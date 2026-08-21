@@ -2088,7 +2088,7 @@
                   </StackPanel>
                 </Border>
 
-                <!-- Available Release Card -->
+                <!-- Available Release Card with Visual Pipeline & Animation -->
                 <Border
                     Grid.Row="1"
                     Padding="22"
@@ -2096,48 +2096,145 @@
                     BorderBrush="{ThemeResource GameShiftCardBorderBrush}"
                     BorderThickness="1"
                     CornerRadius="14">
-                  <StackPanel Spacing="12">
-                    <TextBlock
-                        FontSize="17"
-                        FontWeight="SemiBold"
-                        Text="Nowe wydanie" />
-                    <TextBlock
-                        x:Name="AvailableUpdateVersionText"
-                        FontSize="22"
-                        FontWeight="SemiBold"
-                        Text="Brak nowej wersji" />
+                  <StackPanel Spacing="14">
+                    <Grid>
+                      <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                      </Grid.ColumnDefinitions>
+                      <StackPanel Spacing="2">
+                        <TextBlock
+                            Style="{StaticResource GameShiftEyebrowStyle}"
+                            Text="DOSTĘPNE WYDANIE" />
+                        <TextBlock
+                            x:Name="AvailableUpdateVersionText"
+                            FontSize="22"
+                            FontWeight="SemiBold"
+                            Text="Brak nowej wersji" />
+                      </StackPanel>
+                      <ProgressRing
+                          x:Name="UpdateActivitySpinner"
+                          Grid.Column="1"
+                          Width="24"
+                          Height="24"
+                          IsActive="False"
+                          Visibility="Collapsed" />
+                    </Grid>
+
+                    <!-- Update Pipeline Badges -->
+                    <StackPanel Orientation="Horizontal" Spacing="6">
+                      <Border
+                          x:Name="UpdateStep1Badge"
+                          Background="#2200D7E2"
+                          BorderBrush="{ThemeResource GameShiftAccentBrush}"
+                          BorderThickness="1"
+                          CornerRadius="6"
+                          Padding="8,4">
+                        <TextBlock
+                            FontSize="11"
+                            FontWeight="SemiBold"
+                            Foreground="{ThemeResource GameShiftAccentBrush}"
+                            Text="1. Manifest" />
+                      </Border>
+                      <FontIcon Foreground="{ThemeResource GameShiftMutedTextBrush}" FontSize="10" Glyph="&#xE76C;" />
+                      <Border
+                          x:Name="UpdateStep2Badge"
+                          Background="#16FFFFFF"
+                          BorderBrush="#33FFFFFF"
+                          BorderThickness="1"
+                          CornerRadius="6"
+                          Padding="8,4">
+                        <TextBlock
+                            FontSize="11"
+                            FontWeight="SemiBold"
+                            Foreground="{ThemeResource GameShiftMutedTextBrush}"
+                            Text="2. Pobieranie" />
+                      </Border>
+                      <FontIcon Foreground="{ThemeResource GameShiftMutedTextBrush}" FontSize="10" Glyph="&#xE76C;" />
+                      <Border
+                          x:Name="UpdateStep3Badge"
+                          Background="#16FFFFFF"
+                          BorderBrush="#33FFFFFF"
+                          BorderThickness="1"
+                          CornerRadius="6"
+                          Padding="8,4">
+                        <TextBlock
+                            FontSize="11"
+                            FontWeight="SemiBold"
+                            Foreground="{ThemeResource GameShiftMutedTextBrush}"
+                            Text="3. Weryfikacja SHA-256" />
+                      </Border>
+                      <FontIcon Foreground="{ThemeResource GameShiftMutedTextBrush}" FontSize="10" Glyph="&#xE76C;" />
+                      <Border
+                          x:Name="UpdateStep4Badge"
+                          Background="#16FFFFFF"
+                          BorderBrush="#33FFFFFF"
+                          BorderThickness="1"
+                          CornerRadius="6"
+                          Padding="8,4">
+                        <TextBlock
+                            FontSize="11"
+                            FontWeight="SemiBold"
+                            Foreground="{ThemeResource GameShiftMutedTextBrush}"
+                            Text="4. Gotowa" />
+                      </Border>
+                    </StackPanel>
+
                     <TextBlock
                         x:Name="UpdateReleaseNotesText"
                         Foreground="{ThemeResource GameShiftMutedTextBrush}"
                         FontSize="13"
-                        Text="Po sprawdzeniu pojawi się lista zmian."
+                        Text="Po sprawdzeniu pojawi się lista zmian i opis wydania."
                         TextWrapping="Wrap" />
-                    <StackPanel Orientation="Horizontal" Spacing="10">
-                      <Button
-                          x:Name="DownloadUpdateButton"
-                          Style="{StaticResource GameShiftPrimaryButtonStyle}"
-                          Click="OnDownloadUpdateClicked"
-                          Content="Pobierz aktualizację"
-                          IsEnabled="False" />
+
+                    <!-- Progress and Telemetry -->
+                    <StackPanel Spacing="6">
+                      <Grid>
+                        <TextBlock
+                            x:Name="StagedUpdateText"
+                            Foreground="{ThemeResource GameShiftAccentBrush}"
+                            FontSize="12"
+                            FontWeight="Medium"
+                            Text="Pakiet nie został pobrany."
+                            TextWrapping="Wrap" />
+                        <TextBlock
+                            x:Name="UpdateDownloadPercentText"
+                            HorizontalAlignment="Right"
+                            Foreground="{ThemeResource GameShiftAccentBrush}"
+                            FontSize="12"
+                            FontWeight="SemiBold"
+                            Text="0%" />
+                      </Grid>
+
+                      <ProgressBar
+                          x:Name="UpdateDownloadProgressBar"
+                          Height="6"
+                          CornerRadius="3"
+                          Foreground="{ThemeResource GameShiftAccentBrush}"
+                          Background="#22FFFFFF"
+                          Maximum="100"
+                          Minimum="0"
+                          Value="0" />
+                    </StackPanel>
+
+                    <StackPanel Orientation="Horizontal" Spacing="10" Margin="0,4,0,0">
                       <Button
                           x:Name="InstallUpdateButton"
-                          Style="{StaticResource GameShiftSecondaryButtonStyle}"
+                          Style="{StaticResource GameShiftPrimaryButtonStyle}"
                           Click="OnInstallUpdateClicked"
-                          Content="Zainstaluj teraz"
+                          IsEnabled="False">
+                        <StackPanel Orientation="Horizontal" Spacing="8">
+                          <FontIcon FontSize="14" Glyph="&#xE896;" />
+                          <TextBlock Text="Zainstaluj aktualizację teraz" />
+                        </StackPanel>
+                      </Button>
+                      <Button
+                          x:Name="DownloadUpdateButton"
+                          Style="{StaticResource GameShiftSecondaryButtonStyle}"
+                          Click="OnDownloadUpdateClicked"
+                          Content="Pobierz ponownie"
                           IsEnabled="False" />
                     </StackPanel>
-                    <ProgressBar
-                        x:Name="UpdateDownloadProgressBar"
-                        Height="5"
-                        Maximum="100"
-                        Minimum="0"
-                        Value="0" />
-                    <TextBlock
-                        x:Name="StagedUpdateText"
-                        Foreground="{ThemeResource GameShiftMutedTextBrush}"
-                        FontSize="12"
-                        Text="Pakiet nie został pobrany."
-                        TextWrapping="Wrap" />
                   </StackPanel>
                 </Border>
 

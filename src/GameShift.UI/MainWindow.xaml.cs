@@ -1982,10 +1982,14 @@ public sealed partial class MainWindow : Window, IDisposable
             switch (result.State)
             {
                 case UpdateCheckState.NotDue:
+                    UpdateActivitySpinner.IsActive = false;
+                    UpdateActivitySpinner.Visibility = Visibility.Collapsed;
                     return;
                 case UpdateCheckState.UpToDate:
                     _availableUpdate = null;
                     _stagedInstallerPath = null;
+                    UpdateActivitySpinner.IsActive = false;
+                    UpdateActivitySpinner.Visibility = Visibility.Collapsed;
                     ApplyNoAvailableUpdate();
                     if (manual)
                     {
@@ -2000,6 +2004,7 @@ public sealed partial class MainWindow : Window, IDisposable
                 case UpdateCheckState.Available:
                     _availableUpdate = result.Manifest;
                     _stagedInstallerPath = null;
+                    SetUpdatePipelineStep(1);
                     ApplyAvailableUpdate(result.Manifest!);
                     ShowInfo(
                         UpdateInfoBar,
@@ -2027,6 +2032,8 @@ public sealed partial class MainWindow : Window, IDisposable
 
                     break;
                 case UpdateCheckState.Failed:
+                    UpdateActivitySpinner.IsActive = false;
+                    UpdateActivitySpinner.Visibility = Visibility.Collapsed;
                     ShowInfo(
                         UpdateInfoBar,
                         InfoBarSeverity.Warning,
@@ -2063,6 +2070,8 @@ public sealed partial class MainWindow : Window, IDisposable
         finally
         {
             _isUpdateOperationRunning = false;
+            UpdateActivitySpinner.IsActive = false;
+            UpdateActivitySpinner.Visibility = Visibility.Collapsed;
             UpdateUpdateControls();
         }
     }
@@ -2073,35 +2082,55 @@ public sealed partial class MainWindow : Window, IDisposable
         SignedUpdateManifest manifest = _availableUpdate
             ?? throw new InvalidOperationException(
                 "Najpierw sprawdź dostępność aktualizacji.");
+
+        SetUpdatePipelineStep(2);
+        UpdateActivitySpinner.IsActive = true;
+        UpdateActivitySpinner.Visibility = Visibility.Visible;
         UpdateDownloadProgressBar.Value = 0;
+        UpdateDownloadPercentText.Text = "0%";
         StagedUpdateText.Text = "Pobieranie i weryfikowanie fragmentów…";
+
         Progress<UpdateDownloadProgress> progress = new(update =>
         {
             UpdateDownloadProgressBar.Value = update.Percent;
+            UpdateDownloadPercentText.Text = $"{update.Percent:0}%";
+            double downloadedMib = update.DownloadedBytes / (1024.0 * 1024.0);
+            double totalMib = update.TotalBytes / (1024.0 * 1024.0);
             StagedUpdateText.Text =
-                $"Zweryfikowano {update.CompletedChunks} z "
-                + $"{update.TotalChunks} fragmentów • "
-                + $"{update.Percent:0}%";
+                $"Pobieranie: {update.CompletedChunks}/{update.TotalChunks} fragmentów • "
+                + $"{downloadedMib:0.0} / {totalMib:0.0} MiB";
         });
+
         _stagedInstallerPath = await _updates.DownloadInstallerAsync(
             manifest,
             progress,
             cancellationToken);
+
+        SetUpdatePipelineStep(3);
+        StagedUpdateText.Text = "Weryfikacja kryptograficzna i sprawdzanie SHA-256…";
+
         await _updates.VerifyInstallerAsync(
             manifest,
             _stagedInstallerPath,
             cancellationToken);
+
+        SetUpdatePipelineStep(4);
+        UpdateActivitySpinner.IsActive = false;
+        UpdateActivitySpinner.Visibility = Visibility.Collapsed;
         UpdateDownloadProgressBar.Value = 100;
+        UpdateDownloadPercentText.Text = "100%";
         StagedUpdateText.Text =
             $"Pakiet wersji {manifest.Version} został pobrany i zweryfikowany z SHA-256.";
         ShowInfo(
             UpdateInfoBar,
             InfoBarSeverity.Success,
             "Aktualizacja gotowa do instalacji",
-            $"Wersja {manifest.Version} została pobrana. Kliknij „Zainstaluj teraz”, aby zatwierdzić instalację.");
+            $"Wersja {manifest.Version} została pobrana. Kliknij „Zainstaluj aktualizację teraz”, aby zatwierdzić instalację.");
         _trayIcon?.ShowNotification(
             "GameShift — aktualizacja gotowa",
             $"Nowa wersja {manifest.Version} została pobrana. Kliknij, aby zatwierdzić instalację.");
+        TacticalAudioService.Instance.PlaySuccess();
+        TacticalVfxService.Instance.AnimatePulse(InstallUpdateButton);
         UpdateUpdateControls();
     }
 
@@ -2176,6 +2205,33 @@ public sealed partial class MainWindow : Window, IDisposable
             + "kontroli aktywnej sesji i recovery.");
     }
 
+    private void SetUpdatePipelineStep(int activeStep)
+    {
+        if (UpdateStep1Badge is null)
+        {
+            return;
+        }
+
+        SolidColorBrush accentBg = new(WindowsColor.FromArgb(40, 0, 215, 226));
+        SolidColorBrush accentBorder = new(WindowsColor.FromArgb(255, 0, 215, 226));
+        SolidColorBrush successBg = new(WindowsColor.FromArgb(40, 61, 203, 112));
+        SolidColorBrush successBorder = new(WindowsColor.FromArgb(255, 61, 203, 112));
+        SolidColorBrush idleBg = new(WindowsColor.FromArgb(20, 255, 255, 255));
+        SolidColorBrush idleBorder = new(WindowsColor.FromArgb(40, 255, 255, 255));
+
+        UpdateStep1Badge.Background = activeStep >= 1 ? accentBg : idleBg;
+        UpdateStep1Badge.BorderBrush = activeStep >= 1 ? accentBorder : idleBorder;
+
+        UpdateStep2Badge.Background = activeStep >= 2 ? accentBg : idleBg;
+        UpdateStep2Badge.BorderBrush = activeStep >= 2 ? accentBorder : idleBorder;
+
+        UpdateStep3Badge.Background = activeStep >= 3 ? accentBg : idleBg;
+        UpdateStep3Badge.BorderBrush = activeStep >= 3 ? accentBorder : idleBorder;
+
+        UpdateStep4Badge.Background = activeStep >= 4 ? successBg : idleBg;
+        UpdateStep4Badge.BorderBrush = activeStep >= 4 ? successBorder : idleBorder;
+    }
+
     private void ApplyAvailableUpdate(SignedUpdateManifest manifest)
     {
         AvailableUpdateVersionText.Text = manifest.DisplayName;
@@ -2185,7 +2241,8 @@ public sealed partial class MainWindow : Window, IDisposable
                 Environment.NewLine,
                 manifest.ReleaseNotes.Select(note => $"• {note}"));
         UpdateDownloadProgressBar.Value = 0;
-        StagedUpdateText.Text = "Pakiet nie został pobrany.";
+        UpdateDownloadPercentText.Text = "0%";
+        StagedUpdateText.Text = "Pakiet gotowy do pobrania.";
         UpdateUpdateControls();
     }
 
@@ -2195,7 +2252,9 @@ public sealed partial class MainWindow : Window, IDisposable
         UpdateReleaseNotesText.Text =
             "Zainstalowana wersja jest zgodna z bieżącym kanałem.";
         UpdateDownloadProgressBar.Value = 0;
+        UpdateDownloadPercentText.Text = "0%";
         StagedUpdateText.Text = "Pakiet nie jest potrzebny.";
+        SetUpdatePipelineStep(0);
         UpdateUpdateControls();
     }
 

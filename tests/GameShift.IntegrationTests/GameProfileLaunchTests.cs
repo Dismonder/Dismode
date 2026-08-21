@@ -170,11 +170,30 @@ public sealed class GameProfileLaunchTests
         }
     }
 
-    private static int ReadProcessId(string readyFile) =>
-        int.Parse(
-            File.ReadAllText(readyFile),
-            NumberStyles.None,
-            CultureInfo.InvariantCulture);
+    private static int ReadProcessId(string readyFile)
+    {
+        for (int i = 0; i < 50; i++)
+        {
+            try
+            {
+                using FileStream stream = new(readyFile, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete);
+                using StreamReader reader = new(stream);
+                string text = reader.ReadToEnd().Trim();
+                if (int.TryParse(text, NumberStyles.None, CultureInfo.InvariantCulture, out int pid))
+                {
+                    return pid;
+                }
+            }
+            catch (IOException) when (i < 49)
+            {
+                Thread.Sleep(20);
+            }
+        }
+
+        using FileStream finalStream = new(readyFile, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete);
+        using StreamReader finalReader = new(finalStream);
+        return int.Parse(finalReader.ReadToEnd().Trim(), NumberStyles.None, CultureInfo.InvariantCulture);
+    }
 
     private static async Task CloseProcessAsync(int processId)
     {
