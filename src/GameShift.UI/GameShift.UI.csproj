@@ -1,0 +1,61 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net10.0-windows10.0.26100.0</TargetFramework>
+    <SupportedOSPlatformVersion>10.0.22621.0</SupportedOSPlatformVersion>
+    <TargetPlatformMinVersion>10.0.22621.0</TargetPlatformMinVersion>
+    <RootNamespace>GameShift.UI</RootNamespace>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+    <ApplicationIcon>Assets\GameShift.ico</ApplicationIcon>
+    <RuntimeIdentifier>win-x64</RuntimeIdentifier>
+    <PlatformTarget>x64</PlatformTarget>
+    <UseWinUI>true</UseWinUI>
+    <WindowsPackageType>None</WindowsPackageType>
+    <WindowsAppSDKSelfContained>false</WindowsAppSDKSelfContained>
+    <EnableMsixTooling>false</EnableMsixTooling>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Grpc.Net.Client" />
+    <PackageReference Include="Microsoft.WindowsAppSDK" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\GameShift.Contracts\GameShift.Contracts.csproj" />
+    <ProjectReference Include="..\GameShift.Core\GameShift.Core.csproj" />
+    <ProjectReference Include="..\GameShift.Data\GameShift.Data.csproj" />
+    <ProjectReference Include="..\GameShift.Windows\GameShift.Windows.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Content Include="Assets\GameShift.png">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
+    </Content>
+    <Content Include="Assets\GameShift.ico">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
+    </Content>
+    <Content Include="Assets\TacticalHero.png">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
+    </Content>
+  </ItemGroup>
+
+  <Target Name="CopyLooseWinUiResourcesToPublish"
+          AfterTargets="Publish">
+    <ItemGroup>
+      <_LooseWinUiXbf Include="$(TargetDir)**\*.xbf"
+                      Exclude="$(PublishDir)**\*.xbf" />
+      <_LooseWinUiResource Include="@(_LooseWinUiXbf)" />
+      <_LooseWinUiResource Include="$(TargetDir)$(TargetName).pri" />
+    </ItemGroup>
+    <Error Condition="'@(_LooseWinUiXbf)' == ''"
+           Text="No compiled WinUI XAML resources were found under $(TargetDir)." />
+    <Error Condition="!Exists('%(_LooseWinUiResource.Identity)')"
+           Text="Required WinUI publish resource is missing: %(_LooseWinUiResource.Identity)" />
+    <Copy SourceFiles="@(_LooseWinUiResource)"
+          DestinationFiles="@(_LooseWinUiResource->'$(PublishDir)%(RecursiveDir)%(Filename)%(Extension)')"
+          SkipUnchangedFiles="true" />
+  </Target>
+</Project>

@@ -1,0 +1,40 @@
+# Build output
+bin/
+obj/
+artifacts/
+
+# Visual Studio
+.vs/
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+
+# Test output
+TestResults/
+coverage/
+*.trx
+
+# Packages and publishing
+*.nupkg
+*.snupkg
+AppPackages/
+BundleArtifacts/
+Publish/
+node_modules/
+.wrangler/
+infrastructure/**/dist/
+
+# Local runtime state
+*.db
+*.db-shm
+*.db-wal
+*.journal
+logs/
+*.pem
+*.pfx
+*.update-ticket.json
+
+# OS files
+Thumbs.db
+Desktop.ini

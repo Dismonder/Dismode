@@ -1,0 +1,26 @@
+WARUNKI KORZYSTANIA Z GAMESHIFT TECHNICAL PREVIEW
+
+1. GameShift jest eksperymentalnym projektem badawczo-rozwojowym. Program
+   jest udostępniany bez gwarancji wzrostu FPS, zgodności z każdą grą ani
+   nieprzerwanego działania na każdej konfiguracji Windows.
+
+2. GameShift wykonuje wyłącznie działania pokazane w planie sesji. Zmiany
+   optymalizacyjne mają charakter tymczasowy i korzystają z lokalnego
+   dziennika odzyskiwania. Operacje wysokiego ryzyka, zabezpieczenia Windows,
+   sterowniki oraz anti-cheat pozostają chronione.
+
+3. Użytkownik odpowiada za zapisanie pracy w aplikacjach wybranych do
+   zamknięcia. GameShift nie obiecuje korzyści wydajnościowej bez rzeczywistego
+   pomiaru i może uczciwie zgłosić brak poprawy.
+
+4. Dane bibliotek gier, profili, procesów, usług, historii sesji oraz pomiarów
+   pozostają lokalnie na komputerze. Automatyczne sprawdzenie aktualizacji
+   wysyła wyłącznie standardowe dane techniczne żądania HTTPS; nie wysyła
+   listy gier, procesów, sprzętu ani wyników FPS.
+
+5. Pełny opis prywatności znajduje się w pliku PRIVACY-PL.txt instalowanym
+   razem z programem. Licencje składników zewnętrznych znajdują się w plikach
+   THIRD-PARTY-NOTICES.txt oraz w katalogu Tools\PresentMon.
+
+Instalując program, użytkownik potwierdza, że rozumie eksperymentalny charakter
+wydania Technical Preview i opisane ograniczenia.

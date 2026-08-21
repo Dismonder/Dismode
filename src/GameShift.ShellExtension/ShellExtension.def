@@ -1,0 +1,5 @@
+LIBRARY "GameShift.ShellExtension.dll"
+
+EXPORTS
+    DllCanUnloadNow PRIVATE
+    DllGetClassObject PRIVATE

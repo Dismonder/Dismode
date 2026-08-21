@@ -1,0 +1,111 @@
+using System.Security.Cryptography;
+using System.Text;
+using System.Text.Json;
+using System.Text.Json.Serialization;
+
+namespace GameShift.Core.Activation;
+
+public sealed record UiActivationRequest(
+    int SchemaVersion,
+    Guid RequestId,
+    DateTimeOffset RequestedAtUtc,
+    string GameExecutablePath,
+    bool KeepWindowHidden);
+
+public static class UiActivationProtocol
+{
+    public const int CurrentSchemaVersion = 1;
+    public const int MaximumMessageBytes = 64 * 1024;
+    public static readonly TimeSpan MaximumClockSkew =
+        TimeSpan.FromMinutes(2);
+
+    private static readonly JsonSerializerOptions SerializerOptions = new(
+        JsonSerializerDefaults.Web)
+    {
+        UnmappedMemberHandling = JsonUnmappedMemberHandling.Disallow,
+    };
+
+    public static string GetPipeName(string userSid)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(userSid);
+        string fingerprint = Convert.ToHexString(
+            SHA256.HashData(Encoding.UTF8.GetBytes(userSid.Trim())))[..20];
+        return $"GameShift.UI.Activation.{fingerprint}";
+    }
+
+    public static byte[] Serialize(UiActivationRequest request)
+    {
+        Validate(request, DateTimeOffset.UtcNow);
+        byte[] payload = JsonSerializer.SerializeToUtf8Bytes(
+            request,
+            SerializerOptions);
+        if (payload.Length > MaximumMessageBytes)
+        {
+            throw new InvalidDataException(
+                "Żądanie aktywacji przekracza dozwolony rozmiar.");
+        }
+
+        return payload;
+    }
+
+    public static UiActivationRequest DeserializeAndValidate(
+        ReadOnlySpan<byte> payload,
+        DateTimeOffset nowUtc)
+    {
+        if (payload.IsEmpty || payload.Length > MaximumMessageBytes)
+        {
+            throw new InvalidDataException(
+                "Żądanie aktywacji ma nieprawidłowy rozmiar.");
+        }
+
+        UiActivationRequest request;
+        try
+        {
+            request = JsonSerializer.Deserialize<UiActivationRequest>(
+                payload,
+                SerializerOptions)
+                ?? throw new InvalidDataException(
+                    "Żądanie aktywacji jest puste.");
+        }
+        catch (JsonException exception)
+        {
+            throw new InvalidDataException(
+                "Żądanie aktywacji nie jest prawidłowym JSON.",
+                exception);
+        }
+
+        Validate(request, nowUtc);
+        return request with
+        {
+            RequestedAtUtc = request.RequestedAtUtc.ToUniversalTime(),
+            GameExecutablePath =
+                GameShiftLaunchOptions.NormalizeExecutablePath(
+                    request.GameExecutablePath),
+        };
+    }
+
+    private static void Validate(
+        UiActivationRequest request,
+        DateTimeOffset nowUtc)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        if (request.SchemaVersion != CurrentSchemaVersion
+            || request.RequestId == Guid.Empty)
+        {
+            throw new InvalidDataException(
+                "Żądanie aktywacji ma niezgodny kontrakt.");
+        }
+
+        DateTimeOffset requestedAt =
+            request.RequestedAtUtc.ToUniversalTime();
+        TimeSpan age = nowUtc.ToUniversalTime() - requestedAt;
+        if (age.Duration() > MaximumClockSkew)
+        {
+            throw new InvalidDataException(
+                "Żądanie aktywacji jest nieaktualne.");
+        }
+
+        _ = GameShiftLaunchOptions.NormalizeExecutablePath(
+            request.GameExecutablePath);
+    }
+}

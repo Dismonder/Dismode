@@ -1,0 +1,182 @@
+syntax = "proto3";
+
+option csharp_namespace = "GameShift.Contracts.Grpc";
+
+package gameshift.v1;
+
+service GameShiftDiagnostics {
+  rpc GetStatus (StatusRequest) returns (StatusReply);
+  rpc Discover (DiscoveryRequest) returns (DiscoveryReply);
+}
+
+service GameShiftSessions {
+  rpc PrepareSession (PrepareSessionRequest) returns (SessionPlanReply);
+  rpc StartSession (StartSessionRequest) returns (SessionStateReply);
+  rpc GetActiveSession (GetActiveSessionRequest) returns (SessionStateReply);
+  rpc RestoreSession (RestoreSessionRequest) returns (SessionStateReply);
+  rpc CloseGame (CloseGameRequest) returns (SessionStateReply);
+}
+
+enum RpcCommandKind {
+  RPC_COMMAND_KIND_UNSPECIFIED = 0;
+  GET_COMPONENT_STATUS = 1;
+  DISCOVER_SYSTEM = 2;
+  START_OPTIMIZATION_SESSION = 3;
+  APPROVE_OPTIMIZATION_PLAN = 4;
+  RESTORE_OPTIMIZATION_SESSION = 5;
+  STOP_APPROVED_SERVICE = 6;
+  SET_PROCESS_PRIORITY = 7;
+  SET_PROCESS_ECO_QOS = 8;
+  ACTIVATE_MANAGED_POWER_PROFILE = 9;
+  GET_ACTIVE_SESSION = 10;
+  CLOSE_GAME = 11;
+}
+
+message RpcRequestMetadata {
+  int32 protocol_version = 1;
+  string request_id = 2;
+  string session_id = 3;
+  string caller_sid = 4;
+  int64 timestamp_unix_milliseconds = 5;
+  RpcCommandKind command = 6;
+  string nonce = 7;
+  string idempotency_key = 8;
+}
+
+message StatusRequest {
+  RpcRequestMetadata metadata = 1;
+}
+
+message StatusReply {
+  string component = 1;
+  string state = 2;
+  int32 protocol_version = 3;
+  string message = 4;
+}
+
+message DiscoveryRequest {
+  RpcRequestMetadata metadata = 1;
+  int32 maximum_items = 2;
+}
+
+message ProcessSummary {
+  int32 process_id = 1;
+  string name = 2;
+  int64 started_unix_milliseconds = 3;
+  string executable_path = 4;
+  int32 session_id = 5;
+  int64 working_set_bytes = 6;
+  int64 total_processor_time_milliseconds = 7;
+  bool has_main_window = 8;
+  string safety_classification = 9;
+  string classification_reason = 10;
+  string recommended_action = 11;
+  string priority_class = 12;
+}
+
+message ServiceSummary {
+  string service_name = 1;
+  string display_name = 2;
+  string status = 3;
+  bool can_stop = 4;
+  string service_type = 5;
+  repeated string dependencies = 6;
+  string start_type = 7;
+  string safety_classification = 8;
+  string classification_reason = 9;
+  string recommended_action = 10;
+  bool is_driver = 11;
+  bool is_shared_process = 12;
+  int32 trigger_count = 13;
+  repeated string running_dependent_services = 14;
+}
+
+message DiscoveryReply {
+  repeated ProcessSummary processes = 1;
+  repeated ServiceSummary services = 2;
+  bool truncated = 3;
+  int32 total_process_count = 4;
+  int32 total_service_count = 5;
+}
+
+message PrepareSessionRequest {
+  RpcRequestMetadata metadata = 1;
+  string profile_id = 2;
+  repeated BackgroundApplicationSelection background_applications = 3;
+  GamePriorityMode game_priority = 4;
+  bool use_saved_background_rules = 5;
+}
+
+message BackgroundApplicationSelection {
+  int32 process_id = 1;
+  int64 started_unix_milliseconds = 2;
+  BackgroundProcessActionMode action_mode = 3;
+}
+
+enum BackgroundProcessActionMode {
+  BACKGROUND_PROCESS_ACTION_MODE_UNSPECIFIED = 0;
+  BACKGROUND_PROCESS_ACTION_MODE_CLOSE_AND_RESTORE = 1;
+  BACKGROUND_PROCESS_ACTION_MODE_LOWER_PRIORITY = 2;
+  BACKGROUND_PROCESS_ACTION_MODE_LOWER_PRIORITY_AND_ECO_QOS = 3;
+}
+
+enum GamePriorityMode {
+  GAME_PRIORITY_MODE_UNSPECIFIED = 0;
+  GAME_PRIORITY_MODE_NORMAL = 1;
+  GAME_PRIORITY_MODE_ABOVE_NORMAL = 2;
+  GAME_PRIORITY_MODE_HIGH = 3;
+}
+
+message PlannedSessionAction {
+  string code = 1;
+  string description = 2;
+  string risk = 3;
+  string recovery = 4;
+}
+
+message SessionPlanReply {
+  string plan_id = 1;
+  string session_id = 2;
+  string profile_id = 3;
+  string game_display_name = 4;
+  int64 expires_unix_milliseconds = 5;
+  repeated PlannedSessionAction actions = 6;
+  bool system_mutations_enabled = 7;
+  string safety_message = 8;
+}
+
+message StartSessionRequest {
+  RpcRequestMetadata metadata = 1;
+  string plan_id = 2;
+}
+
+message GetActiveSessionRequest {
+  RpcRequestMetadata metadata = 1;
+}
+
+message RestoreSessionRequest {
+  RpcRequestMetadata metadata = 1;
+}
+
+message CloseGameRequest {
+  RpcRequestMetadata metadata = 1;
+  bool force_termination = 2;
+}
+
+message SessionStateReply {
+  bool has_session = 1;
+  string session_id = 2;
+  string profile_id = 3;
+  string game_display_name = 4;
+  string state = 5;
+  int64 started_unix_milliseconds = 6;
+  int32 applied_action_count = 7;
+  int32 restored_action_count = 8;
+  int32 conflict_count = 9;
+  int32 error_count = 10;
+  string message = 11;
+  optional double frames_per_second = 12;
+  optional double frame_time_milliseconds = 13;
+  string frame_rate_status = 14;
+  optional int32 frame_rate_process_id = 15;
+}

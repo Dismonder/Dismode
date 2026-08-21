@@ -1,0 +1,15 @@
+GameShift — wydanie badawczo-rozwojowe
+
+Instalator:
+- instaluje aplikację dla Windows 11 x64 do chronionego katalogu Program Files;
+- zawiera wymagane środowisko .NET i Windows App Runtime;
+- tworzy wpis w menu Start oraz opcjonalny skrót na pulpicie;
+- dodaje standardowy deinstalator Windows;
+- nie usuwa profili, historii ani journalu odzyskiwania z LocalAppData.
+
+Przed instalacją lub aktualizacją zakończ aktywną sesję i zamknij GameShift.
+Instalator celowo nie zabija gry ani procesów odpowiedzialnych za recovery.
+
+To wydanie nie jest podpisane certyfikatem Authenticode. Windows SmartScreen
+może wyświetlić ostrzeżenie wydawcy. Sumę SHA-256 instalatora znajdziesz obok
+pliku EXE.

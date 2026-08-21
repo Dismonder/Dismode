@@ -1,0 +1,10 @@
+GameShift wykorzystuje składniki open source dostarczane z odpowiednimi
+informacjami licencyjnymi, między innymi:
+
+- PresentMon 2.5.1 — MIT; pełna licencja i notices znajdują się w
+  Tools\PresentMon.
+- .NET i Windows App SDK — licencje Microsoft właściwe dla dystrybucji.
+- Microsoft.Data.Sqlite / SQLitePCLRaw — informacje licencyjne dostawców.
+- gRPC for .NET — Apache-2.0.
+
+Pełny, automatycznie generowany SBOM zostanie dołączony do artefaktu wydania.

@@ -1,0 +1,19 @@
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "gameshift-update-service-dev",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-08-01",
+  "observability": {
+    "enabled": true,
+    "head_sampling_rate": 0.1
+  },
+  "assets": {
+    "directory": "./public",
+    "binding": "ASSETS",
+    "run_worker_first": true
+  },
+  "vars": {
+    "ENVIRONMENT": "development",
+    "PRODUCT_NAME": "GameShift Technical Preview"
+  }
+}

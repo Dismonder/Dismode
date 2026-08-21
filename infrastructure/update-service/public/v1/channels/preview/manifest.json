@@ -1,0 +1,44 @@
+{
+  "schemaVersion": 1,
+  "channel": "preview",
+  "version": "0.1.1",
+  "minimumSupportedVersion": "0.1.1",
+  "publishedAtUtc": "2026-08-01T17:10:41.1501948+00:00",
+  "displayName": "GameShift 0.1.1 Technical Preview",
+  "releaseNotes": [
+    "Dodano Uruchom przez GameShift do menu kontekstowego Windows.",
+    "Dodano bezpieczny tryb t\u0142a z ikon\u0105 w zasobniku systemowym.",
+    "Gra uruchamia si\u0119 przed odroczonym skanowaniem biblioteki i zadaniami konserwacyjnymi.",
+    "Dodano podpisane aktualizacje r\u0119czne i automatyczne sprawdzane najwy\u017Cej co 30 dni."
+  ],
+  "installer": {
+    "fileName": "GameShift-Setup-0.1.1-win-x64.exe",
+    "sizeBytes": 80803708,
+    "sha256": "A288FD24969004BE53C02E4055417407D93AD5E1DC6D527E0671E9E5C22B5793",
+    "chunks": [
+      {
+        "path": "/v1/packages/0.1.1/GameShift-Setup-0.1.1-win-x64.part-0001.bin",
+        "sizeBytes": 20971520,
+        "sha256": "8BC24B74B95E07CCD824F9842FDDC64FFF5BE27E10B725B9DA9D8BBFCAA3BEA9"
+      },
+      {
+        "path": "/v1/packages/0.1.1/GameShift-Setup-0.1.1-win-x64.part-0002.bin",
+        "sizeBytes": 20971520,
+        "sha256": "D42B355C7CE8E20F907E75D5F3229E0A79530120B1D166155E48F88BF1900FB1"
+      },
+      {
+        "path": "/v1/packages/0.1.1/GameShift-Setup-0.1.1-win-x64.part-0003.bin",
+        "sizeBytes": 20971520,
+        "sha256": "B6D67A5BD746EBE8D89FE170213F85DEC8A2F7D5C005724784E9812F2BFFB34D"
+      },
+      {
+        "path": "/v1/packages/0.1.1/GameShift-Setup-0.1.1-win-x64.part-0004.bin",
+        "sizeBytes": 17889148,
+        "sha256": "7EB6314289B916FC9275F2F1544F2D53616F8DB634D2A7B7F7BE68EACFD53373"
+      }
+    ]
+  },
+  "keyId": "gameshift-development-2026-01",
+  "signatureAlgorithm": "ECDSA_P256_SHA256_P1363",
+  "signature": "kFtZT9MY5Bg3YiPEmFe3iE987/Aou5zLWMKkbGo3fbmaLZL4\u002Bgk3OaO3Yg6HNCiBH3VhPhUswr\u002BpSBDaP77Kkw=="
+}

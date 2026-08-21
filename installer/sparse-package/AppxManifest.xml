@@ -1,0 +1,78 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Package
+  xmlns="http://schemas.microsoft.com/appx/manifest/foundation/windows10"
+  xmlns:uap="http://schemas.microsoft.com/appx/manifest/uap/windows10"
+  xmlns:uap10="http://schemas.microsoft.com/appx/manifest/uap/windows10/10"
+  xmlns:rescap="http://schemas.microsoft.com/appx/manifest/foundation/windows10/restrictedcapabilities"
+  xmlns:com="http://schemas.microsoft.com/appx/manifest/com/windows10"
+  xmlns:desktop4="http://schemas.microsoft.com/appx/manifest/desktop/windows10/4"
+  xmlns:desktop5="http://schemas.microsoft.com/appx/manifest/desktop/windows10/5"
+  IgnorableNamespaces="uap uap10 rescap com desktop4 desktop5">
+
+  <Identity
+    Name="GameShift.Desktop"
+    Publisher="CN=GameShift Development"
+    Version="0.0.0.0"
+    ProcessorArchitecture="x64" />
+
+  <Properties>
+    <DisplayName>GameShift</DisplayName>
+    <PublisherDisplayName>GameShift Development</PublisherDisplayName>
+    <Logo>Assets\GameShift.png</Logo>
+    <uap10:AllowExternalContent>true</uap10:AllowExternalContent>
+  </Properties>
+
+  <Resources>
+    <Resource Language="pl-pl" />
+    <Resource Language="en-us" />
+  </Resources>
+
+  <Dependencies>
+    <TargetDeviceFamily
+      Name="Windows.Desktop"
+      MinVersion="10.0.22000.0"
+      MaxVersionTested="10.0.26100.0" />
+  </Dependencies>
+
+  <Capabilities>
+    <rescap:Capability Name="runFullTrust" />
+    <rescap:Capability Name="unvirtualizedResources" />
+  </Capabilities>
+
+  <Applications>
+    <Application
+      Id="GameShift"
+      Executable="GameShift.exe"
+      uap10:TrustLevel="mediumIL"
+      uap10:RuntimeBehavior="win32App">
+      <uap:VisualElements
+        AppListEntry="none"
+        DisplayName="GameShift"
+        Description="GameShift Technical Preview"
+        BackgroundColor="transparent"
+        Square150x150Logo="Assets\GameShift.png"
+        Square44x44Logo="Assets\GameShift.png" />
+      <Extensions>
+        <com:Extension Category="windows.comServer">
+          <com:ComServer>
+            <com:SurrogateServer DisplayName="GameShift Explorer Command">
+              <com:Class
+                Id="1DD2A4B8-88B4-4F02-9E22-4A7A3A541C2F"
+                Path="GameShift.ShellExtension.dll"
+                ThreadingModel="STA" />
+            </com:SurrogateServer>
+          </com:ComServer>
+        </com:Extension>
+        <desktop4:Extension Category="windows.fileExplorerContextMenus">
+          <desktop4:FileExplorerContextMenus>
+            <desktop5:ItemType Type="*">
+              <desktop5:Verb
+                Id="LaunchThroughGameShift"
+                Clsid="1DD2A4B8-88B4-4F02-9E22-4A7A3A541C2F" />
+            </desktop5:ItemType>
+          </desktop4:FileExplorerContextMenus>
+        </desktop4:Extension>
+      </Extensions>
+    </Application>
+  </Applications>
+</Package>

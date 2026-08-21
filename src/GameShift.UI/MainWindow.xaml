@@ -1,0 +1,2398 @@
+<Window
+    x:Class="GameShift.UI.MainWindow"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    Title="GameShift">
+  <Grid
+      x:Name="RootLayout"
+      Background="{ThemeResource GameShiftBackgroundBrush}"
+      Loaded="OnRootLoaded">
+    <Grid.RowDefinitions>
+      <RowDefinition Height="74" />
+      <RowDefinition Height="*" />
+    </Grid.RowDefinitions>
+    <Grid
+        Padding="30,0,0,0"
+        Background="{ThemeResource GameShiftTitleBarBrush}">
+      <Grid.ColumnDefinitions>
+        <ColumnDefinition Width="Auto" />
+        <ColumnDefinition Width="Auto" />
+        <ColumnDefinition Width="*" />
+        <ColumnDefinition Width="Auto" />
+        <ColumnDefinition Width="138" />
+      </Grid.ColumnDefinitions>
+      <StackPanel
+          Grid.Column="0"
+          Orientation="Horizontal"
+          VerticalAlignment="Center"
+          Spacing="10">
+        <Image
+            Width="34"
+            Height="34"
+            Source="Assets/GameShift.png"
+            Stretch="Uniform" />
+        <TextBlock
+            VerticalAlignment="Center"
+            FontFamily="Segoe UI Variable Display"
+            FontSize="22"
+            FontWeight="Bold"
+            Text="GameShift" />
+      </StackPanel>
+      <StackPanel
+          Grid.Column="1"
+          Margin="124,0,20,0"
+          HorizontalAlignment="Left"
+          Orientation="Horizontal">
+        <Button
+            x:Name="DashboardNavigationButton"
+            Style="{StaticResource GameShiftTopNavigationStyle}"
+            Tag="dashboard"
+            Click="OnTopNavigationClicked">
+          <StackPanel Spacing="8">
+            <StackPanel Orientation="Horizontal" Spacing="9">
+              <SymbolIcon Symbol="Home" />
+              <TextBlock Text="Główna" />
+            </StackPanel>
+            <Border
+                x:Name="DashboardNavigationIndicator"
+                Width="68"
+                Height="3"
+                HorizontalAlignment="Center"
+                Background="{ThemeResource GameShiftAccentBrush}"
+                CornerRadius="2" />
+          </StackPanel>
+        </Button>
+        <Button
+            x:Name="ProfilesNavigationButton"
+            Style="{StaticResource GameShiftTopNavigationStyle}"
+            Tag="profiles"
+            Click="OnTopNavigationClicked">
+          <StackPanel Spacing="8">
+            <StackPanel Orientation="Horizontal" Spacing="9">
+              <SymbolIcon Symbol="Library" />
+              <TextBlock Text="Gry" />
+            </StackPanel>
+            <Border x:Name="ProfilesNavigationIndicator" Width="68" Height="3" HorizontalAlignment="Center" Background="{ThemeResource GameShiftAccentBrush}" CornerRadius="2" Opacity="0" />
+          </StackPanel>
+        </Button>
+        <Button
+            x:Name="PlanNavigationButton"
+            Style="{StaticResource GameShiftTopNavigationStyle}"
+            Tag="plan"
+            Click="OnTopNavigationClicked">
+          <StackPanel Spacing="8">
+            <StackPanel Orientation="Horizontal" Spacing="9">
+              <SymbolIcon Symbol="Play" />
+              <TextBlock Text="Sesja" />
+            </StackPanel>
+            <Border x:Name="PlanNavigationIndicator" Width="68" Height="3" HorizontalAlignment="Center" Background="{ThemeResource GameShiftAccentBrush}" CornerRadius="2" Opacity="0" />
+          </StackPanel>
+        </Button>
+        <Button
+            x:Name="HistoryNavigationButton"
+            Style="{StaticResource GameShiftTopNavigationStyle}"
+            Tag="history"
+            Click="OnTopNavigationClicked">
+          <StackPanel Spacing="8">
+            <StackPanel Orientation="Horizontal" Spacing="9">
+              <SymbolIcon Symbol="Clock" />
+              <TextBlock Text="Wyniki" />
+            </StackPanel>
+            <Border x:Name="HistoryNavigationIndicator" Width="68" Height="3" HorizontalAlignment="Center" Background="{ThemeResource GameShiftAccentBrush}" CornerRadius="2" Opacity="0" />
+          </StackPanel>
+        </Button>
+        <Button
+            x:Name="UpdatesNavigationButton"
+            Visibility="Collapsed"
+            Style="{StaticResource GameShiftTopNavigationStyle}"
+            Tag="updates"
+            Click="OnTopNavigationClicked">
+          <StackPanel Spacing="8">
+            <StackPanel Orientation="Horizontal" Spacing="9">
+              <SymbolIcon Symbol="Download" />
+              <TextBlock Text="Aktualizacje" />
+            </StackPanel>
+            <Border x:Name="UpdatesNavigationIndicator" Width="68" Height="3" HorizontalAlignment="Center" Background="{ThemeResource GameShiftAccentBrush}" CornerRadius="2" Opacity="0" />
+          </StackPanel>
+        </Button>
+        <Button
+            x:Name="DiagnosticsNavigationButton"
+            Style="{StaticResource GameShiftTopNavigationStyle}"
+            Tag="diagnostics"
+            Click="OnTopNavigationClicked">
+          <StackPanel Spacing="8">
+            <StackPanel Orientation="Horizontal" Spacing="9">
+              <SymbolIcon Symbol="Setting" />
+              <TextBlock Text="Ustawienia" />
+            </StackPanel>
+            <Border x:Name="DiagnosticsNavigationIndicator" Width="68" Height="3" HorizontalAlignment="Center" Background="{ThemeResource GameShiftAccentBrush}" CornerRadius="2" Opacity="0" />
+          </StackPanel>
+        </Button>
+      </StackPanel>
+      <Grid
+          x:Name="AppTitleBarDragRegion"
+          Grid.Column="2"
+          MinWidth="48"
+          Margin="8,0"
+          Background="Transparent" />
+      <StackPanel
+          Grid.Column="3"
+          Visibility="Collapsed"
+          Margin="12,0,16,0"
+          Orientation="Horizontal"
+          VerticalAlignment="Center"
+          Spacing="8">
+        <Ellipse
+            Width="7"
+            Height="7"
+            Fill="{ThemeResource GameShiftSuccessBrush}" />
+        <TextBlock
+            Foreground="{ThemeResource GameShiftMutedTextBrush}"
+            FontSize="12"
+            FontWeight="SemiBold"
+            Text="SYSTEM GOTOWY" />
+      </StackPanel>
+      <Border
+          Grid.ColumnSpan="5"
+          Height="1"
+          VerticalAlignment="Bottom"
+          Background="{ThemeResource GameShiftCardBorderBrush}" />
+    </Grid>
+    <Grid Grid.Row="1">
+          <ProgressRing
+              x:Name="GlobalProgress"
+              Width="32"
+              Height="32"
+              Margin="24"
+              HorizontalAlignment="Right"
+              VerticalAlignment="Top"
+              AutomationProperties.Name="Trwa odświeżanie danych"
+              IsActive="False"
+              Visibility="Collapsed"
+              Canvas.ZIndex="10" />
+
+          <Grid
+              x:Name="DashboardPage"
+              Margin="20">
+            <Viewbox
+                HorizontalAlignment="Center"
+                VerticalAlignment="Center"
+                Stretch="Uniform">
+              <Canvas
+                  x:Name="DashboardBentoGrid"
+                  Width="1444"
+                  Height="944">
+                <Canvas.ChildrenTransitions>
+                  <TransitionCollection>
+                    <EntranceThemeTransition
+                        FromVerticalOffset="14"
+                        IsStaggeringEnabled="True" />
+                  </TransitionCollection>
+                </Canvas.ChildrenTransitions>
+
+                <InfoBar
+                    x:Name="DashboardInfoBar"
+                    Width="520"
+                    Canvas.Left="904"
+                    Canvas.Top="14"
+                    Canvas.ZIndex="40"
+                    IsClosable="True"
+                    IsOpen="False"
+                    Severity="Informational"
+                    Title="GameShift" />
+
+                <!-- Compact game rail spanning the left deck -->
+                <Grid
+                    Width="157"
+                    Height="836"
+                    Canvas.Left="0"
+                    Canvas.Top="0"
+                    RowSpacing="8">
+                  <Grid.RowDefinitions>
+                    <RowDefinition Height="*" />
+                    <RowDefinition Height="30" />
+                  </Grid.RowDefinitions>
+                  <ListView
+                      x:Name="DashboardGameRail"
+                      HorizontalContentAlignment="Stretch"
+                      SelectionChanged="OnDashboardGameRailSelectionChanged"
+                      SelectionMode="Single"
+                      ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                      ScrollViewer.VerticalScrollBarVisibility="Hidden">
+                    <ListView.ItemContainerStyle>
+                      <Style TargetType="ListViewItem">
+                        <Setter Property="Height" Value="72" />
+                        <Setter Property="Padding" Value="0" />
+                        <Setter Property="Margin" Value="0,0,0,8" />
+                        <Setter Property="Background" Value="Transparent" />
+                        <Setter Property="BorderThickness" Value="0" />
+                        <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+                        <Setter Property="CornerRadius" Value="9" />
+                        <Setter Property="Template">
+                          <Setter.Value>
+                            <ControlTemplate TargetType="ListViewItem">
+                              <Grid>
+                                <VisualStateManager.VisualStateGroups>
+                                  <VisualStateGroup x:Name="CommonStates">
+                                    <VisualState x:Name="Normal" />
+                                    <VisualState x:Name="PointerOver">
+                                      <VisualState.Setters>
+                                        <Setter Target="RailSurface.Opacity" Value="0.88" />
+                                      </VisualState.Setters>
+                                    </VisualState>
+                                    <VisualState x:Name="Pressed">
+                                      <VisualState.Setters>
+                                        <Setter Target="RailSurface.Opacity" Value="0.72" />
+                                      </VisualState.Setters>
+                                    </VisualState>
+                                  </VisualStateGroup>
+                                </VisualStateManager.VisualStateGroups>
+                                <Border
+                                    x:Name="RailSurface"
+                                    Background="Transparent"
+                                    BorderBrush="Transparent"
+                                    BorderThickness="1"
+                                    CornerRadius="9">
+                                  <ContentPresenter
+                                      HorizontalContentAlignment="{TemplateBinding HorizontalContentAlignment}"
+                                      VerticalContentAlignment="{TemplateBinding VerticalContentAlignment}"
+                                      Content="{TemplateBinding Content}"
+                                      ContentTemplate="{TemplateBinding ContentTemplate}"
+                                      ContentTransitions="{TemplateBinding ContentTransitions}" />
+                                </Border>
+                              </Grid>
+                            </ControlTemplate>
+                          </Setter.Value>
+                        </Setter>
+                      </Style>
+                    </ListView.ItemContainerStyle>
+                    <ListView.ItemTemplate>
+                      <DataTemplate>
+                        <Border
+                            Height="70"
+                            Background="#F20D141A"
+                            BorderBrush="{ThemeResource GameShiftCardBorderBrush}"
+                            BorderThickness="1"
+                            CornerRadius="9"
+                            AutomationProperties.Name="{Binding DisplayName}">
+                          <Grid>
+                            <TextBlock
+                                HorizontalAlignment="Center"
+                                VerticalAlignment="Center"
+                                Foreground="{ThemeResource GameShiftAccentBrush}"
+                                FontFamily="Segoe UI Variable Display"
+                                FontSize="30"
+                                FontWeight="SemiBold"
+                                Text="{Binding Initial}" />
+                            <Image
+                                Source="{Binding ArtworkSource}"
+                                Stretch="UniformToFill" />
+                            <Border
+                                BorderBrush="{ThemeResource GameShiftAccentBrush}"
+                                BorderThickness="2"
+                                CornerRadius="9"
+                                IsHitTestVisible="False"
+                                Opacity="{Binding DashboardSelectionOpacity}" />
+                          </Grid>
+                        </Border>
+                      </DataTemplate>
+                    </ListView.ItemTemplate>
+                  </ListView>
+                  <Button
+                      Grid.Row="1"
+                      Height="30"
+                      HorizontalAlignment="Stretch"
+                      Padding="0"
+                      Background="#D911181E"
+                      BorderBrush="{ThemeResource GameShiftCardBorderBrush}"
+                      BorderThickness="1"
+                      CornerRadius="8"
+                      Tag="profiles"
+                      Click="OnTopNavigationClicked"
+                      ToolTipService.ToolTip="Otwórz bibliotekę gier">
+                    <FontIcon
+                        FontSize="15"
+                        Glyph="&#xE70D;" />
+                  </Button>
+                </Grid>
+
+                <!-- Hero: one game, one primary action, real launcher metadata. -->
+                <Border
+                    x:Name="DashboardHeroCard"
+                    Width="1273"
+                    Height="359"
+                    Canvas.Left="171"
+                    Canvas.Top="0"
+                    Background="#FF0D141A"
+                    BorderBrush="{ThemeResource GameShiftCardBorderBrush}"
+                    BorderThickness="1"
+                    CornerRadius="11">
+                  <Grid>
+                    <Image
+                        x:Name="DashboardHeroImage"
+                        Source="Assets/TacticalHero.png"
+                        Stretch="UniformToFill" />
+                    <Rectangle>
+                      <Rectangle.Fill>
+                        <LinearGradientBrush StartPoint="0,0" EndPoint="1,0">
+                          <GradientStop Offset="0" Color="#F9060A0E" />
+                          <GradientStop Offset="0.38" Color="#D1060A0E" />
+                          <GradientStop Offset="0.68" Color="#52060A0E" />
+                          <GradientStop Offset="1" Color="#10060A0E" />
+                        </LinearGradientBrush>
+                      </Rectangle.Fill>
+                    </Rectangle>
+                    <Rectangle VerticalAlignment="Bottom" Height="94">
+                      <Rectangle.Fill>
+                        <LinearGradientBrush StartPoint="0,0" EndPoint="0,1">
+                          <GradientStop Offset="0" Color="#00060A0E" />
+                          <GradientStop Offset="1" Color="#D6060A0E" />
+                        </LinearGradientBrush>
+                      </Rectangle.Fill>
+                    </Rectangle>
+                    <StackPanel
+                        Width="640"
+                        Margin="58,48,0,24"
+                        HorizontalAlignment="Left"
+                        VerticalAlignment="Stretch"
+                        Spacing="0">
+                      <StackPanel Orientation="Horizontal" Spacing="13">
+                        <TextBlock
+                            x:Name="DashboardHeroGameText"
+                            MaxWidth="480"
+                            FontFamily="Segoe UI Variable Display"
+                            FontSize="44"
+                            FontWeight="SemiBold"
+                            CharacterSpacing="-28"
+                            MaxLines="1"
+                            Text="Wybierz grę"
+                            TextTrimming="CharacterEllipsis" />
+                        <Border
+                            Margin="0,10,0,0"
+                            Padding="10,4"
+                            VerticalAlignment="Top"
+                            Background="#C4173037"
+                            BorderBrush="#7820D5DB"
+                            BorderThickness="1"
+                            CornerRadius="13">
+                          <StackPanel Orientation="Horizontal" Spacing="6">
+                            <FontIcon
+                                Foreground="{ThemeResource GameShiftAccentBrush}"
+                                FontSize="12"
+                                Glyph="&#xE73E;" />
+                            <TextBlock
+                                x:Name="DashboardHeroStatusText"
+                                VerticalAlignment="Center"
+                                Foreground="{ThemeResource GameShiftAccentBrush}"
+                                FontSize="12"
+                                FontWeight="SemiBold"
+                                Text="Wybrana gra" />
+                          </StackPanel>
+                        </Border>
+                      </StackPanel>
+
+                      <StackPanel Margin="0,18,0,0" Spacing="10">
+                        <StackPanel Orientation="Horizontal" Spacing="10">
+                          <FontIcon
+                              Width="20"
+                              Foreground="#C9D1D8DC"
+                              FontSize="17"
+                              Glyph="&#xE7B8;" />
+                          <TextBlock
+                              x:Name="DashboardHeroSourceText"
+                              VerticalAlignment="Center"
+                              Foreground="#D8DDE2E5"
+                              FontSize="15"
+                              Text="Biblioteka lokalna" />
+                        </StackPanel>
+                        <StackPanel Orientation="Horizontal" Spacing="10">
+                          <FontIcon
+                              Width="20"
+                              Foreground="#C9D1D8DC"
+                              FontSize="17"
+                              Glyph="&#xE823;" />
+                          <TextBlock
+                              x:Name="DashboardHeroLastPlayedText"
+                              VerticalAlignment="Center"
+                              Foreground="#D8DDE2E5"
+                              FontSize="15"
+                              Text="Ostatnio grano: brak danych" />
+                        </StackPanel>
+                        <StackPanel Orientation="Horizontal" Spacing="10">
+                          <FontIcon
+                              Width="20"
+                              Foreground="#C9D1D8DC"
+                              FontSize="17"
+                              Glyph="&#xE916;" />
+                          <TextBlock
+                              x:Name="DashboardHeroPlaytimeText"
+                              VerticalAlignment="Center"
+                              Foreground="#D8DDE2E5"
+                              FontSize="15"
+                              Text="Czas gry: brak danych" />
+                        </StackPanel>
+                      </StackPanel>
+
+                      <StackPanel Margin="0,25,0,0" Orientation="Horizontal" Spacing="12">
+                        <Button
+                            x:Name="DashboardHeroPlayButton"
+                            Width="329"
+                            Height="58"
+                            Padding="18,0"
+                            HorizontalContentAlignment="Center"
+                            AutomationProperties.Name="Graj przez GameShift"
+                            BorderBrush="#FF28E9EF"
+                            BorderThickness="1"
+                            Click="OnLaunchSelectedFromDashboardClicked"
+                            CornerRadius="8"
+                            FontSize="16"
+                            FontWeight="SemiBold"
+                            Foreground="#FF061014">
+                          <Button.Background>
+                            <LinearGradientBrush StartPoint="0,0" EndPoint="1,1">
+                              <GradientStop Offset="0" Color="#FF29E9EF" />
+                              <GradientStop Offset="1" Color="#FF11AAB4" />
+                            </LinearGradientBrush>
+                          </Button.Background>
+                          <StackPanel Orientation="Horizontal" Spacing="12">
+                            <FontIcon FontSize="21" Glyph="&#xE768;" />
+                            <TextBlock VerticalAlignment="Center" Text="Graj przez GameShift" />
+                          </StackPanel>
+                        </Button>
+                        <Button
+                            Width="56"
+                            Height="58"
+                            Padding="0"
+                            Background="#CC161D23"
+                            BorderBrush="#8B9AA4AA"
+                            BorderThickness="1"
+                            CornerRadius="9"
+                            ToolTipService.ToolTip="Więcej opcji gry">
+                          <Button.Flyout>
+                            <MenuFlyout>
+                              <MenuFlyoutItem
+                                  Click="OnOpenGameModeClicked"
+                                  Text="Plan sesji" />
+                              <MenuFlyoutItem
+                                  Click="OnOpenProfilesClicked"
+                                  Text="Biblioteka gier" />
+                            </MenuFlyout>
+                          </Button.Flyout>
+                          <FontIcon FontSize="20" Glyph="&#xE712;" />
+                        </Button>
+                      </StackPanel>
+                      <StackPanel Margin="2,14,0,0" Orientation="Horizontal" Spacing="8">
+                        <Ellipse
+                            Width="7"
+                            Height="7"
+                            VerticalAlignment="Center"
+                            Fill="{ThemeResource GameShiftAccentBrush}" />
+                        <TextBlock
+                            Foreground="#B8C5CCD0"
+                            FontSize="12"
+                            Text="Optymalizacja trwa także po uruchomieniu gry." />
+                      </StackPanel>
+                      <StackPanel Visibility="Collapsed">
+                        <TextBlock x:Name="DashboardHeroPathText" />
+                        <TextBlock x:Name="DashboardHeroPresetText" />
+                        <TextBlock x:Name="DashboardHeroVerifiedText" />
+                      </StackPanel>
+                    </StackPanel>
+                  </Grid>
+                </Border>
+
+                <!-- Session timeline card. -->
+                <Border
+                    Width="714"
+                    Height="277"
+                    Canvas.Left="171"
+                    Canvas.Top="372"
+                    Padding="18,15"
+                    Background="#F211171C"
+                    BorderBrush="{ThemeResource GameShiftCardBorderBrush}"
+                    BorderThickness="1"
+                    CornerRadius="11">
+                  <Grid>
+                    <Grid.RowDefinitions>
+                      <RowDefinition Height="58" />
+                      <RowDefinition Height="132" />
+                      <RowDefinition Height="46" />
+                    </Grid.RowDefinitions>
+                    <Grid>
+                      <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                      </Grid.ColumnDefinitions>
+                      <Border
+                          Width="42"
+                          Height="42"
+                          VerticalAlignment="Top"
+                          Background="#2A20D5DB"
+                          CornerRadius="8">
+                        <FontIcon
+                            Foreground="{ThemeResource GameShiftAccentBrush}"
+                            FontSize="23"
+                            Glyph="&#xE9D9;" />
+                      </Border>
+                      <StackPanel Grid.Column="1" Margin="12,0,0,0" Spacing="2">
+                        <TextBlock FontSize="18" FontWeight="SemiBold" Text="Sesja gry" />
+                        <TextBlock
+                            Foreground="{ThemeResource GameShiftMutedTextBrush}"
+                            FontSize="12"
+                            Text="Pełna optymalizacja i automatyczny powrót" />
+                      </StackPanel>
+                      <Border
+                          Grid.Column="2"
+                          Height="32"
+                          Padding="13,0"
+                          VerticalAlignment="Top"
+                          Background="#B51B2329"
+                          BorderBrush="#46535D63"
+                          BorderThickness="1"
+                          CornerRadius="16">
+                        <StackPanel Orientation="Horizontal" Spacing="7">
+                          <Ellipse
+                              Width="7"
+                              Height="7"
+                              VerticalAlignment="Center"
+                              Fill="{ThemeResource GameShiftAccentBrush}" />
+                          <TextBlock
+                              x:Name="ActiveSessionStateText"
+                              VerticalAlignment="Center"
+                              AutomationProperties.Name="Stan aktywnej sesji"
+                              FontSize="12"
+                              Text="Gotowość" />
+                        </StackPanel>
+                      </Border>
+                    </Grid>
+
+                    <Grid Grid.Row="1" Margin="30,6,30,0">
+                      <Grid.RowDefinitions>
+                        <RowDefinition Height="48" />
+                        <RowDefinition Height="*" />
+                      </Grid.RowDefinitions>
+                      <Grid>
+                        <Grid.ColumnDefinitions>
+                          <ColumnDefinition Width="48" />
+                          <ColumnDefinition Width="*" />
+                          <ColumnDefinition Width="48" />
+                          <ColumnDefinition Width="*" />
+                          <ColumnDefinition Width="48" />
+                        </Grid.ColumnDefinitions>
+                        <Border
+                            Width="38"
+                            Height="38"
+                            Background="#2620D5DB"
+                            BorderBrush="{ThemeResource GameShiftAccentBrush}"
+                            BorderThickness="1.5"
+                            CornerRadius="19">
+                          <FontIcon
+                              Foreground="{ThemeResource GameShiftAccentBrush}"
+                              FontSize="15"
+                              Glyph="&#xE73E;" />
+                        </Border>
+                        <Border
+                            Grid.Column="1"
+                            Height="2"
+                            VerticalAlignment="Center"
+                            Background="{ThemeResource GameShiftAccentBrush}" />
+                        <Border
+                            Grid.Column="2"
+                            Width="46"
+                            Height="46"
+                            Background="#2517ABB4"
+                            BorderBrush="{ThemeResource GameShiftAccentBrush}"
+                            BorderThickness="2"
+                            CornerRadius="23">
+                          <Grid>
+                            <Ellipse
+                                Margin="6"
+                                Stroke="#7620D5DB"
+                                StrokeThickness="2" />
+                            <FontIcon
+                                Foreground="{ThemeResource GameShiftAccentBrush}"
+                                FontSize="19"
+                                Glyph="&#xE713;" />
+                          </Grid>
+                        </Border>
+                        <Border
+                            Grid.Column="3"
+                            Height="2"
+                            VerticalAlignment="Center"
+                            Background="#69747B80" />
+                        <Border
+                            Grid.Column="4"
+                            Width="38"
+                            Height="38"
+                            Background="#B4141A20"
+                            BorderBrush="#7D8B9398"
+                            BorderThickness="1.5"
+                            CornerRadius="19">
+                          <FontIcon
+                              Foreground="#B8C0C6C9"
+                              FontSize="16"
+                              Glyph="&#xE7FC;" />
+                        </Border>
+                      </Grid>
+                      <Grid Grid.Row="1" ColumnSpacing="18">
+                        <Grid.ColumnDefinitions>
+                          <ColumnDefinition Width="*" />
+                          <ColumnDefinition Width="*" />
+                          <ColumnDefinition Width="*" />
+                        </Grid.ColumnDefinitions>
+                        <StackPanel HorizontalAlignment="Center" Spacing="4">
+                          <TextBlock HorizontalAlignment="Center" FontSize="12" FontWeight="SemiBold" Text="URUCHOMIENIE" />
+                          <TextBlock HorizontalAlignment="Center" Foreground="{ThemeResource GameShiftMutedTextBrush}" FontSize="11" Text="Weryfikacja gry" />
+                          <TextBlock HorizontalAlignment="Center" Foreground="{ThemeResource GameShiftMutedTextBrush}" FontSize="11" Text="Start bez czekania" />
+                        </StackPanel>
+                        <StackPanel Grid.Column="1" HorizontalAlignment="Center" Spacing="4">
+                          <TextBlock HorizontalAlignment="Center" FontSize="12" FontWeight="SemiBold" Text="OPTYMALIZACJA" />
+                          <TextBlock HorizontalAlignment="Center" Foreground="{ThemeResource GameShiftMutedTextBrush}" FontSize="11" Text="Sekwencyjnie w tle" />
+                          <TextBlock HorizontalAlignment="Center" Foreground="{ThemeResource GameShiftMutedTextBrush}" FontSize="11" Text="Odwracalne zmiany" />
+                        </StackPanel>
+                        <StackPanel Grid.Column="2" HorizontalAlignment="Center" Spacing="4">
+                          <TextBlock HorizontalAlignment="Center" FontSize="12" FontWeight="SemiBold" Text="GRA" />
+                          <TextBlock HorizontalAlignment="Center" Foreground="{ThemeResource GameShiftMutedTextBrush}" FontSize="11" Text="Pomiar FPS" />
+                          <TextBlock HorizontalAlignment="Center" Foreground="{ThemeResource GameShiftMutedTextBrush}" FontSize="11" Text="Recovery po wyjściu" />
+                        </StackPanel>
+                      </Grid>
+                    </Grid>
+
+                    <Border
+                        Grid.Row="2"
+                        Padding="12,0"
+                        Background="#A4171E24"
+                        BorderBrush="#32444E54"
+                        BorderThickness="1"
+                        CornerRadius="7">
+                      <StackPanel Orientation="Horizontal" Spacing="9">
+                        <FontIcon
+                            VerticalAlignment="Center"
+                            Foreground="#BFC8CDD0"
+                            FontSize="13"
+                            Glyph="&#xE713;" />
+                        <TextBlock
+                            x:Name="ActiveSessionDetailsText"
+                            VerticalAlignment="Center"
+                            Foreground="#C0C9CED1"
+                            FontSize="11"
+                            MaxLines="1"
+                            Text="Optymalizacja będzie kontynuowana po uruchomieniu gry."
+                            TextTrimming="CharacterEllipsis" />
+                      </StackPanel>
+                    </Border>
+                  </Grid>
+                </Border>
+
+                <!-- FPS and frametime telemetry. Unmeasured lows stay explicit. -->
+                <Border
+                    Width="549"
+                    Height="464"
+                    Canvas.Left="895"
+                    Canvas.Top="372"
+                    Padding="22,17"
+                    Background="#F211171C"
+                    BorderBrush="{ThemeResource GameShiftCardBorderBrush}"
+                    BorderThickness="1"
+                    CornerRadius="11">
+                  <Grid>
+                    <Grid.RowDefinitions>
+                      <RowDefinition Height="48" />
+                      <RowDefinition Height="128" />
+                      <RowDefinition Height="1" />
+                      <RowDefinition Height="44" />
+                      <RowDefinition Height="*" />
+                      <RowDefinition Height="24" />
+                    </Grid.RowDefinitions>
+                    <Grid>
+                      <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                      </Grid.ColumnDefinitions>
+                      <StackPanel Orientation="Horizontal" Spacing="10">
+                        <FontIcon
+                            Foreground="{ThemeResource GameShiftSuccessBrush}"
+                            FontSize="21"
+                            Glyph="&#xE9D9;" />
+                        <StackPanel Spacing="1">
+                          <TextBlock FontSize="18" FontWeight="SemiBold" Text="FPS na żywo" />
+                          <TextBlock
+                              Foreground="{ThemeResource GameShiftMutedTextBrush}"
+                              FontSize="11"
+                              Text="Rzeczywisty pomiar PresentMon" />
+                        </StackPanel>
+                      </StackPanel>
+                      <Border
+                          Grid.Column="1"
+                          Height="32"
+                          Padding="13,0"
+                          Background="#B51B2329"
+                          BorderBrush="#46535D63"
+                          BorderThickness="1"
+                          CornerRadius="16">
+                        <StackPanel Orientation="Horizontal" Spacing="7">
+                          <Ellipse
+                              x:Name="DashboardFrameRateStateDot"
+                              Width="7"
+                              Height="7"
+                              VerticalAlignment="Center"
+                              Fill="{ThemeResource GameShiftAccentBrush}" />
+                          <TextBlock
+                              x:Name="DashboardFrameRateStateText"
+                              VerticalAlignment="Center"
+                              FontSize="12"
+                              Text="Oczekuje" />
+                        </StackPanel>
+                      </Border>
+                    </Grid>
+
+                    <Grid Grid.Row="1" Margin="0,8,0,0">
+                      <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="250" />
+                        <ColumnDefinition Width="1" />
+                        <ColumnDefinition Width="*" />
+                      </Grid.ColumnDefinitions>
+                      <StackPanel VerticalAlignment="Center">
+                        <StackPanel Orientation="Horizontal" Spacing="8">
+                          <TextBlock
+                              x:Name="ActiveFpsText"
+                              AutomationProperties.Name="Aktualna liczba klatek na sekundę"
+                              Foreground="{ThemeResource GameShiftAccentBrush}"
+                              FontFamily="Segoe UI Variable Display"
+                              FontSize="66"
+                              FontWeight="SemiBold"
+                              CharacterSpacing="-35"
+                              Text="—" />
+                          <TextBlock
+                              Margin="0,0,0,10"
+                              VerticalAlignment="Bottom"
+                              Foreground="#CED7DBDE"
+                              FontSize="15"
+                              Text="FPS" />
+                        </StackPanel>
+                        <TextBlock
+                            Foreground="{ThemeResource GameShiftAccentBrush}"
+                            FontSize="12"
+                            Text="Średnia" />
+                      </StackPanel>
+                      <Border Grid.Column="1" Margin="0,12" Background="#31434C52" />
+                      <StackPanel Grid.Column="2" Margin="22,10,0,0" Spacing="14">
+                        <Grid>
+                          <TextBlock Foreground="{ThemeResource GameShiftMutedTextBrush}" Text="1% low" />
+                          <TextBlock HorizontalAlignment="Right" Text="—" />
+                        </Grid>
+                        <Grid>
+                          <TextBlock Foreground="{ThemeResource GameShiftMutedTextBrush}" Text="0,1% low" />
+                          <TextBlock HorizontalAlignment="Right" Text="—" />
+                        </Grid>
+                        <Grid>
+                          <TextBlock Foreground="{ThemeResource GameShiftMutedTextBrush}" Text="Źródło" />
+                          <TextBlock HorizontalAlignment="Right" Text="PresentMon" />
+                        </Grid>
+                      </StackPanel>
+                    </Grid>
+
+                    <Border Grid.Row="2" Background="#31434C52" />
+                    <Grid Grid.Row="3" Margin="0,10,0,0">
+                      <TextBlock FontSize="17" FontWeight="SemiBold" Text="Czas klatki" />
+                      <TextBlock
+                          x:Name="ActiveFrameTimeText"
+                          HorizontalAlignment="Right"
+                          Foreground="{ThemeResource GameShiftAccentBrush}"
+                          FontSize="18"
+                          Text="— ms" />
+                    </Grid>
+                    <Grid Grid.Row="4" Margin="0,8,0,0">
+                      <Grid.RowDefinitions>
+                        <RowDefinition Height="*" />
+                        <RowDefinition Height="*" />
+                        <RowDefinition Height="*" />
+                      </Grid.RowDefinitions>
+                      <Border Grid.Row="0" Height="1" VerticalAlignment="Top" Background="#26394349" />
+                      <Border Grid.Row="1" Height="1" VerticalAlignment="Top" Background="#26394349" />
+                      <Border Grid.Row="2" Height="1" VerticalAlignment="Top" Background="#26394349" />
+                      <TextBlock Margin="0,-8,0,0" Foreground="#77889097" FontSize="10" Text="20 ms" />
+                      <TextBlock Grid.Row="1" Margin="0,-8,0,0" Foreground="#77889097" FontSize="10" Text="10 ms" />
+                      <TextBlock Grid.Row="2" Margin="0,-8,0,0" Foreground="#77889097" FontSize="10" Text="0 ms" />
+                      <Canvas
+                          x:Name="DashboardFrameTimeCanvas"
+                          Grid.RowSpan="3"
+                          Margin="45,0,0,0"
+                          SizeChanged="OnDashboardFrameTimeCanvasSizeChanged">
+                        <Polyline
+                            x:Name="DashboardFrameTimeGraph"
+                            Stroke="{ThemeResource GameShiftAccentBrush}"
+                            StrokeLineJoin="Round"
+                            StrokeThickness="2" />
+                      </Canvas>
+                    </Grid>
+                    <TextBlock
+                        x:Name="ActiveFrameRateStatusText"
+                        Grid.Row="5"
+                        VerticalAlignment="Bottom"
+                        Foreground="{ThemeResource GameShiftMutedTextBrush}"
+                        FontSize="10"
+                        MaxLines="1"
+                        Text="PresentMon uruchomi się automatycznie razem z grą."
+                        TextTrimming="CharacterEllipsis" />
+                  </Grid>
+                </Border>
+
+                <!-- System impact: only confirmed data is shown; unavailable channels stay as dashes. -->
+                <Border
+                    Width="714"
+                    Height="176"
+                    Canvas.Left="171"
+                    Canvas.Top="660"
+                    Padding="18,15"
+                    Background="#F211171C"
+                    BorderBrush="{ThemeResource GameShiftCardBorderBrush}"
+                    BorderThickness="1"
+                    CornerRadius="11">
+                  <Grid>
+                    <Grid.RowDefinitions>
+                      <RowDefinition Height="50" />
+                      <RowDefinition Height="*" />
+                    </Grid.RowDefinitions>
+                    <StackPanel Orientation="Horizontal" Spacing="11">
+                      <Border Width="37" Height="37" Background="#2520D5DB" CornerRadius="8">
+                        <FontIcon Foreground="{ThemeResource GameShiftAccentBrush}" FontSize="20" Glyph="&#xE950;" />
+                      </Border>
+                      <StackPanel Spacing="1">
+                        <TextBlock FontSize="17" FontWeight="SemiBold" Text="Wpływ na system" />
+                        <TextBlock Foreground="{ThemeResource GameShiftMutedTextBrush}" FontSize="11" Text="Bieżący stan komputera • dysk pokazuje zajętość" />
+                      </StackPanel>
+                    </StackPanel>
+                    <Grid Grid.Row="1" ColumnSpacing="0">
+                      <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="1.25*" />
+                      </Grid.ColumnDefinitions>
+                      <StackPanel Padding="4,0,16,0" Spacing="7">
+                        <StackPanel Orientation="Horizontal" Spacing="8">
+                          <FontIcon Foreground="#BAC5CACD" FontSize="20" Glyph="&#xE950;" />
+                          <TextBlock VerticalAlignment="Center" Text="CPU" />
+                        </StackPanel>
+                        <TextBlock x:Name="DashboardCpuText" FontSize="20" FontWeight="SemiBold" Text="—" />
+                        <ProgressBar x:Name="DashboardCpuBar" Height="4" Value="0" />
+                      </StackPanel>
+                      <StackPanel Grid.Column="1" Padding="16,0" BorderBrush="#26394349" BorderThickness="1,0,0,0" Spacing="7">
+                        <StackPanel Orientation="Horizontal" Spacing="8">
+                          <FontIcon Foreground="#BAC5CACD" FontSize="20" Glyph="&#xE7F4;" />
+                          <TextBlock VerticalAlignment="Center" Text="GPU" />
+                        </StackPanel>
+                        <TextBlock x:Name="DashboardGpuText" FontSize="20" FontWeight="SemiBold" Text="—" />
+                        <ProgressBar
+                            x:Name="DashboardGpuBar"
+                            Height="4"
+                            ToolTipService.ToolTip="GPU zostanie pokazane po dodaniu potwierdzonego kanału telemetrii."
+                            Value="0" />
+                      </StackPanel>
+                      <StackPanel Grid.Column="2" Padding="16,0" BorderBrush="#26394349" BorderThickness="1,0,0,0" Spacing="7">
+                        <StackPanel Orientation="Horizontal" Spacing="8">
+                          <FontIcon Foreground="#BAC5CACD" FontSize="20" Glyph="&#xE964;" />
+                          <TextBlock VerticalAlignment="Center" Text="RAM" />
+                        </StackPanel>
+                        <TextBlock x:Name="DashboardMemoryText" FontSize="20" FontWeight="SemiBold" Text="—" />
+                        <ProgressBar x:Name="DashboardMemoryBar" Height="4" Value="0" />
+                      </StackPanel>
+                      <StackPanel Grid.Column="3" Padding="16,0" BorderBrush="#26394349" BorderThickness="1,0,0,0" Spacing="7">
+                        <StackPanel Orientation="Horizontal" Spacing="8">
+                          <FontIcon Foreground="#BAC5CACD" FontSize="20" Glyph="&#xEDA2;" />
+                          <TextBlock VerticalAlignment="Center" Text="Dysk zajęty" />
+                        </StackPanel>
+                        <TextBlock x:Name="DashboardDiskText" FontSize="20" FontWeight="SemiBold" Text="—" />
+                        <ProgressBar
+                            x:Name="DashboardDiskBar"
+                            Height="4"
+                            ToolTipService.ToolTip="Zajętość woluminu systemowego."
+                            Value="0" />
+                      </StackPanel>
+                      <StackPanel Grid.Column="4" Padding="22,0,0,0" BorderBrush="#26394349" BorderThickness="1,0,0,0" Spacing="5">
+                        <TextBlock Foreground="{ThemeResource GameShiftAmberBrush}" FontSize="13" FontWeight="SemiBold" Text="Odzyskane zasoby" />
+                        <TextBlock x:Name="DashboardRecoveredMemoryText" Foreground="{ThemeResource GameShiftAmberBrush}" FontSize="29" FontWeight="SemiBold" Text="—" />
+                        <TextBlock Foreground="{ThemeResource GameShiftMutedTextBrush}" FontSize="10" Text="Tylko wynik potwierdzonych działań" />
+                      </StackPanel>
+                    </Grid>
+                    <StackPanel Visibility="Collapsed">
+                      <TextBlock x:Name="ProfileCountText" Text="0" />
+                      <TextBlock x:Name="HistoryCountText" Text="0" />
+                    </StackPanel>
+                  </Grid>
+                </Border>
+
+                <!-- Always-visible recovery strip. -->
+                <Border
+                    Width="1444"
+                    Height="96"
+                    Canvas.Left="0"
+                    Canvas.Top="848"
+                    Padding="17,10"
+                    Background="#F214171A"
+                    BorderBrush="{ThemeResource GameShiftCardBorderBrush}"
+                    BorderThickness="1"
+                    CornerRadius="11">
+                  <Grid ColumnSpacing="22">
+                    <Grid.ColumnDefinitions>
+                      <ColumnDefinition Width="520" />
+                      <ColumnDefinition Width="*" />
+                      <ColumnDefinition Width="*" />
+                      <ColumnDefinition Width="*" />
+                      <ColumnDefinition Width="264" />
+                    </Grid.ColumnDefinitions>
+                    <Grid>
+                      <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="76" />
+                        <ColumnDefinition Width="*" />
+                      </Grid.ColumnDefinitions>
+                      <Border Width="61" Height="61" Background="#1D20D5DB" CornerRadius="31">
+                        <Grid>
+                          <Ellipse Margin="6" Stroke="#6D20D5DB" StrokeThickness="2" />
+                          <FontIcon Foreground="{ThemeResource GameShiftAccentBrush}" FontSize="29" Glyph="&#xEA18;" />
+                        </Grid>
+                      </Border>
+                      <StackPanel Grid.Column="1" VerticalAlignment="Center" Spacing="3">
+                        <TextBlock FontSize="16" FontWeight="SemiBold" Text="Ochrona i przywracanie" />
+                        <TextBlock Foreground="{ThemeResource GameShiftMutedTextBrush}" FontSize="11" Text="Zmiany są cofane automatycznie po wyjściu z gry." />
+                      </StackPanel>
+                    </Grid>
+                    <Grid Grid.Column="1" VerticalAlignment="Center">
+                      <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="31" />
+                        <ColumnDefinition Width="*" />
+                      </Grid.ColumnDefinitions>
+                      <Border x:Name="DashboardSessionHostStatusIndicator" Width="25" Height="25" Background="#2420D5DB" CornerRadius="13">
+                        <FontIcon x:Name="DashboardSessionHostStatusGlyph" Foreground="{ThemeResource GameShiftAccentBrush}" FontSize="12" Glyph="&#xE895;" />
+                      </Border>
+                      <StackPanel Grid.Column="1" Spacing="2">
+                        <TextBlock Foreground="{ThemeResource GameShiftMutedTextBrush}" FontSize="10" Text="SessionHost" />
+                        <TextBlock
+                            x:Name="SessionHostStateText"
+                            AutomationProperties.Name="Stan SessionHost"
+                            FontSize="11"
+                            Text="Sprawdzanie…" />
+                      </StackPanel>
+                    </Grid>
+                    <Grid Grid.Column="2" VerticalAlignment="Center">
+                      <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="31" />
+                        <ColumnDefinition Width="*" />
+                      </Grid.ColumnDefinitions>
+                      <Border x:Name="DashboardSystemAgentStatusIndicator" Width="25" Height="25" Background="#2420D5DB" CornerRadius="13">
+                        <FontIcon x:Name="DashboardSystemAgentStatusGlyph" Foreground="{ThemeResource GameShiftAccentBrush}" FontSize="12" Glyph="&#xE895;" />
+                      </Border>
+                      <StackPanel Grid.Column="1" Spacing="2">
+                        <TextBlock Foreground="{ThemeResource GameShiftMutedTextBrush}" FontSize="10" Text="SystemAgent" />
+                        <TextBlock
+                            x:Name="SystemAgentStateText"
+                            AutomationProperties.Name="Stan SystemAgent"
+                            FontSize="11"
+                            Text="Sprawdzanie…" />
+                      </StackPanel>
+                    </Grid>
+                    <Grid Grid.Column="3" VerticalAlignment="Center">
+                      <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="31" />
+                        <ColumnDefinition Width="*" />
+                      </Grid.ColumnDefinitions>
+                      <Border x:Name="DashboardRecoveryStatusIndicator" Width="25" Height="25" Background="#2420D5DB" CornerRadius="13">
+                        <FontIcon x:Name="DashboardRecoveryStatusGlyph" Foreground="{ThemeResource GameShiftAccentBrush}" FontSize="12" Glyph="&#xE895;" />
+                      </Border>
+                      <StackPanel Grid.Column="1" Spacing="2">
+                        <TextBlock Foreground="{ThemeResource GameShiftMutedTextBrush}" FontSize="10" Text="Przywracanie po wyjściu" />
+                        <TextBlock x:Name="DashboardRecoveryStateText" FontSize="11" Text="Sprawdzanie…" />
+                      </StackPanel>
+                    </Grid>
+                    <Button
+                        x:Name="DashboardRestoreSessionButton"
+                        Grid.Column="4"
+                        Height="66"
+                        Padding="16,7"
+                        VerticalAlignment="Center"
+                        AutomationProperties.Name="Przywróć wszystkie zmiany teraz"
+                        BorderBrush="{ThemeResource GameShiftAmberBrush}"
+                        BorderThickness="1.5"
+                        Click="OnRestoreSessionClicked"
+                        CornerRadius="8"
+                        IsEnabled="False"
+                        Foreground="{ThemeResource GameShiftAmberBrush}">
+                      <StackPanel Spacing="3">
+                        <StackPanel HorizontalAlignment="Center" Orientation="Horizontal" Spacing="8">
+                          <FontIcon FontSize="17" Glyph="&#xE72C;" />
+                          <TextBlock FontSize="15" FontWeight="SemiBold" Text="Przywróć teraz" />
+                        </StackPanel>
+                        <TextBlock Foreground="#CBD2D6D9" FontSize="10" Text="Cofnij aktywne działania" />
+                      </StackPanel>
+                    </Button>
+                    <StackPanel Visibility="Collapsed">
+                      <TextBlock x:Name="SessionHostDetailsText" />
+                      <TextBlock x:Name="SystemAgentDetailsText" />
+                    </StackPanel>
+                  </Grid>
+                </Border>
+              </Canvas>
+            </Viewbox>
+          </Grid>
+
+          <Grid
+              x:Name="ProfilesPage"
+              MaxWidth="1440"
+              Margin="24,18,24,30"
+              HorizontalAlignment="Stretch"
+              Visibility="Collapsed">
+            <Grid.RowDefinitions>
+              <RowDefinition Height="Auto" />
+              <RowDefinition Height="Auto" />
+              <RowDefinition Height="*" />
+            </Grid.RowDefinitions>
+
+            <!-- Bento Header & Action Bar -->
+            <Border
+                Padding="24,18"
+                Background="{ThemeResource GameShiftHeroBrush}"
+                BorderBrush="{ThemeResource GameShiftCardBorderBrush}"
+                BorderThickness="1"
+                CornerRadius="14">
+              <Grid ColumnSpacing="20">
+                <Grid.ColumnDefinitions>
+                  <ColumnDefinition Width="*" />
+                  <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+                <StackPanel VerticalAlignment="Center" Spacing="4">
+                  <TextBlock
+                      Style="{StaticResource GameShiftEyebrowStyle}"
+                      Text="GAMESHIFT / BIBLIOTEKA" />
+                  <TextBlock
+                      Style="{StaticResource GameShiftPageTitleStyle}"
+                      Text="Biblioteka gier" />
+                  <TextBlock
+                      x:Name="LibraryScanText"
+                      Foreground="{ThemeResource GameShiftAccentBrush}"
+                      FontSize="13"
+                      FontWeight="SemiBold"
+                      Text="Wykrywanie biblioteki przy uruchomieniu"
+                      TextWrapping="Wrap" />
+                </StackPanel>
+
+                <StackPanel
+                    Grid.Column="1"
+                    VerticalAlignment="Center"
+                    Orientation="Horizontal"
+                    Spacing="10">
+                  <Button
+                      x:Name="DiscoverGamesButton"
+                      Style="{StaticResource GameShiftSecondaryButtonStyle}"
+                      AutomationProperties.Name="Ponownie wykryj zainstalowane gry"
+                      Click="OnDiscoverGamesClicked">
+                    <StackPanel Orientation="Horizontal" Spacing="8">
+                      <FontIcon FontSize="15" Glyph="&#xE72C;" />
+                      <TextBlock Text="Wykryj gry" />
+                    </StackPanel>
+                  </Button>
+                  <Button
+                      x:Name="AddProfileButton"
+                      Style="{StaticResource GameShiftSecondaryButtonStyle}"
+                      AutomationProperties.Name="Dodaj ręczny profil gry"
+                      Click="OnAddProfileClicked">
+                    <StackPanel Orientation="Horizontal" Spacing="8">
+                      <FontIcon FontSize="15" Glyph="&#xE710;" />
+                      <TextBlock Text="Dodaj grę EXE" />
+                    </StackPanel>
+                  </Button>
+                  <Button
+                      x:Name="PrepareSelectedProfileButton"
+                      Style="{StaticResource GameShiftPrimaryButtonStyle}"
+                      AutomationProperties.HelpText="Przechodzi do planu Trybu gry dla wybranej gry."
+                      AutomationProperties.Name="Otwórz Tryb gry dla zaznaczonego profilu"
+                      Click="OnOpenGameModeClicked"
+                      IsEnabled="False">
+                    <StackPanel Orientation="Horizontal" Spacing="8">
+                      <FontIcon FontSize="15" Glyph="&#xE768;" />
+                      <TextBlock Text="Dostosuj plan" />
+                    </StackPanel>
+                  </Button>
+                  <Button
+                      x:Name="DeleteProfileButton"
+                      Width="40"
+                      Height="38"
+                      Padding="0"
+                      Style="{StaticResource GameShiftSecondaryButtonStyle}"
+                      AutomationProperties.Name="Usuń zaznaczony profil"
+                      Click="OnDeleteProfileClicked"
+                      ToolTipService.ToolTip="Usuń zaznaczoną grę">
+                    <FontIcon FontSize="15" Glyph="&#xE74D;" />
+                  </Button>
+                </StackPanel>
+              </Grid>
+            </Border>
+
+            <InfoBar
+                x:Name="ProfilesInfoBar"
+                Grid.Row="1"
+                Margin="0,12,0,10"
+                IsClosable="True"
+                IsOpen="False"
+                Title="Biblioteka" />
+
+            <!-- Bento Games Grid -->
+            <Grid Grid.Row="2" Margin="0,12,0,0">
+              <ListView
+                  x:Name="ProfilesList"
+                  AutomationProperties.Name="Lista profili gier"
+                  SelectionChanged="OnProfileSelectionChanged"
+                  SelectionMode="Single">
+                <ListView.ItemsPanel>
+                  <ItemsPanelTemplate>
+                    <ItemsWrapGrid
+                        ItemWidth="356"
+                        ItemHeight="216"
+                        Orientation="Horizontal" />
+                  </ItemsPanelTemplate>
+                </ListView.ItemsPanel>
+                <ListView.ItemTemplate>
+                  <DataTemplate>
+                    <Border
+                        Width="340"
+                        Height="202"
+                        Margin="0,0,14,14"
+                        Background="#F211171C"
+                        BorderBrush="{ThemeResource GameShiftCardBorderBrush}"
+                        BorderThickness="1"
+                        CornerRadius="14">
+                      <Grid>
+                        <Grid.RowDefinitions>
+                          <RowDefinition Height="136" />
+                          <RowDefinition Height="*" />
+                        </Grid.RowDefinitions>
+                        <Border
+                            Grid.Row="0"
+                            Background="{ThemeResource GameShiftLogoTileBrush}"
+                            CornerRadius="13,13,0,0">
+                          <Grid>
+                            <TextBlock
+                                HorizontalAlignment="Center"
+                                VerticalAlignment="Center"
+                                Foreground="{ThemeResource GameShiftAccentBrush}"
+                                FontFamily="Segoe UI Variable Display"
+                                FontSize="48"
+                                FontWeight="SemiBold"
+                                Opacity="0.5"
+                                Text="{Binding Initial}" />
+                            <Image
+                                Source="{Binding ArtworkSource}"
+                                Stretch="UniformToFill" />
+                            <Rectangle>
+                              <Rectangle.Fill>
+                                <LinearGradientBrush StartPoint="0,0" EndPoint="0,1">
+                                  <GradientStop Offset="0" Color="#00000000" />
+                                  <GradientStop Offset="0.45" Color="#3B070C10" />
+                                  <GradientStop Offset="1" Color="#F4070C11" />
+                                </LinearGradientBrush>
+                              </Rectangle.Fill>
+                            </Rectangle>
+                            <StackPanel
+                                Margin="14,0,14,10"
+                                VerticalAlignment="Bottom"
+                                Spacing="4">
+                              <TextBlock
+                                  Foreground="White"
+                                  FontFamily="Segoe UI Variable Display"
+                                  FontSize="17"
+                                  FontWeight="SemiBold"
+                                  MaxLines="1"
+                                  Text="{Binding DisplayName}"
+                                  TextTrimming="CharacterEllipsis" />
+                              <StackPanel Orientation="Horizontal" Spacing="6">
+                                <Border Style="{StaticResource GameShiftPillStyle}">
+                                  <TextBlock
+                                      Foreground="{ThemeResource GameShiftAccentBrush}"
+                                      FontSize="10"
+                                      FontWeight="SemiBold"
+                                      Text="{Binding PresetLabel}" />
+                                </Border>
+                                <Border Style="{StaticResource GameShiftPillStyle}">
+                                  <TextBlock
+                                      Foreground="{ThemeResource GameShiftSuccessBrush}"
+                                      FontSize="10"
+                                      Text="{Binding StateLabel}" />
+                                </Border>
+                              </StackPanel>
+                            </StackPanel>
+                          </Grid>
+                        </Border>
+                        <Button
+                            Grid.Row="1"
+                            Height="38"
+                            Margin="10,6,10,8"
+                            HorizontalAlignment="Stretch"
+                            AutomationProperties.HelpText="Uruchamia zweryfikowaną grę z aktywną optymalizacją."
+                            AutomationProperties.Name="{Binding LaunchAutomationName}"
+                            Click="OnLaunchGameFromLibraryClicked"
+                            IsEnabled="{Binding IsLaunchEnabled}"
+                            Style="{StaticResource GameShiftPrimaryButtonStyle}">
+                          <StackPanel Orientation="Horizontal" Spacing="8">
+                            <FontIcon FontSize="15" Glyph="&#xE768;" />
+                            <TextBlock VerticalAlignment="Center" FontWeight="SemiBold" Text="Uruchom przez GameShift" />
+                          </StackPanel>
+                        </Button>
+                      </Grid>
+                    </Border>
+                  </DataTemplate>
+                </ListView.ItemTemplate>
+              </ListView>
+              <TextBlock
+                  x:Name="ProfilesEmptyText"
+                  Margin="12"
+                  HorizontalAlignment="Center"
+                  VerticalAlignment="Center"
+                  Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                  Text="Brak profili. Kliknij 'Wykryj gry' lub 'Dodaj grę EXE'."
+                  TextWrapping="Wrap" />
+            </Grid>
+          </Grid>
+
+          <ScrollViewer
+              x:Name="PlanPage"
+              HorizontalScrollBarVisibility="Disabled"
+              VerticalScrollBarVisibility="Auto"
+              Visibility="Collapsed">
+            <StackPanel
+                MaxWidth="1440"
+                Margin="24,18,24,36"
+                HorizontalAlignment="Stretch"
+                Spacing="14">
+
+              <!-- Bento Header Card -->
+              <Border
+                  Padding="24,18"
+                  Background="{ThemeResource GameShiftHeroBrush}"
+                  BorderBrush="{ThemeResource GameShiftCardBorderBrush}"
+                  BorderThickness="1"
+                  CornerRadius="14">
+                <Grid ColumnSpacing="20">
+                  <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                  </Grid.ColumnDefinitions>
+                  <StackPanel VerticalAlignment="Center" Spacing="4">
+                    <TextBlock
+                        Style="{StaticResource GameShiftEyebrowStyle}"
+                        Text="GAMESHIFT / OPTYMALIZACJA SESJI" />
+                    <TextBlock
+                        Style="{StaticResource GameShiftPageTitleStyle}"
+                        Text="Tryb gry i optymalizacja" />
+                    <TextBlock
+                        Foreground="{ThemeResource GameShiftMutedTextBrush}"
+                        FontSize="13"
+                        Text="Skonfiguruj profil gry, zoptymalizuj aplikacje tła i uruchom sesję z automatycznym przywracaniem."
+                        TextWrapping="Wrap" />
+                  </StackPanel>
+                  <StackPanel Grid.Column="1" VerticalAlignment="Center" Orientation="Horizontal" Spacing="8">
+                    <Border Style="{StaticResource GameShiftPillStyle}">
+                      <StackPanel Orientation="Horizontal" Spacing="6">
+                        <FontIcon Foreground="{ThemeResource GameShiftSuccessBrush}" FontSize="12" Glyph="&#xE73E;" />
+                        <TextBlock FontSize="11" FontWeight="SemiBold" Text="Auto-Recovery" />
+                      </StackPanel>
+                    </Border>
+                    <Border Style="{StaticResource GameShiftPillStyle}">
+                      <StackPanel Orientation="Horizontal" Spacing="6">
+                        <FontIcon Foreground="{ThemeResource GameShiftAccentBrush}" FontSize="12" Glyph="&#xE9D9;" />
+                        <TextBlock FontSize="11" FontWeight="SemiBold" Text="PresentMon ETW" />
+                      </StackPanel>
+                    </Border>
+                  </StackPanel>
+                </Grid>
+              </Border>
+
+              <InfoBar
+                  x:Name="PlanSafetyInfoBar"
+                  IsClosable="True"
+                  IsOpen="False"
+                  Severity="Informational"
+                  Title="Odwracalna optymalizacja" />
+              <InfoBar
+                  x:Name="PlanInfoBar"
+                  IsClosable="True"
+                  IsOpen="False"
+                  Title="Plan sesji" />
+
+              <!-- Main Bento Grid: 2 Columns -->
+              <Grid ColumnSpacing="16" RowSpacing="16">
+                <Grid.ColumnDefinitions>
+                  <ColumnDefinition Width="1*" />
+                  <ColumnDefinition Width="1.15*" />
+                </Grid.ColumnDefinitions>
+
+                <!-- Left Column: Game & HUD Configuration (Column 0) -->
+                <StackPanel Grid.Column="0" Spacing="14">
+                  <!-- Game Profile Card -->
+                  <Border
+                      Padding="20"
+                      Background="#F211171C"
+                      BorderBrush="{ThemeResource GameShiftCardBorderBrush}"
+                      BorderThickness="1"
+                      CornerRadius="14">
+                    <StackPanel Spacing="12">
+                      <TextBlock FontSize="17" FontWeight="SemiBold" Text="1. Profil gry i priorytet" />
+                      <ComboBox
+                          x:Name="GameProfileSelector"
+                          HorizontalAlignment="Stretch"
+                          AutomationProperties.Name="Gra używana w Trybie gry"
+                          DisplayMemberPath="DisplayName"
+                          Header="Wybierz grę"
+                          PlaceholderText="Wybierz grę z biblioteki"
+                          SelectionChanged="OnGameProfileSelectorChanged" />
+                      <TextBlock
+                          x:Name="PlanLibraryStatusText"
+                          Foreground="{ThemeResource GameShiftMutedTextBrush}"
+                          FontSize="12"
+                          Text="Wyszukiwanie zainstalowanych gier…"
+                          TextWrapping="Wrap" />
+
+                      <Grid ColumnSpacing="12">
+                        <Grid.ColumnDefinitions>
+                          <ColumnDefinition Width="*" />
+                          <ColumnDefinition Width="*" />
+                        </Grid.ColumnDefinitions>
+                        <ComboBox
+                            x:Name="OptimizationIntensitySelector"
+                            HorizontalAlignment="Stretch"
+                            AutomationProperties.Name="Siła optymalizacji procesów tła"
+                            Header="Preset optymalizacji"
+                            SelectedIndex="0"
+                            SelectionChanged="OnOptimizationIntensitySelectionChanged">
+                          <ComboBoxItem Content="Zrównoważony" Tag="Standard" />
+                          <ComboBoxItem Content="Maksymalna wydajność" Tag="Aggressive" />
+                        </ComboBox>
+                        <ComboBox
+                            x:Name="GamePrioritySelector"
+                            Grid.Column="1"
+                            HorizontalAlignment="Stretch"
+                            AutomationProperties.Name="Priorytet procesu gry"
+                            Header="Priorytet gry"
+                            SelectedIndex="0"
+                            SelectionChanged="OnGamePrioritySelectionChanged">
+                          <ComboBoxItem Content="Normalny (Zalecany)" Tag="Normal" />
+                          <ComboBoxItem Content="Powyżej normalnego" Tag="AboveNormal" />
+                          <ComboBoxItem Content="Wysoki" Tag="High" />
+                        </ComboBox>
+                      </Grid>
+
+                      <InfoBar
+                          x:Name="AggressiveModeInfoBar"
+                          IsClosable="False"
+                          IsOpen="True"
+                          Message="Tryb maksymalnej wydajności pozwala na zamykanie aplikacji okienkowych."
+                          Severity="Warning"
+                          Title="Maksymalna wydajność"
+                          Visibility="Collapsed" />
+
+                      <CheckBox
+                          x:Name="RememberRulesCheckBox"
+                          AutomationProperties.Name="Stosuj i zapamiętuj reguły dla wybranej gry"
+                          Content="Zapamiętaj ustawienia dla tej gry"
+                          IsChecked="True" />
+                    </StackPanel>
+                  </Border>
+
+                  <!-- HUD Overlay Card -->
+                  <Border
+                      Padding="20"
+                      Background="#F211171C"
+                      BorderBrush="{ThemeResource GameShiftCardBorderBrush}"
+                      BorderThickness="1"
+                      CornerRadius="14">
+                    <StackPanel Spacing="12">
+                      <Grid ColumnSpacing="16">
+                        <Grid.ColumnDefinitions>
+                          <ColumnDefinition Width="*" />
+                          <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+                        <StackPanel Spacing="2">
+                          <TextBlock FontSize="17" FontWeight="SemiBold" Text="Nakładka wydajności (HUD)" />
+                          <TextBlock
+                              Foreground="{ThemeResource GameShiftMutedTextBrush}"
+                              FontSize="12"
+                              Text="Wyświetla rzeczywisty FPS i czas generowania klatki w grze."
+                              TextWrapping="Wrap" />
+                        </StackPanel>
+                        <ToggleSwitch
+                            x:Name="FpsOverlayToggleSwitch"
+                            Grid.Column="1"
+                            VerticalAlignment="Center"
+                            AutomationProperties.Name="Włącz nakładkę wydajności w grze"
+                            IsOn="True"
+                            OffContent="WYŁ."
+                            OnContent="WŁ."
+                            Toggled="OnFpsOverlaySettingChanged" />
+                      </Grid>
+
+                      <!-- Style and Theme Selectors -->
+                      <Grid ColumnSpacing="12">
+                        <Grid.ColumnDefinitions>
+                          <ColumnDefinition Width="*" />
+                          <ColumnDefinition Width="*" />
+                        </Grid.ColumnDefinitions>
+                        <ComboBox
+                            x:Name="OverlayStyleSelector"
+                            HorizontalAlignment="Stretch"
+                            AutomationProperties.Name="Styl wyglądu nakładki"
+                            Header="Wygląd nakładki"
+                            SelectedIndex="0"
+                            SelectionChanged="OnFpsOverlayStyleChanged">
+                          <ComboBoxItem Content="Pełna karta Tactical" Tag="FullDeck" />
+                          <ComboBoxItem Content="Kompaktowa pastylka" Tag="CompactBar" />
+                          <ComboBoxItem Content="Tylko tekst (bez tła)" Tag="MinimalText" />
+                        </ComboBox>
+                        <ComboBox
+                            x:Name="OverlayThemeSelector"
+                            Grid.Column="1"
+                            HorizontalAlignment="Stretch"
+                            AutomationProperties.Name="Kolor akcentu nakładki"
+                            Header="Kolor akcentu"
+                            SelectedIndex="0"
+                            SelectionChanged="OnFpsOverlayThemeChanged">
+                          <ComboBoxItem Content="Cyber Neon (Cyjan)" Tag="CyberNeon" />
+                          <ComboBoxItem Content="Matrix Green (Zieleń)" Tag="MatrixGreen" />
+                          <ComboBoxItem Content="Toxic Green (Jaskrawy)" Tag="ToxicGreen" />
+                          <ComboBoxItem Content="Apex Amber (Złoty)" Tag="ApexAmber" />
+                          <ComboBoxItem Content="Crimson Red (Czerwony)" Tag="CrimsonRed" />
+                          <ComboBoxItem Content="Pure White (Biały)" Tag="PureWhite" />
+                          <ComboBoxItem Content="Stealth Purple (Fiolet)" Tag="StealthPurple" />
+                        </ComboBox>
+                      </Grid>
+
+                      <Grid ColumnSpacing="12" RowSpacing="10">
+                        <Grid.ColumnDefinitions>
+                          <ColumnDefinition Width="*" />
+                          <ColumnDefinition Width="*" />
+                        </Grid.ColumnDefinitions>
+                        <Grid.RowDefinitions>
+                          <RowDefinition Height="Auto" />
+                          <RowDefinition Height="Auto" />
+                        </Grid.RowDefinitions>
+
+                        <StackPanel Spacing="4">
+                          <Grid>
+                            <TextBlock Foreground="{ThemeResource TextFillColorSecondaryBrush}" FontSize="12" Text="Krycie" />
+                            <TextBlock x:Name="OverlayOpacityValueText" HorizontalAlignment="Right" FontFamily="Cascadia Mono" FontSize="12" Text="94%" />
+                          </Grid>
+                          <Slider
+                              x:Name="OverlayOpacitySlider"
+                              AutomationProperties.Name="Krycie nakładki"
+                              LargeChange="10"
+                              Maximum="100"
+                              Minimum="20"
+                              SmallChange="5"
+                              SnapsTo="StepValues"
+                              StepFrequency="5"
+                              Value="94"
+                              ValueChanged="OnFpsOverlayValueChanged" />
+                        </StackPanel>
+
+                        <StackPanel Grid.Column="1" Spacing="4">
+                          <Grid>
+                            <TextBlock Foreground="{ThemeResource TextFillColorSecondaryBrush}" FontSize="12" Text="Skala" />
+                            <TextBlock x:Name="OverlaySizeValueText" HorizontalAlignment="Right" FontFamily="Cascadia Mono" FontSize="12" Text="100%" />
+                          </Grid>
+                          <Slider
+                              x:Name="OverlaySizeSlider"
+                              AutomationProperties.Name="Wielkość nakładki"
+                              LargeChange="25"
+                              Maximum="150"
+                              Minimum="75"
+                              SmallChange="5"
+                              SnapsTo="StepValues"
+                              StepFrequency="5"
+                              Value="100"
+                              ValueChanged="OnFpsOverlayValueChanged" />
+                        </StackPanel>
+
+                        <ComboBox
+                            x:Name="OverlayCornerSelector"
+                            Grid.Row="1"
+                            Grid.ColumnSpan="2"
+                            HorizontalAlignment="Stretch"
+                            AutomationProperties.Name="Róg ekranu dla nakładki"
+                            Header="Pozycja na ekranie"
+                            SelectedIndex="1"
+                            SelectionChanged="OnFpsOverlayCornerChanged">
+                          <ComboBoxItem Content="Lewy górny róg" Tag="TopLeft" />
+                          <ComboBoxItem Content="Prawy górny róg" Tag="TopRight" />
+                          <ComboBoxItem Content="Lewy dolny róg" Tag="BottomLeft" />
+                          <ComboBoxItem Content="Prawy dolny róg" Tag="BottomRight" />
+                        </ComboBox>
+                      </Grid>
+                    </StackPanel>
+                  </Border>
+                </StackPanel>
+
+                <!-- Right Column: Background Apps & Session Execution (Column 1) -->
+                <StackPanel Grid.Column="1" Spacing="14">
+                  <!-- Memory & Apps Bento KPI Tiles -->
+                  <Grid ColumnSpacing="12">
+                    <Grid.ColumnDefinitions>
+                      <ColumnDefinition Width="*" />
+                      <ColumnDefinition Width="*" />
+                    </Grid.ColumnDefinitions>
+                    <Border
+                        Padding="16"
+                        Background="#F211171C"
+                        BorderBrush="{ThemeResource GameShiftCardBorderBrush}"
+                        BorderThickness="1"
+                        CornerRadius="14">
+                      <StackPanel Spacing="2">
+                        <TextBlock Foreground="{ThemeResource GameShiftMutedTextBrush}" FontSize="12" Text="Wykryte aplikacje" />
+                        <TextBlock x:Name="SelectedAppsCountText" FontSize="26" FontWeight="SemiBold" Text="0" />
+                      </StackPanel>
+                    </Border>
+                    <Border
+                        Grid.Column="1"
+                        Padding="16"
+                        Background="#F211171C"
+                        BorderBrush="{ThemeResource GameShiftCardBorderBrush}"
+                        BorderThickness="1"
+                        CornerRadius="14">
+                      <StackPanel Spacing="2">
+                        <TextBlock Foreground="{ThemeResource GameShiftMutedTextBrush}" FontSize="12" Text="Szacowany odzysk RAM" />
+                        <TextBlock x:Name="SelectedAppsMemoryText" Foreground="{ThemeResource GameShiftSuccessBrush}" FontSize="26" FontWeight="SemiBold" Text="0 MB" />
+                      </StackPanel>
+                    </Border>
+                  </Grid>
+
+                  <!-- Background Applications List Card -->
+                  <Border
+                      MinHeight="300"
+                      Padding="18"
+                      Background="#F211171C"
+                      BorderBrush="{ThemeResource GameShiftCardBorderBrush}"
+                      BorderThickness="1"
+                      CornerRadius="14">
+                    <StackPanel Spacing="12">
+                      <Grid>
+                        <Grid.ColumnDefinitions>
+                          <ColumnDefinition Width="*" />
+                          <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+                        <StackPanel Spacing="2">
+                          <TextBlock FontSize="17" FontWeight="SemiBold" Text="2. Aplikacje w tle" />
+                          <TextBlock
+                              x:Name="ProcessClassificationSummaryText"
+                              Foreground="{ThemeResource GameShiftMutedTextBrush}"
+                              FontSize="12"
+                              Text="Kliknij 'Analizuj aplikacje tła', aby pobrać listę."
+                              TextWrapping="Wrap" />
+                        </StackPanel>
+                        <Button
+                            x:Name="SmartRecommendationsButton"
+                            Grid.Column="1"
+                            VerticalAlignment="Center"
+                            Click="OnApplySmartRecommendationsClicked"
+                            Style="{StaticResource GameShiftSecondaryButtonStyle}"
+                            AutomationProperties.Name="Zastosuj inteligentne rekomendacje optymalizacji">
+                          <StackPanel Orientation="Horizontal" Spacing="6">
+                            <FontIcon Foreground="{ThemeResource GameShiftAccentBrush}" FontSize="13" Glyph="&#xE9D9;" />
+                            <TextBlock Text="Inteligentna selekcja" />
+                          </StackPanel>
+                        </Button>
+                      </Grid>
+
+                      <Button
+                          x:Name="AnalyzeBackgroundApplicationsButton"
+                          Height="38"
+                          HorizontalAlignment="Stretch"
+                          Style="{StaticResource GameShiftSecondaryButtonStyle}"
+                          AutomationProperties.Name="Analizuj aplikacje działające w tle"
+                          Click="OnAnalyzeBackgroundApplicationsClicked"
+                          IsEnabled="False">
+                        <StackPanel Orientation="Horizontal" Spacing="8">
+                          <FontIcon FontSize="15" Glyph="&#xE721;" />
+                          <TextBlock VerticalAlignment="Center" FontWeight="SemiBold" Text="Analizuj aplikacje tła" />
+                        </StackPanel>
+                      </Button>
+
+                      <Grid MinHeight="120">
+                        <ListView
+                            x:Name="BackgroundApplicationsList"
+                            MaxHeight="260"
+                            AutomationProperties.Name="Opcjonalne aplikacje możliwe do ograniczenia lub zamknięcia podczas gry"
+                            SelectionMode="None"
+                            Visibility="Collapsed">
+                          <ListView.ItemTemplate>
+                            <DataTemplate>
+                              <Border
+                                  Margin="0,0,0,8"
+                                  Padding="12"
+                                  Background="{ThemeResource GameShiftCardBrush}"
+                                  BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
+                                  BorderThickness="1"
+                                  CornerRadius="10">
+                                <Grid ColumnSpacing="12">
+                                  <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="Auto" />
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="Auto" />
+                                    <ColumnDefinition Width="Auto" />
+                                  </Grid.ColumnDefinitions>
+                                  <CheckBox
+                                      VerticalAlignment="Center"
+                                      AutomationProperties.Name="{Binding DisplayName}"
+                                      Checked="OnBackgroundApplicationSelectionChanged"
+                                      IsChecked="{Binding IsSelected, Mode=TwoWay}"
+                                      Unchecked="OnBackgroundApplicationSelectionChanged" />
+                                  <StackPanel
+                                      Grid.Column="1"
+                                      VerticalAlignment="Center"
+                                      Spacing="2">
+                                    <TextBlock
+                                        FontWeight="SemiBold"
+                                        Text="{Binding DisplayName}" />
+                                    <TextBlock
+                                        Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                                        FontSize="11"
+                                        Text="{Binding ClassificationLabel}"
+                                        TextWrapping="Wrap" />
+                                  </StackPanel>
+                                  <ComboBox
+                                      Grid.Column="2"
+                                      Margin="0,0,8,0"
+                                      MinWidth="150"
+                                      VerticalAlignment="Center"
+                                      AutomationProperties.Name="Działanie dla procesu"
+                                      DisplayMemberPath="Label"
+                                      IsEnabled="{Binding IsSelected}"
+                                      ItemsSource="{Binding AvailableActions}"
+                                      SelectedItem="{Binding SelectedAction, Mode=TwoWay}"
+                                      SelectionChanged="OnBackgroundApplicationSelectionChanged" />
+                                  <TextBlock
+                                      Grid.Column="3"
+                                      VerticalAlignment="Center"
+                                      FontWeight="SemiBold"
+                                      Foreground="{ThemeResource GameShiftAccentBrush}"
+                                      Text="{Binding MemoryLabel}" />
+                                </Grid>
+                              </Border>
+                            </DataTemplate>
+                          </ListView.ItemTemplate>
+                        </ListView>
+                        <StackPanel
+                            x:Name="BackgroundApplicationsEmptyPanel"
+                            HorizontalAlignment="Center"
+                            VerticalAlignment="Center"
+                            Spacing="8"
+                            Margin="0,16">
+                          <FontIcon
+                              HorizontalAlignment="Center"
+                              Foreground="{ThemeResource GameShiftAccentBrush}"
+                              FontSize="26"
+                              Glyph="&#xE9D9;" />
+                          <TextBlock
+                              x:Name="BackgroundApplicationsEmptyText"
+                              MaxWidth="340"
+                              HorizontalAlignment="Center"
+                              Foreground="{ThemeResource GameShiftMutedTextBrush}"
+                              Text="Kliknij 'Analizuj aplikacje tła', aby zobaczyć aktywne procesy."
+                              TextAlignment="Center"
+                              TextWrapping="Wrap" />
+                        </StackPanel>
+                      </Grid>
+                    </StackPanel>
+                  </Border>
+
+                  <!-- Session Execution Bento Card -->
+                  <Border
+                      Padding="20"
+                      Background="{ThemeResource GameShiftHeroBrush}"
+                      BorderBrush="{ThemeResource GameShiftCardBorderBrush}"
+                      BorderThickness="1"
+                      CornerRadius="14">
+                    <StackPanel Spacing="10">
+                      <TextBlock
+                          x:Name="PlanStateTitleText"
+                          FontSize="17"
+                          FontWeight="SemiBold"
+                          Text="3. Uruchomienie sesji" />
+                      <TextBlock
+                          x:Name="PlanDetailsText"
+                          Foreground="{ThemeResource GameShiftMutedTextBrush}"
+                          FontSize="13"
+                          Text="Wybierz grę i kliknij przycisk poniżej, aby przygotować i włączyć Tryb gry."
+                          TextWrapping="Wrap" />
+                      <ListView
+                          x:Name="PlanActionsList"
+                          MaxHeight="180"
+                          AutomationProperties.Name="Lista działań zatwierdzanego planu"
+                          SelectionMode="None"
+                          Visibility="Collapsed">
+                        <ListView.ItemTemplate>
+                          <DataTemplate>
+                            <Border
+                                Margin="0,0,0,6"
+                                Padding="10"
+                                Background="{ThemeResource GameShiftCardBrush}"
+                                CornerRadius="8">
+                              <StackPanel Spacing="2">
+                                <TextBlock FontWeight="SemiBold" FontSize="13" Text="{Binding Code}" />
+                                <TextBlock Text="{Binding Description}" FontSize="12" TextWrapping="Wrap" />
+                              </StackPanel>
+                            </Border>
+                          </DataTemplate>
+                        </ListView.ItemTemplate>
+                      </ListView>
+                      <StackPanel Orientation="Horizontal" Spacing="10">
+                        <Button
+                            x:Name="PreparePlanButton"
+                            Style="{StaticResource GameShiftSecondaryButtonStyle}"
+                            AutomationProperties.HelpText="Tworzy plan wybranych ograniczeń i zamknięć."
+                            AutomationProperties.Name="Przygotuj plan sesji"
+                            Click="OnPreparePlanClicked"
+                            Content="Sprawdź plan"
+                            IsEnabled="False" />
+                        <Button
+                            x:Name="StartSessionButton"
+                            Style="{StaticResource GameShiftPrimaryButtonStyle}"
+                            AutomationProperties.HelpText="Uruchamia grę i aktywuje Tryb gry."
+                            AutomationProperties.Name="Zatwierdź plan i włącz Tryb gry"
+                            Click="OnStartSessionClicked"
+                            Content="WŁĄCZ TRYB GRY"
+                            IsEnabled="False"
+                            Visibility="Collapsed" />
+                        <Button
+                            x:Name="RestoreSessionButton"
+                            Style="{StaticResource GameShiftRecoveryButtonStyle}"
+                            AutomationProperties.HelpText="Przywraca zamknięte aplikacje tła."
+                            AutomationProperties.Name="Przywróć aplikacje"
+                            Click="OnRestoreSessionClicked"
+                            Content="Przywróć aplikacje teraz"
+                            IsEnabled="False"
+                            Visibility="Collapsed" />
+                        <Button
+                            x:Name="CloseGameButton"
+                            Style="{StaticResource GameShiftDangerButtonStyle}"
+                            AutomationProperties.HelpText="Kończy proces aktywnej gry."
+                            AutomationProperties.Name="Zakończ grę"
+                            Click="OnCloseGameClicked"
+                            Content="Zakończ grę"
+                            IsEnabled="False"
+                            Visibility="Collapsed" />
+                      </StackPanel>
+                    </StackPanel>
+                  </Border>
+
+                  <!-- Hidden elements required for C# bindings -->
+                  <StackPanel Visibility="Collapsed">
+                    <TextBlock x:Name="ServiceClassificationSummaryText" />
+                    <ListView x:Name="ServiceClassificationsList" />
+                  </StackPanel>
+                </StackPanel>
+              </Grid>
+            </StackPanel>
+          </ScrollViewer>
+
+          <!-- HISTORY PAGE -->
+          <Grid
+              x:Name="HistoryPage"
+              MaxWidth="1440"
+              Margin="24,18,24,30"
+              HorizontalAlignment="Stretch"
+              Visibility="Collapsed">
+            <Grid.RowDefinitions>
+              <RowDefinition Height="Auto" />
+              <RowDefinition Height="Auto" />
+              <RowDefinition Height="*" />
+            </Grid.RowDefinitions>
+
+            <!-- Bento Header -->
+            <Border
+                Padding="24,18"
+                Background="{ThemeResource GameShiftHeroBrush}"
+                BorderBrush="{ThemeResource GameShiftCardBorderBrush}"
+                BorderThickness="1"
+                CornerRadius="14">
+              <Grid ColumnSpacing="20">
+                <Grid.ColumnDefinitions>
+                  <ColumnDefinition Width="*" />
+                  <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+                <StackPanel VerticalAlignment="Center" Spacing="4">
+                  <TextBlock
+                      Style="{StaticResource GameShiftEyebrowStyle}"
+                      Text="GAMESHIFT / HISTORIA SESJI" />
+                  <TextBlock
+                      Style="{StaticResource GameShiftPageTitleStyle}"
+                      Text="Wyniki i historia sesji" />
+                  <TextBlock
+                      Foreground="{ThemeResource GameShiftMutedTextBrush}"
+                      FontSize="13"
+                      Text="Przeglądaj rzeczywiste pomiary FPS, stabilność klatek oraz historię przywracania zasobów."
+                      TextWrapping="Wrap" />
+                </StackPanel>
+                <Button
+                    Grid.Column="1"
+                    VerticalAlignment="Center"
+                    Style="{StaticResource GameShiftSecondaryButtonStyle}"
+                    AutomationProperties.Name="Usuń historię starszą niż 90 dni"
+                    Click="OnDeleteOldHistoryClicked">
+                  <StackPanel Orientation="Horizontal" Spacing="8">
+                    <FontIcon FontSize="14" Glyph="&#xE74D;" />
+                    <TextBlock Text="Usuń starsze niż 90 dni" />
+                  </StackPanel>
+                </Button>
+              </Grid>
+            </Border>
+
+            <InfoBar
+                x:Name="HistoryInfoBar"
+                Grid.Row="1"
+                Margin="0,12,0,10"
+                IsClosable="True"
+                IsOpen="False"
+                Title="Historia" />
+
+            <!-- Bento History List -->
+            <Grid Grid.Row="2" Margin="0,8,0,0">
+              <ListView
+                  x:Name="HistoryList"
+                  AutomationProperties.Name="Lista zakończonych sesji"
+                  IsItemClickEnabled="False"
+                  SelectionMode="None">
+                <ListView.ItemTemplate>
+                  <DataTemplate>
+                    <Border
+                        Margin="0,0,0,10"
+                        Padding="18,16"
+                        Background="#F211171C"
+                        BorderBrush="{ThemeResource GameShiftCardBorderBrush}"
+                        BorderThickness="1"
+                        CornerRadius="14">
+                      <Grid ColumnSpacing="18">
+                        <Grid.ColumnDefinitions>
+                          <ColumnDefinition Width="Auto" />
+                          <ColumnDefinition Width="*" />
+                          <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+
+                        <!-- Game Icon / Symbol -->
+                        <Border
+                            Width="44"
+                            Height="44"
+                            VerticalAlignment="Center"
+                            Background="#1F1ED5DB"
+                            BorderBrush="{ThemeResource GameShiftCardBorderBrush}"
+                            BorderThickness="1"
+                            CornerRadius="10">
+                          <FontIcon
+                              HorizontalAlignment="Center"
+                              VerticalAlignment="Center"
+                              Foreground="{ThemeResource GameShiftAccentBrush}"
+                              FontSize="20"
+                              Glyph="&#xE7FC;" />
+                        </Border>
+
+                        <StackPanel Grid.Column="1" VerticalAlignment="Center" Spacing="4">
+                          <StackPanel Orientation="Horizontal" Spacing="10">
+                            <TextBlock
+                                FontFamily="Segoe UI Variable Display"
+                                FontSize="17"
+                                FontWeight="SemiBold"
+                                Text="{Binding GameDisplayName}" />
+                            <Border Style="{StaticResource GameShiftPillStyle}">
+                              <TextBlock
+                                  Foreground="{ThemeResource GameShiftSuccessBrush}"
+                                  FontSize="10"
+                                  FontWeight="SemiBold"
+                                  Text="{Binding StatusLabel}" />
+                            </Border>
+                          </StackPanel>
+                          <TextBlock
+                              Foreground="{ThemeResource GameShiftAccentBrush}"
+                              FontSize="13"
+                              FontWeight="SemiBold"
+                              Text="{Binding FrameRateSummary}"
+                              TextWrapping="Wrap" />
+                          <TextBlock
+                              Foreground="{ThemeResource GameShiftMutedTextBrush}"
+                              FontSize="12"
+                              Text="{Binding ActionSummary}" />
+                          <!-- Hidden Issue summary placeholder -->
+                          <TextBlock
+                              Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                              FontSize="11"
+                              Text="{Binding IssueSummary}"
+                              Visibility="Collapsed" />
+                        </StackPanel>
+
+                        <StackPanel
+                            Grid.Column="2"
+                            VerticalAlignment="Center"
+                            HorizontalAlignment="Right"
+                            Spacing="3">
+                          <TextBlock
+                              HorizontalAlignment="Right"
+                              FontWeight="SemiBold"
+                              FontSize="13"
+                              Text="{Binding EndedAtLabel}" />
+                          <TextBlock
+                              HorizontalAlignment="Right"
+                              Foreground="{ThemeResource GameShiftMutedTextBrush}"
+                              FontSize="12"
+                              Text="{Binding DurationLabel}" />
+                        </StackPanel>
+                      </Grid>
+                    </Border>
+                  </DataTemplate>
+                </ListView.ItemTemplate>
+              </ListView>
+              <TextBlock
+                  x:Name="HistoryEmptyText"
+                  Margin="12"
+                  HorizontalAlignment="Center"
+                  VerticalAlignment="Center"
+                  Foreground="{ThemeResource GameShiftMutedTextBrush}"
+                  FontSize="14"
+                  Text="Brak zapisanych sesji. Uruchom grę przez GameShift, aby zmierzyć wydajność."
+                  TextWrapping="Wrap" />
+            </Grid>
+          </Grid>
+
+          <!-- UPDATES PAGE -->
+          <ScrollViewer
+              x:Name="UpdatesPage"
+              HorizontalScrollBarVisibility="Disabled"
+              VerticalScrollBarVisibility="Auto"
+              Visibility="Collapsed">
+            <StackPanel
+                MaxWidth="1440"
+                Margin="24,18,24,40"
+                HorizontalAlignment="Stretch"
+                Spacing="14">
+
+              <!-- Bento Header -->
+              <Border
+                  Padding="24,18"
+                  Background="{ThemeResource GameShiftHeroBrush}"
+                  BorderBrush="{ThemeResource GameShiftCardBorderBrush}"
+                  BorderThickness="1"
+                  CornerRadius="14">
+                <Grid ColumnSpacing="20">
+                  <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                  </Grid.ColumnDefinitions>
+                  <StackPanel VerticalAlignment="Center" Spacing="4">
+                    <TextBlock
+                        Style="{StaticResource GameShiftEyebrowStyle}"
+                        Text="GAMESHIFT / SYSTEM AKTUALIZACJI" />
+                    <TextBlock
+                        Style="{StaticResource GameShiftPageTitleStyle}"
+                        Text="Aktualizacje" />
+                    <TextBlock
+                        Foreground="{ThemeResource GameShiftMutedTextBrush}"
+                        FontSize="13"
+                        Text="Zapewnij najwyższą kompatybilność z nowymi grami dzięki bezpiecznym aktualizacjom."
+                        TextWrapping="Wrap" />
+                  </StackPanel>
+                  <Button
+                      x:Name="CheckForUpdatesButton"
+                      Grid.Column="1"
+                      VerticalAlignment="Center"
+                      Style="{StaticResource GameShiftPrimaryButtonStyle}"
+                      Click="OnCheckForUpdatesClicked">
+                    <StackPanel Orientation="Horizontal" Spacing="8">
+                      <FontIcon FontSize="15" Glyph="&#xE72C;" />
+                      <TextBlock Text="Sprawdź aktualizacje" />
+                    </StackPanel>
+                  </Button>
+                </Grid>
+              </Border>
+
+              <InfoBar
+                  x:Name="UpdateInfoBar"
+                  IsClosable="True"
+                  IsOpen="False"
+                  Title="Aktualizacje" />
+
+              <Grid ColumnSpacing="16" RowSpacing="16">
+                <Grid.ColumnDefinitions>
+                  <ColumnDefinition Width="1.1*" />
+                  <ColumnDefinition Width="0.9*" />
+                </Grid.ColumnDefinitions>
+                <Grid.RowDefinitions>
+                  <RowDefinition Height="Auto" />
+                  <RowDefinition Height="Auto" />
+                </Grid.RowDefinitions>
+
+                <!-- Current Build Card -->
+                <Border
+                    Padding="22"
+                    Background="#F211171C"
+                    BorderBrush="{ThemeResource GameShiftCardBorderBrush}"
+                    BorderThickness="1"
+                    CornerRadius="14">
+                  <StackPanel Spacing="10">
+                    <TextBlock
+                        Style="{StaticResource GameShiftEyebrowStyle}"
+                        Text="ZAINSTALOWANA WERSJA" />
+                    <TextBlock
+                        x:Name="UpdatesCurrentVersionText"
+                        FontFamily="Segoe UI Variable Display"
+                        FontSize="26"
+                        FontWeight="SemiBold"
+                        Text="GameShift Technical Preview" />
+                    <TextBlock
+                        x:Name="UpdatesStatusText"
+                        Foreground="{ThemeResource GameShiftAccentBrush}"
+                        FontSize="13"
+                        Text="Stan aktualizacji nie został jeszcze sprawdzony."
+                        TextWrapping="Wrap" />
+                    <TextBlock
+                        x:Name="UpdatesLastCheckText"
+                        Foreground="{ThemeResource GameShiftMutedTextBrush}"
+                        FontSize="12"
+                        Text="Ostatnie sprawdzenie: nigdy"
+                        TextWrapping="Wrap" />
+                  </StackPanel>
+                </Border>
+
+                <!-- Update Settings Card -->
+                <Border
+                    Grid.Column="1"
+                    Padding="22"
+                    Background="#F211171C"
+                    BorderBrush="{ThemeResource GameShiftCardBorderBrush}"
+                    BorderThickness="1"
+                    CornerRadius="14">
+                  <StackPanel Spacing="12">
+                    <TextBlock
+                        FontSize="17"
+                        FontWeight="SemiBold"
+                        Text="Ustawienia aktualizacji" />
+                    <ToggleSwitch
+                        x:Name="AutomaticUpdateChecksToggle"
+                        AutomationProperties.Name="Automatycznie sprawdzaj aktualizacje"
+                        Header="Sprawdzaj automatycznie w tle"
+                        OffContent="Wyłączone"
+                        OnContent="Włączone (co 30 dni)"
+                        Toggled="OnAutomaticUpdateSettingChanged" />
+                    <ToggleSwitch
+                        x:Name="AutomaticUpdateInstallToggle"
+                        AutomationProperties.Name="Automatycznie pobieraj i instaluj aktualizacje"
+                        Header="Automatyczne pobieranie"
+                        OffContent="Ręcznie"
+                        OnContent="Automatycznie, gdy bezpieczne"
+                        Toggled="OnAutomaticUpdateSettingChanged" />
+                  </StackPanel>
+                </Border>
+
+                <!-- Available Release Card -->
+                <Border
+                    Grid.Row="1"
+                    Padding="22"
+                    Background="#F211171C"
+                    BorderBrush="{ThemeResource GameShiftCardBorderBrush}"
+                    BorderThickness="1"
+                    CornerRadius="14">
+                  <StackPanel Spacing="12">
+                    <TextBlock
+                        FontSize="17"
+                        FontWeight="SemiBold"
+                        Text="Nowe wydanie" />
+                    <TextBlock
+                        x:Name="AvailableUpdateVersionText"
+                        FontSize="22"
+                        FontWeight="SemiBold"
+                        Text="Brak nowej wersji" />
+                    <TextBlock
+                        x:Name="UpdateReleaseNotesText"
+                        Foreground="{ThemeResource GameShiftMutedTextBrush}"
+                        FontSize="13"
+                        Text="Po sprawdzeniu pojawi się lista zmian."
+                        TextWrapping="Wrap" />
+                    <StackPanel Orientation="Horizontal" Spacing="10">
+                      <Button
+                          x:Name="DownloadUpdateButton"
+                          Style="{StaticResource GameShiftPrimaryButtonStyle}"
+                          Click="OnDownloadUpdateClicked"
+                          Content="Pobierz aktualizację"
+                          IsEnabled="False" />
+                      <Button
+                          x:Name="InstallUpdateButton"
+                          Style="{StaticResource GameShiftSecondaryButtonStyle}"
+                          Click="OnInstallUpdateClicked"
+                          Content="Zainstaluj teraz"
+                          IsEnabled="False" />
+                    </StackPanel>
+                    <ProgressBar
+                        x:Name="UpdateDownloadProgressBar"
+                        Height="5"
+                        Maximum="100"
+                        Minimum="0"
+                        Value="0" />
+                    <TextBlock
+                        x:Name="StagedUpdateText"
+                        Foreground="{ThemeResource GameShiftMutedTextBrush}"
+                        FontSize="12"
+                        Text="Pakiet nie został pobrany."
+                        TextWrapping="Wrap" />
+                  </StackPanel>
+                </Border>
+
+                <!-- Trust and Channel Card -->
+                <Border
+                    Grid.Row="1"
+                    Grid.Column="1"
+                    Padding="22"
+                    Background="#F211171C"
+                    BorderBrush="{ThemeResource GameShiftCardBorderBrush}"
+                    BorderThickness="1"
+                    CornerRadius="14">
+                  <StackPanel Spacing="10">
+                    <TextBlock
+                        FontSize="17"
+                        FontWeight="SemiBold"
+                        Text="Bezpieczeństwo i prywatność" />
+                    <TextBlock
+                        Foreground="{ThemeResource GameShiftMutedTextBrush}"
+                        FontSize="13"
+                        Text="Aktualizacje pobierane są wyłącznie z oficjalnego, szyfrowanego serwera i weryfikowane sumami kontrolnymi."
+                        TextWrapping="Wrap" />
+                    <Border Style="{StaticResource GameShiftPillStyle}" HorizontalAlignment="Left">
+                      <StackPanel Orientation="Horizontal" Spacing="6">
+                        <FontIcon Foreground="{ThemeResource GameShiftSuccessBrush}" FontSize="12" Glyph="&#xE73E;" />
+                        <TextBlock FontSize="11" FontWeight="SemiBold" Text="Oficjalny kanał wydania" />
+                      </StackPanel>
+                    </Border>
+                    <TextBlock
+                        x:Name="UpdateServiceAddressText"
+                        IsTextSelectionEnabled="True"
+                        Foreground="{ThemeResource GameShiftMutedTextBrush}"
+                        FontSize="11"
+                        Text="gameshift-update-service-dev.dismonder.workers.dev"
+                        TextWrapping="Wrap" />
+                  </StackPanel>
+                </Border>
+              </Grid>
+            </StackPanel>
+          </ScrollViewer>
+
+          <!-- DIAGNOSTICS & SETTINGS PAGE -->
+          <ScrollViewer
+              x:Name="DiagnosticsPage"
+              HorizontalScrollBarVisibility="Disabled"
+              VerticalScrollBarVisibility="Auto"
+              Visibility="Collapsed">
+            <StackPanel
+                MaxWidth="1440"
+                Margin="24,18,24,40"
+                HorizontalAlignment="Stretch"
+                Spacing="14">
+
+              <!-- Bento Header -->
+              <Border
+                  Padding="24,18"
+                  Background="{ThemeResource GameShiftHeroBrush}"
+                  BorderBrush="{ThemeResource GameShiftCardBorderBrush}"
+                  BorderThickness="1"
+                  CornerRadius="14">
+                <Grid ColumnSpacing="20">
+                  <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                  </Grid.ColumnDefinitions>
+                  <StackPanel VerticalAlignment="Center" Spacing="4">
+                    <TextBlock
+                        Style="{StaticResource GameShiftEyebrowStyle}"
+                        Text="GAMESHIFT / CENTRUM KONDYCJI PC" />
+                    <TextBlock
+                        Style="{StaticResource GameShiftPageTitleStyle}"
+                        Text="Diagnostyka i Ustawienia" />
+                    <TextBlock
+                        Foreground="{ThemeResource GameShiftMutedTextBrush}"
+                        FontSize="13"
+                        Text="Sprawdź stan optymalizacji Windows, silnika GameShift oraz dostosuj wygląd aplikacji."
+                        TextWrapping="Wrap" />
+                  </StackPanel>
+                  <StackPanel Grid.Column="1" VerticalAlignment="Center" Orientation="Horizontal" Spacing="10">
+                    <Button
+                        Style="{StaticResource GameShiftSecondaryButtonStyle}"
+                        Click="OnRefreshDiagnosticsClicked">
+                      <StackPanel Orientation="Horizontal" Spacing="8">
+                        <FontIcon FontSize="15" Glyph="&#xE72C;" />
+                        <TextBlock Text="Sprawdź ponownie" />
+                      </StackPanel>
+                    </Button>
+                  </StackPanel>
+                </Grid>
+              </Border>
+
+              <Grid ColumnSpacing="16" RowSpacing="16">
+                <Grid.ColumnDefinitions>
+                  <ColumnDefinition Width="1.15*" />
+                  <ColumnDefinition Width="0.85*" />
+                </Grid.ColumnDefinitions>
+
+                <!-- Gaming & GPU Windows 11 Diagnostics Card -->
+                <Border
+                    Padding="22"
+                    Background="#F211171C"
+                    BorderBrush="{ThemeResource GameShiftCardBorderBrush}"
+                    BorderThickness="1"
+                    CornerRadius="14">
+                  <StackPanel Spacing="12">
+                    <StackPanel Orientation="Horizontal" Spacing="8">
+                      <FontIcon Foreground="{ThemeResource GameShiftAccentBrush}" FontSize="18" Glyph="&#xE790;" />
+                      <TextBlock
+                          FontSize="18"
+                          FontWeight="SemiBold"
+                          Text="Konfiguracja gamingowa Windows &amp; GPU" />
+                    </StackPanel>
+                    <TextBlock
+                        x:Name="DiagnosticsGamingEnvironmentText"
+                        Foreground="{ThemeResource GameShiftAccentBrush}"
+                        FontSize="14"
+                        FontWeight="SemiBold"
+                        IsTextSelectionEnabled="True"
+                        Text="Badanie konfiguracji..."
+                        TextWrapping="Wrap" />
+                    <TextBlock
+                        x:Name="DiagnosticsGamingRecommendationsText"
+                        Foreground="{ThemeResource GameShiftMutedTextBrush}"
+                        FontSize="13"
+                        IsTextSelectionEnabled="True"
+                        Text=""
+                        TextWrapping="Wrap" />
+                  </StackPanel>
+                </Border>
+
+                <!-- System & Modules Status Card -->
+                <Border
+                    Grid.Column="1"
+                    Padding="22"
+                    Background="#F211171C"
+                    BorderBrush="{ThemeResource GameShiftCardBorderBrush}"
+                    BorderThickness="1"
+                    CornerRadius="14">
+                  <StackPanel Spacing="12">
+                    <TextBlock
+                        FontSize="18"
+                        FontWeight="SemiBold"
+                        Text="Status silnika GameShift" />
+
+                    <Grid RowSpacing="10" ColumnSpacing="12">
+                      <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="*" />
+                      </Grid.ColumnDefinitions>
+                      <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="Auto" />
+                      </Grid.RowDefinitions>
+
+                      <TextBlock FontWeight="SemiBold" FontSize="13" Text="Silnik optymalizacji:" />
+                      <TextBlock
+                          x:Name="DiagnosticsSessionHostText"
+                          Grid.Column="1"
+                          Foreground="{ThemeResource GameShiftSuccessBrush}"
+                          FontSize="13"
+                          Text="Gotowy"
+                          TextWrapping="Wrap" />
+
+                      <TextBlock Grid.Row="1" FontWeight="SemiBold" FontSize="13" Text="Agent diagnostyczny:" />
+                      <TextBlock
+                          x:Name="DiagnosticsSystemAgentText"
+                          Grid.Row="1"
+                          Grid.Column="1"
+                          Foreground="{ThemeResource GameShiftSuccessBrush}"
+                          FontSize="13"
+                          Text="Gotowy"
+                          TextWrapping="Wrap" />
+
+                      <TextBlock Grid.Row="2" FontWeight="SemiBold" FontSize="13" Text="System operacyjny:" />
+                      <TextBlock
+                          x:Name="DiagnosticsPlatformText"
+                          Grid.Row="2"
+                          Grid.Column="1"
+                          FontSize="13"
+                          Text="Windows"
+                          TextWrapping="Wrap" />
+                    </Grid>
+
+                    <StackPanel Spacing="8" Margin="0,6,0,0">
+                      <TextBlock
+                          FontWeight="SemiBold"
+                          FontSize="13"
+                          Text="Motyw aplikacji" />
+                      <ComboBox
+                          x:Name="ThemeSelector"
+                          HorizontalAlignment="Stretch"
+                          AutomationProperties.Name="Motyw aplikacji"
+                          SelectedIndex="2"
+                          SelectionChanged="OnThemeSelectionChanged">
+                        <ComboBoxItem Content="Ciemny (Domyślny)" Tag="Dark" />
+                        <ComboBoxItem Content="Jasny" Tag="Light" />
+                        <ComboBoxItem Content="Zgodny z systemem" Tag="Default" />
+                      </ComboBox>
+                    </StackPanel>
+
+                    <!-- SFX and VFX Settings -->
+                    <StackPanel Spacing="10" Margin="0,10,0,0">
+                      <TextBlock
+                          FontWeight="SemiBold"
+                          FontSize="13"
+                          Text="Efekty gamingowe (SFX / VFX)" />
+
+                      <Grid ColumnSpacing="12">
+                        <Grid.ColumnDefinitions>
+                          <ColumnDefinition Width="*" />
+                          <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+                        <StackPanel VerticalAlignment="Center">
+                          <TextBlock FontSize="13" Text="Dźwięki interfejsu (SFX)" />
+                          <TextBlock Foreground="{ThemeResource GameShiftMutedTextBrush}" FontSize="11" Text="Dźwięki startu sesji, powiadomień i przełączników." />
+                        </StackPanel>
+                        <ToggleSwitch
+                            x:Name="SfxToggleSwitch"
+                            Grid.Column="1"
+                            IsOn="True"
+                            OffContent="WYŁ."
+                            OnContent="WŁ."
+                            Toggled="OnSfxToggled" />
+                      </Grid>
+
+                      <Grid ColumnSpacing="12">
+                        <Grid.ColumnDefinitions>
+                          <ColumnDefinition Width="*" />
+                          <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+                        <StackPanel VerticalAlignment="Center">
+                          <TextBlock FontSize="13" Text="Efekty wizualne (VFX)" />
+                          <TextBlock Foreground="{ThemeResource GameShiftMutedTextBrush}" FontSize="11" Text="Animacje pulsowania, poświaty i przejść Bento." />
+                        </StackPanel>
+                        <ToggleSwitch
+                            x:Name="VfxToggleSwitch"
+                            Grid.Column="1"
+                            IsOn="True"
+                            OffContent="WYŁ."
+                            OnContent="WŁ."
+                            Toggled="OnVfxToggled" />
+                      </Grid>
+                    </StackPanel>
+
+                    <!-- Hidden bindings for internal IPC / User SIDs to prevent C# errors -->
+                    <StackPanel Visibility="Collapsed">
+                      <TextBlock x:Name="DiagnosticsProtocolText" />
+                      <TextBlock x:Name="DiagnosticsUserText" />
+                    </StackPanel>
+                  </StackPanel>
+                </Border>
+              </Grid>
+            </StackPanel>
+          </ScrollViewer>
+    </Grid>
+  </Grid>
+</Window>

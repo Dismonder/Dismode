@@ -1,0 +1,15 @@
+<Project>
+  <PropertyGroup>
+    <AnalysisLevel>latest-recommended</AnalysisLevel>
+    <AssemblyVersion>0.3.0.0</AssemblyVersion>
+    <Deterministic>true</Deterministic>
+    <EnableNETAnalyzers>true</EnableNETAnalyzers>
+    <FileVersion>0.3.0.0</FileVersion>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <InformationalVersion>0.3.0-gaming-edition</InformationalVersion>
+    <LangVersion>14.0</LangVersion>
+    <Nullable>enable</Nullable>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <Version>0.3.0</Version>
+  </PropertyGroup>
+</Project>
