@@ -2006,27 +2006,23 @@ public sealed partial class MainWindow : Window, IDisposable
                         InfoBarSeverity.Informational,
                         "Dostępna aktualizacja",
                         result.Message);
-                    if (!manual
-                        && result.Preferences.AutomaticInstallEnabled)
+
+                    SessionStateClientSnapshot? activeSession =
+                        await _sessions.GetActiveAsync(cancellationToken);
+                    if (activeSession is null)
                     {
-                        SessionStateClientSnapshot? activeSession =
-                            await _sessions.GetActiveAsync(
-                                cancellationToken);
-                        if (activeSession is null)
-                        {
-                            await DownloadAvailableUpdateCoreAsync(
-                                cancellationToken);
-                            await LaunchVerifiedInstallerCoreAsync(
-                                automatic: true,
-                                cancellationToken);
-                        }
-                        else
-                        {
-                            _automaticUpdateDeferredForSession = true;
-                            UpdatesStatusText.Text =
-                                "Nowa wersja czeka. Pobieranie rozpocznie się "
-                                + "po zakończeniu gry.";
-                        }
+                        ShowInfo(
+                            UpdateInfoBar,
+                            InfoBarSeverity.Informational,
+                            "Pobieranie aktualizacji w tle",
+                            $"Pobieram pakiet wersji {result.Manifest!.Version}. Po zakończeniu wystarczy zatwierdzić instalację przyciskiem.");
+                        await DownloadAvailableUpdateCoreAsync(cancellationToken);
+                    }
+                    else
+                    {
+                        _automaticUpdateDeferredForSession = true;
+                        UpdatesStatusText.Text =
+                            "Nowa wersja czeka. Pobieranie w tle rozpocznie się po zakończeniu gry.";
                     }
 
                     break;
@@ -2097,12 +2093,15 @@ public sealed partial class MainWindow : Window, IDisposable
             cancellationToken);
         UpdateDownloadProgressBar.Value = 100;
         StagedUpdateText.Text =
-            "Pakiet pobrany i zgodny z podpisem oraz SHA-256.";
+            $"Pakiet wersji {manifest.Version} został pobrany i zweryfikowany z SHA-256.";
         ShowInfo(
             UpdateInfoBar,
             InfoBarSeverity.Success,
-            "Aktualizacja gotowa",
-            "Instalator został złożony lokalnie z podpisanych fragmentów.");
+            "Aktualizacja gotowa do instalacji",
+            $"Wersja {manifest.Version} została pobrana. Kliknij „Zainstaluj teraz”, aby zatwierdzić instalację.");
+        _trayIcon?.ShowNotification(
+            "GameShift — aktualizacja gotowa",
+            $"Nowa wersja {manifest.Version} została pobrana. Kliknij, aby zatwierdzić instalację.");
         UpdateUpdateControls();
     }
 

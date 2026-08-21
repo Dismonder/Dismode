@@ -99,6 +99,10 @@ Filename: "{app}\GameShift.exe"; Description: "Uruchom GameShift"; WorkingDir: "
 [Code]
 var
   CustomSetupExitCode: Integer;
+  IsAlreadyInstalled: Boolean;
+  ExistingInstallPath: String;
+  MaintenancePage: TInputOptionWizardPage;
+  MaintenanceChoice: Integer;
 
 function GetCustomSetupExitCode: Integer;
 begin
@@ -114,6 +118,84 @@ begin
     (WindowsVersion.Major > 10) or
     ((WindowsVersion.Major = 10) and
      (WindowsVersion.Build >= 22000));
+end;
+
+function DetectExistingInstallation: Boolean;
+var
+  UninstallKey: String;
+  InstallLocation: String;
+begin
+  Result := False;
+  UninstallKey := 'Software\Microsoft\Windows\CurrentVersion\Uninstall\{8C8B533E-5B8B-46A7-B5F5-B3C2E5F7B9A1}_is1';
+
+  if RegQueryStringValue(HKLM, UninstallKey, 'InstallLocation', InstallLocation) then
+  begin
+    if (InstallLocation <> '') and DirExists(InstallLocation) and FileExists(InstallLocation + '\GameShift.exe') then
+    begin
+      ExistingInstallPath := InstallLocation;
+      Result := True;
+      exit;
+    end;
+  end;
+
+  if RegQueryStringValue(HKLM, UninstallKey, 'Inno Setup: App Path', InstallLocation) then
+  begin
+    if (InstallLocation <> '') and DirExists(InstallLocation) and FileExists(InstallLocation + '\GameShift.exe') then
+    begin
+      ExistingInstallPath := InstallLocation;
+      Result := True;
+      exit;
+    end;
+  end;
+
+  if FileExists(ExpandConstant('{autopf}\GameShift\GameShift.exe')) then
+  begin
+    ExistingInstallPath := ExpandConstant('{autopf}\GameShift');
+    Result := True;
+    exit;
+  end;
+end;
+
+function InitializeSetup: Boolean;
+begin
+  CustomSetupExitCode := 0;
+  ExistingInstallPath := '';
+  IsAlreadyInstalled := DetectExistingInstallation;
+  Result := True;
+end;
+
+procedure InitializeWizard;
+begin
+  if IsAlreadyInstalled then
+  begin
+    MaintenancePage := CreateInputOptionPage(
+      wpWelcome,
+      'Wykryto istniejącą instalację GameShift',
+      'Wybierz operację, którą instalator ma przeprowadzić:',
+      'GameShift jest już zainstalowany na tym komputerze.' + #13#10 +
+      'Katalog: ' + ExistingInstallPath + #13#10#13#10 +
+      'Wybierz jedną z dostępnych opcji konserwacji lub aktualizacji:',
+      True, False);
+
+    MaintenancePage.Add(
+      'Aktualizuj (Zalecane) — Zaktualizuj pliki programu do najnowszej wersji. Twoje profile gier, historia i baza danych zostaną w pełni zachowane.');
+    MaintenancePage.Add(
+      'Napraw — Ponowna instalacja wszystkich składników, odświeżenie rejestracji menu Windows 11 i naprawa skrótów.');
+    MaintenancePage.Add(
+      'Odinstaluj — Bezpiecznie usuń program GameShift z komputera.');
+
+    MaintenancePage.SelectedValueIndex := 0;
+  end;
+end;
+
+function ShouldSkipPage(PageID: Integer): Boolean;
+begin
+  Result := False;
+  if IsAlreadyInstalled then
+  begin
+    if (PageID = wpSelectDir) or (PageID = wpSelectProgramGroup) then
+      Result := True;
+  end;
 end;
 
 function RunShellIntegrationScript(
@@ -250,6 +332,44 @@ begin
     ErrorMessage :=
       'Nie udało się zamknąć wyłącznie składników GameShift z katalogu ' +
       'instalacji. Gra i obce procesy nie zostały zakończone.';
+end;
+
+function NextButtonClick(CurPageID: Integer): Boolean;
+var
+  UninstallerPath: String;
+  ResultCode: Integer;
+begin
+  Result := True;
+  if IsAlreadyInstalled and (MaintenancePage <> nil) and (CurPageID = MaintenancePage.ID) then
+  begin
+    MaintenanceChoice := MaintenancePage.SelectedValueIndex;
+    if MaintenanceChoice = 2 then // Uninstall
+    begin
+      if MsgBox('Czy na pewno chcesz odinstalować program GameShift z tego komputera?', mbConfirmation, MB_YESNO) = IDYES then
+      begin
+        UninstallerPath := ExpandConstant('{app}\unins000.exe');
+        if not FileExists(UninstallerPath) and (ExistingInstallPath <> '') then
+          UninstallerPath := ExistingInstallPath + '\unins000.exe';
+
+        if FileExists(UninstallerPath) then
+        begin
+          Exec(UninstallerPath, '', ExpandConstant('{app}'), SW_SHOW, ewNoWait, ResultCode);
+        end
+        else
+        begin
+          MsgBox('Nie znaleziono pliku deinstalatora: ' + UninstallerPath, mbError, MB_OK);
+        end;
+        WizardForm.Close;
+        Result := False;
+        exit;
+      end
+      else
+      begin
+        Result := False;
+        exit;
+      end;
+    end;
+  end;
 end;
 
 function PrepareToInstall(var NeedsRestart: Boolean): String;
