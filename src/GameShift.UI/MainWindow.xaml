@@ -1138,7 +1138,7 @@
                 IsOpen="False"
                 Title="Biblioteka" />
 
-            <!-- Bento Games Grid -->
+            <!-- Bento Games Grid with Uncropped Artwork Display -->
             <Grid Grid.Row="2" Margin="0,12,0,0">
               <ListView
                   x:Name="ProfilesList"
@@ -1148,31 +1148,40 @@
                 <ListView.ItemsPanel>
                   <ItemsPanelTemplate>
                     <ItemsWrapGrid
-                        ItemWidth="356"
-                        ItemHeight="216"
+                        ItemWidth="330"
+                        ItemHeight="290"
                         Orientation="Horizontal" />
                   </ItemsPanelTemplate>
                 </ListView.ItemsPanel>
                 <ListView.ItemTemplate>
                   <DataTemplate>
                     <Border
-                        Width="340"
-                        Height="202"
-                        Margin="0,0,14,14"
+                        Width="314"
+                        Height="274"
+                        Margin="0,0,16,16"
                         Background="#F211171C"
                         BorderBrush="{ThemeResource GameShiftCardBorderBrush}"
                         BorderThickness="1"
                         CornerRadius="14">
                       <Grid>
                         <Grid.RowDefinitions>
-                          <RowDefinition Height="136" />
+                          <RowDefinition Height="160" />
                           <RowDefinition Height="*" />
+                          <RowDefinition Height="Auto" />
                         </Grid.RowDefinitions>
+
+                        <!-- Artwork Container with Ambient Background -->
                         <Border
                             Grid.Row="0"
-                            Background="{ThemeResource GameShiftLogoTileBrush}"
+                            Background="#FF0B1015"
                             CornerRadius="13,13,0,0">
                           <Grid>
+                            <!-- Ambient Backdrop -->
+                            <Image
+                                Source="{Binding ArtworkSource}"
+                                Stretch="UniformToFill"
+                                Opacity="0.25" />
+
                             <TextBlock
                                 HorizontalAlignment="Center"
                                 VerticalAlignment="Center"
@@ -1180,65 +1189,124 @@
                                 FontFamily="Segoe UI Variable Display"
                                 FontSize="48"
                                 FontWeight="SemiBold"
-                                Opacity="0.5"
+                                Opacity="0.4"
                                 Text="{Binding Initial}" />
+
+                            <!-- Foreground Crisp Fitted Artwork -->
                             <Image
                                 Source="{Binding ArtworkSource}"
-                                Stretch="UniformToFill" />
-                            <Rectangle>
+                                Stretch="Uniform"
+                                HorizontalAlignment="Center"
+                                VerticalAlignment="Center" />
+
+                            <!-- Bottom subtle gradient -->
+                            <Rectangle VerticalAlignment="Bottom" Height="50">
                               <Rectangle.Fill>
                                 <LinearGradientBrush StartPoint="0,0" EndPoint="0,1">
                                   <GradientStop Offset="0" Color="#00000000" />
-                                  <GradientStop Offset="0.45" Color="#3B070C10" />
-                                  <GradientStop Offset="1" Color="#F4070C11" />
+                                  <GradientStop Offset="1" Color="#D911171C" />
                                 </LinearGradientBrush>
                               </Rectangle.Fill>
                             </Rectangle>
-                            <StackPanel
-                                Margin="14,0,14,10"
-                                VerticalAlignment="Bottom"
-                                Spacing="4">
+
+                            <!-- Top Floating Badges -->
+                            <Border
+                                Margin="10,10,0,0"
+                                HorizontalAlignment="Left"
+                                VerticalAlignment="Top"
+                                Background="#D9060A0D"
+                                BorderBrush="{ThemeResource GameShiftCardBorderBrush}"
+                                BorderThickness="1"
+                                CornerRadius="6"
+                                Padding="8,4">
                               <TextBlock
-                                  Foreground="White"
-                                  FontFamily="Segoe UI Variable Display"
-                                  FontSize="17"
+                                  Foreground="{ThemeResource GameShiftAccentBrush}"
+                                  FontSize="10"
                                   FontWeight="SemiBold"
-                                  MaxLines="1"
-                                  Text="{Binding DisplayName}"
-                                  TextTrimming="CharacterEllipsis" />
-                              <StackPanel Orientation="Horizontal" Spacing="6">
-                                <Border Style="{StaticResource GameShiftPillStyle}">
-                                  <TextBlock
-                                      Foreground="{ThemeResource GameShiftAccentBrush}"
-                                      FontSize="10"
-                                      FontWeight="SemiBold"
-                                      Text="{Binding PresetLabel}" />
-                                </Border>
-                                <Border Style="{StaticResource GameShiftPillStyle}">
-                                  <TextBlock
-                                      Foreground="{ThemeResource GameShiftSuccessBrush}"
-                                      FontSize="10"
-                                      Text="{Binding StateLabel}" />
-                                </Border>
-                              </StackPanel>
-                            </StackPanel>
+                                  Text="{Binding SourceLabel}" />
+                            </Border>
+
+                            <Border
+                                Margin="0,10,10,0"
+                                HorizontalAlignment="Right"
+                                VerticalAlignment="Top"
+                                Background="#D9060A0D"
+                                BorderBrush="{ThemeResource GameShiftCardBorderBrush}"
+                                BorderThickness="1"
+                                CornerRadius="6"
+                                Padding="8,4">
+                              <TextBlock
+                                  Foreground="{ThemeResource GameShiftAccentBrush}"
+                                  FontSize="10"
+                                  FontWeight="SemiBold"
+                                  Text="{Binding PresetLabel}" />
+                            </Border>
                           </Grid>
                         </Border>
-                        <Button
+
+                        <!-- Game Info -->
+                        <StackPanel
                             Grid.Row="1"
-                            Height="38"
-                            Margin="10,6,10,8"
-                            HorizontalAlignment="Stretch"
-                            AutomationProperties.HelpText="Uruchamia zweryfikowaną grę z aktywną optymalizacją."
-                            AutomationProperties.Name="{Binding LaunchAutomationName}"
-                            Click="OnLaunchGameFromLibraryClicked"
-                            IsEnabled="{Binding IsLaunchEnabled}"
-                            Style="{StaticResource GameShiftPrimaryButtonStyle}">
-                          <StackPanel Orientation="Horizontal" Spacing="8">
-                            <FontIcon FontSize="15" Glyph="&#xE768;" />
-                            <TextBlock VerticalAlignment="Center" FontWeight="SemiBold" Text="Uruchom przez GameShift" />
-                          </StackPanel>
-                        </Button>
+                            Margin="14,10,14,4"
+                            Spacing="3">
+                          <TextBlock
+                              Foreground="White"
+                              FontFamily="Segoe UI Variable Display"
+                              FontSize="15"
+                              FontWeight="SemiBold"
+                              MaxLines="1"
+                              Text="{Binding DisplayName}"
+                              TextTrimming="CharacterEllipsis" />
+                          <Grid>
+                            <TextBlock
+                                Foreground="{ThemeResource GameShiftMutedTextBrush}"
+                                FontSize="11"
+                                Text="{Binding LastPlayedLabel}"
+                                TextTrimming="CharacterEllipsis" />
+                            <TextBlock
+                                HorizontalAlignment="Right"
+                                Foreground="{ThemeResource GameShiftSuccessBrush}"
+                                FontSize="11"
+                                FontWeight="Medium"
+                                Text="{Binding StateLabel}" />
+                          </Grid>
+                        </StackPanel>
+
+                        <!-- Action Bar -->
+                        <Grid
+                            Grid.Row="2"
+                            Margin="10,0,10,10"
+                            ColumnSpacing="8">
+                          <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
+                          </Grid.ColumnDefinitions>
+
+                          <Button
+                              Height="36"
+                              HorizontalAlignment="Stretch"
+                              AutomationProperties.HelpText="Uruchamia grę z aktywną optymalizacją GameShift."
+                              AutomationProperties.Name="{Binding LaunchAutomationName}"
+                              Click="OnLaunchGameFromLibraryClicked"
+                              IsEnabled="{Binding IsLaunchEnabled}"
+                              Style="{StaticResource GameShiftPrimaryButtonStyle}">
+                            <StackPanel Orientation="Horizontal" Spacing="6">
+                              <FontIcon FontSize="13" Glyph="&#xE768;" />
+                              <TextBlock VerticalAlignment="Center" FontSize="12" FontWeight="SemiBold" Text="Uruchom" />
+                            </StackPanel>
+                          </Button>
+
+                          <Button
+                              Grid.Column="1"
+                              Width="38"
+                              Height="36"
+                              Padding="0"
+                              Style="{StaticResource GameShiftSecondaryButtonStyle}"
+                              Click="OnOpenGameModeClicked"
+                              ToolTipService.ToolTip="Dostosuj plan optymalizacji dla tej gry">
+                            <FontIcon FontSize="13" Glyph="&#xE70F;" />
+                          </Button>
+                        </Grid>
                       </Grid>
                     </Border>
                   </DataTemplate>
@@ -2477,6 +2545,42 @@
                             OffContent="WYŁ."
                             OnContent="WŁ."
                             Toggled="OnVfxToggled" />
+                      </Grid>
+                    </StackPanel>
+
+                    <!-- Updates & Version in Settings -->
+                    <StackPanel Spacing="10" Margin="0,10,0,0">
+                      <TextBlock
+                          FontWeight="SemiBold"
+                          FontSize="13"
+                          Text="Aktualizacje i Wydania" />
+
+                      <Grid ColumnSpacing="12">
+                        <Grid.ColumnDefinitions>
+                          <ColumnDefinition Width="*" />
+                          <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+                        <StackPanel VerticalAlignment="Center" Spacing="2">
+                          <TextBlock
+                              FontSize="13"
+                              FontWeight="Medium"
+                              Text="GameShift v0.3.0 (Gaming Edition)" />
+                          <TextBlock
+                              x:Name="SettingsUpdatesStatusText"
+                              Foreground="{ThemeResource GameShiftMutedTextBrush}"
+                              FontSize="11"
+                              Text="Wyszukaj najnowsze aktualizacje i pakiety." />
+                        </StackPanel>
+                        <Button
+                            x:Name="CheckForUpdatesInSettingsButton"
+                            Grid.Column="1"
+                            Style="{StaticResource GameShiftSecondaryButtonStyle}"
+                            Click="OnCheckForUpdatesInSettingsClicked">
+                          <StackPanel Orientation="Horizontal" Spacing="6">
+                            <FontIcon FontSize="12" Glyph="&#xE72C;" />
+                            <TextBlock FontSize="12" Text="Sprawdź" />
+                          </StackPanel>
+                        </Button>
                       </Grid>
                     </StackPanel>
 

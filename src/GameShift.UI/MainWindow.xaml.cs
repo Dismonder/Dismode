@@ -765,6 +765,17 @@ public sealed partial class MainWindow : Window, IDisposable
             manual: true,
             _lifetime.Token);
 
+    private async void OnCheckForUpdatesInSettingsClicked(
+        object sender,
+        RoutedEventArgs args)
+    {
+        TacticalAudioService.Instance.PlayClick();
+        NavigateToPage("updates");
+        await CheckForUpdatesAsync(
+            manual: true,
+            _lifetime.Token);
+    }
+
     private async void OnAutomaticUpdateSettingChanged(
         object sender,
         RoutedEventArgs args)

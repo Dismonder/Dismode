@@ -108,6 +108,50 @@ public sealed class LocalGameArtworkResolver
     {
         foreach (string steamRoot in _steamRoots)
         {
+            string userdataRoot = Path.GetFullPath(
+                Path.Combine(steamRoot, "userdata"));
+            if (Directory.Exists(userdataRoot))
+            {
+                try
+                {
+                    foreach (string userDir in Directory.EnumerateDirectories(
+                                 userdataRoot,
+                                 "*",
+                                 SearchOption.TopDirectoryOnly))
+                    {
+                        string gridDir = Path.Combine(userDir, "config", "grid");
+                        if (!Directory.Exists(gridDir))
+                        {
+                            continue;
+                        }
+
+                        string[] userGridCandidates =
+                        [
+                            Path.Combine(gridDir, $"{appId}_hero.jpg"),
+                            Path.Combine(gridDir, $"{appId}_hero.png"),
+                            Path.Combine(gridDir, $"{appId}p.jpg"),
+                            Path.Combine(gridDir, $"{appId}p.png"),
+                            Path.Combine(gridDir, $"{appId}.jpg"),
+                            Path.Combine(gridDir, $"{appId}.png"),
+                            Path.Combine(gridDir, $"{appId}_logo.png"),
+                        ];
+
+                        string? foundGrid = userGridCandidates.FirstOrDefault(
+                            IsSafeArtworkFile);
+                        if (foundGrid is not null)
+                        {
+                            return Path.GetFullPath(foundGrid);
+                        }
+                    }
+                }
+                catch (Exception exception) when (
+                    exception is IOException
+                        or UnauthorizedAccessException
+                        or System.Security.SecurityException)
+                {
+                }
+            }
+
             string cacheRoot = Path.GetFullPath(
                 Path.Combine(steamRoot, "appcache", "librarycache"));
             if (!Directory.Exists(cacheRoot))
