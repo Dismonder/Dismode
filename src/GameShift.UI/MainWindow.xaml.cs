@@ -126,6 +126,8 @@ public sealed partial class MainWindow : Window, IDisposable
     private bool _automaticUpdateDeferredForSession;
     private bool _sessionEndpointAvailable;
     private bool? _isRecoveryJournalClean;
+    private ProfileListItem? _detectedRunningUnoptimizedGame;
+    private int _detectedRunningProcessId;
     private bool _disposed;
 
     public MainWindow()
@@ -2518,6 +2520,12 @@ public sealed partial class MainWindow : Window, IDisposable
         {
             _pendingPlan = null;
             _planActions.Clear();
+            _detectedRunningUnoptimizedGame = null;
+            if (UnoptimizedGameBanner is not null)
+            {
+                UnoptimizedGameBanner.Visibility = Visibility.Collapsed;
+            }
+
             ApplyActiveSession(current);
         }
         else
@@ -2530,9 +2538,204 @@ public sealed partial class MainWindow : Window, IDisposable
                 _ = CompleteDeferredStartupAsync(cancellationToken);
                 _ = CompleteDeferredAutomaticUpdateAsync(cancellationToken);
             }
+
+            await CheckForRunningUnoptimizedGameAsync(cancellationToken);
         }
 
         UpdateSessionControls();
+    }
+
+    private async Task CheckForRunningUnoptimizedGameAsync(
+        CancellationToken cancellationToken)
+    {
+        if (_activeSession is not null || _profiles.Count == 0)
+        {
+            _detectedRunningUnoptimizedGame = null;
+            _detectedRunningProcessId = 0;
+            if (UnoptimizedGameBanner is not null)
+            {
+                UnoptimizedGameBanner.Visibility = Visibility.Collapsed;
+            }
+
+            return;
+        }
+
+        try
+        {
+            List<ProfileListItem> candidateProfiles = [.. _profiles];
+            (ProfileListItem? matched, int pid) = await Task.Run<(ProfileListItem?, int)>(() =>
+            {
+                Process[] processes = Process.GetProcesses();
+                try
+                {
+                    foreach (Process process in processes)
+                    {
+                        try
+                        {
+                            if (process.HasExited)
+                            {
+                                continue;
+                            }
+
+                            string? processExecutablePath = null;
+                            try
+                            {
+                                processExecutablePath = process.MainModule?.FileName;
+                            }
+                            catch
+                            {
+                            }
+
+                            string processName = process.ProcessName;
+
+                            foreach (ProfileListItem profile in candidateProfiles)
+                            {
+                                if (!profile.Profile.IsEnabled)
+                                {
+                                    continue;
+                                }
+
+                                string targetExe = profile.ExecutablePath;
+                                string targetName = Path.GetFileNameWithoutExtension(targetExe);
+
+                                bool isMatch = false;
+                                if (!string.IsNullOrWhiteSpace(processExecutablePath)
+                                    && string.Equals(processExecutablePath, targetExe, StringComparison.OrdinalIgnoreCase))
+                                {
+                                    isMatch = true;
+                                }
+                                else if (string.Equals(processName, targetName, StringComparison.OrdinalIgnoreCase))
+                                {
+                                    isMatch = true;
+                                }
+
+                                if (isMatch)
+                                {
+                                    return (profile, process.Id);
+                                }
+                            }
+                        }
+                        catch
+                        {
+                        }
+                    }
+                }
+                finally
+                {
+                    foreach (Process p in processes)
+                    {
+                        p.Dispose();
+                    }
+                }
+
+                return (null, 0);
+            }, cancellationToken);
+
+            _detectedRunningUnoptimizedGame = matched;
+            _detectedRunningProcessId = pid;
+
+            if (UnoptimizedGameBanner is not null)
+            {
+                if (matched is not null && _activeSession is null)
+                {
+                    UnoptimizedGameNameText.Text = $"„{matched.DisplayName}” (PID: {pid})";
+                    UnoptimizedGameDetailsText.Text =
+                        $"Gra {matched.DisplayName} działa w systemie Windows. Możesz włączyć profil optymalizacji w locie bez jej restartowania.";
+                    UnoptimizedGameBanner.Visibility = Visibility.Visible;
+                }
+                else
+                {
+                    UnoptimizedGameBanner.Visibility = Visibility.Collapsed;
+                }
+            }
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+        }
+        catch
+        {
+        }
+    }
+
+    private async void OnOptimizeRunningGameClicked(
+        object sender,
+        RoutedEventArgs args)
+    {
+        ProfileListItem? target = _detectedRunningUnoptimizedGame
+            ?? (ProfilesList.SelectedItem as ProfileListItem);
+        if (target is null || _isBusy)
+        {
+            return;
+        }
+
+        TacticalAudioService.Instance.PlayClick();
+        ShowInfo(
+            DashboardInfoBar,
+            InfoBarSeverity.Informational,
+            "Optymalizacja w locie",
+            $"Dołączam do gry „{target.DisplayName}” (PID: {_detectedRunningProcessId}) i aktywuję profil optymalizacji...");
+
+        try
+        {
+            SetBusy(true);
+            SessionPlanClientSnapshot plan = await _sessions.PrepareAsync(
+                target.Profile.ProfileId.Value,
+                backgroundApplications: [],
+                GamePriorityClientMode.Normal,
+                _lifetime.Token,
+                useSavedBackgroundRules: true);
+
+            _pendingPlan = plan;
+            ApplyPreparedPlan(plan);
+
+            SessionStateClientSnapshot active = await _sessions.StartAsync(
+                plan.PlanId,
+                plan.SessionId,
+                _lifetime.Token);
+
+            _sessionEndpointAvailable = true;
+            _pendingPlan = null;
+            _planActions.Clear();
+            _activeSession = active;
+            _detectedRunningUnoptimizedGame = null;
+            if (UnoptimizedGameBanner is not null)
+            {
+                UnoptimizedGameBanner.Visibility = Visibility.Collapsed;
+            }
+
+            ApplyActiveSession(active);
+            UpdateSessionControls();
+
+            TacticalAudioService.Instance.PlaySessionStart();
+            TacticalVfxService.Instance.AnimateQuickFlash(DashboardHeroCard);
+
+            ShowInfo(
+                DashboardInfoBar,
+                InfoBarSeverity.Success,
+                "Optymalizacja aktywna w locie",
+                $"Pomyślnie zoptymalizowano działającą grę „{target.DisplayName}”.");
+        }
+        catch (OperationCanceledException) when (_lifetime.IsCancellationRequested)
+        {
+        }
+        catch (Exception exception) when (IsExpectedUiFailure(exception))
+        {
+            if (IsSessionConnectionFailure(exception))
+            {
+                _sessionEndpointAvailable = false;
+                ApplySessionUnavailable(exception.Message);
+            }
+
+            ShowInfo(
+                DashboardInfoBar,
+                InfoBarSeverity.Error,
+                "Błąd optymalizacji w locie",
+                exception.Message);
+        }
+        finally
+        {
+            SetBusy(false);
+        }
     }
 
     private void ApplyPreparedPlan(SessionPlanClientSnapshot plan)
@@ -3079,6 +3282,7 @@ public sealed partial class MainWindow : Window, IDisposable
                 cancellationToken);
         }));
         UpdateDashboardHero();
+        await CheckForRunningUnoptimizedGameAsync(cancellationToken);
     }
 
     private void UpdateDashboardRailSelection()

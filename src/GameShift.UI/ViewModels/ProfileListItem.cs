@@ -76,10 +76,22 @@ public sealed class ProfileListItem : INotifyPropertyChanged
             PropertyChanged?.Invoke(
                 this,
                 new(nameof(HasArtwork)));
+            PropertyChanged?.Invoke(
+                this,
+                new(nameof(FallbackInitialVisibility)));
+            PropertyChanged?.Invoke(
+                this,
+                new(nameof(ArtworkVisibility)));
         }
     }
 
     public bool HasArtwork => ArtworkSource is not null;
+
+    public Microsoft.UI.Xaml.Visibility FallbackInitialVisibility =>
+        HasArtwork ? Microsoft.UI.Xaml.Visibility.Collapsed : Microsoft.UI.Xaml.Visibility.Visible;
+
+    public Microsoft.UI.Xaml.Visibility ArtworkVisibility =>
+        HasArtwork ? Microsoft.UI.Xaml.Visibility.Visible : Microsoft.UI.Xaml.Visibility.Collapsed;
 
     public double DashboardSelectionOpacity
     {

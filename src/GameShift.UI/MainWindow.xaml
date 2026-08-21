@@ -201,6 +201,79 @@
                     Severity="Informational"
                     Title="GameShift" />
 
+                <!-- Detected Unoptimized Running Game Banner -->
+                <Border
+                    x:Name="UnoptimizedGameBanner"
+                    Width="715"
+                    Canvas.Left="171"
+                    Canvas.Top="14"
+                    Canvas.ZIndex="45"
+                    Padding="16,10"
+                    Background="#F00F1710"
+                    BorderBrush="{ThemeResource GameShiftSuccessBrush}"
+                    BorderThickness="1"
+                    CornerRadius="10"
+                    Visibility="Collapsed">
+                  <Grid ColumnSpacing="12">
+                    <Grid.ColumnDefinitions>
+                      <ColumnDefinition Width="Auto" />
+                      <ColumnDefinition Width="*" />
+                      <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+
+                    <Border
+                        Width="34"
+                        Height="34"
+                        Background="#333DCB70"
+                        BorderBrush="{ThemeResource GameShiftSuccessBrush}"
+                        BorderThickness="1"
+                        CornerRadius="7"
+                        VerticalAlignment="Center">
+                      <FontIcon
+                          Foreground="{ThemeResource GameShiftSuccessBrush}"
+                          FontSize="16"
+                          Glyph="&#xE7E8;" />
+                    </Border>
+
+                    <StackPanel Grid.Column="1" VerticalAlignment="Center" Spacing="2">
+                      <StackPanel Orientation="Horizontal" Spacing="6">
+                        <TextBlock
+                            FontSize="13"
+                            FontWeight="SemiBold"
+                            Foreground="White"
+                            Text="Wykryto aktywną grę:" />
+                        <TextBlock
+                            x:Name="UnoptimizedGameNameText"
+                            FontSize="13"
+                            FontWeight="Bold"
+                            Foreground="{ThemeResource GameShiftSuccessBrush}"
+                            Text="Gra (PID)" />
+                      </StackPanel>
+                      <TextBlock
+                          x:Name="UnoptimizedGameDetailsText"
+                          FontSize="11"
+                          Foreground="{ThemeResource GameShiftMutedTextBrush}"
+                          Text="Optymalizacje GameShift nie są jeszcze aktywne." />
+                    </StackPanel>
+
+                    <StackPanel
+                        Grid.Column="2"
+                        VerticalAlignment="Center"
+                        Orientation="Horizontal"
+                        Spacing="6">
+                      <Button
+                          x:Name="OptimizeRunningGameButton"
+                          Style="{StaticResource GameShiftPrimaryButtonStyle}"
+                          Click="OnOptimizeRunningGameClicked">
+                        <StackPanel Orientation="Horizontal" Spacing="6">
+                          <FontIcon FontSize="12" Glyph="&#xE7E8;" />
+                          <TextBlock FontSize="12" FontWeight="SemiBold" Text="Optymalizuj w locie" />
+                        </StackPanel>
+                      </Button>
+                    </StackPanel>
+                  </Grid>
+                </Border>
+
                 <!-- Compact game rail spanning the left deck -->
                 <Grid
                     Width="157"
@@ -283,6 +356,7 @@
                                 FontFamily="Segoe UI Variable Display"
                                 FontSize="30"
                                 FontWeight="SemiBold"
+                                Visibility="{Binding FallbackInitialVisibility}"
                                 Text="{Binding Initial}" />
                             <Image
                                 Source="{Binding ArtworkSource}"
@@ -1190,6 +1264,7 @@
                                 FontSize="48"
                                 FontWeight="SemiBold"
                                 Opacity="0.4"
+                                Visibility="{Binding FallbackInitialVisibility}"
                                 Text="{Binding Initial}" />
 
                             <!-- Foreground Crisp Fitted Artwork -->
