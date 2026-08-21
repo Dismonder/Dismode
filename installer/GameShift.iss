@@ -94,7 +94,7 @@ Root: HKLM; Subkey: "Software\Classes\exefile\shell\GameShift"; ValueType: strin
 Root: HKLM; Subkey: "Software\Classes\exefile\shell\GameShift\command"; ValueType: string; ValueName: ""; ValueData: """{app}\GameShift.exe"" --launch-through-gameshift ""%1"" --background"
 
 [Run]
-Filename: "{app}\GameShift.exe"; Description: "Uruchom GameShift"; WorkingDir: "{app}"; Flags: nowait postinstall skipifsilent
+Filename: "{app}\GameShift.exe"; Description: "Uruchom GameShift"; WorkingDir: "{app}"; Flags: nowait postinstall skipifsilent shellexec
 
 [Code]
 var
@@ -353,7 +353,7 @@ begin
 
         if FileExists(UninstallerPath) then
         begin
-          Exec(UninstallerPath, '', ExpandConstant('{app}'), SW_SHOW, ewNoWait, ResultCode);
+          ShellExec('open', UninstallerPath, '', ExpandConstant('{app}'), SW_SHOW, ewNoWait, ResultCode);
         end
         else
         begin
