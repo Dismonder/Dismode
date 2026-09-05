@@ -260,6 +260,7 @@ public sealed class UserDataStoreTests
             await testContext.Store.LoadPerformanceOverlayPreferencesAsync(
                 CancellationToken.None);
         Assert.IsTrue(defaults.IsEnabled);
+        Assert.IsTrue(defaults.IsFpsTrackingEnabled);
         Assert.AreEqual(
             PerformanceOverlayPreferences.DefaultOpacityPercent,
             defaults.OpacityPercent);
@@ -280,6 +281,7 @@ public sealed class UserDataStoreTests
             DateTimeOffset.UtcNow.AddMinutes(-1);
         PerformanceOverlayPreferences saved = new(
             isEnabled: false,
+            isFpsTrackingEnabled: false,
             opacityPercent: 65,
             scalePercent: 125,
             PerformanceOverlayCorner.BottomLeft,
@@ -294,6 +296,7 @@ public sealed class UserDataStoreTests
             await testContext.Store.LoadPerformanceOverlayPreferencesAsync(
                 CancellationToken.None);
         Assert.IsFalse(loaded.IsEnabled);
+        Assert.IsFalse(loaded.IsFpsTrackingEnabled);
         Assert.AreEqual(65, loaded.OpacityPercent);
         Assert.AreEqual(125, loaded.ScalePercent);
         Assert.AreEqual(
@@ -391,7 +394,7 @@ public sealed class UserDataStoreTests
             Assert.AreEqual(legacySummary.SessionId, history[0].SessionId);
             Assert.IsNull(history[0].FrameRateStatistics);
             Assert.AreEqual(
-                9,
+                11,
                 await ReadMaximumSchemaVersionAsync(databasePath));
         }
         finally
@@ -448,7 +451,7 @@ public sealed class UserDataStoreTests
             Assert.AreEqual(artworkPath, migrated.ArtworkPath);
             Assert.IsEmpty(metadata);
             Assert.AreEqual(
-                9,
+                11,
                 await ReadMaximumSchemaVersionAsync(databasePath));
         }
         finally
@@ -499,7 +502,7 @@ public sealed class UserDataStoreTests
         {
             await CreateMigrationOnlyDatabaseAsync(
                 databasePath,
-                version: 9);
+                version: 10);
             using SqliteUserDataStore store = new(databasePath);
 
             await Assert.ThrowsExactlyAsync<InvalidDataException>(
@@ -588,7 +591,8 @@ public sealed class UserDataStoreTests
             ALTER TABLE GameProfiles DROP COLUMN ArtworkPath;
             ALTER TABLE PerformanceOverlayPreferences DROP COLUMN Style;
             ALTER TABLE PerformanceOverlayPreferences DROP COLUMN Theme;
-            DELETE FROM SchemaMigrations WHERE Version IN (5, 6, 7, 8, 9);
+            ALTER TABLE PerformanceOverlayPreferences DROP COLUMN IsFpsTrackingEnabled;
+            DELETE FROM SchemaMigrations WHERE Version IN (5, 6, 7, 8, 9, 10, 11);
             """;
         await command.ExecuteNonQueryAsync();
         await transaction.CommitAsync();
@@ -608,7 +612,8 @@ public sealed class UserDataStoreTests
             DROP TABLE GameMetadata;
             ALTER TABLE PerformanceOverlayPreferences DROP COLUMN Style;
             ALTER TABLE PerformanceOverlayPreferences DROP COLUMN Theme;
-            DELETE FROM SchemaMigrations WHERE Version IN (8, 9);
+            ALTER TABLE PerformanceOverlayPreferences DROP COLUMN IsFpsTrackingEnabled;
+            DELETE FROM SchemaMigrations WHERE Version IN (8, 9, 10, 11);
             """;
         await command.ExecuteNonQueryAsync();
         await transaction.CommitAsync();

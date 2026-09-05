@@ -31,3 +31,9 @@ public sealed record SessionStateClientSnapshot(
     double? FrameTimeMilliseconds,
     string FrameRateStatus,
     int? FrameRateProcessId);
+
+public sealed record SessionShutdownReadinessClientSnapshot(
+    bool CanShutdown,
+    bool HasActiveSession,
+    bool HasPreparedPlan,
+    string Message);

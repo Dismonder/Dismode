@@ -153,7 +153,7 @@ public sealed class TrayIconService : IDisposable
                 menu,
                 MenuString,
                 ExitCommand,
-                "Zamknij interfejs GameShift");
+                "Wyłącz GameShift — Memory Optimizer pozostaje");
             if (!GetCursorPos(out Point cursor))
             {
                 return;

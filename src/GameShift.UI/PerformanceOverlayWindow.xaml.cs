@@ -20,21 +20,24 @@ public sealed partial class PerformanceOverlayWindow : Window, IDisposable
     private const long WsExToolWindow = 0x00000080L;
     private const long WsExLayered = 0x00080000L;
     private const long WsExNoActivate = 0x08000000L;
-    private const uint LwaAlpha = 0x00000002;
+    private const uint LwaColorKey = 0x00000001;
+    private const uint TransparentColorKey = 0x00000000;
     private const uint MonitorDefaultToPrimary = 0x00000001;
     private const uint MonitorDefaultToNearest = 0x00000002;
     private const uint SwpNoActivate = 0x0010;
     private const uint SwpShowWindow = 0x0040;
     private const int SwHide = 0;
     private const int DwmwaWindowCornerPreference = 33;
-    private const int DwmWindowCornerPreferenceRound = 2;
-    private const int OverlayWidth = 376;
-    private const int OverlayHeight = 160;
+    private const int DwmWindowCornerPreferenceDoNotRound = 1;
+    private const int DwmwaBorderColor = 34;
+    private const int DwmColorNone = unchecked((int)0xFFFFFFFE);
+    private const int OverlayWidth = 328;
+    private const int OverlayHeight = 120;
     private const int OverlayMargin = 22;
     private static readonly TimeSpan ForegroundPollInterval =
         TimeSpan.FromMilliseconds(200);
-    private const double GraphWidth = 122d;
-    private const double GraphHeight = 19d;
+    private const double GraphWidth = 58d;
+    private const double GraphHeight = 17d;
     private const int MaximumGraphSamples = 32;
     private static readonly nint HwndTopmost = new(-1);
 
@@ -71,16 +74,16 @@ public sealed partial class PerformanceOverlayWindow : Window, IDisposable
 
     private int CurrentBaseWidth => _style switch
     {
-        PerformanceOverlayStyle.CompactBar => 280,
-        PerformanceOverlayStyle.MinimalText => 220,
-        _ => 376,
+        PerformanceOverlayStyle.CompactBar => 190,
+        PerformanceOverlayStyle.MinimalText => 120,
+        _ => OverlayWidth,
     };
 
     private int CurrentBaseHeight => _style switch
     {
         PerformanceOverlayStyle.CompactBar => 52,
         PerformanceOverlayStyle.MinimalText => 44,
-        _ => 160,
+        _ => OverlayHeight,
     };
 
     public PerformanceOverlayWindow()
@@ -111,15 +114,34 @@ public sealed partial class PerformanceOverlayWindow : Window, IDisposable
                 | WsExToolWindow
                 | WsExLayered
                 | WsExNoActivate));
+        if (!SetLayeredWindowAttributes(
+                _windowHandle,
+                TransparentColorKey,
+                byte.MaxValue,
+                LwaColorKey))
+        {
+            throw new InvalidOperationException(
+                "Windows nie ustawił przezroczystości nakładki.",
+                new Win32Exception(Marshal.GetLastWin32Error()));
+        }
+
         ApplyWindowOpacity(
             PerformanceOverlayPreferences.DefaultOpacityPercent);
 
-        int cornerPreference = DwmWindowCornerPreferenceRound;
+        int cornerPreference = DwmWindowCornerPreferenceDoNotRound;
         _ = DwmSetWindowAttribute(
             _windowHandle,
             DwmwaWindowCornerPreference,
             ref cornerPreference,
             sizeof(int));
+
+        int borderColor = DwmColorNone;
+        _ = DwmSetWindowAttribute(
+            _windowHandle,
+            DwmwaBorderColor,
+            ref borderColor,
+            sizeof(int));
+
         _foregroundTimer.Tick += OnForegroundTimerTick;
     }
 
@@ -142,7 +164,6 @@ public sealed partial class PerformanceOverlayWindow : Window, IDisposable
         }
 
         GameNameText.Text = session.GameDisplayName;
-        CompactGameNameText.Text = session.GameDisplayName;
         UpdateAutoRestoreVisual(session);
 
         Color themeAccent = GetThemeAccentColor(_theme);
@@ -163,7 +184,6 @@ public sealed partial class PerformanceOverlayWindow : Window, IDisposable
 
             FrameTimeValueText.Text = frameTimeString;
             CompactFrameTimeValueText.Text = frameTimeString;
-            MinimalFrameTimeValueText.Text = $"{frameTimeString} ms";
 
             Color metricColor = GetMetricColor(frameTime);
             FpsValueText.Foreground = new SolidColorBrush(themeAccent);
@@ -176,9 +196,7 @@ public sealed partial class PerformanceOverlayWindow : Window, IDisposable
 
             SetStatusVisual(
                 "LIVE",
-                Green,
-                Color.FromArgb(36, 59, 220, 155),
-                Color.FromArgb(102, 59, 220, 155));
+                Green);
             SourceStatusText.Text =
                 $"PRESENTMON 2.5.1 • PID {session.FrameRateProcessId}";
             AddFrameTimeSample(frameTime);
@@ -192,7 +210,6 @@ public sealed partial class PerformanceOverlayWindow : Window, IDisposable
 
         FrameTimeValueText.Text = "—";
         CompactFrameTimeValueText.Text = "—";
-        MinimalFrameTimeValueText.Text = "— ms";
 
         _frameTimeHistory.Clear();
         UpdateFrameGraph();
@@ -200,17 +217,7 @@ public sealed partial class PerformanceOverlayWindow : Window, IDisposable
         Color stateColor = failed ? Red : Amber;
         SetStatusVisual(
             failed ? "BRAK" : "SYNC",
-            stateColor,
-            Color.FromArgb(
-                36,
-                stateColor.R,
-                stateColor.G,
-                stateColor.B),
-            Color.FromArgb(
-                102,
-                stateColor.R,
-                stateColor.G,
-                stateColor.B));
+            stateColor);
         SourceStatusText.Text = failed
             ? "ŹRÓDŁO FPS NIEDOSTĘPNE"
             : session.FrameRateProcessId is int processId
@@ -244,29 +251,19 @@ public sealed partial class PerformanceOverlayWindow : Window, IDisposable
         ApplyWindowOpacity(preferences.OpacityPercent);
         OverlayScaleTransform.ScaleX = _scale;
         OverlayScaleTransform.ScaleY = _scale;
-        SetRequestedVisibility(preferences.IsEnabled);
+        SetRequestedVisibility(
+            preferences.IsEnabled && preferences.IsFpsTrackingEnabled);
     }
 
     private void ApplyStyleAndThemeLayout(PerformanceOverlayPreferences preferences)
     {
         Color themeAccent = GetThemeAccentColor(preferences.Theme);
-        Color themeBorder = Color.FromArgb(113, themeAccent.R, themeAccent.G, themeAccent.B);
-        Color themeSoft = Color.FromArgb(38, themeAccent.R, themeAccent.G, themeAccent.B);
-
         SolidColorBrush accentBrush = new(themeAccent);
-        SolidColorBrush borderBrush = new(themeBorder);
-        SolidColorBrush softBrush = new(themeSoft);
 
-        FullDeckAccentStripe.Background = accentBrush;
-        FullDeckBadgeIconBorder.Background = softBrush;
-        FullDeckBadgeIconBorder.BorderBrush = borderBrush;
-        FullDeckBadgeDot.Fill = accentBrush;
-        FpsPanelBorder.BorderBrush = borderBrush;
-        FrameTimePanelBorder.BorderBrush = borderBrush;
+        FpsValueText.Foreground = accentBrush;
+        CompactFpsValueText.Foreground = accentBrush;
+        MinimalFpsValueText.Foreground = accentBrush;
         FrameTimeIndicatorBar.Background = accentBrush;
-        TelemetryStripBorder.BorderBrush = borderBrush;
-
-        CompactBarLayout.BorderBrush = borderBrush;
 
         switch (preferences.Style)
         {
@@ -284,7 +281,6 @@ public sealed partial class PerformanceOverlayWindow : Window, IDisposable
 
             default:
                 OverlaySurfaceBorder.Visibility = Visibility.Visible;
-                OverlaySurfaceBorder.BorderBrush = borderBrush;
                 CompactBarLayout.Visibility = Visibility.Collapsed;
                 MinimalTextLayout.Visibility = Visibility.Collapsed;
                 break;
@@ -305,47 +301,7 @@ public sealed partial class PerformanceOverlayWindow : Window, IDisposable
     private void ApplyWindowOpacity(int opacityPercent)
     {
         double opacity = Math.Clamp(opacityPercent, 0, 100) / 100d;
-        byte surfaceAlpha = ToAlpha(242d * opacity);
-        byte compactAlpha = ToAlpha(230d * opacity);
-        byte panelAlpha = ToAlpha(90d * opacity);
-        byte stripAlpha = ToAlpha(72d * opacity);
-
-        OverlaySurfaceBorder.Background = new SolidColorBrush(
-            Color.FromArgb(surfaceAlpha, 8, 13, 20));
-        CompactBarLayout.Background = new SolidColorBrush(
-            Color.FromArgb(compactAlpha, 8, 13, 20));
-        FpsPanelBorder.Background = new SolidColorBrush(
-            Color.FromArgb(panelAlpha, 16, 32, 43));
-        FrameTimePanelBorder.Background = new SolidColorBrush(
-            Color.FromArgb(panelAlpha, 19, 32, 42));
-        AutoRestoreBadgeBorder.Background = new SolidColorBrush(
-            Color.FromArgb(panelAlpha, 20, 35, 35));
-        TelemetryStripBorder.Background = new SolidColorBrush(
-            Color.FromArgb(stripAlpha, 14, 26, 34));
-
-        const byte fullWindowAlpha = byte.MaxValue;
-        if (!SetLayeredWindowAttributes(
-                _windowHandle,
-                colorKey: 0,
-                fullWindowAlpha,
-                LwaAlpha))
-        {
-            throw new InvalidOperationException(
-                "Windows nie zastosował przezroczystości nakładki.",
-                new Win32Exception(Marshal.GetLastPInvokeError()));
-        }
-
-        if (!GetLayeredWindowAttributes(
-                _windowHandle,
-                out _,
-                out byte appliedAlpha,
-                out uint appliedFlags)
-            || appliedAlpha != fullWindowAlpha
-            || (appliedFlags & LwaAlpha) == 0)
-        {
-            throw new InvalidOperationException(
-                "Windows nie potwierdził przezroczystości nakładki.");
-        }
+        OverlayStatisticsContent.Opacity = opacity;
     }
 
     public void SetRequestedVisibility(bool requestedVisible)
@@ -574,22 +530,17 @@ public sealed partial class PerformanceOverlayWindow : Window, IDisposable
 
     private void SetStatusVisual(
         string label,
-        Color foreground,
-        Color background,
-        Color border)
+        Color foreground)
     {
         StatusBadgeText.Text = label;
         StatusBadgeText.Foreground = new SolidColorBrush(foreground);
         SourceIndicator.Fill = new SolidColorBrush(foreground);
-        StatusBadgeBorder.Background = new SolidColorBrush(background);
-        StatusBadgeBorder.BorderBrush = new SolidColorBrush(border);
     }
 
     private void UpdateAutoRestoreVisual(
         SessionStateClientSnapshot session)
     {
         Color color;
-        Color border;
         string status;
         string detail;
 
@@ -600,14 +551,12 @@ public sealed partial class PerformanceOverlayWindow : Window, IDisposable
                 StringComparison.OrdinalIgnoreCase))
         {
             color = Red;
-            border = Color.FromArgb(95, 255, 91, 116);
             status = "WYMAGA UWAGI";
             detail = $"BŁĘDY: {session.ErrorCount}";
         }
         else if (session.ConflictCount > 0)
         {
             color = Amber;
-            border = Color.FromArgb(88, 244, 184, 74);
             status = "KONFLIKT";
             detail = $"DO SPRAWDZENIA: {session.ConflictCount}";
         }
@@ -625,14 +574,12 @@ public sealed partial class PerformanceOverlayWindow : Window, IDisposable
                      StringComparison.OrdinalIgnoreCase))
         {
             color = Cyan;
-            border = Color.FromArgb(82, 53, 242, 208);
             status = "PRZYWRACANIE";
             detail = $"{session.RestoredActionCount}/{session.AppliedActionCount} AKCJI";
         }
         else
         {
             color = Green;
-            border = Color.FromArgb(76, 59, 220, 155);
             status = "UZBROJONE";
             int pendingActions = Math.Max(
                 0,
@@ -646,7 +593,6 @@ public sealed partial class PerformanceOverlayWindow : Window, IDisposable
         AutoRestoreStatusText.Foreground = new SolidColorBrush(color);
         AutoRestoreStatusText.Text = status;
         AutoRestoreDetailText.Text = detail;
-        AutoRestoreBadgeBorder.BorderBrush = new SolidColorBrush(border);
     }
 
     private nint ResolveTargetWindowHandle()
@@ -709,11 +655,6 @@ public sealed partial class PerformanceOverlayWindow : Window, IDisposable
             value * Math.Max(96U, dpi) / 96d,
             MidpointRounding.AwayFromZero));
 
-    private static byte ToAlpha(double value) =>
-        checked((byte)Math.Round(
-            Math.Clamp(value, 0d, byte.MaxValue),
-            MidpointRounding.AwayFromZero));
-
     [DllImport("user32.dll", EntryPoint = "GetWindowLongPtrW")]
     private static extern nint GetWindowLongPtr(
         nint windowHandle,
@@ -732,14 +673,6 @@ public sealed partial class PerformanceOverlayWindow : Window, IDisposable
         uint colorKey,
         byte alpha,
         uint flags);
-
-    [DllImport("user32.dll", SetLastError = true)]
-    [return: MarshalAs(UnmanagedType.Bool)]
-    private static extern bool GetLayeredWindowAttributes(
-        nint windowHandle,
-        out uint colorKey,
-        out byte alpha,
-        out uint flags);
 
     [DllImport("user32.dll")]
     [return: MarshalAs(UnmanagedType.Bool)]

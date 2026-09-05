@@ -5,7 +5,7 @@ namespace GameShift.Windows.Platform;
 
 public static class WindowsPlatformSupport
 {
-    public static readonly Version MinimumVersion = new(10, 0, 22621);
+    public static readonly Version MinimumVersion = new(10, 0, 22631);
 
     public static bool IsSupported =>
         OperatingSystem.IsWindowsVersionAtLeast(
@@ -19,4 +19,3 @@ public static class WindowsPlatformSupport
         return $"{Environment.OSVersion.VersionString}; x64 process: {Environment.Is64BitProcess}; {formFactor.ToDisplayName()}";
     }
 }
-

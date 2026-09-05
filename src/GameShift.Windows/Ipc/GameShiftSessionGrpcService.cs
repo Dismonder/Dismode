@@ -142,6 +142,39 @@ public sealed class GameShiftSessionGrpcService :
                 await _orchestrator.StartAsync(
                     planId,
                     sessionId,
+                    context.CancellationToken,
+                    request.HasEnableFrameRateTracking
+                        ? request.EnableFrameRateTracking
+                        : true);
+            return ToReply(snapshot);
+        }
+        catch (Exception exception) when (IsExpectedSessionFailure(exception))
+        {
+            throw ToRpcException(exception);
+        }
+    }
+
+    public override async Task<SessionStateReply> SetFrameRateTracking(
+        SetFrameRateTrackingRequest request,
+        ServerCallContext context)
+    {
+        SessionId? expectedSessionId =
+            await _orchestrator.GetActiveSessionIdAsync(
+                context.CancellationToken);
+        _requestValidator.Validate(
+            request.Metadata,
+            request.CalculateSize(),
+            CommandKind.SetFrameRateTracking,
+            expectedSessionId?.Value);
+        SessionId sessionId = new(
+            ParseRequiredSessionId(request.Metadata));
+
+        try
+        {
+            GameSessionSnapshot snapshot =
+                await _orchestrator.SetFrameRateTrackingAsync(
+                    sessionId,
+                    request.Enabled,
                     context.CancellationToken);
             return ToReply(snapshot);
         }
@@ -164,6 +197,46 @@ public sealed class GameShiftSessionGrpcService :
         return active is null
             ? EmptyReply("No game session is active.")
             : ToReply(active);
+    }
+
+    public override async Task<ShutdownReadinessReply> GetShutdownReadiness(
+        ShutdownReadinessRequest request,
+        ServerCallContext context)
+    {
+        _requestValidator.Validate(
+            request.Metadata,
+            request.CalculateSize(),
+            CommandKind.ShutdownComponents);
+        SessionShutdownReadiness readiness =
+            await _orchestrator.GetShutdownReadinessAsync(
+                context.CancellationToken);
+        return new()
+        {
+            CanShutdown = readiness.CanShutdown,
+            HasActiveSession = readiness.HasActiveSession,
+            HasPreparedPlan = readiness.HasPreparedPlan,
+            Message = readiness.Message,
+        };
+    }
+
+    public override async Task<ShutdownReadinessReply> ShutdownComponents(
+        ShutdownComponentsRequest request,
+        ServerCallContext context)
+    {
+        _requestValidator.Validate(
+            request.Metadata,
+            request.CalculateSize(),
+            CommandKind.ShutdownComponents);
+        SessionShutdownReadiness readiness =
+            await _orchestrator.ReserveShutdownAsync(
+                context.CancellationToken);
+        return new()
+        {
+            CanShutdown = readiness.CanShutdown,
+            HasActiveSession = readiness.HasActiveSession,
+            HasPreparedPlan = readiness.HasPreparedPlan,
+            Message = readiness.Message,
+        };
     }
 
     public override async Task<SessionStateReply> RestoreSession(

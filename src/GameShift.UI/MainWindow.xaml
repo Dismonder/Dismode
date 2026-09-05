@@ -7,6 +7,60 @@
       x:Name="RootLayout"
       Background="{ThemeResource GameShiftBackgroundBrush}"
       Loaded="OnRootLoaded">
+    <VisualStateManager.VisualStateGroups>
+      <VisualStateGroup x:Name="WindowWidthStates">
+        <VisualState x:Name="CompactWindowLayout">
+          <VisualState.StateTriggers>
+            <AdaptiveTrigger MinWindowWidth="0" />
+          </VisualState.StateTriggers>
+          <VisualState.Setters>
+            <Setter Target="ProfilesHeaderActions.(Grid.Row)" Value="1" />
+            <Setter Target="ProfilesHeaderActions.(Grid.Column)" Value="0" />
+            <Setter Target="ProfilesHeaderActions.Margin" Value="0,12,0,0" />
+            <Setter Target="ProfilesHeaderActions.HorizontalAlignment" Value="Left" />
+            <Setter Target="UnoptimizedGameActions.(Grid.Row)" Value="1" />
+            <Setter Target="UnoptimizedGameActions.(Grid.Column)" Value="1" />
+            <Setter Target="UnoptimizedGameActions.Margin" Value="0,8,0,0" />
+            <Setter Target="UnoptimizedGameActions.HorizontalAlignment" Value="Left" />
+            <Setter Target="PlanHeaderBadges.(Grid.Row)" Value="1" />
+            <Setter Target="PlanHeaderBadges.(Grid.Column)" Value="0" />
+            <Setter Target="PlanHeaderBadges.Margin" Value="0,12,0,0" />
+            <Setter Target="PlanPrimaryColumn.Width" Value="*" />
+            <Setter Target="PlanSecondaryColumn.Width" Value="0" />
+            <Setter Target="PlanSecondarySection.(Grid.Row)" Value="1" />
+            <Setter Target="PlanSecondarySection.(Grid.Column)" Value="0" />
+            <Setter Target="HistoryHeaderAction.(Grid.Row)" Value="1" />
+            <Setter Target="HistoryHeaderAction.(Grid.Column)" Value="0" />
+            <Setter Target="HistoryHeaderAction.Margin" Value="0,12,0,0" />
+            <Setter Target="HistoryHeaderAction.HorizontalAlignment" Value="Left" />
+            <Setter Target="CheckForUpdatesButton.(Grid.Row)" Value="1" />
+            <Setter Target="CheckForUpdatesButton.(Grid.Column)" Value="0" />
+            <Setter Target="CheckForUpdatesButton.Margin" Value="0,12,0,0" />
+            <Setter Target="CheckForUpdatesButton.HorizontalAlignment" Value="Left" />
+            <Setter Target="UpdatesPrimaryColumn.Width" Value="*" />
+            <Setter Target="UpdatesSecondaryColumn.Width" Value="0" />
+            <Setter Target="UpdatesSettingsCard.(Grid.Row)" Value="1" />
+            <Setter Target="UpdatesSettingsCard.(Grid.Column)" Value="0" />
+            <Setter Target="AvailableUpdateCard.(Grid.Row)" Value="2" />
+            <Setter Target="AvailableUpdateCard.(Grid.Column)" Value="0" />
+            <Setter Target="UpdatesTrustCard.(Grid.Row)" Value="3" />
+            <Setter Target="UpdatesTrustCard.(Grid.Column)" Value="0" />
+            <Setter Target="DiagnosticsHeaderActions.(Grid.Row)" Value="1" />
+            <Setter Target="DiagnosticsHeaderActions.(Grid.Column)" Value="0" />
+            <Setter Target="DiagnosticsHeaderActions.Margin" Value="0,12,0,0" />
+            <Setter Target="DiagnosticsPrimaryColumn.Width" Value="*" />
+            <Setter Target="DiagnosticsSecondaryColumn.Width" Value="0" />
+            <Setter Target="DiagnosticsStatusCard.(Grid.Row)" Value="1" />
+            <Setter Target="DiagnosticsStatusCard.(Grid.Column)" Value="0" />
+          </VisualState.Setters>
+        </VisualState>
+        <VisualState x:Name="ExpandedWindowLayout">
+          <VisualState.StateTriggers>
+            <AdaptiveTrigger MinWindowWidth="1320" />
+          </VisualState.StateTriggers>
+        </VisualState>
+      </VisualStateGroup>
+    </VisualStateManager.VisualStateGroups>
     <Grid.RowDefinitions>
       <RowDefinition Height="74" />
       <RowDefinition Height="*" />
@@ -168,13 +222,125 @@
               VerticalAlignment="Top"
               AutomationProperties.Name="Trwa odświeżanie danych"
               IsActive="False"
-              Visibility="Collapsed"
+              IsHitTestVisible="False"
+              Opacity="0"
+              Visibility="Visible"
               Canvas.ZIndex="10" />
 
           <Grid
               x:Name="DashboardPage"
               Margin="20">
+            <Grid.RowDefinitions>
+              <RowDefinition Height="Auto" />
+              <RowDefinition Height="*" />
+            </Grid.RowDefinitions>
+            <Grid
+                x:Name="DashboardNotificationRow"
+                Canvas.ZIndex="100">
+              <Grid.RowDefinitions>
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="Auto" />
+              </Grid.RowDefinitions>
+              <InfoBar
+                  x:Name="DashboardInfoBar"
+                  HorizontalAlignment="Stretch"
+                  IsClosable="True"
+                  IsOpen="False"
+                  Severity="Informational"
+                  Title="GameShift" />
+
+              <!-- Detected Unoptimized Running Game Banner -->
+              <Border
+                  x:Name="UnoptimizedGameBanner"
+                  Grid.Row="1"
+                  Margin="0,8,0,0"
+                  Padding="16,10"
+                  HorizontalAlignment="Stretch"
+                  Background="#F00F1710"
+                  BorderBrush="{ThemeResource GameShiftSuccessBrush}"
+                  BorderThickness="1"
+                  CornerRadius="10"
+                  Visibility="Collapsed">
+                <Grid
+                    x:Name="UnoptimizedGameBannerLayout"
+                    ColumnSpacing="12">
+                  <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                  </Grid.ColumnDefinitions>
+                  <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
+                  </Grid.RowDefinitions>
+
+                  <Border
+                      Width="34"
+                      Height="34"
+                      Background="#333DCB70"
+                      BorderBrush="{ThemeResource GameShiftSuccessBrush}"
+                      BorderThickness="1"
+                      CornerRadius="7"
+                      VerticalAlignment="Center">
+                    <FontIcon
+                        Foreground="{ThemeResource GameShiftSuccessBrush}"
+                        FontSize="16"
+                        Glyph="&#xE7E8;" />
+                  </Border>
+
+                  <StackPanel Grid.Column="1" VerticalAlignment="Center" Spacing="2">
+                    <Grid
+                        x:Name="UnoptimizedGameTitleLayout"
+                        ColumnSpacing="6">
+                      <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="*" />
+                      </Grid.ColumnDefinitions>
+                      <TextBlock
+                          FontSize="13"
+                          FontWeight="SemiBold"
+                          Foreground="White"
+                          Text="Wykryto aktywną grę:" />
+                      <TextBlock
+                          x:Name="UnoptimizedGameNameText"
+                          Grid.Column="1"
+                          FontSize="13"
+                          FontWeight="Bold"
+                          Foreground="{ThemeResource GameShiftSuccessBrush}"
+                          Text="Gra (PID)"
+                          TextWrapping="Wrap" />
+                    </Grid>
+                    <TextBlock
+                        x:Name="UnoptimizedGameDetailsText"
+                        FontSize="11"
+                        Foreground="{ThemeResource GameShiftMutedTextBrush}"
+                        Text="Optymalizacje GameShift nie są jeszcze aktywne."
+                        TextWrapping="Wrap" />
+                  </StackPanel>
+
+                  <StackPanel
+                      x:Name="UnoptimizedGameActions"
+                      Grid.Column="2"
+                      VerticalAlignment="Center"
+                      Orientation="Horizontal"
+                      Spacing="6">
+                    <Button
+                        x:Name="OptimizeRunningGameButton"
+                        Style="{StaticResource GameShiftPrimaryButtonStyle}"
+                        Click="OnOptimizeRunningGameClicked">
+                      <StackPanel Orientation="Horizontal" Spacing="6">
+                        <FontIcon FontSize="12" Glyph="&#xE7E8;" />
+                        <TextBlock FontSize="12" FontWeight="SemiBold" Text="Optymalizuj w locie" />
+                      </StackPanel>
+                    </Button>
+                  </StackPanel>
+                </Grid>
+              </Border>
+            </Grid>
             <Viewbox
+                x:Name="DashboardContentViewbox"
+                Grid.Row="0"
+                Grid.RowSpan="2"
                 HorizontalAlignment="Center"
                 VerticalAlignment="Center"
                 Stretch="Uniform">
@@ -189,90 +355,6 @@
                         IsStaggeringEnabled="True" />
                   </TransitionCollection>
                 </Canvas.ChildrenTransitions>
-
-                <InfoBar
-                    x:Name="DashboardInfoBar"
-                    Width="520"
-                    Canvas.Left="904"
-                    Canvas.Top="14"
-                    Canvas.ZIndex="40"
-                    IsClosable="True"
-                    IsOpen="False"
-                    Severity="Informational"
-                    Title="GameShift" />
-
-                <!-- Detected Unoptimized Running Game Banner -->
-                <Border
-                    x:Name="UnoptimizedGameBanner"
-                    Width="715"
-                    Canvas.Left="171"
-                    Canvas.Top="14"
-                    Canvas.ZIndex="45"
-                    Padding="16,10"
-                    Background="#F00F1710"
-                    BorderBrush="{ThemeResource GameShiftSuccessBrush}"
-                    BorderThickness="1"
-                    CornerRadius="10"
-                    Visibility="Collapsed">
-                  <Grid ColumnSpacing="12">
-                    <Grid.ColumnDefinitions>
-                      <ColumnDefinition Width="Auto" />
-                      <ColumnDefinition Width="*" />
-                      <ColumnDefinition Width="Auto" />
-                    </Grid.ColumnDefinitions>
-
-                    <Border
-                        Width="34"
-                        Height="34"
-                        Background="#333DCB70"
-                        BorderBrush="{ThemeResource GameShiftSuccessBrush}"
-                        BorderThickness="1"
-                        CornerRadius="7"
-                        VerticalAlignment="Center">
-                      <FontIcon
-                          Foreground="{ThemeResource GameShiftSuccessBrush}"
-                          FontSize="16"
-                          Glyph="&#xE7E8;" />
-                    </Border>
-
-                    <StackPanel Grid.Column="1" VerticalAlignment="Center" Spacing="2">
-                      <StackPanel Orientation="Horizontal" Spacing="6">
-                        <TextBlock
-                            FontSize="13"
-                            FontWeight="SemiBold"
-                            Foreground="White"
-                            Text="Wykryto aktywną grę:" />
-                        <TextBlock
-                            x:Name="UnoptimizedGameNameText"
-                            FontSize="13"
-                            FontWeight="Bold"
-                            Foreground="{ThemeResource GameShiftSuccessBrush}"
-                            Text="Gra (PID)" />
-                      </StackPanel>
-                      <TextBlock
-                          x:Name="UnoptimizedGameDetailsText"
-                          FontSize="11"
-                          Foreground="{ThemeResource GameShiftMutedTextBrush}"
-                          Text="Optymalizacje GameShift nie są jeszcze aktywne." />
-                    </StackPanel>
-
-                    <StackPanel
-                        Grid.Column="2"
-                        VerticalAlignment="Center"
-                        Orientation="Horizontal"
-                        Spacing="6">
-                      <Button
-                          x:Name="OptimizeRunningGameButton"
-                          Style="{StaticResource GameShiftPrimaryButtonStyle}"
-                          Click="OnOptimizeRunningGameClicked">
-                        <StackPanel Orientation="Horizontal" Spacing="6">
-                          <FontIcon FontSize="12" Glyph="&#xE7E8;" />
-                          <TextBlock FontSize="12" FontWeight="SemiBold" Text="Optymalizuj w locie" />
-                        </StackPanel>
-                      </Button>
-                    </StackPanel>
-                  </Grid>
-                </Border>
 
                 <!-- Compact game rail spanning the left deck -->
                 <Grid
@@ -359,7 +441,8 @@
                                 Visibility="{Binding FallbackInitialVisibility}"
                                 Text="{Binding Initial}" />
                             <Image
-                                Source="{Binding ArtworkSource}"
+                                x:Name="DashboardRailPosterImage"
+                                Source="{Binding PosterArtworkSource}"
                                 Stretch="UniformToFill" />
                             <Border
                                 BorderBrush="{ThemeResource GameShiftAccentBrush}"
@@ -773,11 +856,7 @@
                   <Grid>
                     <Grid.RowDefinitions>
                       <RowDefinition Height="48" />
-                      <RowDefinition Height="128" />
-                      <RowDefinition Height="1" />
-                      <RowDefinition Height="44" />
                       <RowDefinition Height="*" />
-                      <RowDefinition Height="24" />
                     </Grid.RowDefinitions>
                     <Grid>
                       <Grid.ColumnDefinitions>
@@ -821,7 +900,45 @@
                       </Border>
                     </Grid>
 
-                    <Grid Grid.Row="1" Margin="0,8,0,0">
+                    <StackPanel
+                        x:Name="DashboardFpsNoDataState"
+                        Grid.Row="1"
+                        MaxWidth="330"
+                        HorizontalAlignment="Center"
+                        VerticalAlignment="Center"
+                        Spacing="10"
+                        Visibility="Visible">
+                      <FontIcon
+                          HorizontalAlignment="Center"
+                          Foreground="{ThemeResource GameShiftMutedTextBrush}"
+                          FontSize="30"
+                          Glyph="&#xE9D9;" />
+                      <TextBlock
+                          HorizontalAlignment="Center"
+                          FontSize="16"
+                          FontWeight="SemiBold"
+                          Text="Oczekiwanie na dane FPS" />
+                      <TextBlock
+                          HorizontalAlignment="Center"
+                          Foreground="{ThemeResource GameShiftMutedTextBrush}"
+                          FontSize="12"
+                          Text="Telemetria i wykres pojawią się po pierwszej prawidłowej próbce PresentMon."
+                          TextAlignment="Center"
+                          TextWrapping="Wrap" />
+                    </StackPanel>
+
+                    <Grid
+                        x:Name="DashboardFpsTelemetryContent"
+                        Grid.Row="1"
+                        Visibility="Collapsed">
+                      <Grid.RowDefinitions>
+                        <RowDefinition Height="128" />
+                        <RowDefinition Height="1" />
+                        <RowDefinition Height="44" />
+                        <RowDefinition Height="*" />
+                        <RowDefinition Height="24" />
+                      </Grid.RowDefinitions>
+                    <Grid Grid.Row="0" Margin="0,8,0,0">
                       <Grid.ColumnDefinitions>
                         <ColumnDefinition Width="250" />
                         <ColumnDefinition Width="1" />
@@ -867,8 +984,8 @@
                       </StackPanel>
                     </Grid>
 
-                    <Border Grid.Row="2" Background="#31434C52" />
-                    <Grid Grid.Row="3" Margin="0,10,0,0">
+                    <Border Grid.Row="1" Background="#31434C52" />
+                    <Grid Grid.Row="2" Margin="0,10,0,0">
                       <TextBlock FontSize="17" FontWeight="SemiBold" Text="Czas klatki" />
                       <TextBlock
                           x:Name="ActiveFrameTimeText"
@@ -877,7 +994,7 @@
                           FontSize="18"
                           Text="— ms" />
                     </Grid>
-                    <Grid Grid.Row="4" Margin="0,8,0,0">
+                    <Grid Grid.Row="3" Margin="0,8,0,0">
                       <Grid.RowDefinitions>
                         <RowDefinition Height="*" />
                         <RowDefinition Height="*" />
@@ -903,13 +1020,14 @@
                     </Grid>
                     <TextBlock
                         x:Name="ActiveFrameRateStatusText"
-                        Grid.Row="5"
+                        Grid.Row="4"
                         VerticalAlignment="Bottom"
                         Foreground="{ThemeResource GameShiftMutedTextBrush}"
                         FontSize="10"
                         MaxLines="1"
                         Text="PresentMon uruchomi się automatycznie razem z grą."
                         TextTrimming="CharacterEllipsis" />
+                    </Grid>
                   </Grid>
                 </Border>
 
@@ -938,20 +1056,23 @@
                         <TextBlock Foreground="{ThemeResource GameShiftMutedTextBrush}" FontSize="11" Text="Bieżący stan komputera • dysk pokazuje zajętość" />
                       </StackPanel>
                     </StackPanel>
-                    <Grid Grid.Row="1" ColumnSpacing="0">
+                    <Grid
+                        x:Name="DashboardSystemImpactMetrics"
+                        Grid.Row="1"
+                        ColumnSpacing="0">
                       <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="*" />
-                        <ColumnDefinition Width="*" />
-                        <ColumnDefinition Width="*" />
-                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="0.8*" />
+                        <ColumnDefinition Width="0.8*" />
+                        <ColumnDefinition Width="1.05*" />
                         <ColumnDefinition Width="1.25*" />
+                        <ColumnDefinition Width="1.6*" />
                       </Grid.ColumnDefinitions>
                       <StackPanel Padding="4,0,16,0" Spacing="7">
                         <StackPanel Orientation="Horizontal" Spacing="8">
                           <FontIcon Foreground="#BAC5CACD" FontSize="20" Glyph="&#xE950;" />
                           <TextBlock VerticalAlignment="Center" Text="CPU" />
                         </StackPanel>
-                        <TextBlock x:Name="DashboardCpuText" FontSize="20" FontWeight="SemiBold" Text="—" />
+                        <TextBlock x:Name="DashboardCpuText" FontSize="20" FontWeight="SemiBold" Text="—" TextWrapping="Wrap" />
                         <ProgressBar x:Name="DashboardCpuBar" Height="4" Value="0" />
                       </StackPanel>
                       <StackPanel Grid.Column="1" Padding="16,0" BorderBrush="#26394349" BorderThickness="1,0,0,0" Spacing="7">
@@ -959,7 +1080,7 @@
                           <FontIcon Foreground="#BAC5CACD" FontSize="20" Glyph="&#xE7F4;" />
                           <TextBlock VerticalAlignment="Center" Text="GPU" />
                         </StackPanel>
-                        <TextBlock x:Name="DashboardGpuText" FontSize="20" FontWeight="SemiBold" Text="—" />
+                        <TextBlock x:Name="DashboardGpuText" FontSize="20" FontWeight="SemiBold" Text="—" TextWrapping="Wrap" />
                         <ProgressBar
                             x:Name="DashboardGpuBar"
                             Height="4"
@@ -971,7 +1092,7 @@
                           <FontIcon Foreground="#BAC5CACD" FontSize="20" Glyph="&#xE964;" />
                           <TextBlock VerticalAlignment="Center" Text="RAM" />
                         </StackPanel>
-                        <TextBlock x:Name="DashboardMemoryText" FontSize="20" FontWeight="SemiBold" Text="—" />
+                        <TextBlock x:Name="DashboardMemoryText" FontSize="20" FontWeight="SemiBold" Text="—" TextWrapping="Wrap" />
                         <ProgressBar x:Name="DashboardMemoryBar" Height="4" Value="0" />
                       </StackPanel>
                       <StackPanel Grid.Column="3" Padding="16,0" BorderBrush="#26394349" BorderThickness="1,0,0,0" Spacing="7">
@@ -979,7 +1100,7 @@
                           <FontIcon Foreground="#BAC5CACD" FontSize="20" Glyph="&#xEDA2;" />
                           <TextBlock VerticalAlignment="Center" Text="Dysk zajęty" />
                         </StackPanel>
-                        <TextBlock x:Name="DashboardDiskText" FontSize="20" FontWeight="SemiBold" Text="—" />
+                        <TextBlock x:Name="DashboardDiskText" FontSize="20" FontWeight="SemiBold" Text="—" TextWrapping="Wrap" />
                         <ProgressBar
                             x:Name="DashboardDiskBar"
                             Height="4"
@@ -988,8 +1109,8 @@
                       </StackPanel>
                       <StackPanel Grid.Column="4" Padding="22,0,0,0" BorderBrush="#26394349" BorderThickness="1,0,0,0" Spacing="5">
                         <TextBlock Foreground="{ThemeResource GameShiftAmberBrush}" FontSize="13" FontWeight="SemiBold" Text="Odzyskane zasoby" />
-                        <TextBlock x:Name="DashboardRecoveredMemoryText" Foreground="{ThemeResource GameShiftAmberBrush}" FontSize="29" FontWeight="SemiBold" Text="—" />
-                        <TextBlock Foreground="{ThemeResource GameShiftMutedTextBrush}" FontSize="10" Text="Tylko wynik potwierdzonych działań" />
+                        <TextBlock x:Name="DashboardRecoveredMemoryText" Foreground="{ThemeResource GameShiftAmberBrush}" FontSize="26" FontWeight="SemiBold" Text="—" TextWrapping="Wrap" />
+                        <TextBlock Foreground="{ThemeResource GameShiftMutedTextBrush}" FontSize="10" Text="Tylko wynik potwierdzonych działań" TextWrapping="Wrap" />
                       </StackPanel>
                     </Grid>
                     <StackPanel Visibility="Collapsed">
@@ -1114,10 +1235,24 @@
 
           <Grid
               x:Name="ProfilesPage"
-              MaxWidth="1440"
+              MaxWidth="1680"
               Margin="24,18,24,30"
               HorizontalAlignment="Stretch"
               Visibility="Collapsed">
+            <Grid.Resources>
+              <Style
+                  x:Key="GameShiftLibraryCompactButtonStyle"
+                  TargetType="Button">
+                <Setter Property="MinHeight" Value="0" />
+                <Setter Property="Height" Value="36" />
+                <Setter Property="Padding" Value="10,4" />
+                <Setter Property="HorizontalContentAlignment" Value="Center" />
+                <Setter Property="Background" Value="#CC161D23" />
+                <Setter Property="BorderBrush" Value="{ThemeResource GameShiftCardBorderBrush}" />
+                <Setter Property="BorderThickness" Value="1" />
+                <Setter Property="CornerRadius" Value="8" />
+              </Style>
+            </Grid.Resources>
             <Grid.RowDefinitions>
               <RowDefinition Height="Auto" />
               <RowDefinition Height="Auto" />
@@ -1131,11 +1266,15 @@
                 BorderBrush="{ThemeResource GameShiftCardBorderBrush}"
                 BorderThickness="1"
                 CornerRadius="14">
-              <Grid ColumnSpacing="20">
+              <Grid x:Name="ProfilesHeaderGrid" ColumnSpacing="20" RowSpacing="12">
                 <Grid.ColumnDefinitions>
                   <ColumnDefinition Width="*" />
                   <ColumnDefinition Width="Auto" />
                 </Grid.ColumnDefinitions>
+                <Grid.RowDefinitions>
+                  <RowDefinition Height="Auto" />
+                  <RowDefinition Height="Auto" />
+                </Grid.RowDefinitions>
                 <StackPanel VerticalAlignment="Center" Spacing="4">
                   <TextBlock
                       Style="{StaticResource GameShiftEyebrowStyle}"
@@ -1153,6 +1292,7 @@
                 </StackPanel>
 
                 <StackPanel
+                    x:Name="ProfilesHeaderActions"
                     Grid.Column="1"
                     VerticalAlignment="Center"
                     Orientation="Horizontal"
@@ -1201,6 +1341,31 @@
                     <FontIcon FontSize="15" Glyph="&#xE74D;" />
                   </Button>
                 </StackPanel>
+
+                <Grid
+                    Grid.Row="1"
+                    Grid.ColumnSpan="2"
+                    ColumnSpacing="12">
+                  <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                  </Grid.ColumnDefinitions>
+                  <TextBox
+                      x:Name="LibrarySearchBox"
+                      MaxWidth="420"
+                      HorizontalAlignment="Left"
+                      AutomationProperties.Name="Szukaj gry w bibliotece"
+                      PlaceholderText="Szukaj gry…"
+                      TextChanged="OnLibrarySearchTextChanged"
+                      ToolTipService.ToolTip="Filtruje bibliotekę po nazwie gry" />
+                  <TextBlock
+                      x:Name="LibrarySearchSummary"
+                      Grid.Column="1"
+                      VerticalAlignment="Center"
+                      Foreground="{ThemeResource GameShiftMutedTextBrush}"
+                      FontSize="13"
+                      Text="" />
+                </Grid>
               </Grid>
             </Border>
 
@@ -1212,26 +1377,34 @@
                 IsOpen="False"
                 Title="Biblioteka" />
 
-            <!-- Bento Games Grid with Uncropped Artwork Display -->
+            <!-- Bento Games Grid with Clean Poster Artwork Display -->
             <Grid Grid.Row="2" Margin="0,12,0,0">
               <ListView
                   x:Name="ProfilesList"
                   AutomationProperties.Name="Lista profili gier"
                   SelectionChanged="OnProfileSelectionChanged"
                   SelectionMode="Single">
+                <ListView.ItemContainerStyle>
+                  <Style TargetType="ListViewItem">
+                    <Setter Property="Padding" Value="0" />
+                    <Setter Property="Margin" Value="0" />
+                    <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+                    <Setter Property="VerticalContentAlignment" Value="Stretch" />
+                  </Style>
+                </ListView.ItemContainerStyle>
                 <ListView.ItemsPanel>
                   <ItemsPanelTemplate>
                     <ItemsWrapGrid
-                        ItemWidth="330"
-                        ItemHeight="290"
+                        ItemWidth="280"
+                        ItemHeight="398"
                         Orientation="Horizontal" />
                   </ItemsPanelTemplate>
                 </ListView.ItemsPanel>
                 <ListView.ItemTemplate>
                   <DataTemplate>
                     <Border
-                        Width="314"
-                        Height="274"
+                        Width="264"
+                        Height="382"
                         Margin="0,0,16,16"
                         Background="#F211171C"
                         BorderBrush="{ThemeResource GameShiftCardBorderBrush}"
@@ -1239,42 +1412,38 @@
                         CornerRadius="14">
                       <Grid>
                         <Grid.RowDefinitions>
-                          <RowDefinition Height="160" />
+                          <RowDefinition Height="238" />
+                          <RowDefinition Height="88" />
                           <RowDefinition Height="*" />
-                          <RowDefinition Height="Auto" />
                         </Grid.RowDefinitions>
 
-                        <!-- Artwork Container with Ambient Background -->
+                        <!-- Poster Artwork Container -->
                         <Border
                             Grid.Row="0"
                             Background="#FF0B1015"
                             CornerRadius="13,13,0,0">
                           <Grid>
-                            <!-- Ambient Backdrop -->
-                            <Image
-                                Source="{Binding ArtworkSource}"
-                                Stretch="UniformToFill"
-                                Opacity="0.25" />
-
+                            <!-- Fallback Letter if no artwork -->
                             <TextBlock
                                 HorizontalAlignment="Center"
                                 VerticalAlignment="Center"
                                 Foreground="{ThemeResource GameShiftAccentBrush}"
                                 FontFamily="Segoe UI Variable Display"
-                                FontSize="48"
+                                FontSize="54"
                                 FontWeight="SemiBold"
-                                Opacity="0.4"
+                                Opacity="0.3"
                                 Visibility="{Binding FallbackInitialVisibility}"
                                 Text="{Binding Initial}" />
 
-                            <!-- Foreground Crisp Fitted Artwork -->
+                            <!-- Crisp Poster Artwork -->
                             <Image
-                                Source="{Binding ArtworkSource}"
-                                Stretch="Uniform"
+                                x:Name="LibraryPosterImage"
+                                Source="{Binding PosterArtworkSource}"
+                                Stretch="UniformToFill"
                                 HorizontalAlignment="Center"
                                 VerticalAlignment="Center" />
 
-                            <!-- Bottom subtle gradient -->
+                            <!-- Bottom subtle shadow vignette -->
                             <Rectangle VerticalAlignment="Bottom" Height="50">
                               <Rectangle.Fill>
                                 <LinearGradientBrush StartPoint="0,0" EndPoint="0,1">
@@ -1284,102 +1453,108 @@
                               </Rectangle.Fill>
                             </Rectangle>
 
-                            <!-- Top Floating Badges -->
+                            <!-- Top-Left Launcher Badge -->
                             <Border
-                                Margin="10,10,0,0"
+                                Margin="8,8,0,0"
                                 HorizontalAlignment="Left"
                                 VerticalAlignment="Top"
                                 Background="#D9060A0D"
                                 BorderBrush="{ThemeResource GameShiftCardBorderBrush}"
                                 BorderThickness="1"
                                 CornerRadius="6"
-                                Padding="8,4">
+                                Padding="6,3">
                               <TextBlock
                                   Foreground="{ThemeResource GameShiftAccentBrush}"
                                   FontSize="10"
                                   FontWeight="SemiBold"
                                   Text="{Binding SourceLabel}" />
                             </Border>
-
-                            <Border
-                                Margin="0,10,10,0"
-                                HorizontalAlignment="Right"
-                                VerticalAlignment="Top"
-                                Background="#D9060A0D"
-                                BorderBrush="{ThemeResource GameShiftCardBorderBrush}"
-                                BorderThickness="1"
-                                CornerRadius="6"
-                                Padding="8,4">
-                              <TextBlock
-                                  Foreground="{ThemeResource GameShiftAccentBrush}"
-                                  FontSize="10"
-                                  FontWeight="SemiBold"
-                                  Text="{Binding PresetLabel}" />
-                            </Border>
                           </Grid>
                         </Border>
 
                         <!-- Game Info -->
                         <StackPanel
+                            x:Name="LibraryGameInfo"
                             Grid.Row="1"
-                            Margin="14,10,14,4"
+                            Margin="12,8,12,0"
                             Spacing="3">
                           <TextBlock
                               Foreground="White"
                               FontFamily="Segoe UI Variable Display"
-                              FontSize="15"
+                              FontSize="14"
                               FontWeight="SemiBold"
-                              MaxLines="1"
+                              MaxLines="2"
                               Text="{Binding DisplayName}"
-                              TextTrimming="CharacterEllipsis" />
-                          <Grid>
-                            <TextBlock
-                                Foreground="{ThemeResource GameShiftMutedTextBrush}"
-                                FontSize="11"
-                                Text="{Binding LastPlayedLabel}"
-                                TextTrimming="CharacterEllipsis" />
-                            <TextBlock
-                                HorizontalAlignment="Right"
-                                Foreground="{ThemeResource GameShiftSuccessBrush}"
-                                FontSize="11"
-                                FontWeight="Medium"
-                                Text="{Binding StateLabel}" />
-                          </Grid>
+                              TextWrapping="Wrap" />
+                          <TextBlock
+                              x:Name="LibraryProfileStateText"
+                              Foreground="{ThemeResource GameShiftAccentBrush}"
+                              FontSize="11"
+                              FontWeight="SemiBold"
+                              Text="{Binding StateLabel}"
+                              TextWrapping="Wrap" />
+                          <TextBlock
+                              Foreground="{ThemeResource GameShiftMutedTextBrush}"
+                              FontSize="11"
+                              Text="{Binding LastPlayedLabel}"
+                              TextWrapping="Wrap" />
                         </StackPanel>
 
                         <!-- Action Bar -->
                         <Grid
                             Grid.Row="2"
                             Margin="10,0,10,10"
-                            ColumnSpacing="8">
+                            ColumnSpacing="6">
                           <Grid.ColumnDefinitions>
                             <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
                             <ColumnDefinition Width="Auto" />
                           </Grid.ColumnDefinitions>
 
                           <Button
-                              Height="36"
                               HorizontalAlignment="Stretch"
                               AutomationProperties.HelpText="Uruchamia grę z aktywną optymalizacją GameShift."
                               AutomationProperties.Name="{Binding LaunchAutomationName}"
                               Click="OnLaunchGameFromLibraryClicked"
                               IsEnabled="{Binding IsLaunchEnabled}"
-                              Style="{StaticResource GameShiftPrimaryButtonStyle}">
+                              Style="{StaticResource GameShiftLibraryCompactButtonStyle}"
+                              BorderBrush="{ThemeResource GameShiftAccentBrush}"
+                              BorderThickness="1">
                             <StackPanel Orientation="Horizontal" Spacing="6">
-                              <FontIcon FontSize="13" Glyph="&#xE768;" />
-                              <TextBlock VerticalAlignment="Center" FontSize="12" FontWeight="SemiBold" Text="Uruchom" />
+                              <FontIcon
+                                  FontSize="12"
+                                  Foreground="{ThemeResource GameShiftAccentBrush}"
+                                  Glyph="&#xE768;" />
+                              <TextBlock
+                                  VerticalAlignment="Center"
+                                  FontSize="12"
+                                  FontWeight="SemiBold"
+                                  Text="Uruchom" />
                             </StackPanel>
                           </Button>
 
                           <Button
                               Grid.Column="1"
-                              Width="38"
-                              Height="36"
+                              Width="36"
                               Padding="0"
-                              Style="{StaticResource GameShiftSecondaryButtonStyle}"
+                              Style="{StaticResource GameShiftLibraryCompactButtonStyle}"
                               Click="OnOpenGameModeClicked"
                               ToolTipService.ToolTip="Dostosuj plan optymalizacji dla tej gry">
-                            <FontIcon FontSize="13" Glyph="&#xE70F;" />
+                            <FontIcon FontSize="12" Glyph="&#xE70F;" />
+                          </Button>
+
+                          <Button
+                              Grid.Column="2"
+                              Width="36"
+                              Padding="0"
+                              Style="{StaticResource GameShiftLibraryCompactButtonStyle}"
+                              AutomationProperties.Name="Zarządzaj OptiScaler dla tej gry"
+                              Click="OnManageOptiScalerClicked"
+                              ToolTipService.ToolTip="Zainstaluj, zaktualizuj lub usuń OptiScaler">
+                            <FontIcon
+                                FontSize="12"
+                                Foreground="{ThemeResource GameShiftAccentBrush}"
+                                Glyph="&#xE71B;" />
                           </Button>
                         </Grid>
                       </Grid>
@@ -1416,11 +1591,15 @@
                   BorderBrush="{ThemeResource GameShiftCardBorderBrush}"
                   BorderThickness="1"
                   CornerRadius="14">
-                <Grid ColumnSpacing="20">
+                <Grid x:Name="PlanHeaderGrid" ColumnSpacing="20" RowSpacing="12">
                   <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="*" />
                     <ColumnDefinition Width="Auto" />
                   </Grid.ColumnDefinitions>
+                  <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
+                  </Grid.RowDefinitions>
                   <StackPanel VerticalAlignment="Center" Spacing="4">
                     <TextBlock
                         Style="{StaticResource GameShiftEyebrowStyle}"
@@ -1434,7 +1613,7 @@
                         Text="Skonfiguruj profil gry, zoptymalizuj aplikacje tła i uruchom sesję z automatycznym przywracaniem."
                         TextWrapping="Wrap" />
                   </StackPanel>
-                  <StackPanel Grid.Column="1" VerticalAlignment="Center" Orientation="Horizontal" Spacing="8">
+                  <StackPanel x:Name="PlanHeaderBadges" Grid.Column="1" VerticalAlignment="Center" Orientation="Horizontal" Spacing="8">
                     <Border Style="{StaticResource GameShiftPillStyle}">
                       <StackPanel Orientation="Horizontal" Spacing="6">
                         <FontIcon Foreground="{ThemeResource GameShiftSuccessBrush}" FontSize="12" Glyph="&#xE73E;" />
@@ -1464,11 +1643,15 @@
                   Title="Plan sesji" />
 
               <!-- Main Bento Grid: 2 Columns -->
-              <Grid ColumnSpacing="16" RowSpacing="16">
+              <Grid x:Name="PlanSectionsGrid" ColumnSpacing="16" RowSpacing="16">
                 <Grid.ColumnDefinitions>
-                  <ColumnDefinition Width="1*" />
-                  <ColumnDefinition Width="1.15*" />
+                  <ColumnDefinition x:Name="PlanPrimaryColumn" Width="1*" />
+                  <ColumnDefinition x:Name="PlanSecondaryColumn" Width="1.15*" />
                 </Grid.ColumnDefinitions>
+                <Grid.RowDefinitions>
+                  <RowDefinition Height="Auto" />
+                  <RowDefinition Height="Auto" />
+                </Grid.RowDefinitions>
 
                 <!-- Left Column: Game & HUD Configuration (Column 0) -->
                 <StackPanel Grid.Column="0" Spacing="14">
@@ -1563,15 +1746,27 @@
                               Text="Wyświetla rzeczywisty FPS i czas generowania klatki w grze."
                               TextWrapping="Wrap" />
                         </StackPanel>
-                        <ToggleSwitch
-                            x:Name="FpsOverlayToggleSwitch"
+                        <StackPanel
                             Grid.Column="1"
                             VerticalAlignment="Center"
-                            AutomationProperties.Name="Włącz nakładkę wydajności w grze"
-                            IsOn="True"
-                            OffContent="WYŁ."
-                            OnContent="WŁ."
-                            Toggled="OnFpsOverlaySettingChanged" />
+                            Spacing="4">
+                          <ToggleSwitch
+                              x:Name="FpsTrackingToggleSwitch"
+                              AutomationProperties.Name="Włącz śledzenie FPS"
+                              Header="Śledzenie FPS"
+                              IsOn="True"
+                              OffContent="WYŁ."
+                              OnContent="WŁ."
+                              Toggled="OnFpsTrackingSettingChanged" />
+                          <ToggleSwitch
+                              x:Name="FpsOverlayToggleSwitch"
+                              AutomationProperties.Name="Włącz nakładkę wydajności w grze"
+                              Header="Nakładka FPS"
+                              IsOn="True"
+                              OffContent="WYŁ."
+                              OnContent="WŁ."
+                              Toggled="OnFpsOverlaySettingChanged" />
+                        </StackPanel>
                       </Grid>
 
                       <!-- Style and Theme Selectors -->
@@ -1587,9 +1782,9 @@
                             Header="Wygląd nakładki"
                             SelectedIndex="0"
                             SelectionChanged="OnFpsOverlayStyleChanged">
-                          <ComboBoxItem Content="Pełna karta Tactical" Tag="FullDeck" />
-                          <ComboBoxItem Content="Kompaktowa pastylka" Tag="CompactBar" />
-                          <ComboBoxItem Content="Tylko tekst (bez tła)" Tag="MinimalText" />
+                          <ComboBoxItem Content="Tylko FPS" Tag="MinimalText" />
+                          <ComboBoxItem Content="FPS + ms" Tag="CompactBar" />
+                          <ComboBoxItem Content="Wszystkie szczegóły" Tag="FullDeck" />
                         </ComboBox>
                         <ComboBox
                             x:Name="OverlayThemeSelector"
@@ -1675,7 +1870,7 @@
                 </StackPanel>
 
                 <!-- Right Column: Background Apps & Session Execution (Column 1) -->
-                <StackPanel Grid.Column="1" Spacing="14">
+                <StackPanel x:Name="PlanSecondarySection" Grid.Column="1" Spacing="14">
                   <!-- Memory & Apps Bento KPI Tiles -->
                   <Grid ColumnSpacing="12">
                     <Grid.ColumnDefinitions>
@@ -1956,11 +2151,15 @@
                 BorderBrush="{ThemeResource GameShiftCardBorderBrush}"
                 BorderThickness="1"
                 CornerRadius="14">
-              <Grid ColumnSpacing="20">
+              <Grid x:Name="HistoryHeaderGrid" ColumnSpacing="20" RowSpacing="12">
                 <Grid.ColumnDefinitions>
                   <ColumnDefinition Width="*" />
                   <ColumnDefinition Width="Auto" />
                 </Grid.ColumnDefinitions>
+                <Grid.RowDefinitions>
+                  <RowDefinition Height="Auto" />
+                  <RowDefinition Height="Auto" />
+                </Grid.RowDefinitions>
                 <StackPanel VerticalAlignment="Center" Spacing="4">
                   <TextBlock
                       Style="{StaticResource GameShiftEyebrowStyle}"
@@ -1975,6 +2174,7 @@
                       TextWrapping="Wrap" />
                 </StackPanel>
                 <Button
+                    x:Name="HistoryHeaderAction"
                     Grid.Column="1"
                     VerticalAlignment="Center"
                     Style="{StaticResource GameShiftSecondaryButtonStyle}"
@@ -2015,8 +2215,8 @@
                       <Grid ColumnSpacing="18">
                         <Grid.ColumnDefinitions>
                           <ColumnDefinition Width="Auto" />
-                          <ColumnDefinition Width="*" />
-                          <ColumnDefinition Width="Auto" />
+                          <ColumnDefinition Width="3*" />
+                          <ColumnDefinition Width="1.15*" />
                         </Grid.ColumnDefinitions>
 
                         <!-- Game Icon / Symbol -->
@@ -2037,20 +2237,27 @@
                         </Border>
 
                         <StackPanel Grid.Column="1" VerticalAlignment="Center" Spacing="4">
-                          <StackPanel Orientation="Horizontal" Spacing="10">
+                          <Grid x:Name="HistoryIdentityLayout" RowSpacing="4">
+                            <Grid.RowDefinitions>
+                              <RowDefinition Height="Auto" />
+                              <RowDefinition Height="Auto" />
+                            </Grid.RowDefinitions>
                             <TextBlock
+                                x:Name="HistoryGameNameText"
                                 FontFamily="Segoe UI Variable Display"
                                 FontSize="17"
                                 FontWeight="SemiBold"
-                                Text="{Binding GameDisplayName}" />
-                            <Border Style="{StaticResource GameShiftPillStyle}">
-                              <TextBlock
-                                  Foreground="{ThemeResource GameShiftSuccessBrush}"
-                                  FontSize="10"
-                                  FontWeight="SemiBold"
-                                  Text="{Binding StatusLabel}" />
-                            </Border>
-                          </StackPanel>
+                                Text="{Binding GameDisplayName}"
+                                TextWrapping="Wrap" />
+                            <TextBlock
+                                x:Name="HistoryStatusText"
+                                Grid.Row="1"
+                                Foreground="{ThemeResource GameShiftSuccessBrush}"
+                                FontSize="10"
+                                FontWeight="SemiBold"
+                                Text="{Binding StatusLabel}"
+                                TextWrapping="Wrap" />
+                          </Grid>
                           <TextBlock
                               Foreground="{ThemeResource GameShiftAccentBrush}"
                               FontSize="13"
@@ -2058,9 +2265,11 @@
                               Text="{Binding FrameRateSummary}"
                               TextWrapping="Wrap" />
                           <TextBlock
+                              x:Name="HistoryActionSummaryText"
                               Foreground="{ThemeResource GameShiftMutedTextBrush}"
                               FontSize="12"
-                              Text="{Binding ActionSummary}" />
+                              Text="{Binding ActionSummary}"
+                              TextWrapping="Wrap" />
                           <!-- Hidden Issue summary placeholder -->
                           <TextBlock
                               Foreground="{ThemeResource TextFillColorSecondaryBrush}"
@@ -2075,15 +2284,20 @@
                             HorizontalAlignment="Right"
                             Spacing="3">
                           <TextBlock
+                              x:Name="HistoryEndedAtText"
                               HorizontalAlignment="Right"
                               FontWeight="SemiBold"
                               FontSize="13"
-                              Text="{Binding EndedAtLabel}" />
+                              Text="{Binding EndedAtLabel}"
+                              TextAlignment="Right"
+                              TextWrapping="Wrap" />
                           <TextBlock
                               HorizontalAlignment="Right"
                               Foreground="{ThemeResource GameShiftMutedTextBrush}"
                               FontSize="12"
-                              Text="{Binding DurationLabel}" />
+                              Text="{Binding DurationLabel}"
+                              TextAlignment="Right"
+                              TextWrapping="Wrap" />
                         </StackPanel>
                       </Grid>
                     </Border>
@@ -2121,11 +2335,15 @@
                   BorderBrush="{ThemeResource GameShiftCardBorderBrush}"
                   BorderThickness="1"
                   CornerRadius="14">
-                <Grid ColumnSpacing="20">
+                <Grid x:Name="UpdatesHeaderGrid" ColumnSpacing="20" RowSpacing="12">
                   <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="*" />
                     <ColumnDefinition Width="Auto" />
                   </Grid.ColumnDefinitions>
+                  <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
+                  </Grid.RowDefinitions>
                   <StackPanel VerticalAlignment="Center" Spacing="4">
                     <TextBlock
                         Style="{StaticResource GameShiftEyebrowStyle}"
@@ -2159,12 +2377,14 @@
                   IsOpen="False"
                   Title="Aktualizacje" />
 
-              <Grid ColumnSpacing="16" RowSpacing="16">
+              <Grid x:Name="UpdatesSectionsGrid" ColumnSpacing="16" RowSpacing="16">
                 <Grid.ColumnDefinitions>
-                  <ColumnDefinition Width="1.1*" />
-                  <ColumnDefinition Width="0.9*" />
+                  <ColumnDefinition x:Name="UpdatesPrimaryColumn" Width="1.1*" />
+                  <ColumnDefinition x:Name="UpdatesSecondaryColumn" Width="0.9*" />
                 </Grid.ColumnDefinitions>
                 <Grid.RowDefinitions>
+                  <RowDefinition Height="Auto" />
+                  <RowDefinition Height="Auto" />
                   <RowDefinition Height="Auto" />
                   <RowDefinition Height="Auto" />
                 </Grid.RowDefinitions>
@@ -2185,7 +2405,7 @@
                         FontFamily="Segoe UI Variable Display"
                         FontSize="26"
                         FontWeight="SemiBold"
-                        Text="GameShift Technical Preview" />
+                        Text="GameShift Gaming Edition" />
                     <TextBlock
                         x:Name="UpdatesStatusText"
                         Foreground="{ThemeResource GameShiftAccentBrush}"
@@ -2203,6 +2423,7 @@
 
                 <!-- Update Settings Card -->
                 <Border
+                    x:Name="UpdatesSettingsCard"
                     Grid.Column="1"
                     Padding="22"
                     Background="#F211171C"
@@ -2233,6 +2454,7 @@
 
                 <!-- Available Release Card with Visual Pipeline & Animation -->
                 <Border
+                    x:Name="AvailableUpdateCard"
                     Grid.Row="1"
                     Padding="22"
                     Background="#F211171C"
@@ -2383,6 +2605,7 @@
 
                 <!-- Trust and Channel Card -->
                 <Border
+                    x:Name="UpdatesTrustCard"
                     Grid.Row="1"
                     Grid.Column="1"
                     Padding="22"
@@ -2438,11 +2661,15 @@
                   BorderBrush="{ThemeResource GameShiftCardBorderBrush}"
                   BorderThickness="1"
                   CornerRadius="14">
-                <Grid ColumnSpacing="20">
+                <Grid x:Name="DiagnosticsHeaderGrid" ColumnSpacing="20" RowSpacing="12">
                   <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="*" />
                     <ColumnDefinition Width="Auto" />
                   </Grid.ColumnDefinitions>
+                  <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
+                  </Grid.RowDefinitions>
                   <StackPanel VerticalAlignment="Center" Spacing="4">
                     <TextBlock
                         Style="{StaticResource GameShiftEyebrowStyle}"
@@ -2456,7 +2683,7 @@
                         Text="Sprawdź stan optymalizacji Windows, silnika GameShift oraz dostosuj wygląd aplikacji."
                         TextWrapping="Wrap" />
                   </StackPanel>
-                  <StackPanel Grid.Column="1" VerticalAlignment="Center" Orientation="Horizontal" Spacing="10">
+                  <StackPanel x:Name="DiagnosticsHeaderActions" Grid.Column="1" VerticalAlignment="Center" Orientation="Horizontal" Spacing="10">
                     <Button
                         Style="{StaticResource GameShiftSecondaryButtonStyle}"
                         Click="OnRefreshDiagnosticsClicked">
@@ -2469,14 +2696,23 @@
                 </Grid>
               </Border>
 
-              <Grid ColumnSpacing="16" RowSpacing="16">
+              <Grid x:Name="DiagnosticsSectionsGrid" ColumnSpacing="16" RowSpacing="16">
                 <Grid.ColumnDefinitions>
-                  <ColumnDefinition Width="1.15*" />
-                  <ColumnDefinition Width="0.85*" />
+                  <ColumnDefinition x:Name="DiagnosticsPrimaryColumn" Width="1.15*" />
+                  <ColumnDefinition x:Name="DiagnosticsSecondaryColumn" Width="0.85*" />
                 </Grid.ColumnDefinitions>
+                <Grid.RowDefinitions>
+                  <RowDefinition Height="Auto" />
+                  <RowDefinition Height="Auto" />
+                  <RowDefinition Height="Auto" />
+                  <RowDefinition Height="Auto" />
+                  <RowDefinition Height="Auto" />
+                </Grid.RowDefinitions>
 
                 <!-- Gaming & GPU Windows 11 Diagnostics Card -->
                 <Border
+                    x:Name="DiagnosticsGamingCard"
+                    VerticalAlignment="Top"
                     Padding="22"
                     Background="#F211171C"
                     BorderBrush="{ThemeResource GameShiftCardBorderBrush}"
@@ -2510,7 +2746,9 @@
 
                 <!-- System & Modules Status Card -->
                 <Border
+                    x:Name="DiagnosticsStatusCard"
                     Grid.Column="1"
+                    VerticalAlignment="Top"
                     Padding="22"
                     Background="#F211171C"
                     BorderBrush="{ThemeResource GameShiftCardBorderBrush}"
@@ -2561,7 +2799,28 @@
                           Text="Windows"
                           TextWrapping="Wrap" />
                     </Grid>
+                    <!-- Hidden bindings for internal IPC / User SIDs to prevent C# errors -->
+                    <StackPanel Visibility="Collapsed">
+                      <TextBlock x:Name="DiagnosticsProtocolText" />
+                      <TextBlock x:Name="DiagnosticsUserText" />
+                    </StackPanel>
+                  </StackPanel>
+                </Border>
 
+                <Border
+                    x:Name="SettingsAppearanceCard"
+                    Grid.Row="1"
+                    VerticalAlignment="Top"
+                    Padding="22"
+                    Background="#F211171C"
+                    BorderBrush="{ThemeResource GameShiftCardBorderBrush}"
+                    BorderThickness="1"
+                    CornerRadius="14">
+                  <StackPanel Spacing="12">
+                    <TextBlock
+                        FontSize="18"
+                        FontWeight="SemiBold"
+                        Text="Wygląd i efekty" />
                     <StackPanel Spacing="8" Margin="0,6,0,0">
                       <TextBlock
                           FontWeight="SemiBold"
@@ -2622,7 +2881,87 @@
                             Toggled="OnVfxToggled" />
                       </Grid>
                     </StackPanel>
+                  </StackPanel>
+                </Border>
 
+                <Border
+                    x:Name="SettingsPerformanceCard"
+                    Grid.Row="1"
+                    Grid.Column="1"
+                    VerticalAlignment="Top"
+                    Padding="22"
+                    Background="#F211171C"
+                    BorderBrush="{ThemeResource GameShiftCardBorderBrush}"
+                    BorderThickness="1"
+                    CornerRadius="14">
+                  <StackPanel Spacing="12">
+                    <!-- FPS tracking and overlay can be disabled independently. -->
+                    <StackPanel Spacing="10" Margin="0,10,0,0">
+                      <TextBlock
+                          FontWeight="SemiBold"
+                          FontSize="13"
+                          Text="Śledzenie wydajności" />
+
+                      <Grid ColumnSpacing="12">
+                        <Grid.ColumnDefinitions>
+                          <ColumnDefinition Width="*" />
+                          <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+                        <StackPanel VerticalAlignment="Center" Spacing="2">
+                          <TextBlock FontSize="13" Text="Pomiar FPS" />
+                          <TextBlock
+                              Foreground="{ThemeResource GameShiftMutedTextBrush}"
+                              FontSize="11"
+                              Text="Wyłączenie zatrzymuje pomiar i czyści telemetrię sesji."
+                              TextWrapping="Wrap" />
+                        </StackPanel>
+                        <ToggleSwitch
+                            x:Name="FpsTrackingSettingsToggleSwitch"
+                            Grid.Column="1"
+                            AutomationProperties.Name="Włącz pomiar FPS w ustawieniach"
+                            IsOn="True"
+                            OffContent="WYŁ."
+                            OnContent="WŁ."
+                            Toggled="OnFpsTrackingSettingChanged" />
+                      </Grid>
+
+                      <Grid ColumnSpacing="12">
+                        <Grid.ColumnDefinitions>
+                          <ColumnDefinition Width="*" />
+                          <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+                        <StackPanel VerticalAlignment="Center" Spacing="2">
+                          <TextBlock FontSize="13" Text="Nakładka FPS" />
+                          <TextBlock
+                              Foreground="{ThemeResource GameShiftMutedTextBrush}"
+                              FontSize="11"
+                              Text="Wyłączenie ukrywa HUD, ale nie zatrzymuje pomiaru."
+                              TextWrapping="Wrap" />
+                        </StackPanel>
+                        <ToggleSwitch
+                            x:Name="FpsOverlaySettingsToggleSwitch"
+                            Grid.Column="1"
+                            AutomationProperties.Name="Włącz nakładkę FPS w ustawieniach"
+                            IsOn="True"
+                            OffContent="WYŁ."
+                            OnContent="WŁ."
+                            Toggled="OnFpsOverlaySettingChanged" />
+                      </Grid>
+                    </StackPanel>
+                  </StackPanel>
+                </Border>
+
+                <Border
+                    x:Name="SettingsUpdatesCard"
+                    Grid.Row="2"
+                    Grid.ColumnSpan="2"
+                    VerticalAlignment="Top"
+                    Padding="22"
+                    Background="#F211171C"
+                    BorderBrush="{ThemeResource GameShiftCardBorderBrush}"
+                    BorderThickness="1"
+                    CornerRadius="14">
+                  <StackPanel Spacing="12">
                     <!-- Updates & Version in Settings -->
                     <StackPanel Spacing="10" Margin="0,10,0,0">
                       <TextBlock
@@ -2637,9 +2976,10 @@
                         </Grid.ColumnDefinitions>
                         <StackPanel VerticalAlignment="Center" Spacing="2">
                           <TextBlock
+                              x:Name="SettingsVersionText"
                               FontSize="13"
                               FontWeight="Medium"
-                              Text="GameShift v0.3.0 (Gaming Edition)" />
+                              Text="GameShift Gaming Edition" />
                           <TextBlock
                               x:Name="SettingsUpdatesStatusText"
                               Foreground="{ThemeResource GameShiftMutedTextBrush}"
@@ -2658,13 +2998,102 @@
                         </Button>
                       </Grid>
                     </StackPanel>
-
-                    <!-- Hidden bindings for internal IPC / User SIDs to prevent C# errors -->
-                    <StackPanel Visibility="Collapsed">
-                      <TextBlock x:Name="DiagnosticsProtocolText" />
-                      <TextBlock x:Name="DiagnosticsUserText" />
-                    </StackPanel>
                   </StackPanel>
+                </Border>
+
+                <Border
+                    x:Name="MemoryOptimizerCard"
+                    Grid.Row="3"
+                    Grid.ColumnSpan="2"
+                    Padding="22"
+                    Background="#F211171C"
+                    BorderBrush="{ThemeResource GameShiftCardBorderBrush}"
+                    BorderThickness="1"
+                    CornerRadius="14">
+                  <Grid ColumnSpacing="18">
+                    <Grid.ColumnDefinitions>
+                      <ColumnDefinition Width="Auto" />
+                      <ColumnDefinition Width="*" />
+                      <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+                    <Border Width="46" Height="46" Background="{ThemeResource GameShiftAccentSoftBrush}" CornerRadius="12">
+                      <FontIcon HorizontalAlignment="Center" VerticalAlignment="Center" Foreground="{ThemeResource GameShiftAccentBrush}" FontSize="22" Glyph="&#xE950;" />
+                    </Border>
+                    <StackPanel Grid.Column="1" VerticalAlignment="Center" Spacing="3">
+                      <TextBlock FontSize="18" FontWeight="SemiBold" Text="Memory Optimizer" />
+                      <TextBlock x:Name="MemoryOptimizerStatusText" Foreground="{ThemeResource GameShiftAccentBrush}" FontSize="13" FontWeight="SemiBold" Text="Sprawdzanie stanu..." />
+                      <TextBlock x:Name="MemoryOptimizerDetailsText" Foreground="{ThemeResource GameShiftMutedTextBrush}" FontSize="12" Text="Opcjonalny komponent GPL działa niezależnie od części gamingowej." TextWrapping="Wrap" />
+                    </StackPanel>
+                    <Button
+                        x:Name="OpenMemoryOptimizerButton"
+                        Grid.Column="2"
+                        VerticalAlignment="Center"
+                        Style="{StaticResource GameShiftSecondaryButtonStyle}"
+                        Click="OnOpenMemoryOptimizerClicked"
+                        Content="Otwórz ustawienia" />
+                  </Grid>
+                </Border>
+
+                <Border
+                    x:Name="SystemOptimizerCard"
+                    Grid.Row="4"
+                    Grid.ColumnSpan="2"
+                    Padding="22"
+                    Background="#F211171C"
+                    BorderBrush="{ThemeResource GameShiftCardBorderBrush}"
+                    BorderThickness="1"
+                    CornerRadius="14">
+                  <Grid ColumnSpacing="18">
+                    <Grid.ColumnDefinitions>
+                      <ColumnDefinition Width="Auto" />
+                      <ColumnDefinition Width="*" />
+                      <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+                    <Border
+                        Width="46"
+                        Height="46"
+                        Background="{ThemeResource GameShiftAccentSoftBrush}"
+                        CornerRadius="12">
+                      <FontIcon
+                          HorizontalAlignment="Center"
+                          VerticalAlignment="Center"
+                          Foreground="{ThemeResource GameShiftAccentBrush}"
+                          FontSize="22"
+                          Glyph="&#xE9D2;" />
+                    </Border>
+                    <StackPanel
+                        Grid.Column="1"
+                        VerticalAlignment="Center"
+                        Spacing="3">
+                      <TextBlock
+                          FontSize="18"
+                          FontWeight="SemiBold"
+                          Text="System Optimizer" />
+                      <TextBlock
+                          x:Name="SystemOptimizerStatusText"
+                          Foreground="{ThemeResource GameShiftAccentBrush}"
+                          FontSize="13"
+                          FontWeight="SemiBold"
+                          Text="Sprawdzanie stanu..." />
+                      <TextBlock
+                          x:Name="SystemOptimizerProfileText"
+                          Height="18"
+                          MaxLines="1"
+                          Foreground="{ThemeResource GameShiftMutedTextBrush}"
+                          FontSize="12"
+                          Text="Brak aktywnego profilu systemowego."
+                          TextTrimming="CharacterEllipsis"
+                          TextWrapping="NoWrap" />
+                    </StackPanel>
+                    <Button
+                        x:Name="OpenSystemOptimizerButton"
+                        Grid.Column="2"
+                        Width="164"
+                        VerticalAlignment="Center"
+                        Style="{StaticResource GameShiftSecondaryButtonStyle}"
+                        Click="OnOpenSystemOptimizerClicked"
+                        Content="Otwórz optimizer" />
+                  </Grid>
                 </Border>
               </Grid>
             </StackPanel>

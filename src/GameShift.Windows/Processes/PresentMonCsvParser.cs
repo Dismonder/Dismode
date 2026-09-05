@@ -8,6 +8,7 @@ internal sealed class PresentMonCsvParser
     private int _processIdIndex = -1;
     private int _swapChainIndex = -1;
     private int _frameTimeIndex = -1;
+    private int _gpuBusyIndex = -1;
 
     internal bool HasValidHeader =>
         _processIdIndex >= 0
@@ -33,7 +34,9 @@ internal sealed class PresentMonCsvParser
 
         int highestIndex = Math.Max(
             _processIdIndex,
-            Math.Max(_swapChainIndex, _frameTimeIndex));
+            Math.Max(
+                _swapChainIndex,
+                Math.Max(_frameTimeIndex, _gpuBusyIndex)));
         if (fields.Length <= highestIndex
             || !int.TryParse(
                 fields[_processIdIndex],
@@ -53,10 +56,24 @@ internal sealed class PresentMonCsvParser
             return false;
         }
 
+        double? gpuBusyMilliseconds = null;
+        if (_gpuBusyIndex >= 0
+            && double.TryParse(
+                fields[_gpuBusyIndex],
+                NumberStyles.Float,
+                CultureInfo.InvariantCulture,
+                out double parsedGpuBusy)
+            && double.IsFinite(parsedGpuBusy)
+            && parsedGpuBusy is >= 0 and <= 10_000)
+        {
+            gpuBusyMilliseconds = parsedGpuBusy;
+        }
+
         frame = new(
             processId,
             fields[_swapChainIndex],
-            frameTimeMilliseconds);
+            frameTimeMilliseconds,
+            gpuBusyMilliseconds);
         return true;
     }
 
@@ -110,6 +127,7 @@ internal sealed class PresentMonCsvParser
         _processIdIndex = FindColumn(fields, "ProcessID");
         _swapChainIndex = FindColumn(fields, "SwapChainAddress");
         _frameTimeIndex = FindColumn(fields, "FrameTime");
+        _gpuBusyIndex = FindColumn(fields, "GPUBusy");
         if (!HasValidHeader)
         {
             _processIdIndex = -1;
@@ -137,4 +155,5 @@ internal sealed class PresentMonCsvParser
 internal readonly record struct PresentMonFrame(
     int ProcessId,
     string SwapChainAddress,
-    double FrameTimeMilliseconds);
+    double FrameTimeMilliseconds,
+    double? GpuBusyMilliseconds = null);

@@ -8,7 +8,7 @@ namespace GameShift.IntegrationTests;
 public sealed class SteamLocalGameMetadataProviderTests
 {
     [TestMethod]
-    public async Task ReadsManifestMostRecentLocalUsageAndWideHero()
+    public async Task ReadsManifestAndMostRecentLocalUsageWithoutArtwork()
     {
         using SteamMetadataTestContext context = new();
         string steamRoot = context.CreateDirectory("Steam");
@@ -22,13 +22,6 @@ public sealed class SteamLocalGameMetadataProviderTests
                 "TestGame.exe"));
         string launcherPath = context.CreateFile(
             Path.Combine("Steam", "steam.exe"));
-        string heroPath = context.CreateFile(
-            Path.Combine(
-                "Steam",
-                "appcache",
-                "librarycache",
-                "12345",
-                "library_hero.jpg"));
         context.WriteText(
             Path.Combine("Steam", "steamapps", "libraryfolders.vdf"),
             $$"""
@@ -74,12 +67,7 @@ public sealed class SteamLocalGameMetadataProviderTests
             isEnabled: true,
             DateTimeOffset.UtcNow,
             DateTimeOffset.UtcNow);
-        LocalGameArtworkResolver artworkResolver = new(
-            [steamRoot],
-            context.GetPath("ArtworkCache"));
-        SteamLocalGameMetadataProvider provider = new(
-            [steamRoot],
-            artworkResolver);
+        SteamLocalGameMetadataProvider provider = new([steamRoot]);
 
         GameMetadataProviderResult? result = await provider.ReadAsync(
             profile,
@@ -92,7 +80,7 @@ public sealed class SteamLocalGameMetadataProviderTests
             DateTimeOffset.FromUnixTimeSeconds(1700000200),
             result.LastPlayedAtUtc);
         Assert.AreEqual(95L, result.TotalPlaytimeMinutes);
-        Assert.AreEqual(heroPath, result.HeroArtworkPath);
+        Assert.IsNull(result.HeroArtworkPath);
     }
 
     private static string EscapeVdf(string value) =>

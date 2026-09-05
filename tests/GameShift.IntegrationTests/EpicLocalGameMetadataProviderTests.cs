@@ -52,7 +52,7 @@ public sealed class EpicLocalGameMetadataProviderTests
                 TimeSpan.Zero),
             result.LastPlayedAtUtc);
         Assert.IsNull(result.TotalPlaytimeMinutes);
-        Assert.AreEqual(heroPath, result.HeroArtworkPath);
+        Assert.IsNull(result.HeroArtworkPath);
         string exposedValues = string.Join(
             '|',
             result.LauncherPath,

@@ -158,7 +158,8 @@ public sealed class SessionClientService : IDisposable
     public async Task<SessionStateClientSnapshot> StartAsync(
         Guid planId,
         Guid sessionId,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        bool enableFrameRateTracking = true)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
         StartSessionRequest request = new()
@@ -167,6 +168,7 @@ public sealed class SessionClientService : IDisposable
                 CommandKind.ApproveOptimizationPlan,
                 sessionId),
             PlanId = RequireGuid(planId, nameof(planId)).ToString("D"),
+            EnableFrameRateTracking = enableFrameRateTracking,
         };
         SessionStateReply reply = await ExecuteAsync(
             token => _client.StartSessionAsync(
@@ -174,6 +176,27 @@ public sealed class SessionClientService : IDisposable
                 cancellationToken: token),
             cancellationToken,
             StartTimeout);
+        return MapRequiredState(reply);
+    }
+
+    public async Task<SessionStateClientSnapshot> SetFrameRateTrackingAsync(
+        Guid sessionId,
+        bool enabled,
+        CancellationToken cancellationToken)
+    {
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        SetFrameRateTrackingRequest request = new()
+        {
+            Metadata = CreateMetadata(
+                CommandKind.SetFrameRateTracking,
+                RequireGuid(sessionId, nameof(sessionId))),
+            Enabled = enabled,
+        };
+        SessionStateReply reply = await ExecuteAsync(
+            token => _client.SetFrameRateTrackingAsync(
+                request,
+                cancellationToken: token),
+            cancellationToken);
         return MapRequiredState(reply);
     }
 
@@ -193,6 +216,50 @@ public sealed class SessionClientService : IDisposable
                 cancellationToken: token),
             cancellationToken);
         return reply.HasSession ? MapRequiredState(reply) : null;
+    }
+
+    public async Task<SessionShutdownReadinessClientSnapshot>
+        GetShutdownReadinessAsync(CancellationToken cancellationToken)
+    {
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        ShutdownReadinessRequest request = new()
+        {
+            Metadata = CreateMetadata(
+                CommandKind.ShutdownComponents,
+                sessionId: null),
+        };
+        ShutdownReadinessReply reply = await ExecuteAsync(
+            token => _client.GetShutdownReadinessAsync(
+                request,
+                cancellationToken: token),
+            cancellationToken);
+        return new(
+            reply.CanShutdown,
+            reply.HasActiveSession,
+            reply.HasPreparedPlan,
+            RequireText(reply.Message, "message"));
+    }
+
+    public async Task<SessionShutdownReadinessClientSnapshot>
+        ShutdownComponentsAsync(CancellationToken cancellationToken)
+    {
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        ShutdownComponentsRequest request = new()
+        {
+            Metadata = CreateMetadata(
+                CommandKind.ShutdownComponents,
+                sessionId: null),
+        };
+        ShutdownReadinessReply reply = await ExecuteAsync(
+            token => _client.ShutdownComponentsAsync(
+                request,
+                cancellationToken: token),
+            cancellationToken);
+        return new(
+            reply.CanShutdown,
+            reply.HasActiveSession,
+            reply.HasPreparedPlan,
+            RequireText(reply.Message, "message"));
     }
 
     public async Task<SessionStateClientSnapshot> RestoreAsync(

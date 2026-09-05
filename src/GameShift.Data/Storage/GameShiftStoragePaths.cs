@@ -23,4 +23,10 @@ public static class GameShiftStoragePaths
 
     public static string MachineRecoveryJournalPath =>
         Path.Combine(MachineDataDirectory, "machine-recovery.jsonl");
+
+    public static string SystemOptimizerDatabasePath =>
+        Path.Combine(MachineDataDirectory, "system-optimizer.db");
+
+    public static string TrustedSignerConfigurationPath =>
+        Path.Combine(MachineDataDirectory, "trusted-signers.json");
 }

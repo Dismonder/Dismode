@@ -18,7 +18,7 @@ public sealed class SqliteUserDataStore :
     IUpdatePreferencesRepository,
     IDisposable
 {
-    private const int CurrentSchemaVersion = 9;
+    private const int CurrentSchemaVersion = 11;
     private const int MaximumHistoryPageSize = 1000;
 
     private readonly string _databasePath;
@@ -513,8 +513,9 @@ public sealed class SqliteUserDataStore :
         await using SqliteCommand command = connection.CreateCommand();
         command.CommandText =
             """
-            SELECT IsEnabled, OpacityPercent, ScalePercent, Corner,
-                   COALESCE(Style, 1), COALESCE(Theme, 1),
+            SELECT IsEnabled, IsFpsTrackingEnabled, OpacityPercent,
+                   ScalePercent, Corner, COALESCE(Style, 1),
+                   COALESCE(Theme, 1),
                    UpdatedAtUtc
             FROM PerformanceOverlayPreferences
             WHERE SettingsKey = 1;
@@ -529,12 +530,13 @@ public sealed class SqliteUserDataStore :
 
         return new(
             reader.GetBoolean(0),
-            reader.GetInt32(1),
+            reader.GetBoolean(1),
             reader.GetInt32(2),
-            (PerformanceOverlayCorner)reader.GetInt32(3),
-            (PerformanceOverlayStyle)reader.GetInt32(4),
-            (PerformanceOverlayTheme)reader.GetInt32(5),
-            ParseTimestamp(reader.GetString(6)));
+            reader.GetInt32(3),
+            (PerformanceOverlayCorner)reader.GetInt32(4),
+            (PerformanceOverlayStyle)reader.GetInt32(5),
+            (PerformanceOverlayTheme)reader.GetInt32(6),
+            ParseTimestamp(reader.GetString(7)));
     }
 
     public async ValueTask SavePerformanceOverlayPreferencesAsync(
@@ -552,13 +554,15 @@ public sealed class SqliteUserDataStore :
         command.CommandText =
             """
             INSERT INTO PerformanceOverlayPreferences (
-                SettingsKey, IsEnabled, OpacityPercent, ScalePercent,
-                Corner, Style, Theme, UpdatedAtUtc)
+                SettingsKey, IsEnabled, IsFpsTrackingEnabled,
+                OpacityPercent, ScalePercent, Corner, Style, Theme,
+                UpdatedAtUtc)
             VALUES (
-                1, $isEnabled, $opacityPercent, $scalePercent,
-                $corner, $style, $theme, $updatedAtUtc)
+                1, $isEnabled, $isFpsTrackingEnabled, $opacityPercent,
+                $scalePercent, $corner, $style, $theme, $updatedAtUtc)
             ON CONFLICT(SettingsKey) DO UPDATE SET
                 IsEnabled = excluded.IsEnabled,
+                IsFpsTrackingEnabled = excluded.IsFpsTrackingEnabled,
                 OpacityPercent = excluded.OpacityPercent,
                 ScalePercent = excluded.ScalePercent,
                 Corner = excluded.Corner,
@@ -569,6 +573,9 @@ public sealed class SqliteUserDataStore :
         command.Parameters.AddWithValue(
             "$isEnabled",
             preferences.IsEnabled ? 1 : 0);
+        command.Parameters.AddWithValue(
+            "$isFpsTrackingEnabled",
+            preferences.IsFpsTrackingEnabled ? 1 : 0);
         command.Parameters.AddWithValue(
             "$opacityPercent",
             preferences.OpacityPercent);
@@ -1340,6 +1347,103 @@ public sealed class SqliteUserDataStore :
                 .ConfigureAwait(false);
             await transaction.CommitAsync(cancellationToken)
                 .ConfigureAwait(false);
+            existingVersion = 9;
+        }
+
+        if (existingVersion < 10)
+        {
+            await using SqliteTransaction transaction =
+                (SqliteTransaction)await connection
+                    .BeginTransactionAsync(
+                        IsolationLevel.Serializable,
+                        cancellationToken)
+                    .ConfigureAwait(false);
+            await using SqliteCommand schema = connection.CreateCommand();
+            schema.Transaction = transaction;
+            schema.CommandText =
+                """
+                CREATE TABLE PerformanceOverlayPreferences_New (
+                    SettingsKey INTEGER NOT NULL PRIMARY KEY
+                        CHECK (SettingsKey = 1),
+                    IsEnabled INTEGER NOT NULL
+                        CHECK (IsEnabled IN (0, 1)),
+                    OpacityPercent INTEGER NOT NULL
+                        CHECK (OpacityPercent BETWEEN 20 AND 100),
+                    ScalePercent INTEGER NOT NULL
+                        CHECK (ScalePercent BETWEEN 75 AND 150),
+                    Corner INTEGER NOT NULL
+                        CHECK (Corner BETWEEN 1 AND 4),
+                    Style INTEGER NOT NULL DEFAULT 1,
+                    Theme INTEGER NOT NULL DEFAULT 1,
+                    UpdatedAtUtc TEXT NOT NULL
+                );
+
+                INSERT INTO PerformanceOverlayPreferences_New (
+                    SettingsKey, IsEnabled, OpacityPercent, ScalePercent, Corner, Style, Theme, UpdatedAtUtc)
+                SELECT
+                    SettingsKey, IsEnabled, MAX(20, MIN(100, OpacityPercent)), ScalePercent, Corner, Style, Theme, UpdatedAtUtc
+                FROM PerformanceOverlayPreferences;
+
+                DROP TABLE PerformanceOverlayPreferences;
+
+                ALTER TABLE PerformanceOverlayPreferences_New
+                    RENAME TO PerformanceOverlayPreferences;
+
+                INSERT INTO SchemaMigrations (Version, AppliedAtUtc)
+                VALUES (10, $appliedAtUtc);
+                """;
+            schema.Parameters.AddWithValue(
+                "$appliedAtUtc",
+                FormatTimestamp(DateTimeOffset.UtcNow));
+            await schema.ExecuteNonQueryAsync(cancellationToken)
+                .ConfigureAwait(false);
+            await transaction.CommitAsync(cancellationToken)
+                .ConfigureAwait(false);
+            existingVersion = 10;
+        }
+
+        if (existingVersion < 11)
+        {
+            await using (SqliteCommand tableCheck = connection.CreateCommand())
+            {
+                tableCheck.CommandText =
+                    "SELECT 1 FROM sqlite_master WHERE type = 'table' "
+                    + "AND name = 'PerformanceOverlayPreferences' LIMIT 1;";
+                object? tableExists = await tableCheck
+                    .ExecuteScalarAsync(cancellationToken)
+                    .ConfigureAwait(false);
+                if (tableExists is null)
+                {
+                    throw new InvalidDataException(
+                        "The user database schema is incomplete.");
+                }
+            }
+
+            await using SqliteTransaction transaction =
+                (SqliteTransaction)await connection
+                    .BeginTransactionAsync(
+                        IsolationLevel.Serializable,
+                        cancellationToken)
+                    .ConfigureAwait(false);
+            await using SqliteCommand schema = connection.CreateCommand();
+            schema.Transaction = transaction;
+            schema.CommandText =
+                """
+                ALTER TABLE PerformanceOverlayPreferences
+                    ADD COLUMN IsFpsTrackingEnabled INTEGER NOT NULL DEFAULT 1
+                        CHECK (IsFpsTrackingEnabled IN (0, 1));
+
+                INSERT INTO SchemaMigrations (Version, AppliedAtUtc)
+                VALUES (11, $appliedAtUtc);
+                """;
+            schema.Parameters.AddWithValue(
+                "$appliedAtUtc",
+                FormatTimestamp(DateTimeOffset.UtcNow));
+            await schema.ExecuteNonQueryAsync(cancellationToken)
+                .ConfigureAwait(false);
+            await transaction.CommitAsync(cancellationToken)
+                .ConfigureAwait(false);
+            existingVersion = 11;
         }
     }
 
@@ -1412,8 +1516,9 @@ public sealed class SqliteUserDataStore :
                 FROM BackgroundProcessRules
                 LIMIT 0;
 
-                SELECT SettingsKey, IsEnabled, OpacityPercent, ScalePercent,
-                       Corner, UpdatedAtUtc
+                SELECT SettingsKey, IsEnabled, IsFpsTrackingEnabled,
+                       OpacityPercent, ScalePercent, Corner, Style, Theme,
+                       UpdatedAtUtc
                 FROM PerformanceOverlayPreferences
                 LIMIT 0;
 

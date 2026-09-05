@@ -23,7 +23,7 @@ public sealed class NamedPipeConnectionFactory
             pipeName: _pipeName,
             direction: PipeDirection.InOut,
             options: PipeOptions.WriteThrough | PipeOptions.Asynchronous,
-            impersonationLevel: TokenImpersonationLevel.Anonymous);
+            impersonationLevel: TokenImpersonationLevel.Identification);
 
         try
         {

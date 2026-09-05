@@ -48,6 +48,22 @@ public sealed class PresentMonFrameRateProviderTests
     }
 
     [TestMethod]
+    public void VersionTwoCsvReturnsOptionalGpuBusyTime()
+    {
+        PresentMonCsvParser parser = new();
+        _ = parser.TryParse(
+            "Application,ProcessID,SwapChainAddress,FrameTime,GPUBusy",
+            out _);
+
+        bool parsed = parser.TryParse(
+            "Game.exe,23456,0xAABBCCDD,16.0000,8.0000",
+            out PresentMonFrame frame);
+
+        Assert.IsTrue(parsed);
+        Assert.AreEqual(8d, frame.GpuBusyMilliseconds);
+    }
+
+    [TestMethod]
     public async Task CaptureTargetPrefersTheVerifiedProcessWithAGameWindow()
     {
         await using ProcessHarnessFixture harness =
@@ -81,6 +97,40 @@ public sealed class PresentMonFrameRateProviderTests
         Assert.IsFalse(
             first.Contains(firstSid, StringComparison.Ordinal));
         Assert.AreEqual("GameShift-".Length + 16, first.Length);
+    }
+
+    [TestMethod]
+    public void BenchmarkCollectorKeepsRawFramesFromDominantSwapChain()
+    {
+        BenchmarkFrameCollector collector = new(targetProcessId: 42);
+        collector.Add(new(42, "0xSECONDARY", 30));
+        collector.Add(new(7, "0xMAIN", 99));
+        collector.Add(new(42, "0xMAIN", 16));
+        collector.Add(new(42, "0xMAIN", 17));
+        collector.Add(new(42, "0xMAIN", 18));
+
+        IReadOnlyList<double> frames = collector.SnapshotDominantStream();
+
+        double[] expected = [16d, 17d, 18d];
+        CollectionAssert.AreEqual(expected, frames.ToArray());
+    }
+
+    [TestMethod]
+    public void BenchmarkCollectorCalculatesGpuBusyForDominantSwapChain()
+    {
+        BenchmarkFrameCollector collector = new(targetProcessId: 42);
+        collector.Add(new(42, "0xSECONDARY", 30, 30));
+        collector.Add(new(42, "0xMAIN", 16, 8));
+        collector.Add(new(42, "0xMAIN", 20, 10));
+
+        PresentMonBenchmarkCapture capture =
+            collector.SnapshotDominantCapture();
+
+        double[] expected = [16d, 20d];
+        CollectionAssert.AreEqual(
+            expected,
+            capture.FrameTimesMilliseconds.ToArray());
+        Assert.AreEqual(50d, capture.AverageGpuBusyPercent);
     }
 
     [TestMethod]

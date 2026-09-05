@@ -97,5 +97,6 @@ public sealed class RequestValidationPolicy
             or CommandKind.StopApprovedService
             or CommandKind.SetProcessPriority
             or CommandKind.SetProcessEcoQos
-            or CommandKind.ActivateManagedPowerProfile;
+            or CommandKind.ActivateManagedPowerProfile
+            or CommandKind.SetFrameRateTracking;
 }

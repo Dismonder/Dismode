@@ -289,7 +289,6 @@ public sealed class GameMetadataRefreshService
             lastPlayedAtUtc,
             totalPlaytime,
             providerResult?.HeroArtworkPath
-                ?? profile.ArtworkPath
                 ?? existing?.HeroArtworkPath,
             refreshedAtUtc);
     }

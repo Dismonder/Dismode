@@ -3,9 +3,15 @@ namespace GameShift.Core.Product;
 public static class ProductInformation
 {
     public const string DisplayName = "GameShift";
-    public const string CurrentVersion = "0.1.9";
-    public const string FullDisplayName =
-        "GameShift 0.1.9 Technical Preview";
+    public static string CurrentVersion => typeof(ProductInformation)
+        .Assembly
+        .GetName()
+        .Version?
+        .ToString(3)
+        ?? throw new InvalidOperationException(
+            "GameShift.Core assembly version is unavailable.");
+    public static string FullDisplayName =>
+        $"{DisplayName} {CurrentVersion} Gaming Edition";
     public const string Publisher = "GameShift Research Project";
     public const string Copyright =
         "Copyright © 2026 GameShift Research Project";

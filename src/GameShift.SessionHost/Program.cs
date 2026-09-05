@@ -23,14 +23,27 @@ if (!WindowsPlatformSupport.IsSupported)
     return 2;
 }
 
-if (args.Length == 1
-    && string.Equals(
+if (args.Length == 1)
+{
+    bool prepareUpdate = string.Equals(
         args[0],
         "--prepare-update",
-        StringComparison.OrdinalIgnoreCase))
-{
-    return await SessionHostUpdatePreparation.RunAsync(
-        CancellationToken.None);
+        StringComparison.OrdinalIgnoreCase);
+    bool prepareUninstall = string.Equals(
+        args[0],
+        "--prepare-uninstall",
+        StringComparison.OrdinalIgnoreCase);
+    bool shutdownComponents = string.Equals(
+        args[0],
+        "--shutdown-components",
+        StringComparison.OrdinalIgnoreCase);
+    if (prepareUpdate || prepareUninstall || shutdownComponents)
+    {
+        return await SessionHostUpdatePreparation.RunAsync(
+            stopUserInterface: prepareUpdate || prepareUninstall,
+            restoreSystemOptimizer: prepareUninstall,
+            cancellationToken: CancellationToken.None);
+    }
 }
 
 SecurityIdentifier userSid = CurrentWindowsIdentity.GetUserSid();
@@ -88,11 +101,14 @@ ReadOnlyDiagnosticsGrpcService diagnosticsService = new(
 using SqliteUserDataStore userDataStore = new();
 using AppendOnlyRecoveryJournal recoveryJournal = new(
     GameShiftStoragePaths.UserRecoveryJournalPath);
+using SystemOptimizerGameProfileClient systemProfileCoordinator = new(
+    userSid.Value);
 await using LocalGameSessionOrchestrator sessionOrchestrator = new(
     userDataStore,
     userDataStore,
     recoveryJournal,
-    optimizationPreferences: userDataStore);
+    optimizationPreferences: userDataStore,
+    systemProfileCoordinator: systemProfileCoordinator);
 await sessionOrchestrator.InitializeAsync(CancellationToken.None);
 GameShiftSessionGrpcService sessionService = new(
     validationPolicy,

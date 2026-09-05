@@ -8,6 +8,41 @@ namespace GameShift.IntegrationTests;
 public sealed class GameMetadataRefreshServiceTests
 {
     [TestMethod]
+    public async Task RefreshDoesNotCopyPosterIntoHeroMetadata()
+    {
+        using UserDataTestContext context = new();
+        string executablePath = CreateFile(context.DirectoryPath, "Game.exe");
+        string posterPath = CreateFile(context.DirectoryPath, "poster.jpg");
+        ManualGameProfile profile = new(
+            GameProfileId.Create(),
+            "Game",
+            executablePath,
+            new string('A', 64),
+            context.DirectoryPath,
+            launchArguments: [],
+            OptimizationPreset.Balanced,
+            isEnabled: true,
+            DateTimeOffset.UtcNow,
+            DateTimeOffset.UtcNow,
+            posterPath);
+        await context.Store.UpsertAsync(profile, CancellationToken.None);
+        GameMetadataRefreshService service = new(
+            [new FakeMetadataProvider(new(null, null, null, null))]);
+
+        await service.RefreshDetectedAsync(
+            context.Store,
+            context.Store,
+            [new("Steam", "12345", "Game", executablePath, [], 100)],
+            CancellationToken.None);
+        GameMetadata? metadata = await context.Store.FindMetadataAsync(
+            profile.ProfileId,
+            CancellationToken.None);
+
+        Assert.IsNotNull(metadata);
+        Assert.IsNull(metadata.HeroArtworkPath);
+    }
+
+    [TestMethod]
     public async Task StartupHonorsTtlAndCompletedSessionForcesOneRefresh()
     {
         using UserDataTestContext context = new();

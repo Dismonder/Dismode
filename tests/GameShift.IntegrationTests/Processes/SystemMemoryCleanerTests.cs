@@ -5,6 +5,20 @@ namespace GameShift.IntegrationTests.Processes;
 [TestClass]
 public sealed class SystemMemoryCleanerTests
 {
+    [TestInitialize]
+    public void RequireExplicitVmFlag()
+    {
+        if (!StringComparer.Ordinal.Equals(
+                Environment.GetEnvironmentVariable(
+                    "GAMESHIFT_ALLOW_AGGRESSIVE_MEMORY_TESTS"),
+                "1"))
+        {
+            Assert.Inconclusive(
+                "System file cache mutations are allowed only on a disposable " +
+                "Windows 11 VM with GAMESHIFT_ALLOW_AGGRESSIVE_MEMORY_TESTS=1.");
+        }
+    }
+
     [TestMethod]
     public void PurgeMemoryReturnsValidResultStructure()
     {

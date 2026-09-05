@@ -10,11 +10,9 @@ public sealed class SteamLocalGameMetadataProvider : IGameMetadataProvider
     private const long MaximumManifestBytes = 2L * 1024 * 1024;
     private const long MaximumLocalConfigBytes = 8L * 1024 * 1024;
     private readonly string[] _steamRoots;
-    private readonly LocalGameArtworkResolver _artworkResolver;
 
     public SteamLocalGameMetadataProvider(
-        IEnumerable<string>? steamRoots = null,
-        LocalGameArtworkResolver? artworkResolver = null)
+        IEnumerable<string>? steamRoots = null)
     {
         _steamRoots = (steamRoots ?? FindDefaultSteamRoots())
             .Where(path => !string.IsNullOrWhiteSpace(path))
@@ -22,13 +20,11 @@ public sealed class SteamLocalGameMetadataProvider : IGameMetadataProvider
             .Where(Directory.Exists)
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .ToArray();
-        _artworkResolver = artworkResolver
-            ?? new LocalGameArtworkResolver(_steamRoots);
     }
 
     public string Source => "Steam";
 
-    public async ValueTask<GameMetadataProviderResult?> ReadAsync(
+    public ValueTask<GameMetadataProviderResult?> ReadAsync(
         ManualGameProfile profile,
         string? externalId,
         CancellationToken cancellationToken)
@@ -38,7 +34,7 @@ public sealed class SteamLocalGameMetadataProvider : IGameMetadataProvider
         if (!IsNumericAppId(externalId)
             || !File.Exists(profile.ExecutablePath))
         {
-            return null;
+            return ValueTask.FromResult<GameMetadataProviderResult?>(null);
         }
 
         string appId = externalId!;
@@ -49,31 +45,21 @@ public sealed class SteamLocalGameMetadataProvider : IGameMetadataProvider
         DateTimeOffset? lastPlayedAtUtc = MaxTimestamp(
             ToTimestamp(manifest.LastPlayedUnixSeconds),
             ToTimestamp(usage?.LastPlayedUnixSeconds));
-        GameArtwork? artwork = await _artworkResolver.ResolveAsync(
-                new(
-                    Source,
-                    appId,
-                    profile.DisplayName,
-                    profile.ExecutablePath,
-                    profile.LaunchArguments,
-                    Confidence: 100),
-                cancellationToken)
-            .ConfigureAwait(false);
 
         string? launcherPath = NormalizeLauncherPath(
             manifest.LauncherPath);
         if (manifest.WasFound is false
-            && usage is null
-            && artwork is null)
+            && usage is null)
         {
-            return null;
+            return ValueTask.FromResult<GameMetadataProviderResult?>(null);
         }
 
-        return new(
-            launcherPath,
-            lastPlayedAtUtc,
-            usage?.PlaytimeMinutes,
-            artwork?.LocalPath);
+        return ValueTask.FromResult<GameMetadataProviderResult?>(
+            new(
+                launcherPath,
+                lastPlayedAtUtc,
+                usage?.PlaytimeMinutes,
+                HeroArtworkPath: null));
     }
 
     private SteamManifestMetadata ReadManifest(string appId)

@@ -8,5 +8,5 @@ public enum SystemTargetKind
     ScheduledTask = 4,
     PowerProfile = 5,
     UserApplication = 6,
+    OperatingSystemSetting = 7,
 }
-

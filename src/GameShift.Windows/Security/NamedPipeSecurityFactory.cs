@@ -24,6 +24,31 @@ public static class NamedPipeSecurityFactory
         return security;
     }
 
+    public static PipeSecurity CreateSystemService()
+    {
+        PipeSecurity security = new();
+        security.SetAccessRuleProtection(
+            isProtected: true,
+            preserveInheritance: false);
+
+        AddFullControl(
+            security,
+            new SecurityIdentifier(WellKnownSidType.LocalSystemSid, null));
+        AddFullControl(
+            security,
+            new SecurityIdentifier(
+                WellKnownSidType.BuiltinAdministratorsSid,
+                null));
+        security.AddAccessRule(
+            new PipeAccessRule(
+                new SecurityIdentifier(
+                    WellKnownSidType.AuthenticatedUserSid,
+                    null),
+                PipeAccessRights.ReadWrite,
+                AccessControlType.Allow));
+        return security;
+    }
+
     private static void AddFullControl(
         PipeSecurity security,
         SecurityIdentifier identity)
@@ -35,4 +60,3 @@ public static class NamedPipeSecurityFactory
         security.AddAccessRule(rule);
     }
 }
-

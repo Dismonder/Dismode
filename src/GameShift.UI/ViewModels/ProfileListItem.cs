@@ -7,7 +7,8 @@ namespace GameShift.UI.ViewModels;
 
 public sealed class ProfileListItem : INotifyPropertyChanged
 {
-    private ImageSource? _artworkSource;
+    private ImageSource? _posterArtworkSource;
+    private ImageSource? _heroArtworkSource;
     private double _dashboardSelectionOpacity;
 
     public ProfileListItem(
@@ -21,9 +22,9 @@ public sealed class ProfileListItem : INotifyPropertyChanged
             ? "G"
             : DisplayName.Trim()[..1].ToUpperInvariant();
         ExecutablePath = profile.ExecutablePath;
-        ArtworkPath = ResolveArtworkPath(
-            metadata?.HeroArtworkPath,
-            profile.ArtworkPath);
+        PosterArtworkPath = ResolveArtworkPath(profile.ArtworkPath);
+        HeroArtworkPath = ResolveArtworkPath(metadata?.HeroArtworkPath);
+        ArtworkPath = PosterArtworkPath;
         SourceLabel = string.IsNullOrWhiteSpace(metadata?.Source)
             ? "Profil EXE"
             : metadata.Source;
@@ -53,6 +54,10 @@ public sealed class ProfileListItem : INotifyPropertyChanged
 
     public string? ArtworkPath { get; }
 
+    public string? PosterArtworkPath { get; }
+
+    public string? HeroArtworkPath { get; }
+
     public string SourceLabel { get; }
 
     public string LastPlayedLabel { get; }
@@ -61,18 +66,30 @@ public sealed class ProfileListItem : INotifyPropertyChanged
 
     public ImageSource? ArtworkSource
     {
-        get => _artworkSource;
+        get => PosterArtworkSource;
+        internal set => PosterArtworkSource = value;
+    }
+
+    public ImageSource? PosterArtworkSource
+    {
+        get => _posterArtworkSource;
         internal set
         {
-            if (ReferenceEquals(_artworkSource, value))
+            if (ReferenceEquals(_posterArtworkSource, value))
             {
                 return;
             }
 
-            _artworkSource = value;
+            _posterArtworkSource = value;
             PropertyChanged?.Invoke(
                 this,
                 new(nameof(ArtworkSource)));
+            PropertyChanged?.Invoke(
+                this,
+                new(nameof(PosterArtworkSource)));
+            PropertyChanged?.Invoke(
+                this,
+                new(nameof(HasPosterArtwork)));
             PropertyChanged?.Invoke(
                 this,
                 new(nameof(HasArtwork)));
@@ -85,7 +102,27 @@ public sealed class ProfileListItem : INotifyPropertyChanged
         }
     }
 
+    public ImageSource? HeroArtworkSource
+    {
+        get => _heroArtworkSource;
+        internal set
+        {
+            if (ReferenceEquals(_heroArtworkSource, value))
+            {
+                return;
+            }
+
+            _heroArtworkSource = value;
+            PropertyChanged?.Invoke(this, new(nameof(HeroArtworkSource)));
+            PropertyChanged?.Invoke(this, new(nameof(HasHeroArtwork)));
+        }
+    }
+
     public bool HasArtwork => ArtworkSource is not null;
+
+    public bool HasPosterArtwork => PosterArtworkSource is not null;
+
+    public bool HasHeroArtwork => HeroArtworkSource is not null;
 
     public Microsoft.UI.Xaml.Visibility FallbackInitialVisibility =>
         HasArtwork ? Microsoft.UI.Xaml.Visibility.Collapsed : Microsoft.UI.Xaml.Visibility.Visible;
@@ -126,17 +163,10 @@ public sealed class ProfileListItem : INotifyPropertyChanged
         $"{DisplayName}. {PresetLabel}. {StateLabel}. "
         + $"{ExecutablePath}. {HashLabel}";
 
-    private static string? ResolveArtworkPath(
-        string? metadataArtworkPath,
-        string? profileArtworkPath)
+    private static string? ResolveArtworkPath(string? artworkPath)
     {
-        if (File.Exists(metadataArtworkPath))
-        {
-            return metadataArtworkPath;
-        }
-
-        return File.Exists(profileArtworkPath)
-            ? profileArtworkPath
+        return File.Exists(artworkPath)
+            ? artworkPath
             : null;
     }
 
