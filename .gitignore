@@ -38,3 +38,8 @@ logs/
 # OS files
 Thumbs.db
 Desktop.ini
+
+# Fragmenty paczek aktualizacji sa wyjsciem buildu i trafiaja na Cloudflare.
+# Trzymanie ich w gicie dodaje setki megabajtow binariow do historii.
+infrastructure/update-service/public/v1/packages/*/
+!infrastructure/update-service/public/v1/packages/0.1.1/
