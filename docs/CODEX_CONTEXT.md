@@ -1,6 +1,22 @@
 # GameShift — kontekst roboczy repozytorium
 
-Ostatnia aktualizacja: 2026-08-02
+Ostatnia aktualizacja: 2026-09-05
+
+### Memory Optimizer — bieżąca poprawka panelu tray (2026-09-05)
+
+- Nowy panel 400×548 DIP: fizyczny RAM, dostępna pamięć, stan automatu,
+  osobne zamknięcie interfejsu i wyłączenie komponentu z potwierdzeniem.
+- Pauza i optymalizacja pozostawiają menu otwarte; stan offline blokuje akcje.
+  Układ ma jawne kolumny, stałe powierzchnie statusu i ciemną ramkę DWM.
+- Zweryfikowano kompilację Release, 75 testów komponentu (1 agresywny test
+  pominięty zgodnie z bramą VM) oraz 20 testów integracji/wydania.
+- Paczka `artifacts/GameShift-MemoryOptimizer-tray-preview` została zbudowana
+  z odpowiadającymi źródłami GPL i SHA-256. Przeszła `dotnet format`, kontrolę
+  GPL oraz ukryty test startu i pomiaru panelu. Kontrola wizualna na pulpicie
+  nie została wykonana (zgodnie z prośbą użytkownika).
+- Reinstalacja nie została wykonana: certyfikat wydania nie jest skonfigurowany,
+  a poprzedni instalator ma podpis UnknownError (niezaufany root). Nie omijać
+  walidacji podpisu. Paczka developerska nie jest zatwierdzonym instalatorem.
 
 ## Źródła prawdy
 
@@ -11,7 +27,8 @@ Ostatnia aktualizacja: 2026-08-02
   analitycznym, nie źródłem prawdy o aktualnym kodzie; twierdzenia wpływające
   na implementację trzeba potwierdzić w repozytorium.
 - Instrukcje pracy: `AGENTS.md`.
-- Aktywne plany: `docs/exec-plans/active/gameshift-mvp.md` oraz
+- Aktywne plany: `docs/exec-plans/active/gameshift-mvp.md`,
+  `docs/exec-plans/active/system-optimizer-0.4.0.md` oraz
   `docs/exec-plans/active/launch-latency-bento-ui.md`. Plan Safety
   Release znajduje się w
   `docs/exec-plans/completed/safety-release-0.1.1.md`. Zakończone plany:
@@ -28,7 +45,30 @@ Ostatnia aktualizacja: 2026-08-02
 - Katalog roboczy `C:\Users\Damia\Documents\Win-Optymalizer` był pusty na początku audytu.
 - 2026-07-28 użytkownik wyraźnie zatwierdził utworzenie programu od zera w tym katalogu.
 - Repozytorium Git zostało zainicjalizowane na gałęzi `main`; nie utworzono jeszcze pierwszego commita.
-- Istnieje rozwiązanie `GameShift.sln` z czternastoma projektami.
+- Istnieje rozwiązanie `GameShift.sln` z szesnastoma projektami.
+- Jedynym źródłem wersji produktu jest `Directory.Build.props`; bieżąca
+  wersja to `0.4.0`, protokół IPC to v6, a nazwa produktu jest wyprowadzana z
+  metadanych assembly.
+- `GameShift.SystemAgent` jest usługą Windows LocalSystem z opóźnionym startem
+  i jedynym writerem `system-optimizer.db` oraz append-only
+  `machine-recovery.jsonl`. Mutacje wymagają rzeczywistego SID/PID klienta,
+  ścieżki pod katalogiem instalacji i zaufanego podpisu Authenticode; bez
+  certyfikatu klient działa tylko do odczytu.
+- Osobny `GameShift.SystemOptimizer.exe` ma osiem ekranów, katalog
+  Supported/Unsupported/Blocked, surowy pomiar PresentMon A/B, profile per gra
+  i globalne, historię oraz jawny restore. Hard Safety Policy bezwarunkowo
+  blokuje Defender, firewall, Windows Update, BitLocker, anti-cheat, Secure
+  Boot, HVCI, mitigacje, WHEA, watchdog i BCD.
+- Biblioteka gier ma menedżer OptiScaler per gra z wyborem konkretnej wersji
+  w kanałach: oficjalny Stable (`optiscaler/OptiScaler`), społecznościowy i
+  nieoficjalny Beta (`Optiscaler-Client/Optiscaler-Betas`) oraz oficjalny
+  codzienny Nightly (`optiscaler/OptiScaler-nightly`). Pobieranie jest
+  ograniczone do przypiętego repozytorium danego kanału, rozmiaru i SHA-256.
+  Beta/Nightly wymagają osobnego potwierdzenia ryzyka. Menedżer wybiera
+  właściwy plik Unreal Shipping EXE, a instalację oraz usuwanie wykonuje
+  transakcyjnie z kopią kolidujących plików. Instalacja jest blokowana dla
+  uruchomionej gry, wykrytego anti-cheat/Roblox i bez jawnego potwierdzenia
+  użycia offline lub single-player.
 - Bramy A–E (fundament, bezpieczeństwo, recovery, read-only IPC i kontrolowane akcje procesów) są ukończone i zweryfikowane.
 - SessionHost udostępnia rzeczywiste, journalowane akcje procesów użytkownika:
   graceful close/restart, odwracalne `BelowNormal`, priorytet gry
@@ -62,7 +102,8 @@ Ostatnia aktualizacja: 2026-08-02
 - WinUI 3 nie było widoczne jako szablon w `dotnet new list`; projekt został przygotowany zgodnie z aktualnym szablonem Visual Studio i dokumentacją Microsoft.
 - Stabilny Windows App SDK: `2.3.1`.
 - TFM Windows: `net10.0-windows10.0.26100.0`.
-- Minimalny obsługiwany system: Windows 11 23H2 (`10.0.22621.0`).
+- Minimalny obsługiwany system: Windows 11 23H2 build 22631
+  (`10.0.22631.0`).
 
 ## Stos
 
@@ -81,10 +122,10 @@ Ostatnia aktualizacja: 2026-08-02
 
 ## Mapa modułów
 
-- `src/GameShift.Launcher`: niepodwyższony `GameShift.exe`; przez stałe
-  `runas` prosi o UAC tylko dla SessionHost, pozostałe dwa komponenty
-  uruchamia bez shella i maksymalizuje istniejące okno zamiast dublować
-  procesy.
+- `src/GameShift.Launcher`: niepodwyższony `GameShift.exe`; uruchamia lub
+  odnajduje SessionHost i UI, lecz nie uruchamia SystemAgent, który jest
+  zarządzany przez SCM jako usługa. Maksymalizuje istniejące okno zamiast
+  dublować procesy.
 - `src/GameShift.UI`: niepodwyższone, unpackaged WinUI 3 x64; automatyczna
   biblioteka gier, Tryb gry, trwałe reguły per gra, historia, diagnostyka
   oraz FPS/czas klatki ze stanem źródła PresentMon. Osobne natywne okno
@@ -97,8 +138,11 @@ Ostatnia aktualizacja: 2026-08-02
 - `src/GameShift.SessionHost`: backend wymagający UAC i host gRPC na pipe
   konkretnego SID; klasyfikuje procesy, prowadzi transakcyjną sesję oraz
   posiada proces PresentMon aktywnej gry.
-- `src/GameShift.SystemAgent`: host gRPC na pipe systemowym; udostępnia
-  read-only inwentaryzację i klasyfikację usług.
+- `src/GameShift.SystemAgent`: usługa Windows i host gRPC na zabezpieczonym
+  pipe systemowym; udostępnia diagnostykę, sprzęt, katalog, A/B, profile,
+  historię i recovery. Bez zaufanego podpisu klientów pozostaje read-only.
+- `src/GameShift.SystemOptimizer`: niepodwyższony, osobny interfejs WinUI 3
+  uruchamiany na żądanie, bez trayu; nie wykonuje mutacji bezpośrednio.
 - `src/GameShift.Core`: niezależna od platformy domena; zawiera tożsamość procesu, maszynę stanów sesji, odwracalne działania, Hard Safety Policy, recovery i walidację żądań IPC.
 - `src/GameShift.Windows`: adaptery Windows; read-only procesy/usługi, ACL oraz klient i serwer gRPC przez named pipes.
 - `src/GameShift.Contracts`: Protobuf/gRPC, zamknięte komendy, wersjonowanie i metadata żądań.
@@ -119,7 +163,8 @@ Ostatnia aktualizacja: 2026-08-02
 - `src/GameShift.Launcher/Program.cs`: widoczny entrypoint `GameShift.exe`; uruchamia host użytkownika, agenta read-only i UI z jednego katalogu wydania.
 - `src/GameShift.SessionHost/Program.cs`: podwyższony proces sesji użytkownika,
   gRPC/HTTP2 wyłącznie przez `GameShift.User.{SID}`.
-- `src/GameShift.SystemAgent/Program.cs`: przyszły host usługi Windows, gRPC/HTTP2 wyłącznie przez `GameShift.System`.
+- `src/GameShift.SystemAgent/Program.cs`: host usługi Windows LocalSystem,
+  gRPC/HTTP2 wyłącznie przez `GameShift.System`.
 - Oba hosty obsługują `--diagnostics` jako jednorazowy, read-only raport konsolowy.
 - Osobny updater powstanie dopiero po ustabilizowaniu MVP.
 
@@ -174,23 +219,26 @@ zakończyła się kodem 0: build Release bez ostrzeżeń, format bez zmian i
 
 ## Znane problemy i braki
 
-- Journal i recovery sterują rzeczywistymi akcjami procesu w produkcyjnym
-  SessionHost. Adaptery mutujące SCM i zasilania istnieją, ale nie są
-  dostępne przez produkcyjne IPC; na hoście wykonano wyłącznie odczyt.
-- User Database SQLite ma schemat v8, automatyczne i ręczne profile,
+- Journal i recovery sterują rzeczywistymi akcjami procesu w SessionHost oraz
+  wydzielonym runtime SystemAgent. Katalog 0.4.0 udostępnia tylko adaptery z
+  niezależnym readbackiem; pozostałe kategorie są jawnie `Unsupported`.
+- User Database SQLite ma schemat v11, automatyczne i ręczne profile,
   historię z interwałowymi statystykami FPS/frametime, reguły
   priorytetu/akcji per gra oraz globalne preferencje HUD (włączenie,
   przezroczystość, skala i róg), a także lokalne metadane Steam/Epic z TTL;
-  Machine Database nie jest jeszcze wdrożona.
-- Systemowy pipe w prototypie dopuszcza bieżący SID, SYSTEM i administratorów. Wymóg weryfikacji podpisanego SessionHost wymaga docelowego podpisu Authenticode i instalacji w chronionym katalogu.
-- Brak certyfikatu Authenticode i testowej usługi Windows. Instalator EXE jest
-  gotowy, ale Windows może pokazać ostrzeżenie nieznanego wydawcy.
+  Osobna baza maszyny System Optimizer ma schemat v1.
+- Systemowy pipe używa ACL dla SYSTEM i administratorów, odczytuje rzeczywisty
+  SID oraz PID klienta i ponownie weryfikuje tożsamość procesu. Produkcyjne
+  mutacje pozostają zablokowane do czasu dostarczenia certyfikatu wydawcy.
+- Na hoście nie ma skonfigurowanego produkcyjnego certyfikatu Authenticode.
+  `Build-Installer.ps1` celowo przerywa przed budową zamiast tworzyć
+  niepodpisane wydanie 0.4.0.
 - Klikalne wydanie `GameShift-App` pozostaje framework-dependent; instalator
   0.1.7 używa osobnego self-contained payloadu i nie wymaga zewnętrznego .NET
   ani Windows App Runtime.
-- SystemAgent nie jest jeszcze rejestrowany jako usługa Windows. Instalator
-  świadomie zachowuje bieżący model procesu do czasu zaliczenia bramy recovery
-  usługi na kontrolowanej VM.
+- Instalator zawiera rejestrację, aktualizację i bezpieczną deinstalację usługi
+  SystemAgent, lecz rzeczywisty smoke instalacji/restartu wymaga kontrolowanej
+  VM i produkcyjnego podpisu.
 - Zarządzany profil zasilania bezpiecznie kopiuje i usuwa własny schemat, ale nie zmienia jeszcze parametrów wydajnościowych; nie wolno przedstawiać go jako wzrostu FPS.
 - Rozmowa audytowa rekomenduje część fundamentów, które repo już ma:
   .NET 10, wspólny kontrakt odwracalnej akcji, append-only journal, recovery,
@@ -415,6 +463,41 @@ zakończyła się kodem 0: build Release bez ostrzeżeń, format bez zmian i
 
 ## Ostatnia walidacja wydania
 
+- Lokalna regresja System Optimizer 0.4.0: `GameShift.sln` przywrócono i
+  zbudowano w Debug bez ostrzeżeń; przeszło 285/285 testów (112 Unit,
+  156 Integration, 13 Recovery, 4 Security), a format jest czysty. Osobne
+  rozwiązanie Memory Optimizer zbudowano w Release bez ostrzeżeń; przeszło
+  70 testów, jeden agresywny test VM został prawidłowo pominięty i format jest
+  czysty. Worker aktualizacji przeszedł 5/5 testów, typecheck, generowanie
+  typów i suchy build bez deploymentu. Inno Setup 6.7.3 skompilował skrypt
+  instalatora na minimalnym tymczasowym payloadzie. Wszystkie 13 skryptów
+  parsują się pod Windows PowerShell 5.1, a brak produkcyjnego certyfikatu
+  celowo blokuje budowę wydania przed utworzeniem instalatora. Nie uruchamiano
+  UI, instalatora, gry, usług ani mutacji systemowych.
+- Najnowsza poprawka stabilnego układu Memory Optimizer zarezerwowała miejsce
+  na status i postęp oraz ograniczyła zmiany geometrii okna do świadomego
+  przełączenia trybu. Odświeżenie statusu, zapis i optymalizacja nie wywołują
+  już `MoveAndResize`; pasek statusu ma stałą wysokość i jednoliniowe komunikaty.
+  Pełny komponent ma 58/58 testów Core i 12/12 Security (łącznie 70 zaliczonych
+  oraz 1 kontrolowany test agresywny pominięty bez flagi VM). Payload i instalator 0.3.0
+  przebudowano bez uruchamiania UI ani sterowania pulpitem.
+  Instalator `artifacts\\installer\\GameShift-Setup-0.3.0-win-x64.exe` ma
+  163 143 906 B i SHA-256
+  `0928FACF8DE43BBAC3B6AC3C96F4675865E54005D2C7B5EFF07A09FBD051DDCA`;
+  odpowiadające źródło GPL ma SHA-256
+  `22B799207B2CCCC4BA6F85953191AD033D660D7735DEBD86FB7484159EA36EED`.
+- Ostatnie `Build-Installer.ps1 -SkipTests` dla GameShift 0.3.0 zakończyło
+  lokalny build i staging bez instalacji, UAC, uruchamiania aplikacji/gier ani
+  deploymentu. Release ma 0 ostrzeżeń i 0 błędów. Świeży
+  self-contained `artifacts\GameShift-App` ma manifest 703/703 plików,
+  publiczne artefakty mają 0 PDB, a własne binaria mają wersję `0.3.0.0`.
+  Instalator pozostaje niepodpisany Authenticode; instalacji nie wykonywano.
+- Lokalny staging `artifacts\update-service-0.3.0` zawiera podpisany manifest
+  preview `0.3.0` z `minimumSupportedVersion=0.1.1` i osiem chunków.
+  Brama publikatora ECDSA oraz zgodność rozmiaru i SHA-256 chunków z finalnym
+  instalatorem przeszły. Smoke instalacji, kontrola UI/DPI, rejestracja sparse
+  package i końcowe usunięcie `bin/obj` nie zostały wykonane i pozostają po
+  stronie kontrolera.
 - Hotfix startu Bento UI usunął trzy odwołania do nieistniejącego zasobu
   `GameShiftCardBackgroundBrush`; właściwy klucz to `GameShiftCardBrush`.
   `App.xaml.cs` zapisuje lokalnie pełny wyjątek startowy, a nowy test
@@ -664,6 +747,62 @@ zakończyła się kodem 0: build Release bez ostrzeżeń, format bez zmian i
 - Kompilator Inno Setup wygenerował zaktualizowany pakiet instalatora: `artifacts/installer/GameShift-Setup-0.2.0-win-x64.exe` (SHA-256: `C7669AA8DBD842FC7530615B4043267D9FF4DF395B9600BD0AB3151530B388D6`, 70.29 MiB).
 - Zestaw 150/150 testów automatycznych przeszedł w 100% z wynikiem pozytywnym.
 
+## Wydanie 0.3.0 — niezależny GameShift Memory Optimizer
+
+- `components/GameShift.MemoryOptimizer` jest osobnym rozwiązaniem GPL-3.0-only
+  z izolowanymi projektami Core, LocalSystem Windows Service oraz
+  niepodwyższonym WinUI 3/trayem. Nie ma referencji do zamkniętych bibliotek
+  GameShift.
+- Port operacji pamięci zachowuje osiem flag Windows Memory Cleaner 3.0.8,
+  używa `LibraryImport`, bezpiecznych uchwytów, zakresowych uprawnień,
+  mapowania `NTSTATUS`, anulowania, single-flight i raportów per operacja.
+- Per-użytkownik IPC v1 wymusza ACL/SID, impersonację, limit 1 MiB,
+  timestamp, replay protection i idempotency powiązane z hashem żądania.
+  SQLite w `%ProgramData%` ma jednego writera w usłudze.
+- Tray pozostaje aktywny po zamknięciu głównego GameShift. Główne UI eksportuje
+  tylko neutralne pliki stanu gry i potrafi otworzyć osobny komponent.
+  Protokół gamingowy v5 ma bezpieczną rezerwację `ShutdownComponents`, która
+  nigdy nie zatrzymuje Memory Optimizer ani jego usługi.
+- Instalator traktuje komponent jako domyślnie wybrany, opcjonalny agregat,
+  zachowuje poprzedni wybór, pokazuje osobną informację GPL oraz rejestruje
+  usługę delayed-auto i zadanie logowania dla każdej interaktywnej sesji;
+  tray respektuje ustawienie startu z Windows osobno dla SID użytkownika.
+- Awarię zainstalowanego interfejsu odtworzono i zdiagnozowano z pełnego dumpa:
+  inicjalizacja WinRT `AccessibilitySettings` w polu okna kończyła WinUI
+  fail-fastem `CLASS_E_CLASSNOTAVAILABLE`. Obsługa High Contrast korzysta teraz
+  z `SystemParametersInfoW` i `GetSysColor`; finalny niewidoczny startup-probe
+  kończy się kodem 0 i nie tworzy nowego zdarzenia crash.
+- Główne UI rozróżnia teraz działającą usługę od zamkniętego interfejsu tray i
+  raportuje przedwczesne zakończenie nowo uruchomionego procesu wraz z kodem.
+  Ekran konserwacji instalatora używa wykrytej ścieżki istniejącej instalacji,
+  więc akcja „Odinstaluj” nie rozwija `{app}` przed jego inicjalizacją.
+  Manifest trayu deklaruje również `PerMonitorV2` i `longPathAware`, aby uniknąć
+  bitmapowego skalowania na monitorach 4K/OLED. Pełny build Release obu
+  rozwiązań zakończył się bez ostrzeżeń. Regresja GameShift: 217/217 (77 Unit,
+  124 Integration, 13 Recovery, 3 Security). Regresja komponentu: 58/58 Core
+  oraz 12/12 Security; jeden agresywny test VM został zgodnie z bramą pominięty.
+  Oba przebiegi `dotnet format --verify-no-changes` są czyste.
+- Ustawienia HUD mają niezależne przełączniki śledzenia FPS i nakładki. Po
+  wyłączeniu śledzenia sesja zatrzymuje provider, czyści próbki i ukrywa HUD;
+  po wyłączeniu samej nakładki pomiar może nadal działać. Stan jest trwały w
+  migracji SQLite v11, a nowe polecenie IPC można włączać bez restartu sesji.
+  Elementy informacji, postępu i niezapisanych zmian w Memory Optimizer mają
+  zarezerwowane miejsce lub warstwę overlay, dzięki czemu akcje przycisków nie
+  powodują chwilowego przeskoku całej strony.
+- Payload `artifacts/GameShift-MemoryOptimizer` ma wersję 0.3.0.0, zero PDB,
+  736 zweryfikowanych wpisów SHA-256, skrypty instalacji/deinstalacji, licencję,
+  atrybucję i odpowiadające źródła. SHA-256 archiwum źródłowego:
+  `22B799207B2CCCC4BA6F85953191AD033D660D7735DEBD86FB7484159EA36EED`.
+- `Build-Installer.ps1 -SkipTests` potwierdził czysty journal (1127 rekordów),
+  zweryfikował manifest głównego payloadu 703/703 i utworzył finalny instalator
+  `GameShift-Setup-0.3.0-win-x64.exe` (163 143 906 B, SHA-256
+  `0928FACF8DE43BBAC3B6AC3C96F4675865E54005D2C7B5EFF07A09FBD051DDCA`).
+  Staging aktualizatora ma podpisany manifest preview 0.3.0, minimum 0.1.1
+  i osiem chunków zgodnych z tym instalatorem; `Build-Installer.ps1` uruchamia
+  publikator automatycznie.
+  Authenticode instalatora pozostaje `NotSigned` (wymaga certyfikatu wydawcy).
+  Nie uruchamiano instalatora, usługi ani agresywnych operacji na hoście.
+
 ## Otwarte pytania do ręcznej weryfikacji
 
 - Ręcznie potwierdzić wizualną obecność „Uruchom przez GameShift” w głównym
@@ -683,3 +822,42 @@ zakończyła się kodem 0: build Release bez ostrzeżeń, format bez zmian i
 - Przy tej samej sesji potwierdzić wizualnie, że zmniejszenie „Krycia”
   odsłania obraz gry zamiast wygaszać zawartość HUD do czerni.
 
+## Walidacja Windows po handoffie Linux — 2026-09-05
+
+- Handoff z Linuxa został przyjęty jako punkt wyjścia dla bieżącego repozytorium;
+  na Windows sprawdzono kod po zmianach OptiScaler, System Optimizer 0.4.0 i
+  niezależnego Memory Optimizer bez sterowania pulpitem.
+- Host: Windows 11 Insider x64, build `28120`; `.NET SDK 10.0.303`, Windows
+  SDK `10.0.26100.0`. Restore i build Debug `GameShift.sln` oraz restore i
+  build Release rozwiązania Memory Optimizer zakończyły się 0 ostrzeżeń i 0
+  błędów.
+- Bezpieczna regresja Release GameShift (z wyłączeniem testów uruchamiających
+  okna/harness oraz globalnie mutujących cache): 134 Unit, 13 Recovery,
+  140 Integration i 4 Security przeszły; jeden test symlinków został
+  pominięty, bo host nie udostępnił wymaganej funkcji. Memory Optimizer:
+  58 Core i 12 Security przeszło; jeden agresywny test VM pominięto bez
+  `GAMESHIFT_ALLOW_AGGRESSIVE_MEMORY_TESTS=1`. Oba rozwiązania przeszły
+  `dotnet format --verify-no-changes`.
+- Dedykowane testy OptiScaler na Windows: 17/17 Unit oraz 21/22 Integration;
+  pominięty test symlinków jest tym samym kontrolowanym skipem hosta.
+- Testy globalnego `SystemMemoryCleaner` mają teraz jawne zabezpieczenie VM;
+  nie uruchamiają `SetSystemFileCacheSize` na zwykłym komputerze.
+- Read-only smoke: journal recovery jest czysty (1127 rekordów), PresentMon
+  2.5.1 ma stan `Ready`, a `GameShift.SystemAgent.exe --diagnostics` zwraca
+  protokół v6. Zainstalowany komponent Memory Optimizer pozostaje uruchomiony
+  jako `GameShiftMemoryService` (LocalSystem) wraz z trayem.
+- Zbudowano finalny lokalny staging 0.4.0. Instalator
+  `artifacts\\installer\\GameShift-Setup-0.4.0-win-x64.exe` ma 223 888 088 B
+  i SHA-256
+  `26C6A83C5D870E12F8CFC272AA5BD528F88F10D5F71D51427435914475C70369`;
+  Authenticode jest `Valid`, a 24 własne binaria payloadu mają wersję
+  `0.4.0.0` i zgodny podpis. Manifest preview ma wersję `0.4.0`, minimum
+  `0.3.0`, 11 chunków, a ich odtworzenie daje ten sam SHA-256.
+- GPL release gate przeszedł. NOTICE wskazuje `GameShift.MemoryOptimizer
+  0.4.0`, archiwum `Source/GameShift.MemoryOptimizer-0.4.0-source.zip` ma
+  SHA-256 `7FFFDF98286946C588183251A5F3A28EB058A0196426B2347A746AF36032B8BF`,
+  a wszystkie sześć własnych binariów Memory Optimizer jest podpisanych.
+- Podpis użyty do lokalnego stagingu to certyfikat deweloperski
+  `CN=GameShift Development`; pipeline produkcyjny nadal wymaga certyfikatu
+  wydawcy. Instalatora nie uruchamiano, usługi SystemAgent nie instalowano,
+  nie wykonywano restartu, gry ani agresywnej mutacji Windows.

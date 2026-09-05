@@ -1,6 +1,9 @@
 # Plan wykonawczy: bezpieczne MVP GameShift
 
-Status: aktywny — Bramy A–E ukończone, Brama F zaimplementowana na adapterach i oczekuje na walidację VM; Brama G ma działający launcher, reconnect i przepływ sesji, pozostała ręczna walidacja wysokiego kontrastu, skalowania i Narratora  
+Status: aktywny — Bramy A–G ukończone w kodzie; System Optimizer 0.4.0 ma
+usługę, bezpieczne IPC, pomiar A/B i recovery, lecz instalacja, restartowe
+recovery i agresywne mutacje nadal oczekują na kontrolowaną VM oraz podpis
+produkcyjny
 Utworzono: 2026-07-28  
 Źródło wymagań: pełna specyfikacja GameShift z załącznika zadania
 
@@ -419,6 +422,14 @@ Dowód ukończenia:
 
 ## Ryzyka
 
+- Memory Optimizer 0.3.0 ma odizolowane rozwiązanie GPL, usługę LocalSystem,
+  tray użytkownika, bezpieczny pipe per SID oraz neutralny eksport aktywnej
+  gry. Build obu rozwiązań jest bez ostrzeżeń; regresja główna przeszła
+  210/210, komponent 31/31 z jednym celowo pominiętym testem agresywnym.
+- Finalna instalacja agregatu pozostaje zablokowana przez niedokończony wpis
+  recovery `f34113f1-6660-4745-a726-d04a59fcf537`. Bramy nie pominięto i nie
+  uruchamiano operacji pamięci na hoście.
+
 - rozpoczęcie scaffoldingu w błędnym katalogu;
 - użycie niezatwierdzonej wersji Windows App SDK;
 - połączenie recovery z główną bazą i utrata niezależności awaryjnej;
@@ -428,8 +439,9 @@ Dowód ukończenia:
 
 ## Następna czynność
 
-Na kontrolowanej VM przejść bramę zatrzymywania własnej testowej usługi,
-restartu SystemAgent/systemu i pełnego recovery. Dopiero po 100% przywrócenia
-podłączyć mutujące RPC dla jawnie zatwierdzonych usług firm trzecich.
-Równolegle pozostaje ręczna checklista wysokiego kontrastu, skalowania 300%
-i Narratora.
+Na kontrolowanej VM przejść instalację/aktualizację 0.3.0→0.4.0, restart
+SystemAgent/systemu, crash-injection każdego checkpointu oraz pełny uninstall
+z trójstronnym recovery. Nie rozszerzać katalogu `Supported`, dopóki nowy
+adapter nie ma niezależnego readbacku i zielonego restore na macierzy VM.
+Równolegle pozostaje ręczna checklista 1080p/4K, DPI 100–200%, wysokiego
+kontrastu i Narratora.
