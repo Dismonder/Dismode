@@ -16,7 +16,8 @@ public sealed record OptiScalerInstallRequest(
     OptiScalerReleaseChannel Channel = OptiScalerReleaseChannel.Stable,
     string? Version = null,
     bool ExperimentalUseConfirmed = false,
-    bool EnableNeuralRendering = false);
+    bool EnableNeuralRendering = false,
+    bool UpgradeAgilitySdk = false);
 
 public sealed record OptiScalerOperationResult(
     bool Succeeded,
@@ -511,20 +512,33 @@ public sealed class OptiScalerManager : IDisposable
                 return new(false, "Oficjalny pakiet nie zawiera pliku OptiScaler.dll.");
             }
 
-            List<PayloadFile> additionalFiles = [];
+            List<OptiScalerIniSetting> iniSettings = [];
             if (driverStore is not null)
+            {
+                iniSettings.AddRange(
+                    OptiScalerIniPatcher.NeuralRenderingSettings);
+            }
+
+            if (request.UpgradeAgilitySdk)
+            {
+                iniSettings.AddRange(OptiScalerIniPatcher.AgilitySdkSettings);
+            }
+
+            List<PayloadFile> additionalFiles = [];
+            if (iniSettings.Count > 0)
             {
                 progress?.Report(new(
                     OptiScalerInstallStage.ConfiguringNeuralRendering,
-                    "Włączanie Neural Rendering w konfiguracji…"));
-                OptiScalerIniPatchResult? iniPatch =
-                    PatchNeuralRenderingIni(extractionDirectory);
+                    "Zapisywanie konfiguracji OptiScaler…"));
+                OptiScalerIniPatchResult? iniPatch = PatchIni(
+                    extractionDirectory,
+                    iniSettings);
                 if (iniPatch is null)
                 {
                     return new(
                         false,
                         "Pakiet nie zawiera OptiScaler.ini, więc nie da się "
-                            + "włączyć Neural Rendering.",
+                            + "zapisać wybranej konfiguracji.",
                         targetExecutable);
                 }
 
@@ -536,11 +550,14 @@ public sealed class OptiScalerManager : IDisposable
                             setting => $"[{setting.Section}] {setting.Key}"));
                     return new(
                         false,
-                        "Ten pakiet nie obsługuje Neural Rendering; brakuje "
+                        "Ten pakiet nie obsługuje wybranych opcji; brakuje "
                             + $"ustawień: {missing}.",
                         targetExecutable);
                 }
+            }
 
+            if (driverStore is not null)
+            {
                 progress?.Report(new(
                     OptiScalerInstallStage.CollectingDriverFiles,
                     $"Kopiowanie {driverStore.ModelFiles.Count} plików DLSS "
@@ -843,12 +860,13 @@ public sealed class OptiScalerManager : IDisposable
     }
 
     /// <summary>
-    /// Rewrites the extracted OptiScaler.ini so the package installs with
-    /// Neural Rendering enabled. Returns null when the package has no INI.
+    /// Rewrites the extracted OptiScaler.ini with the requested settings.
+    /// Returns null when the package has no INI.
     /// The file is UTF-8 with a BOM and CRLF endings, both of which survive.
     /// </summary>
-    private static OptiScalerIniPatchResult? PatchNeuralRenderingIni(
-        string extractionDirectory)
+    private static OptiScalerIniPatchResult? PatchIni(
+        string extractionDirectory,
+        IReadOnlyList<OptiScalerIniSetting> settings)
     {
         string iniPath = Path.Combine(extractionDirectory, "OptiScaler.ini");
         if (!File.Exists(iniPath))
@@ -868,7 +886,7 @@ public sealed class OptiScalerManager : IDisposable
 
         OptiScalerIniPatchResult result = OptiScalerIniPatcher.Apply(
             content,
-            OptiScalerIniPatcher.NeuralRenderingSettings);
+            settings);
         if (result.NotFound.Count == 0)
         {
             File.WriteAllBytes(

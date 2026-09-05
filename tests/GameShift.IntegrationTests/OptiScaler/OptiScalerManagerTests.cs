@@ -688,6 +688,55 @@ public sealed class OptiScalerManagerTests
         public void Report(OptiScalerInstallProgress value) => Reports.Add(value);
     }
 
+    [TestMethod]
+    public async Task AgilitySdkUpgradeIsWrittenWithoutNeuralRendering()
+    {
+        // Czesc gier nie uruchomi OptiScalera bez odswiezonego Agility SDK,
+        // a przelacznik jest w pakiecie domyslnie wylaczony. Opcja musi
+        // dzialac niezaleznie od Neural Rendering.
+        using OptiScalerTestContext context = new();
+        string game = context.CreateGameFile("Game.exe", "game");
+        context.CreatePayloadFile("OptiScaler.dll", "proxy");
+        context.CreatePayloadFile(
+            Path.Combine("OptiScaler", "D3D12_OptiScaler", "D3D12Core.dll"),
+            "agility");
+        context.CreatePayloadIni(withBom: true, complete: true);
+        bool probed = false;
+        OptiScalerManager manager = context.CreateManager(
+            driverStoreProbe: () =>
+            {
+                probed = true;
+                return context.CreateDriverStore(modelFileNames: []);
+            });
+
+        OptiScalerOperationResult result = await manager.InstallAsync(
+            new OptiScalerInstallRequest(
+                "profile-agility",
+                game,
+                context.GameDirectory,
+                OptiScalerProxy.Dxgi,
+                OfflineUseConfirmed: true,
+                UpgradeAgilitySdk: true),
+            CancellationToken.None);
+
+        Assert.IsTrue(result.Succeeded, result.Message);
+        Assert.IsFalse(probed, "Bez Neural Rendering sterownik nie jest badany.");
+
+        string ini = File.ReadAllText(
+            Path.Combine(context.GameDirectory, "OptiScaler.ini"));
+        StringAssert.Contains(ini, "FsrAgilitySDKUpgrade=true");
+
+        // Neural Rendering ma pozostac nietkniete.
+        StringAssert.Contains(ini, "Dx12Upscaler=auto");
+
+        // Framework musi trafic tam, gdzie pakiet go oczekuje.
+        Assert.IsTrue(File.Exists(Path.Combine(
+            context.GameDirectory,
+            "OptiScaler",
+            "D3D12_OptiScaler",
+            "D3D12Core.dll")));
+    }
+
     private static async Task<OptiScalerOperationResult>
         RunBlockedNeuralInstallAsync(
             Func<OptiScalerTestContext, NvidiaDriverStoreSnapshot> driverStore)
@@ -809,6 +858,8 @@ public sealed class OptiScalerManagerTests
                     "Enabled=auto",
                     "[DlssNr]",
                     "Enabled=auto",
+                    "[FSR]",
+                    "FsrAgilitySDKUpgrade=auto",
                 ]
                 : ["[Upscalers]", "Dx12Upscaler=auto"];
             string content = string.Join("\r\n", lines) + "\r\n";

@@ -1575,6 +1575,17 @@ public sealed partial class MainWindow : Window, IDisposable
                     TextWrapping = TextWrapping.Wrap,
                 },
             };
+            CheckBox agilitySdkUpgrade = new()
+            {
+                IsEnabled = !hardBlocked,
+                Content = new TextBlock
+                {
+                    MaxWidth = 500,
+                    Text = "Zaktualizuj DirectX 12 Agility SDK. Część gier bez "
+                        + "tego nie uruchomi OptiScalera; pliki są w pakiecie.",
+                    TextWrapping = TextWrapping.Wrap,
+                },
+            };
             TextBlock neuralStatus = new()
             {
                 Foreground = (Brush)Application.Current.Resources[
@@ -1625,6 +1636,7 @@ public sealed partial class MainWindow : Window, IDisposable
             content.Children.Add(safetyNotice);
             content.Children.Add(offlineConfirmation);
             content.Children.Add(experimentalConfirmation);
+            content.Children.Add(agilitySdkUpgrade);
             content.Children.Add(neuralRendering);
             content.Children.Add(neuralStatus);
 
@@ -1768,6 +1780,8 @@ public sealed partial class MainWindow : Window, IDisposable
                                     == OptiScalerReleaseChannel
                                         .DlssNeuralRendering
                                 && neuralRendering.IsChecked == true,
+                            UpgradeAgilitySdk =
+                                agilitySdkUpgrade.IsChecked == true,
                         });
                 }
             }
