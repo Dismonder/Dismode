@@ -58,4 +58,12 @@ public sealed record FrameRateSample(
             FrameTimeMilliseconds: null,
             ProcessId: null,
             message);
+
+    public static FrameRateSample Disabled() =>
+        new(
+            FrameRateStatus.Disabled,
+            FramesPerSecond: null,
+            FrameTimeMilliseconds: null,
+            ProcessId: null,
+            "Pomiar FPS jest wyłączony w ustawieniach GameShift.");
 }

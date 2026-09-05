@@ -4,8 +4,8 @@
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
   <Grid
       x:Name="OverlayRoot"
-      Width="376"
-      Height="160"
+      Width="328"
+      Height="120"
       Background="Transparent"
       RenderTransformOrigin="0,0">
     <Grid.RenderTransform>
@@ -15,299 +15,201 @@
           ScaleY="1" />
     </Grid.RenderTransform>
 
-    <!-- 1. FULL TACTICAL DECK LAYOUT -->
+    <Grid
+        x:Name="OverlayStatisticsContent"
+        Background="Transparent">
+
+    <!-- 1. FULL DETAILS LAYOUT -->
     <Border
         x:Name="OverlaySurfaceBorder"
         Margin="1"
-        Background="#F2080D14"
-        BorderBrush="#7135F2D0"
-        BorderThickness="1"
+        Background="Transparent"
+        BorderBrush="Transparent"
+        BorderThickness="0"
         CornerRadius="18">
-      <Grid>
-        <Grid.ColumnDefinitions>
-          <ColumnDefinition Width="5" />
-          <ColumnDefinition Width="*" />
-        </Grid.ColumnDefinitions>
+      <Grid
+          x:Name="FullDeckLayout"
+          Margin="8,5,8,5"
+          Background="Transparent"
+          RowSpacing="4">
+        <Grid.RowDefinitions>
+          <RowDefinition Height="18" />
+          <RowDefinition Height="50" />
+          <RowDefinition Height="32" />
+        </Grid.RowDefinitions>
 
-        <Border
-            x:Name="FullDeckAccentStripe"
-            Background="#FF35F2D0"
-            CornerRadius="17,0,0,17" />
+        <Grid ColumnSpacing="8">
+          <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="*" />
+            <ColumnDefinition Width="Auto" />
+          </Grid.ColumnDefinitions>
+          <TextBlock
+              x:Name="GameNameText"
+              VerticalAlignment="Center"
+              Foreground="#FFF4F8FA"
+              FontFamily="Segoe UI Variable Display"
+              FontSize="10"
+              FontWeight="SemiBold"
+              MaxLines="1"
+              TextTrimming="CharacterEllipsis" />
+          <Border
+              x:Name="StatusBadgeBorder"
+              Grid.Column="1"
+              Padding="4,1"
+              VerticalAlignment="Center"
+              Background="Transparent"
+              BorderBrush="Transparent"
+              BorderThickness="0">
+            <StackPanel Orientation="Horizontal" Spacing="5">
+              <Ellipse
+                  x:Name="SourceIndicator"
+                  Width="5"
+                  Height="5"
+                  VerticalAlignment="Center"
+                  Fill="#FF3BDC9B" />
+              <TextBlock
+                  x:Name="StatusBadgeText"
+                  Foreground="#FF7EF0C2"
+                  FontSize="7"
+                  FontWeight="Bold"
+                  CharacterSpacing="80"
+                  Text="LIVE" />
+            </StackPanel>
+          </Border>
+        </Grid>
 
         <Grid
-            x:Name="FullDeckLayout"
-            Grid.Column="1"
-            Margin="12,10,12,9"
-            RowSpacing="7">
-          <Grid.RowDefinitions>
-            <RowDefinition Height="25" />
-            <RowDefinition Height="70" />
-            <RowDefinition Height="29" />
-          </Grid.RowDefinitions>
-
-          <Grid ColumnSpacing="9">
-            <Grid.ColumnDefinitions>
-              <ColumnDefinition Width="Auto" />
-              <ColumnDefinition Width="*" />
-              <ColumnDefinition Width="Auto" />
-            </Grid.ColumnDefinitions>
-
-            <Border
-                x:Name="FullDeckBadgeIconBorder"
-                Width="25"
-                Height="25"
-                Background="#2635F2D0"
-                BorderBrush="#6235F2D0"
-                BorderThickness="1"
-                CornerRadius="7">
-              <Grid>
-                <Rectangle
-                    x:Name="FullDeckBadgeDot"
-                    Width="9"
-                    Height="1"
-                    Margin="0,6,0,0"
-                    HorizontalAlignment="Center"
-                    VerticalAlignment="Top"
-                    Fill="#FF35F2D0" />
-                <TextBlock
-                    HorizontalAlignment="Center"
-                    VerticalAlignment="Center"
-                    Foreground="#FFF3FBFA"
-                    FontFamily="Segoe UI Variable Display"
-                    FontSize="9"
-                    FontWeight="Bold"
-                    CharacterSpacing="35"
-                    Text="GS" />
-              </Grid>
-            </Border>
-
+            x:Name="FullDeckPrimaryMetrics"
+            Grid.Row="1"
+            ColumnSpacing="10">
+          <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="Auto" />
+            <ColumnDefinition Width="1" />
+            <ColumnDefinition Width="*" />
+          </Grid.ColumnDefinitions>
+          <Border
+              x:Name="FpsPanelBorder"
+              Background="Transparent"
+              BorderBrush="Transparent"
+              BorderThickness="0">
             <StackPanel
-                Grid.Column="1"
                 VerticalAlignment="Center"
-                Spacing="0">
+                Orientation="Horizontal"
+                Spacing="6">
               <TextBlock
-                  x:Name="GameNameText"
-                  Foreground="#FFF4F8FA"
-                  FontFamily="Segoe UI Variable Display"
-                  FontSize="11"
+                  x:Name="FpsValueText"
+                  VerticalAlignment="Center"
+                  Foreground="#FF35F2D0"
+                  FontFamily="Cascadia Mono"
+                  FontSize="31"
                   FontWeight="SemiBold"
-                  MaxLines="1"
-                  TextTrimming="CharacterEllipsis" />
-              <TextBlock
-                  Foreground="#FF70818B"
-                  FontSize="7"
-                  FontWeight="SemiBold"
-                  CharacterSpacing="135"
-                  Text="TACTICAL PERFORMANCE DECK" />
-            </StackPanel>
-
-            <Border
-                x:Name="StatusBadgeBorder"
-                Grid.Column="2"
-                Padding="8,4"
-                VerticalAlignment="Center"
-                Background="#243BDC9B"
-                BorderBrush="#663BDC9B"
-                BorderThickness="1"
-                CornerRadius="9">
-              <StackPanel Orientation="Horizontal" Spacing="6">
-                <Ellipse
-                    x:Name="SourceIndicator"
-                    Width="6"
-                    Height="6"
-                    VerticalAlignment="Center"
-                    Fill="#FF3BDC9B" />
+                  CharacterSpacing="-40"
+                  Text="—" />
+              <StackPanel VerticalAlignment="Center" Spacing="0">
                 <TextBlock
-                    x:Name="StatusBadgeText"
-                    Foreground="#FF7EF0C2"
-                    FontSize="8"
-                    FontWeight="Bold"
-                    CharacterSpacing="100"
-                    Text="LIVE" />
-              </StackPanel>
-            </Border>
-          </Grid>
-
-          <Grid Grid.Row="1" ColumnSpacing="7">
-            <Grid.ColumnDefinitions>
-              <ColumnDefinition Width="145" />
-              <ColumnDefinition Width="91" />
-              <ColumnDefinition Width="*" />
-            </Grid.ColumnDefinitions>
-
-            <Border
-                x:Name="FpsPanelBorder"
-                Padding="10,7"
-                Background="#6B10202B"
-                BorderBrush="#4A35F2D0"
-                BorderThickness="1"
-                CornerRadius="12">
-              <Grid>
-                <Grid.RowDefinitions>
-                  <RowDefinition Height="Auto" />
-                  <RowDefinition Height="*" />
-                </Grid.RowDefinitions>
-                <TextBlock
-                    Foreground="#FF6F8790"
-                    FontSize="7"
-                    FontWeight="SemiBold"
-                    CharacterSpacing="125"
-                    Text="LIVE OUTPUT" />
-                <StackPanel
-                    Grid.Row="1"
-                    VerticalAlignment="Center"
-                    Orientation="Horizontal"
-                    Spacing="6">
-                  <TextBlock
-                      x:Name="FpsValueText"
-                      VerticalAlignment="Center"
-                      Foreground="#FF35F2D0"
-                      FontFamily="Cascadia Mono"
-                      FontSize="35"
-                      FontWeight="SemiBold"
-                      CharacterSpacing="-40"
-                      Text="—" />
-                  <StackPanel VerticalAlignment="Center" Spacing="0">
-                    <TextBlock
-                        Foreground="#FFF4FAF9"
-                        FontSize="11"
-                        FontWeight="Bold"
-                        CharacterSpacing="55"
-                        Text="FPS" />
-                    <TextBlock
-                        Foreground="#FF5CBFAE"
-                        FontSize="7"
-                        CharacterSpacing="80"
-                        Text="REAL" />
-                  </StackPanel>
-                </StackPanel>
-              </Grid>
-            </Border>
-
-            <Border
-                x:Name="FrameTimePanelBorder"
-                Grid.Column="1"
-                Padding="9,7"
-                Background="#5A13202A"
-                BorderBrush="#3035F2D0"
-                BorderThickness="1"
-                CornerRadius="12">
-              <StackPanel VerticalAlignment="Center" Spacing="3">
-                <TextBlock
-                    Foreground="#FF6F8790"
-                    FontSize="7"
-                    FontWeight="SemiBold"
-                    CharacterSpacing="105"
-                    Text="FRAME TIME" />
-                <StackPanel Orientation="Horizontal" Spacing="4">
-                  <TextBlock
-                      x:Name="FrameTimeValueText"
-                      Foreground="#FFF2F7F7"
-                      FontFamily="Cascadia Mono"
-                      FontSize="19"
-                      FontWeight="SemiBold"
-                      Text="—" />
-                  <TextBlock
-                      Margin="0,4,0,0"
-                      Foreground="#FF8A9AA2"
-                      FontSize="8"
-                      Text="ms" />
-                </StackPanel>
-                <Border
-                    Height="2"
-                    Background="#2635F2D0"
-                    CornerRadius="1">
-                  <Border
-                      x:Name="FrameTimeIndicatorBar"
-                      Width="28"
-                      HorizontalAlignment="Left"
-                      Background="#FF35F2D0"
-                      CornerRadius="1" />
-                </Border>
-              </StackPanel>
-            </Border>
-
-            <Border
-                x:Name="AutoRestoreBadgeBorder"
-                Grid.Column="2"
-                Padding="9,7"
-                Background="#42142323"
-                BorderBrush="#453BDC9B"
-                BorderThickness="1"
-                CornerRadius="12">
-              <Grid>
-                <Grid.RowDefinitions>
-                  <RowDefinition Height="Auto" />
-                  <RowDefinition Height="*" />
-                  <RowDefinition Height="Auto" />
-                </Grid.RowDefinitions>
-                <StackPanel Orientation="Horizontal" Spacing="5">
-                  <Ellipse
-                      x:Name="AutoRestoreIndicator"
-                      Width="5"
-                      Height="5"
-                      VerticalAlignment="Center"
-                      Fill="#FF3BDC9B" />
-                  <TextBlock
-                      Foreground="#FF79908E"
-                      FontSize="7"
-                      FontWeight="SemiBold"
-                      CharacterSpacing="95"
-                      Text="AUTO RESTORE" />
-                </StackPanel>
-                <TextBlock
-                    x:Name="AutoRestoreStatusText"
-                    Grid.Row="1"
-                    VerticalAlignment="Center"
-                    Foreground="#FF78EFC2"
-                    FontFamily="Segoe UI Variable Display"
+                    Foreground="#FFF4FAF9"
                     FontSize="10"
                     FontWeight="Bold"
-                    CharacterSpacing="65"
-                    Text="UZBROJONE" />
+                    CharacterSpacing="45"
+                    Text="FPS" />
                 <TextBlock
-                    x:Name="AutoRestoreDetailText"
-                    Grid.Row="2"
-                    Foreground="#FF667D7B"
+                    Foreground="#FF5CBFAE"
+                    FontSize="6"
+                    CharacterSpacing="70"
+                    Text="LIVE" />
+              </StackPanel>
+            </StackPanel>
+          </Border>
+          <Rectangle
+              Grid.Column="1"
+              Width="1"
+              Margin="0,8"
+              Fill="#4035F2D0" />
+          <Border
+              x:Name="FrameTimePanelBorder"
+              Grid.Column="2"
+              Background="Transparent"
+              BorderBrush="Transparent"
+              BorderThickness="0">
+            <Grid VerticalAlignment="Center" RowSpacing="3">
+              <Grid.RowDefinitions>
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="2" />
+              </Grid.RowDefinitions>
+              <StackPanel Orientation="Horizontal" Spacing="5">
+                <TextBlock
+                    VerticalAlignment="Center"
+                    Foreground="#FF6F8790"
                     FontSize="7"
-                    MaxLines="1"
-                    Text="PO WYJŚCIU Z GRY"
-                    TextTrimming="CharacterEllipsis" />
-              </Grid>
-            </Border>
-          </Grid>
+                    FontWeight="SemiBold"
+                    CharacterSpacing="85"
+                    Text="FRAME" />
+                <TextBlock
+                    x:Name="FrameTimeValueText"
+                    Foreground="#FFF2F7F7"
+                    FontFamily="Cascadia Mono"
+                    FontSize="19"
+                    FontWeight="SemiBold"
+                    Text="—" />
+                <TextBlock
+                    Margin="0,4,0,0"
+                    Foreground="#FF8A9AA2"
+                    FontSize="8"
+                    Text="ms" />
+              </StackPanel>
+              <Border
+                  Grid.Row="1"
+                  Width="72"
+                  Height="2"
+                  HorizontalAlignment="Left"
+                  Background="#2635F2D0"
+                  CornerRadius="1">
+                <Border
+                    x:Name="FrameTimeIndicatorBar"
+                    Width="28"
+                    HorizontalAlignment="Left"
+                    Background="#FF35F2D0"
+                    CornerRadius="1" />
+              </Border>
+            </Grid>
+          </Border>
+        </Grid>
 
+        <Grid
+            x:Name="FullDeckStatusRow"
+            Grid.Row="2"
+            ColumnSpacing="8">
+          <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="*" />
+            <ColumnDefinition Width="104" />
+          </Grid.ColumnDefinitions>
           <Border
               x:Name="TelemetryStripBorder"
-              Grid.Row="2"
-              Padding="8,3"
-              Background="#3D0E1A22"
-              BorderBrush="#2435F2D0"
-              BorderThickness="1"
-              CornerRadius="9">
-            <Grid ColumnSpacing="8">
+              Background="Transparent"
+              BorderBrush="Transparent"
+              BorderThickness="0">
+            <Grid ColumnSpacing="6">
               <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="122" />
-                <ColumnDefinition Width="1" />
+                <ColumnDefinition Width="58" />
                 <ColumnDefinition Width="*" />
               </Grid.ColumnDefinitions>
               <Canvas
-                  Width="122"
-                  Height="20"
+                  Width="58"
+                  Height="18"
                   HorizontalAlignment="Left"
                   VerticalAlignment="Center">
                 <Line
                     X1="0"
-                    X2="122"
-                    Y1="19"
-                    Y2="19"
+                    X2="58"
+                    Y1="17"
+                    Y2="17"
                     Stroke="#2635F2D0"
                     StrokeThickness="1" />
                 <Line
                     X1="0"
-                    X2="122"
-                    Y1="9"
-                    Y2="9"
+                    X2="58"
+                    Y1="8"
+                    Y2="8"
                     Stroke="#141A7F75"
                     StrokeDashArray="2,4"
                     StrokeThickness="1" />
@@ -315,32 +217,59 @@
                     x:Name="FrameGraphLine"
                     Stroke="#FF35F2D0"
                     StrokeLineJoin="Round"
-                    StrokeThickness="1.8" />
+                    StrokeThickness="1.5" />
               </Canvas>
-              <Rectangle
-                  Grid.Column="1"
-                  Width="1"
-                  Margin="0,2"
-                  Fill="#2E35F2D0" />
               <StackPanel
-                  Grid.Column="2"
+                  Grid.Column="1"
                   VerticalAlignment="Center"
                   Spacing="0">
                 <TextBlock
                     Foreground="#FF5E747E"
-                    FontSize="7"
+                    FontSize="6"
                     FontWeight="SemiBold"
-                    CharacterSpacing="105"
-                    Text="PRESENTMON / ETW SOURCE" />
+                    CharacterSpacing="80"
+                    Text="PRESENTMON / ETW" />
                 <TextBlock
                     x:Name="SourceStatusText"
                     Foreground="#FFB4C4C7"
-                    FontSize="8"
+                    FontSize="7"
                     MaxLines="1"
                     Text="Synchronizacja ze źródłem"
                     TextTrimming="CharacterEllipsis" />
               </StackPanel>
             </Grid>
+          </Border>
+          <Border
+              x:Name="AutoRestoreBadgeBorder"
+              Grid.Column="1"
+              Background="Transparent"
+              BorderBrush="Transparent"
+              BorderThickness="0">
+            <StackPanel VerticalAlignment="Center" Spacing="1">
+              <StackPanel Orientation="Horizontal" Spacing="5">
+                <Ellipse
+                    x:Name="AutoRestoreIndicator"
+                    Width="5"
+                    Height="5"
+                    VerticalAlignment="Center"
+                    Fill="#FF3BDC9B" />
+                <TextBlock
+                    x:Name="AutoRestoreStatusText"
+                    Foreground="#FF78EFC2"
+                    FontFamily="Segoe UI Variable Display"
+                    FontSize="8"
+                    FontWeight="Bold"
+                    CharacterSpacing="45"
+                    Text="UZBROJONE" />
+              </StackPanel>
+              <TextBlock
+                  x:Name="AutoRestoreDetailText"
+                  Foreground="#FF667D7B"
+                  FontSize="6"
+                  MaxLines="1"
+                  Text="PO WYJŚCIU Z GRY"
+                  TextTrimming="CharacterEllipsis" />
+            </StackPanel>
           </Border>
         </Grid>
       </Grid>
@@ -351,37 +280,18 @@
         x:Name="CompactBarLayout"
         Margin="1"
         Padding="12,6"
-        Background="#E6080D14"
-        BorderBrush="#7135F2D0"
-        BorderThickness="1"
+        Background="Transparent"
+        BorderBrush="Transparent"
+        BorderThickness="0"
         CornerRadius="14"
         Visibility="Collapsed">
       <Grid ColumnSpacing="10">
         <Grid.ColumnDefinitions>
           <ColumnDefinition Width="Auto" />
-          <ColumnDefinition Width="*" />
           <ColumnDefinition Width="Auto" />
         </Grid.ColumnDefinitions>
 
-        <StackPanel Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
-          <Ellipse
-              x:Name="CompactSourceIndicator"
-              Width="6"
-              Height="6"
-              VerticalAlignment="Center"
-              Fill="#FF3BDC9B" />
-          <TextBlock
-              x:Name="CompactGameNameText"
-              MaxWidth="110"
-              Foreground="#FFF4F8FA"
-              FontFamily="Segoe UI Variable Display"
-              FontSize="11"
-              FontWeight="SemiBold"
-              MaxLines="1"
-              TextTrimming="CharacterEllipsis" />
-        </StackPanel>
-
-        <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="4" HorizontalAlignment="Center" VerticalAlignment="Center">
+        <StackPanel Orientation="Horizontal" Spacing="4" HorizontalAlignment="Center" VerticalAlignment="Center">
           <TextBlock
               x:Name="CompactFpsValueText"
               Foreground="#FF35F2D0"
@@ -397,7 +307,7 @@
               Text="FPS" />
         </StackPanel>
 
-        <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="4" VerticalAlignment="Center">
+        <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="4" VerticalAlignment="Center">
           <TextBlock
               x:Name="CompactFrameTimeValueText"
               Foreground="#FFF2F7F7"
@@ -418,34 +328,26 @@
     <Grid
         x:Name="MinimalTextLayout"
         Padding="6,4"
+        Background="Transparent"
         HorizontalAlignment="Left"
         VerticalAlignment="Center"
         Visibility="Collapsed">
-      <StackPanel Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
-        <StackPanel Orientation="Horizontal" Spacing="4" VerticalAlignment="Center">
-          <TextBlock
-              x:Name="MinimalFpsValueText"
-              Foreground="#FF35F2D0"
-              FontFamily="Cascadia Mono"
-              FontSize="22"
-              FontWeight="Bold"
-              Text="—" />
-          <TextBlock
-              Foreground="#FFE0E8EB"
-              FontSize="12"
-              FontWeight="Bold"
-              VerticalAlignment="Center"
-              Text="FPS" />
-        </StackPanel>
+      <StackPanel Orientation="Horizontal" Spacing="4" VerticalAlignment="Center">
         <TextBlock
-            x:Name="MinimalFrameTimeValueText"
-            Foreground="#FFD5E0E4"
+            x:Name="MinimalFpsValueText"
+            Foreground="#FF35F2D0"
             FontFamily="Cascadia Mono"
-            FontSize="14"
-            FontWeight="SemiBold"
-            VerticalAlignment="Center"
+            FontSize="22"
+            FontWeight="Bold"
             Text="—" />
+        <TextBlock
+            Foreground="#FFE0E8EB"
+            FontSize="12"
+            FontWeight="Bold"
+            VerticalAlignment="Center"
+            Text="FPS" />
       </StackPanel>
+    </Grid>
     </Grid>
   </Grid>
 </Window>

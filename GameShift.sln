@@ -35,6 +35,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "GameShift.Launcher", "src\G
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "GameShift.UpdatePublisher", "tools\GameShift.UpdatePublisher\GameShift.UpdatePublisher.csproj", "{7D2B5763-40BE-4E31-A740-6A44D33D9F35}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "GameShift.SystemOptimizer", "src\GameShift.SystemOptimizer\GameShift.SystemOptimizer.csproj", "{F94A2B2F-55AE-4EF6-99D2-B17A8FBE4BCF}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -225,11 +227,24 @@ Global
 		{7D2B5763-40BE-4E31-A740-6A44D33D9F35}.Release|x64.Build.0 = Release|Any CPU
 		{7D2B5763-40BE-4E31-A740-6A44D33D9F35}.Release|x86.ActiveCfg = Release|Any CPU
 		{7D2B5763-40BE-4E31-A740-6A44D33D9F35}.Release|x86.Build.0 = Release|Any CPU
+		{F94A2B2F-55AE-4EF6-99D2-B17A8FBE4BCF}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{F94A2B2F-55AE-4EF6-99D2-B17A8FBE4BCF}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{F94A2B2F-55AE-4EF6-99D2-B17A8FBE4BCF}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{F94A2B2F-55AE-4EF6-99D2-B17A8FBE4BCF}.Debug|x64.Build.0 = Debug|Any CPU
+		{F94A2B2F-55AE-4EF6-99D2-B17A8FBE4BCF}.Debug|x86.ActiveCfg = Debug|Any CPU
+		{F94A2B2F-55AE-4EF6-99D2-B17A8FBE4BCF}.Debug|x86.Build.0 = Debug|Any CPU
+		{F94A2B2F-55AE-4EF6-99D2-B17A8FBE4BCF}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{F94A2B2F-55AE-4EF6-99D2-B17A8FBE4BCF}.Release|Any CPU.Build.0 = Release|Any CPU
+		{F94A2B2F-55AE-4EF6-99D2-B17A8FBE4BCF}.Release|x64.ActiveCfg = Release|Any CPU
+		{F94A2B2F-55AE-4EF6-99D2-B17A8FBE4BCF}.Release|x64.Build.0 = Release|Any CPU
+		{F94A2B2F-55AE-4EF6-99D2-B17A8FBE4BCF}.Release|x86.ActiveCfg = Release|Any CPU
+		{F94A2B2F-55AE-4EF6-99D2-B17A8FBE4BCF}.Release|x86.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
 	EndGlobalSection
 	GlobalSection(NestedProjects) = preSolution
 		{54B7A3AA-0AFD-4600-A82D-C5F55A4F63C6} = {827E0CD3-B72D-47B6-A68D-7590B98EB39B}
+		{F94A2B2F-55AE-4EF6-99D2-B17A8FBE4BCF} = {827E0CD3-B72D-47B6-A68D-7590B98EB39B}
 	EndGlobalSection
 EndGlobal

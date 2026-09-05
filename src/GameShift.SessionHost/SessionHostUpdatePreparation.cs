@@ -2,6 +2,8 @@ using System.ComponentModel;
 using System.Diagnostics;
 using GameShift.Data.Journal;
 using GameShift.Data.Storage;
+using GameShift.Windows.Security;
+using GameShift.Windows.Sessions;
 
 namespace GameShift.SessionHost;
 
@@ -13,6 +15,8 @@ internal static class SessionHostUpdatePreparation
         TimeSpan.FromSeconds(5);
 
     public static async Task<int> RunAsync(
+        bool stopUserInterface,
+        bool restoreSystemOptimizer,
         CancellationToken cancellationToken)
     {
         try
@@ -29,10 +33,19 @@ internal static class SessionHostUpdatePreparation
 
             string applicationDirectory =
                 Path.GetFullPath(AppContext.BaseDirectory);
-            bool userInterfaceWasRunning = await StopExactComponentAsync(
-                Path.Combine(applicationDirectory, "GameShift.UI.exe"),
-                preferGracefulClose: true,
-                cancellationToken);
+            if (stopUserInterface &&
+                !await PrepareSystemOptimizerForMaintenanceAsync(
+                    restoreSystemOptimizer,
+                    cancellationToken))
+            {
+                return restoreSystemOptimizer ? 7 : 6;
+            }
+
+            bool userInterfaceWasRunning = stopUserInterface &&
+                await StopExactComponentAsync(
+                    Path.Combine(applicationDirectory, "GameShift.UI.exe"),
+                    preferGracefulClose: true,
+                    cancellationToken);
 
             await Task.Delay(
                 TimeSpan.FromMilliseconds(300),
@@ -60,12 +73,17 @@ internal static class SessionHostUpdatePreparation
                     "PresentMon-2.5.1-x64.exe"),
                 preferGracefulClose: false,
                 cancellationToken);
-            await StopExactComponentAsync(
-                Path.Combine(
-                    applicationDirectory,
-                    "GameShift.SystemAgent.exe"),
-                preferGracefulClose: false,
-                cancellationToken);
+            if (stopUserInterface)
+            {
+                await StopExactComponentAsync(
+                    Path.Combine(
+                        applicationDirectory,
+                        "SystemOptimizer",
+                        "GameShift.SystemOptimizer.exe"),
+                    preferGracefulClose: true,
+                    cancellationToken);
+            }
+
             await StopExactComponentAsync(
                 Path.Combine(
                     applicationDirectory,
@@ -111,6 +129,53 @@ internal static class SessionHostUpdatePreparation
                 + exception.Message);
             return 5;
         }
+    }
+
+    private static async Task<bool> PrepareSystemOptimizerForMaintenanceAsync(
+        bool restoreAll,
+        CancellationToken cancellationToken)
+    {
+        bool hasMachineState =
+            File.Exists(GameShiftStoragePaths.SystemOptimizerDatabasePath)
+            || File.Exists(GameShiftStoragePaths.MachineRecoveryJournalPath);
+        if (!hasMachineState)
+        {
+            return true;
+        }
+
+        // Demanding a restore that has nothing to undo would be a dead end on
+        // builds whose signature the agent does not trust: restore is a
+        // mutation, the policy refuses mutations from untrusted callers, and
+        // the uninstaller would block forever. If the machine journal records
+        // no applied-but-uncompensated action, no durable change exists.
+        RecoveryJournalInspection machineJournal =
+            await RecoveryJournalInspector.InspectAsync(
+                GameShiftStoragePaths.MachineRecoveryJournalPath,
+                cancellationToken);
+        if (machineJournal.IsClean && !machineJournal.HasPendingDurableChanges)
+        {
+            return true;
+        }
+
+        using SystemOptimizerGameProfileClient client = new(
+            CurrentWindowsIdentity.GetUserSid().Value);
+        SystemGameProfileOperationResult result = restoreAll
+            ? await client.RestoreAllAsync(cancellationToken)
+                .ConfigureAwait(false)
+            : await client.PrepareForUpdateAsync(cancellationToken)
+                .ConfigureAwait(false);
+        if (restoreAll && result.Succeeded)
+        {
+            result = await client.PrepareForUpdateAsync(cancellationToken)
+                .ConfigureAwait(false);
+        }
+
+        if (!result.Succeeded)
+        {
+            Console.Error.WriteLine(result.Message);
+        }
+
+        return result.Succeeded;
     }
 
     private static async Task<bool> StopExactComponentAsync(

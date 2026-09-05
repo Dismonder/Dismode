@@ -1,12 +1,20 @@
 #include <windows.h>
 
 #define IDI_GAMESHIFT 101
+#define GAMESHIFT_STRINGIZE_DETAIL(value) #value
+#define GAMESHIFT_STRINGIZE(value) GAMESHIFT_STRINGIZE_DETAIL(value)
+
+#if !defined(GAMESHIFT_VERSION_MAJOR) || \
+    !defined(GAMESHIFT_VERSION_MINOR) || \
+    !defined(GAMESHIFT_VERSION_PATCH)
+#error GameShift version macros must be provided by MSBuild.
+#endif
 
 IDI_GAMESHIFT ICON "..\\..\\assets\\branding\\GameShift.ico"
 
 VS_VERSION_INFO VERSIONINFO
- FILEVERSION 0,1,7,0
- PRODUCTVERSION 0,1,7,0
+ FILEVERSION GAMESHIFT_VERSION_MAJOR,GAMESHIFT_VERSION_MINOR,GAMESHIFT_VERSION_PATCH,0
+ PRODUCTVERSION GAMESHIFT_VERSION_MAJOR,GAMESHIFT_VERSION_MINOR,GAMESHIFT_VERSION_PATCH,0
  FILEFLAGSMASK 0x3fL
 #ifdef _DEBUG
  FILEFLAGS VS_FF_DEBUG
@@ -23,12 +31,12 @@ BEGIN
         BEGIN
             VALUE "CompanyName", "GameShift Development\0"
             VALUE "FileDescription", "GameShift Windows 11 Explorer Command\0"
-            VALUE "FileVersion", "0.1.7.0\0"
+            VALUE "FileVersion", GAMESHIFT_STRINGIZE(GAMESHIFT_VERSION_MAJOR) "." GAMESHIFT_STRINGIZE(GAMESHIFT_VERSION_MINOR) "." GAMESHIFT_STRINGIZE(GAMESHIFT_VERSION_PATCH) ".0\0"
             VALUE "InternalName", "GameShift.ShellExtension.dll\0"
             VALUE "LegalCopyright", "Copyright (c) 2026 GameShift Development\0"
             VALUE "OriginalFilename", "GameShift.ShellExtension.dll\0"
-            VALUE "ProductName", "GameShift Technical Preview\0"
-            VALUE "ProductVersion", "0.1.7.0\0"
+            VALUE "ProductName", "GameShift Gaming Edition\0"
+            VALUE "ProductVersion", GAMESHIFT_STRINGIZE(GAMESHIFT_VERSION_MAJOR) "." GAMESHIFT_STRINGIZE(GAMESHIFT_VERSION_MINOR) "." GAMESHIFT_STRINGIZE(GAMESHIFT_VERSION_PATCH) ".0\0"
         END
     END
     BLOCK "VarFileInfo"

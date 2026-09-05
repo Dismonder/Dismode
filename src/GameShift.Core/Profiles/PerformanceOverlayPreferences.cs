@@ -99,6 +99,28 @@ public sealed record PerformanceOverlayPreferences
         Style = style;
         Theme = theme;
         UpdatedAtUtc = updatedAtUtc.ToUniversalTime();
+        IsFpsTrackingEnabled = true;
+    }
+
+    public PerformanceOverlayPreferences(
+        bool isEnabled,
+        bool isFpsTrackingEnabled,
+        int opacityPercent,
+        int scalePercent,
+        PerformanceOverlayCorner corner,
+        PerformanceOverlayStyle style,
+        PerformanceOverlayTheme theme,
+        DateTimeOffset updatedAtUtc)
+        : this(
+            isEnabled,
+            opacityPercent,
+            scalePercent,
+            corner,
+            style,
+            theme,
+            updatedAtUtc)
+    {
+        IsFpsTrackingEnabled = isFpsTrackingEnabled;
     }
 
     public PerformanceOverlayPreferences(
@@ -119,6 +141,8 @@ public sealed record PerformanceOverlayPreferences
     }
 
     public bool IsEnabled { get; }
+
+    public bool IsFpsTrackingEnabled { get; }
 
     public int OpacityPercent { get; }
 
@@ -142,4 +166,3 @@ public sealed record PerformanceOverlayPreferences
             PerformanceOverlayTheme.CyberNeon,
             DateTimeOffset.UtcNow);
 }
-

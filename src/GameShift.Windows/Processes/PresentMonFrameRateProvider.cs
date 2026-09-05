@@ -22,6 +22,7 @@ public sealed class PresentMonFrameRateProvider : IFrameRateProvider
 
     private readonly string _executablePath;
     private readonly string _sessionName;
+    private readonly bool _trackGpu;
     private readonly TimeProvider _timeProvider;
     private readonly SemaphoreSlim _lifecycleGate = new(1, 1);
     private readonly object _observationSync = new();
@@ -37,6 +38,7 @@ public sealed class PresentMonFrameRateProvider : IFrameRateProvider
     private DateTimeOffset? _captureStartedAtUtc;
     private int _initialCaptureRestartCount;
     private bool _captureProducedFrame;
+    private BenchmarkFrameCollector? _benchmarkCollector;
     private bool _disposed;
 
     public PresentMonFrameRateProvider(
@@ -48,23 +50,107 @@ public sealed class PresentMonFrameRateProvider : IFrameRateProvider
             ?? PresentMonComponent.ResolveDefaultExecutablePath());
         _sessionName = CreateCaptureSessionName(
             GetCurrentUserIdentityKey());
+        _trackGpu = false;
         _timeProvider = timeProvider ?? TimeProvider.System;
     }
 
     internal PresentMonFrameRateProvider(
         string executablePath,
         string captureSessionIdentityKey,
-        TimeProvider? timeProvider = null)
+        TimeProvider? timeProvider = null,
+        bool trackGpu = false)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(
             captureSessionIdentityKey);
         _executablePath = Path.GetFullPath(executablePath);
         _sessionName = CreateCaptureSessionName(
             captureSessionIdentityKey);
+        _trackGpu = trackGpu;
         _timeProvider = timeProvider ?? TimeProvider.System;
     }
 
     internal int? ActiveCaptureProcessId => _captureIdentity?.ProcessId;
+
+    public static PresentMonFrameRateProvider CreateBenchmarkProvider(
+        string? executablePath = null,
+        TimeProvider? timeProvider = null) =>
+        new(
+            executablePath
+            ?? PresentMonComponent.ResolveDefaultExecutablePath(),
+            $"{GetCurrentUserIdentityKey()}|benchmark",
+            timeProvider,
+            trackGpu: true);
+
+    public async ValueTask<IReadOnlyList<double>> CaptureFrameTimesAsync(
+        int processId,
+        TimeSpan measurementDuration,
+        CancellationToken cancellationToken) =>
+        (await CaptureBenchmarkAsync(
+                processId,
+                measurementDuration,
+                cancellationToken)
+            .ConfigureAwait(false)).FrameTimesMilliseconds;
+
+    public async ValueTask<PresentMonBenchmarkCapture> CaptureBenchmarkAsync(
+        int processId,
+        TimeSpan measurementDuration,
+        CancellationToken cancellationToken)
+    {
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(processId);
+        if (measurementDuration <= TimeSpan.Zero
+            || measurementDuration > TimeSpan.FromSeconds(120))
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(measurementDuration),
+                "Benchmark capture must be between zero and 120 seconds.");
+        }
+
+        FrameRateSample sample = await SampleAsync(
+                [processId],
+                cancellationToken)
+            .ConfigureAwait(false);
+        if (sample.Status is FrameRateStatus.MissingComponent
+            or FrameRateStatus.InvalidComponent
+            or FrameRateStatus.AccessDenied
+            or FrameRateStatus.Failed)
+        {
+            throw new InvalidOperationException(sample.Message);
+        }
+
+        BenchmarkFrameCollector collector = new(processId);
+        lock (_observationSync)
+        {
+            if (_benchmarkCollector is not null)
+            {
+                throw new InvalidOperationException(
+                    "A raw PresentMon benchmark capture is already active.");
+            }
+
+            _benchmarkCollector = collector;
+        }
+
+        try
+        {
+            await Task.Delay(
+                    measurementDuration,
+                    _timeProvider,
+                    cancellationToken)
+                .ConfigureAwait(false);
+            return collector.SnapshotDominantCapture();
+        }
+        finally
+        {
+            lock (_observationSync)
+            {
+                if (ReferenceEquals(_benchmarkCollector, collector))
+                {
+                    _benchmarkCollector = null;
+                }
+            }
+
+            await StopAsync(CancellationToken.None).ConfigureAwait(false);
+        }
+    }
 
     public async ValueTask<FrameRateSample> SampleAsync(
         IReadOnlyCollection<int> processIds,
@@ -265,7 +351,10 @@ public sealed class PresentMonFrameRateProvider : IFrameRateProvider
         startInfo.ArgumentList.Add("--no_console_stats");
         startInfo.ArgumentList.Add("--v2_metrics");
         startInfo.ArgumentList.Add("--no_track_display");
-        startInfo.ArgumentList.Add("--no_track_gpu");
+        if (!_trackGpu)
+        {
+            startInfo.ArgumentList.Add("--no_track_gpu");
+        }
         startInfo.ArgumentList.Add("--no_track_input");
         startInfo.ArgumentList.Add("--set_circular_buffer_size");
         startInfo.ArgumentList.Add(
@@ -432,6 +521,7 @@ public sealed class PresentMonFrameRateProvider : IFrameRateProvider
             frame.SwapChainAddress);
         lock (_observationSync)
         {
+            _benchmarkCollector?.Add(frame);
             if (!_observations.TryGetValue(
                     key,
                     out Queue<FrameObservation>? stream))

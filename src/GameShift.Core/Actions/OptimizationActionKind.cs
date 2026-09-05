@@ -13,4 +13,6 @@ public enum OptimizationActionKind
     SuppressApprovedRelaunch = 8,
     AssignOwnedProcessJob = 9,
     BoostGamePriority = 10,
+    ConfigureHibernation = 11,
+    ConfigureSystemTweak = 12,
 }

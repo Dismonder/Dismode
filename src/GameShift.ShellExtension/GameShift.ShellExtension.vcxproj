@@ -43,7 +43,16 @@
     <OutDir>$(ProjectDir)bin\$(Platform)\$(Configuration)\</OutDir>
     <IntDir>$(ProjectDir)obj\$(Platform)\$(Configuration)\</IntDir>
     <TargetName>GameShift.ShellExtension</TargetName>
+    <GameShiftVersionMajor>$([System.Version]::Parse('$(Version)').Major)</GameShiftVersionMajor>
+    <GameShiftVersionMinor>$([System.Version]::Parse('$(Version)').Minor)</GameShiftVersionMinor>
+    <GameShiftVersionPatch>$([System.Version]::Parse('$(Version)').Build)</GameShiftVersionPatch>
   </PropertyGroup>
+
+  <ItemDefinitionGroup>
+    <ResourceCompile>
+      <PreprocessorDefinitions>GAMESHIFT_VERSION_MAJOR=$(GameShiftVersionMajor);GAMESHIFT_VERSION_MINOR=$(GameShiftVersionMinor);GAMESHIFT_VERSION_PATCH=$(GameShiftVersionPatch);%(PreprocessorDefinitions)</PreprocessorDefinitions>
+    </ResourceCompile>
+  </ItemDefinitionGroup>
 
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
     <ClCompile>

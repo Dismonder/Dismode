@@ -13,11 +13,6 @@ internal static partial class Program
     private const string UiExecutableName = "GameShift.UI.exe";
     private const string ElevatedSessionHostExecutableName =
         "GameShift.SessionHost.exe";
-    private static readonly string[] BackgroundExecutableNames =
-    [
-        "GameShift.SessionHost.exe",
-        "GameShift.SystemAgent.exe",
-    ];
 
     [STAThread]
     private static int Main(string[] args)
@@ -48,7 +43,8 @@ internal static partial class Program
             Path.GetFullPath(AppContext.BaseDirectory);
         List<string> failures = [];
 
-        foreach (string executableName in BackgroundExecutableNames)
+        foreach (string executableName in
+                 CompanionStartupPolicy.InteractiveBackgroundComponents)
         {
             EnsureBackgroundProcess(
                 applicationDirectory,

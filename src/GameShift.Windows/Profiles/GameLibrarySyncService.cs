@@ -128,18 +128,32 @@ public sealed class GameLibrarySyncService
                     && !StringComparer.OrdinalIgnoreCase.Equals(
                         existing.ExecutablePath,
                         detectedPath);
+                bool existingPosterIsValid = existing is not null
+                    && _artworkResolver.IsArtworkValidForRole(
+                        existing.ArtworkPath,
+                        GameArtworkRole.Poster,
+                        cancellationToken);
                 if (existing is not null
                     && !executableRelocated
                     && File.GetLastWriteTimeUtc(detectedPath)
                         <= existing.UpdatedAtUtc.UtcDateTime)
                 {
-                    GameArtwork? artwork =
-                        await _artworkResolver.ResolveAsync(
-                                game,
-                                cancellationToken)
-                            .ConfigureAwait(false);
-                    string? resolvedArtworkPath =
-                        artwork?.LocalPath ?? existing.ArtworkPath;
+                    string? resolvedArtworkPath;
+                    if (existingPosterIsValid)
+                    {
+                        resolvedArtworkPath = existing.ArtworkPath;
+                    }
+                    else
+                    {
+                        GameArtwork? artwork =
+                            await _artworkResolver.ResolveRoleAsync(
+                                    game,
+                                    GameArtworkRole.Poster,
+                                    cancellationToken)
+                                .ConfigureAwait(false);
+                        resolvedArtworkPath = artwork?.LocalPath;
+                    }
+
                     if (!StringComparer.OrdinalIgnoreCase.Equals(
                             existing.ArtworkPath,
                             resolvedArtworkPath))
@@ -168,12 +182,33 @@ public sealed class GameLibrarySyncService
                     continue;
                 }
 
-                ManualGameProfile scanned =
-                    await _profileFactory.CreateDetectedAsync(
+                ManualGameProfile scanned;
+                if (existing is null)
+                {
+                    scanned = await _profileFactory.CreateDetectedAsync(
                             game,
                             OptimizationPreset.Balanced,
                             cancellationToken)
                         .ConfigureAwait(false);
+                }
+                else
+                {
+                    string? artworkPath = existingPosterIsValid
+                        ? existing.ArtworkPath
+                        : (await _artworkResolver.ResolveRoleAsync(
+                                game,
+                                GameArtworkRole.Poster,
+                                cancellationToken)
+                            .ConfigureAwait(false))?.LocalPath;
+                    scanned = await _profileFactory
+                        .CreateDetectedWithArtworkAsync(
+                            game,
+                            OptimizationPreset.Balanced,
+                            artworkPath,
+                            cancellationToken)
+                        .ConfigureAwait(false);
+                }
+
                 if (existing is null)
                 {
                     await repository.UpsertAsync(
@@ -187,8 +222,7 @@ public sealed class GameLibrarySyncService
                     continue;
                 }
 
-                string? refreshedArtworkPath =
-                    scanned.ArtworkPath ?? existing.ArtworkPath;
+                string? refreshedArtworkPath = scanned.ArtworkPath;
                 bool executableHashUnchanged =
                     StringComparer.OrdinalIgnoreCase.Equals(
                         existing.ExecutableSha256,
@@ -247,6 +281,62 @@ public sealed class GameLibrarySyncService
                         cancellationToken)
                     .ConfigureAwait(false);
             errorCount += metadataResult.ErrorCount;
+            Dictionary<string, ManualGameProfile> profilesByPath =
+                (await repository.ListAsync(cancellationToken)
+                    .ConfigureAwait(false))
+                .ToDictionary(
+                    profile => profile.ExecutablePath,
+                    StringComparer.OrdinalIgnoreCase);
+            foreach (DetectedGame game in detected)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                if (!profilesByPath.TryGetValue(
+                        Path.GetFullPath(game.ExecutablePath),
+                        out ManualGameProfile? profile))
+                {
+                    continue;
+                }
+
+                GameMetadata? existingMetadata =
+                    await metadataRepository.FindMetadataAsync(
+                            profile.ProfileId,
+                            cancellationToken)
+                        .ConfigureAwait(false);
+                if (_artworkResolver.IsArtworkValidForRole(
+                        existingMetadata?.HeroArtworkPath,
+                        GameArtworkRole.Hero,
+                        cancellationToken))
+                {
+                    continue;
+                }
+
+                GameArtwork? resolvedHero =
+                    await _artworkResolver.ResolveRoleAsync(
+                            game,
+                            GameArtworkRole.Hero,
+                            cancellationToken)
+                        .ConfigureAwait(false);
+                if (StringComparer.OrdinalIgnoreCase.Equals(
+                        existingMetadata?.HeroArtworkPath,
+                        resolvedHero?.LocalPath))
+                {
+                    continue;
+                }
+
+                await metadataRepository.UpsertMetadataAsync(
+                        new(
+                            profile.ProfileId,
+                            existingMetadata?.Source ?? game.Source,
+                            existingMetadata?.ExternalId ?? game.ExternalId,
+                            existingMetadata?.LauncherPath,
+                            existingMetadata?.LastPlayedAtUtc,
+                            existingMetadata?.TotalPlaytimeMinutes ?? 0,
+                            resolvedHero?.LocalPath,
+                            existingMetadata?.LastMetadataRefreshAtUtc
+                                ?? _timeProvider.GetUtcNow()),
+                        cancellationToken)
+                    .ConfigureAwait(false);
+            }
         }
 
         return new(

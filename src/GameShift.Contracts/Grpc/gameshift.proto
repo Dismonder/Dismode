@@ -13,8 +13,29 @@ service GameShiftSessions {
   rpc PrepareSession (PrepareSessionRequest) returns (SessionPlanReply);
   rpc StartSession (StartSessionRequest) returns (SessionStateReply);
   rpc GetActiveSession (GetActiveSessionRequest) returns (SessionStateReply);
+  rpc GetShutdownReadiness (ShutdownReadinessRequest) returns (ShutdownReadinessReply);
+  rpc ShutdownComponents (ShutdownComponentsRequest) returns (ShutdownReadinessReply);
   rpc RestoreSession (RestoreSessionRequest) returns (SessionStateReply);
   rpc CloseGame (CloseGameRequest) returns (SessionStateReply);
+  rpc SetFrameRateTracking (SetFrameRateTrackingRequest) returns (SessionStateReply);
+}
+
+service GameShiftSystemOptimizer {
+  rpc GetStatus (SystemOptimizerStatusRequest) returns (SystemOptimizerStatusReply);
+  rpc GetHardware (SystemOptimizerHardwareRequest) returns (SystemOptimizerHardwareReply);
+  rpc GetCatalog (SystemTweakCatalogRequest) returns (SystemTweakCatalogReply);
+  rpc SetConsent (SetSystemOptimizerConsentRequest) returns (SystemOptimizerOperationReply);
+  rpc PrepareExperiment (PrepareSystemExperimentRequest) returns (SystemExperimentReply);
+  rpc AdvanceExperiment (AdvanceSystemExperimentRequest) returns (SystemExperimentReply);
+  rpc SubmitCapture (SubmitBenchmarkCaptureRequest) returns (BenchmarkDecisionReply);
+  rpc SavePerGameProfile (SavePerGameOptimizationProfileRequest) returns (SystemOptimizerOperationReply);
+  rpc SaveGlobalProfile (SaveGlobalOptimizationProfileRequest) returns (SystemOptimizerOperationReply);
+  rpc GetProfiles (GetSystemOptimizationProfilesRequest) returns (SystemOptimizationProfilesReply);
+  rpc ActivatePerGameProfile (ActivatePerGameOptimizationProfileRequest) returns (SystemOptimizerOperationReply);
+  rpc RestorePerGameProfile (RestorePerGameOptimizationProfileRequest) returns (SystemOptimizerOperationReply);
+  rpc Restore (RestoreSystemOptimizationRequest) returns (SystemOptimizerOperationReply);
+  rpc GetHistory (SystemOptimizationHistoryRequest) returns (SystemOptimizationHistoryReply);
+  rpc PrepareForUpdate (PrepareSystemOptimizerUpdateRequest) returns (SystemOptimizerOperationReply);
 }
 
 enum RpcCommandKind {
@@ -30,6 +51,23 @@ enum RpcCommandKind {
   ACTIVATE_MANAGED_POWER_PROFILE = 9;
   GET_ACTIVE_SESSION = 10;
   CLOSE_GAME = 11;
+  SHUTDOWN_COMPONENTS = 12;
+  SET_FRAME_RATE_TRACKING = 13;
+  GET_SYSTEM_OPTIMIZER_STATUS = 14;
+  GET_HARDWARE_FINGERPRINT = 15;
+  GET_SYSTEM_TWEAK_CATALOG = 16;
+  PREPARE_SYSTEM_EXPERIMENT = 17;
+  ADVANCE_SYSTEM_EXPERIMENT = 18;
+  SAVE_PER_GAME_OPTIMIZATION_PROFILE = 19;
+  SAVE_GLOBAL_OPTIMIZATION_PROFILE = 20;
+  RESTORE_SYSTEM_OPTIMIZATION = 21;
+  GET_SYSTEM_OPTIMIZATION_HISTORY = 22;
+  PREPARE_SYSTEM_OPTIMIZER_UPDATE = 23;
+  SUBMIT_BENCHMARK_CAPTURE = 24;
+  SET_SYSTEM_OPTIMIZER_CONSENT = 25;
+  GET_SYSTEM_OPTIMIZATION_PROFILES = 26;
+  ACTIVATE_PER_GAME_OPTIMIZATION_PROFILE = 27;
+  RESTORE_PER_GAME_OPTIMIZATION_PROFILE = 28;
 }
 
 message RpcRequestMetadata {
@@ -148,9 +186,25 @@ message SessionPlanReply {
 message StartSessionRequest {
   RpcRequestMetadata metadata = 1;
   string plan_id = 2;
+  optional bool enable_frame_rate_tracking = 3;
 }
 
 message GetActiveSessionRequest {
+  RpcRequestMetadata metadata = 1;
+}
+
+message ShutdownReadinessRequest {
+  RpcRequestMetadata metadata = 1;
+}
+
+message ShutdownReadinessReply {
+  bool can_shutdown = 1;
+  bool has_active_session = 2;
+  bool has_prepared_plan = 3;
+  string message = 4;
+}
+
+message ShutdownComponentsRequest {
   RpcRequestMetadata metadata = 1;
 }
 
@@ -161,6 +215,11 @@ message RestoreSessionRequest {
 message CloseGameRequest {
   RpcRequestMetadata metadata = 1;
   bool force_termination = 2;
+}
+
+message SetFrameRateTrackingRequest {
+  RpcRequestMetadata metadata = 1;
+  bool enabled = 2;
 }
 
 message SessionStateReply {
@@ -179,4 +238,282 @@ message SessionStateReply {
   optional double frame_time_milliseconds = 13;
   string frame_rate_status = 14;
   optional int32 frame_rate_process_id = 15;
+}
+
+enum SystemTweakRiskValue {
+  SYSTEM_TWEAK_RISK_SAFE = 0;
+  SYSTEM_TWEAK_RISK_EXPERIMENTAL = 1;
+  SYSTEM_TWEAK_RISK_DANGEROUS = 2;
+  SYSTEM_TWEAK_RISK_BLOCKED = 3;
+}
+
+enum SystemTweakScopeValue {
+  SYSTEM_TWEAK_SCOPE_GAME_SESSION = 0;
+  SYSTEM_TWEAK_SCOPE_GLOBAL = 1;
+}
+
+enum RestartRequirementValue {
+  RESTART_REQUIREMENT_NONE = 0;
+  RESTART_REQUIREMENT_GAME = 1;
+  RESTART_REQUIREMENT_SIGN_OUT = 2;
+  RESTART_REQUIREMENT_WINDOWS = 3;
+}
+
+enum SystemTweakAvailabilityValue {
+  SYSTEM_TWEAK_AVAILABILITY_SUPPORTED = 0;
+  SYSTEM_TWEAK_AVAILABILITY_UNSUPPORTED = 1;
+  SYSTEM_TWEAK_AVAILABILITY_BLOCKED_BY_POLICY = 2;
+}
+
+enum BenchmarkVariantValue {
+  BENCHMARK_VARIANT_BASELINE = 0;
+  BENCHMARK_VARIANT_CANDIDATE = 1;
+}
+
+enum ExperimentStateValue {
+  EXPERIMENT_STATE_DRAFT = 0;
+  EXPERIMENT_STATE_WAITING_FOR_SCENE = 1;
+  EXPERIMENT_STATE_STABILIZING = 2;
+  EXPERIMENT_STATE_CAPTURING = 3;
+  EXPERIMENT_STATE_WAITING_FOR_RESTART = 4;
+  EXPERIMENT_STATE_EVALUATING = 5;
+  EXPERIMENT_STATE_COMPLETED = 6;
+  EXPERIMENT_STATE_RESTORING = 7;
+  EXPERIMENT_STATE_FAILED = 8;
+}
+
+enum ExperimentControlAction {
+  EXPERIMENT_CONTROL_ACTION_UNSPECIFIED = 0;
+  EXPERIMENT_CONTROL_ACTION_BEGIN_STABILIZATION = 1;
+  EXPERIMENT_CONTROL_ACTION_BEGIN_CAPTURE = 2;
+  EXPERIMENT_CONTROL_ACTION_CANCEL_AND_RESTORE = 3;
+  EXPERIMENT_CONTROL_ACTION_CONFIRM_POST_BOOT = 4;
+  EXPERIMENT_CONTROL_ACTION_KEEP_AS_GAME_PROFILE = 5;
+  EXPERIMENT_CONTROL_ACTION_KEEP_GLOBALLY = 6;
+}
+
+enum SystemRestoreTarget {
+  SYSTEM_RESTORE_TARGET_UNSPECIFIED = 0;
+  SYSTEM_RESTORE_TARGET_ACTIVE_EXPERIMENT = 1;
+  SYSTEM_RESTORE_TARGET_GLOBAL_PROFILE = 2;
+  SYSTEM_RESTORE_TARGET_ALL_GAMESHIFT_CHANGES = 3;
+}
+
+message SystemOptimizerStatusRequest {
+  RpcRequestMetadata metadata = 1;
+}
+
+message RecoveryStatusMessage {
+  int32 phase = 1;
+  string experiment_id = 2;
+  int64 phase_entered_unix_milliseconds = 3;
+  bool is_journal_clean = 4;
+  bool has_conflicts = 5;
+  repeated string conflict_targets = 6;
+  string message = 7;
+}
+
+message SystemOptimizerStatusReply {
+  bool is_service_ready = 1;
+  bool is_read_only = 2;
+  bool has_user_consent = 3;
+  string active_experiment_id = 4;
+  string active_global_profile_id = 5;
+  string active_game_profile_id = 6;
+  RecoveryStatusMessage recovery = 7;
+  string message = 8;
+  int64 observed_unix_milliseconds = 9;
+  int32 protocol_version = 10;
+  SystemExperimentReply active_experiment = 11;
+}
+
+message SystemOptimizerHardwareRequest {
+  RpcRequestMetadata metadata = 1;
+}
+
+message SystemOptimizerHardwareReply {
+  int32 schema_version = 1;
+  string windows_build = 2;
+  string cpu_architecture = 3;
+  string cpu_vendor = 4;
+  string cpu_model_family = 5;
+  repeated string graphics_adapters = 6;
+  repeated string graphics_driver_versions = 7;
+  repeated string network_adapter_classes = 8;
+  int64 physical_memory_bytes = 9;
+  bool is_laptop = 10;
+  string fingerprint_hash = 11;
+}
+
+message SystemTweakCatalogRequest {
+  RpcRequestMetadata metadata = 1;
+}
+
+message SystemTweakDefinitionMessage {
+  string id = 1;
+  int32 revision = 2;
+  string display_name = 3;
+  string category = 4;
+  string description = 5;
+  SystemTweakRiskValue risk = 6;
+  SystemTweakScopeValue scope = 7;
+  RestartRequirementValue restart_requirement = 8;
+  SystemTweakAvailabilityValue availability = 9;
+  repeated string allowed_values = 10;
+  repeated string conflicts_with = 11;
+  string technical_source = 12;
+  string restore_description = 13;
+  string blocking_reason = 14;
+  int32 minimum_windows_build = 15;
+  optional int32 maximum_windows_build = 16;
+  bool requires_target = 17;
+}
+
+message SystemTweakCatalogReply {
+  repeated SystemTweakDefinitionMessage definitions = 1;
+}
+
+message SystemTweakSelectionMessage {
+  string tweak_id = 1;
+  int32 revision = 2;
+  string value = 3;
+  string target_id = 4;
+  string dangerous_confirmation = 5;
+}
+
+message SetSystemOptimizerConsentRequest {
+  RpcRequestMetadata metadata = 1;
+  bool accepted = 2;
+}
+
+message PrepareSystemExperimentRequest {
+  RpcRequestMetadata metadata = 1;
+  string game_profile_id = 2;
+  string game_executable_sha256 = 3;
+  string hardware_fingerprint_hash = 4;
+  SystemTweakSelectionMessage selection = 5;
+}
+
+message AdvanceSystemExperimentRequest {
+  RpcRequestMetadata metadata = 1;
+  string experiment_id = 2;
+  ExperimentControlAction action = 3;
+}
+
+message SystemExperimentReply {
+  string experiment_id = 1;
+  string owner_sid = 2;
+  string game_profile_id = 3;
+  string game_executable_sha256 = 4;
+  string hardware_fingerprint_hash = 5;
+  SystemTweakSelectionMessage selection = 6;
+  BenchmarkVariantValue first_variant = 7;
+  ExperimentStateValue state = 8;
+  int32 required_pairs = 9;
+  int32 completed_baseline_captures = 10;
+  int32 completed_candidate_captures = 11;
+  int64 created_unix_milliseconds = 12;
+  int64 updated_unix_milliseconds = 13;
+  string message = 14;
+}
+
+message SubmitBenchmarkCaptureRequest {
+  RpcRequestMetadata metadata = 1;
+  string experiment_id = 2;
+  string capture_id = 3;
+  BenchmarkVariantValue variant = 4;
+  int64 started_unix_milliseconds = 5;
+  int32 stabilization_milliseconds = 6;
+  int32 measurement_milliseconds = 7;
+  repeated double frame_times_milliseconds = 8;
+  optional double average_cpu_percent = 9;
+  optional double average_gpu_busy_percent = 10;
+  optional int64 average_used_ram_bytes = 11;
+  string profile_state_hash = 12;
+}
+
+message BenchmarkDecisionReply {
+  string experiment_id = 1;
+  int32 verdict = 2;
+  bool requires_additional_pair = 3;
+  double primary_metric_improvement_percent = 4;
+  double average_fps_change_percent = 5;
+  double baseline_hitch_rate_percent = 6;
+  double candidate_hitch_rate_percent = 7;
+  int32 completed_pairs = 8;
+  string explanation = 9;
+  SystemExperimentReply experiment = 10;
+}
+
+message SavePerGameOptimizationProfileRequest {
+  RpcRequestMetadata metadata = 1;
+  string profile_id = 2;
+  string game_profile_id = 3;
+  string hardware_fingerprint_hash = 4;
+  repeated SystemTweakSelectionMessage selections = 5;
+  bool enabled = 6;
+}
+
+message SaveGlobalOptimizationProfileRequest {
+  RpcRequestMetadata metadata = 1;
+  string profile_id = 2;
+  string hardware_fingerprint_hash = 3;
+  repeated SystemTweakSelectionMessage selections = 4;
+  bool enabled = 5;
+}
+
+message GetSystemOptimizationProfilesRequest {
+  RpcRequestMetadata metadata = 1;
+  string game_profile_id = 2;
+}
+
+message SystemOptimizationProfilesReply {
+  string per_game_profile_json = 1;
+  string global_profile_json = 2;
+  repeated string per_game_profiles_json = 3;
+}
+
+message ActivatePerGameOptimizationProfileRequest {
+  RpcRequestMetadata metadata = 1;
+  string game_profile_id = 2;
+  string game_executable_sha256 = 3;
+}
+
+message RestorePerGameOptimizationProfileRequest {
+  RpcRequestMetadata metadata = 1;
+}
+
+message RestoreSystemOptimizationRequest {
+  RpcRequestMetadata metadata = 1;
+  SystemRestoreTarget target = 2;
+}
+
+message SystemOptimizationHistoryRequest {
+  RpcRequestMetadata metadata = 1;
+  int32 maximum_items = 2;
+}
+
+message SystemOptimizationHistoryEntry {
+  int64 sequence = 1;
+  string owner_sid = 2;
+  string operation_kind = 3;
+  string target_id = 4;
+  bool success = 5;
+  string details = 6;
+  int64 created_unix_milliseconds = 7;
+}
+
+message SystemOptimizationHistoryReply {
+  repeated SystemOptimizationHistoryEntry entries = 1;
+}
+
+message PrepareSystemOptimizerUpdateRequest {
+  RpcRequestMetadata metadata = 1;
+}
+
+message SystemOptimizerOperationReply {
+  bool succeeded = 1;
+  bool read_only = 2;
+  bool recovery_required = 3;
+  string message = 4;
 }

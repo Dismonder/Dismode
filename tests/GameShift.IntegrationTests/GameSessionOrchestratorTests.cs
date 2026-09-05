@@ -19,6 +19,89 @@ namespace GameShift.IntegrationTests;
 public sealed class GameSessionOrchestratorTests
 {
     [TestMethod]
+    public async Task ShutdownReadinessBlocksPreparedPlan()
+    {
+        string directory = CreateTestDirectory();
+        SqliteUserDataStore store =
+            new(Path.Combine(directory, "user.db"));
+        AppendOnlyRecoveryJournal journal =
+            new(Path.Combine(directory, "recovery.jsonl"));
+        LocalGameSessionOrchestrator orchestrator = new(
+            store,
+            store,
+            journal);
+
+        try
+        {
+            ManualGameProfile profile = await CreateHarnessProfileAsync(
+                Path.Combine(directory, "unused.ready"));
+            await store.UpsertAsync(profile, CancellationToken.None);
+            await orchestrator.InitializeAsync(CancellationToken.None);
+
+            SessionShutdownReadiness idle =
+                await orchestrator.GetShutdownReadinessAsync(
+                    CancellationToken.None);
+            _ = await orchestrator.PrepareAsync(
+                profile.ProfileId,
+                CancellationToken.None);
+            SessionShutdownReadiness prepared =
+                await orchestrator.GetShutdownReadinessAsync(
+                    CancellationToken.None);
+
+            Assert.IsTrue(idle.CanShutdown);
+            Assert.IsFalse(idle.HasPreparedPlan);
+            Assert.IsFalse(prepared.CanShutdown);
+            Assert.IsTrue(prepared.HasPreparedPlan);
+            Assert.IsFalse(prepared.HasActiveSession);
+        }
+        finally
+        {
+            await orchestrator.DisposeAsync();
+            journal.Dispose();
+            store.Dispose();
+            DeleteDirectory(directory);
+        }
+    }
+
+    [TestMethod]
+    public async Task ShutdownReservationBlocksNewPlan()
+    {
+        string directory = CreateTestDirectory();
+        SqliteUserDataStore store = new(Path.Combine(directory, "user.db"));
+        AppendOnlyRecoveryJournal journal = new(
+            Path.Combine(directory, "recovery.jsonl"));
+        LocalGameSessionOrchestrator orchestrator = new(
+            store,
+            store,
+            journal);
+
+        try
+        {
+            ManualGameProfile profile = await CreateHarnessProfileAsync(
+                Path.Combine(directory, "unused.ready"));
+            await store.UpsertAsync(profile, CancellationToken.None);
+            await orchestrator.InitializeAsync(CancellationToken.None);
+
+            SessionShutdownReadiness reservation =
+                await orchestrator.ReserveShutdownAsync(
+                    CancellationToken.None);
+
+            Assert.IsTrue(reservation.CanShutdown);
+            await Assert.ThrowsExactlyAsync<InvalidOperationException>(
+                async () => _ = await orchestrator.PrepareAsync(
+                    profile.ProfileId,
+                    CancellationToken.None));
+        }
+        finally
+        {
+            await orchestrator.DisposeAsync();
+            journal.Dispose();
+            store.Dispose();
+            DeleteDirectory(directory);
+        }
+    }
+
+    [TestMethod]
     public async Task ApprovedZeroChangePlanLaunchesTracksAndWritesHistory()
     {
         string directory = CreateTestDirectory();
@@ -117,6 +200,138 @@ public sealed class GameSessionOrchestratorTests
             Assert.AreEqual(
                 SessionCheckpoint.ReconciliationComplete,
                 records[^1].SessionCheckpoint);
+        }
+        finally
+        {
+            if (processId is null && File.Exists(readyFile))
+            {
+                processId = ReadProcessId(readyFile);
+            }
+
+            if (processId is not null)
+            {
+                await CloseProcessAsync(processId.Value);
+            }
+
+            await orchestrator.DisposeAsync();
+            journal.Dispose();
+            store.Dispose();
+            DeleteDirectory(directory);
+        }
+    }
+
+    [TestMethod]
+    public async Task SessionLifecycleActivatesAndRestoresSystemProfile()
+    {
+        string directory = CreateTestDirectory();
+        string readyFile = Path.Combine(directory, "system-profile.ready");
+        int? processId = null;
+        SqliteUserDataStore store = new(Path.Combine(directory, "user.db"));
+        AppendOnlyRecoveryJournal journal = new(
+            Path.Combine(directory, "recovery.jsonl"));
+        RecordingSystemProfileCoordinator systemProfile = new();
+        LocalGameSessionOrchestrator orchestrator = new(
+            store,
+            store,
+            journal,
+            monitorInterval: TimeSpan.FromMilliseconds(50),
+            systemProfileCoordinator: systemProfile);
+
+        try
+        {
+            ManualGameProfile profile = await CreateHarnessProfileAsync(
+                readyFile);
+            await store.UpsertAsync(profile, CancellationToken.None);
+            await orchestrator.InitializeAsync(CancellationToken.None);
+            SessionPlanPreview plan = await orchestrator.PrepareAsync(
+                profile.ProfileId,
+                CancellationToken.None);
+
+            _ = await orchestrator.StartAsync(
+                plan.PlanId,
+                plan.SessionId,
+                CancellationToken.None,
+                enableFrameRateTracking: false);
+            await WaitForFileAsync(readyFile);
+            processId = ReadProcessId(readyFile);
+
+            Assert.AreEqual(profile.ProfileId, systemProfile.ActivatedProfileId);
+            Assert.AreEqual(processId, systemProfile.ActivatedIdentity?.RuntimeKey.ProcessId);
+            _ = await orchestrator.RestoreAsync(
+                plan.SessionId,
+                CancellationToken.None);
+            Assert.AreEqual(profile.ProfileId, systemProfile.RestoredProfileId);
+        }
+        finally
+        {
+            if (processId is int id)
+            {
+                await CloseProcessAsync(id);
+            }
+
+            await orchestrator.DisposeAsync();
+            journal.Dispose();
+            store.Dispose();
+            DeleteDirectory(directory);
+        }
+    }
+
+    [TestMethod]
+    public async Task DisabledFrameRateTrackingSkipsProviderUntilEnabled()
+    {
+        string directory = CreateTestDirectory();
+        string readyFile = Path.Combine(directory, "tracking-disabled.ready");
+        int? processId = null;
+        SqliteUserDataStore store =
+            new(Path.Combine(directory, "user.db"));
+        AppendOnlyRecoveryJournal journal =
+            new(Path.Combine(directory, "recovery.jsonl"));
+        CountingFrameRateProvider frameRateProvider = new();
+        LocalGameSessionOrchestrator orchestrator = new(
+            store,
+            store,
+            journal,
+            monitorInterval: TimeSpan.FromMilliseconds(50),
+            frameRateProvider: frameRateProvider);
+
+        try
+        {
+            ManualGameProfile profile = await CreateHarnessProfileAsync(
+                readyFile);
+            await store.UpsertAsync(profile, CancellationToken.None);
+            await orchestrator.InitializeAsync(CancellationToken.None);
+            SessionPlanPreview plan = await orchestrator.PrepareAsync(
+                profile.ProfileId,
+                CancellationToken.None);
+
+            GameSessionSnapshot disabled = await orchestrator.StartAsync(
+                plan.PlanId,
+                plan.SessionId,
+                CancellationToken.None,
+                enableFrameRateTracking: false);
+            await WaitForFileAsync(readyFile);
+            processId = ReadProcessId(readyFile);
+            await Task.Delay(TimeSpan.FromMilliseconds(250));
+
+            Assert.IsNull(disabled.FramesPerSecond);
+            Assert.AreEqual(
+                "Pomiar FPS jest wyłączony w ustawieniach GameShift.",
+                disabled.FrameRateStatus);
+            Assert.AreEqual(0, frameRateProvider.SampleCount);
+
+            GameSessionSnapshot enabled =
+                await orchestrator.SetFrameRateTrackingAsync(
+                    plan.SessionId,
+                    enabled: true,
+                    CancellationToken.None);
+            await Task.Delay(TimeSpan.FromMilliseconds(250));
+
+            Assert.IsNull(enabled.FramesPerSecond);
+            Assert.IsGreaterThanOrEqualTo(1, frameRateProvider.SampleCount);
+
+            await orchestrator.RestoreAsync(
+                plan.SessionId,
+                CancellationToken.None);
         }
         finally
         {
@@ -853,6 +1068,38 @@ public sealed class GameSessionOrchestratorTests
         }
     }
 
+    private sealed class RecordingSystemProfileCoordinator :
+        ISystemGameProfileCoordinator
+    {
+        internal GameProfileId? ActivatedProfileId { get; private set; }
+
+        internal ProcessIdentity? ActivatedIdentity { get; private set; }
+
+        internal GameProfileId? RestoredProfileId { get; private set; }
+
+        public ValueTask<SystemGameProfileOperationResult> ActivateAsync(
+            GameProfileId profileId,
+            ProcessIdentity gameIdentity,
+            CancellationToken cancellationToken)
+        {
+            ActivatedProfileId = profileId;
+            ActivatedIdentity = gameIdentity;
+            return ValueTask.FromResult(
+                SystemGameProfileOperationResult.Applied(
+                    "controlled activation"));
+        }
+
+        public ValueTask<SystemGameProfileOperationResult> RestoreAsync(
+            GameProfileId profileId,
+            CancellationToken cancellationToken)
+        {
+            RestoredProfileId = profileId;
+            return ValueTask.FromResult(
+                SystemGameProfileOperationResult.Restored(
+                    "controlled restore"));
+        }
+    }
+
     private sealed class ConstantFrameRateProvider : IFrameRateProvider
     {
         public ValueTask<FrameRateSample> SampleAsync(
@@ -867,6 +1114,36 @@ public sealed class GameSessionOrchestratorTests
                     FrameTimeMilliseconds: 8.33d,
                     processIds.FirstOrDefault(),
                     "Stała prawdziwa próbka adaptera testowego."));
+        }
+
+        public ValueTask StopAsync(CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            return ValueTask.CompletedTask;
+        }
+
+        public ValueTask DisposeAsync() => ValueTask.CompletedTask;
+    }
+
+    private sealed class CountingFrameRateProvider : IFrameRateProvider
+    {
+        private int _sampleCount;
+
+        internal int SampleCount => Volatile.Read(ref _sampleCount);
+
+        public ValueTask<FrameRateSample> SampleAsync(
+            IReadOnlyCollection<int> processIds,
+            CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            Interlocked.Increment(ref _sampleCount);
+            return ValueTask.FromResult(
+                new FrameRateSample(
+                    FrameRateStatus.Measuring,
+                    FramesPerSecond: 120d,
+                    FrameTimeMilliseconds: 8.33d,
+                    processIds.FirstOrDefault(),
+                    "Kontrolowana próbka adaptera testowego."));
         }
 
         public ValueTask StopAsync(CancellationToken cancellationToken)

@@ -6,14 +6,6 @@ using GameShift.Core.Updates;
 
 namespace GameShift.UI.Services;
 
-public enum UpdateCheckState
-{
-    NotDue = 1,
-    UpToDate = 2,
-    Available = 3,
-    Failed = 4,
-}
-
 public sealed record UpdateCheckResult(
     UpdateCheckState State,
     string Message,
@@ -104,35 +96,26 @@ public sealed class UpdateClientService : IDisposable
                 saved,
                 cancellationToken);
 
-            Version currentVersion = UpdateManifestCodec.ParseVersion(
+            UpdateVersionDecision decision = UpdateVersionPolicy.Classify(
                 ProductInformation.CurrentVersion,
-                "installed version");
-            Version offeredVersion = UpdateManifestCodec.ParseVersion(
-                manifest.Version,
-                "offered version");
-            if (offeredVersion <= currentVersion)
-            {
-                return new(
-                    UpdateCheckState.UpToDate,
-                    $"Masz aktualną wersję {ProductInformation.CurrentVersion}.",
-                    Manifest: null,
-                    saved);
-            }
-
+                manifest);
             return new(
-                UpdateCheckState.Available,
-                $"Dostępna jest wersja {manifest.Version}.",
-                manifest,
+                decision.State,
+                decision.Message,
+                decision.Manifest,
                 saved);
         }
-        catch (Exception exception) when (
-            exception is HttpRequestException
-                or IOException
-                or InvalidDataException
-                or CryptographicException
-                or TaskCanceledException)
+        catch (OperationCanceledException exception) when (
+            UpdateFailurePolicy.IsUserCancellation(
+                exception,
+                cancellationToken))
         {
-            string message = DescribeUpdateFailure(exception);
+            throw;
+        }
+        catch (Exception exception) when (
+            UpdateFailurePolicy.IsHandled(exception))
+        {
+            string message = UpdateFailurePolicy.Describe(exception);
             UpdatePreferences failed = preferences.WithError(now, message);
             await _preferencesRepository.SaveUpdatePreferencesAsync(
                 failed,
@@ -603,20 +586,6 @@ public sealed class UpdateClientService : IDisposable
 
         return candidate;
     }
-
-    private static string DescribeUpdateFailure(Exception exception) =>
-        exception switch
-        {
-            TaskCanceledException =>
-                "Serwer aktualizacji nie odpowiedział w wymaganym czasie.",
-            HttpRequestException =>
-                "Nie można połączyć się z serwerem aktualizacji.",
-            CryptographicException =>
-                "Aktualizacja nie przeszła weryfikacji kryptograficznej.",
-            InvalidDataException =>
-                "Serwer zwrócił nieprawidłowy manifest aktualizacji.",
-            _ => "Nie udało się sprawdzić aktualizacji.",
-        };
 
     private static void TryDeleteFile(string path)
     {

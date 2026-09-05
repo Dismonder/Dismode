@@ -1,14 +1,14 @@
-using System.Security.Principal;
 using System.Text.Json;
 using GameShift.Contracts.Diagnostics;
 using GameShift.Contracts.Protocol;
-using GameShift.Core.Ipc;
 using GameShift.Core.Product;
 using GameShift.Data.Storage;
-using GameShift.Windows.Ipc;
+using GameShift.Data.SystemOptimization;
+using GameShift.SystemAgent;
+using GameShift.SystemAgent.Ipc;
+using GameShift.SystemAgent.Security;
 using GameShift.Windows.Platform;
 using GameShift.Windows.Security;
-using GameShift.Windows.Services;
 using Microsoft.AspNetCore.Server.Kestrel.Core;
 using Microsoft.AspNetCore.Server.Kestrel.Transport.NamedPipes;
 
@@ -18,8 +18,6 @@ if (!WindowsPlatformSupport.IsSupported)
         $"{ProductInformation.DisplayName} SystemAgent requires Windows 11 23H2 or newer.");
     return 2;
 }
-
-SecurityIdentifier allowedUserSid = CurrentWindowsIdentity.GetUserSid();
 
 if (args.Contains("--diagnostics", StringComparer.OrdinalIgnoreCase))
 {
@@ -36,11 +34,15 @@ if (args.Contains("--diagnostics", StringComparer.OrdinalIgnoreCase))
 }
 
 WebApplicationBuilder builder = WebApplication.CreateBuilder(args);
+builder.Host.UseWindowsService(options =>
+{
+    options.ServiceName = "GameShiftSystemAgent";
+});
 
 builder.WebHost.UseNamedPipes(options =>
 {
     options.CurrentUserOnly = false;
-    options.PipeSecurity = NamedPipeSecurityFactory.Create(allowedUserSid);
+    options.PipeSecurity = NamedPipeSecurityFactory.CreateSystemService();
     options.MaxReadBufferSize = ProtocolInfo.MaximumMessageBytes;
     options.MaxWriteBufferSize = ProtocolInfo.MaximumMessageBytes;
 });
@@ -61,19 +63,19 @@ builder.Services.AddGrpc(options =>
     options.MaxReceiveMessageSize = ProtocolInfo.MaximumMessageBytes;
     options.MaxSendMessageSize = ProtocolInfo.MaximumMessageBytes;
 });
-
-RequestValidationPolicy validationPolicy = new(
-    allowedUserSid.Value,
-    new BoundedRequestReplayGuard());
-ReadOnlyDiagnosticsGrpcService diagnosticsService = new(
-    componentName: "SystemAgent",
-    validationPolicy,
-    processInventory: null,
-    serviceInventory: new ServiceInventory());
-builder.Services.AddSingleton(diagnosticsService);
+SystemAgentServiceRegistration.AddSystemOptimizerServices(
+    builder.Services,
+    GameShiftStoragePaths.SystemOptimizerDatabasePath,
+    GameShiftStoragePaths.MachineRecoveryJournalPath,
+    AppContext.BaseDirectory,
+    TrustedSignerConfiguration.Load());
 
 WebApplication app = builder.Build();
-app.MapGrpcService<ReadOnlyDiagnosticsGrpcService>();
+await app.Services
+    .GetRequiredService<SqliteSystemOptimizerStore>()
+    .InitializeAsync(CancellationToken.None);
+app.MapGrpcService<SystemAgentDiagnosticsGrpcService>();
+app.MapGrpcService<SystemOptimizerGrpcService>();
 
 Console.WriteLine($"GameShift SystemAgent listening on {PipeNames.System}.");
 await app.RunAsync();

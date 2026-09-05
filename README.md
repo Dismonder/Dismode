@@ -19,9 +19,25 @@ starts it automatically only for the tracked game PIDs. FPS and frame time are
 calculated from real ETW present events. Missing or stale data is shown as
 unavailable and is never replaced with an estimate. The binary is pinned by
 size and SHA-256, and its MIT license and third-party notices ship beside it.
-Every production process action is journaled and reversible. Service and power
-mutations remain unavailable through production IPC until validation on a
-controlled VM.
+Every production process action is journaled and reversible. GameShift 0.4.0
+also ships a separate System Optimizer UI backed by the delayed-auto
+`GameShiftSystemAgent` Windows service. Its A/B catalog is fail-closed: only
+process priority, per-process Power Throttling and the fixed, independently
+verified hibernation adapter are executable; entries without a verified
+adapter remain visibly `Unsupported`, while security, anti-cheat, WHEA and BCD
+changes are permanently blocked.
+
+The library also exposes a per-game OptiScaler manager. In a few clicks it
+lists exact versions from the recommended official Stable channel, the
+community Beta channel, or the official daily Nightly channel. It downloads
+the selected 7z release from a pinned GitHub repository, verifies the GitHub
+SHA-256 digest, selects the actual Unreal shipping executable when applicable,
+and installs one of four fixed proxy DLL names. Beta and Nightly require a
+separate experimental-build confirmation; Beta is clearly marked as an
+unofficial community source. Existing files are backed up and restored on
+removal. Installation is blocked while the game is running, for detected
+anti-cheat/online-only targets, and until the user explicitly confirms offline
+or single-player use.
 
 ## Requirements
 
@@ -54,11 +70,12 @@ artifacts\GameShift-App\GameShift.exe
 ```
 
 On this workstation the desktop shortcut `GameShift` points to that launcher.
-`GameShift.exe` is the user-facing launcher. It requests one UAC approval for
-the fixed `GameShift.SessionHost.exe` backend, starts the read-only
-`GameShift.SystemAgent.exe`, then opens the unprivileged `GameShift.UI.exe`
-maximized. A second launch reuses the already running components and maximizes
-the existing window.
+`GameShift.exe` is the user-facing launcher. It requests UAC for the fixed
+`GameShift.SessionHost.exe` backend when Windows requires it, then opens the
+unprivileged `GameShift.UI.exe` maximized. `GameShift.SystemAgent.exe` is
+installed and started separately as a LocalSystem Windows service; closing the
+gaming UI does not stop recovery supervision. A second launch reuses the
+already running interactive components and maximizes the existing window.
 
 To rebuild the clickable release after all sessions have completed:
 
@@ -84,8 +101,8 @@ installer instead.
 The resulting files are:
 
 ```text
-artifacts\installer\GameShift-Setup-0.1.0-win-x64.exe
-artifacts\installer\GameShift-Setup-0.1.0-win-x64.exe.sha256
+artifacts\installer\GameShift-Setup-0.4.0-win-x64.exe
+artifacts\installer\GameShift-Setup-0.4.0-win-x64.exe.sha256
 ```
 
 The installer requires UAC once to write into `Program Files\GameShift`, adds a
@@ -94,10 +111,12 @@ Windows uninstaller. It refuses to update or uninstall while GameShift or its
 FPS collector is running. Profiles, history, settings, and the recovery journal
 under `%LocalAppData%\GameShift` are intentionally preserved by uninstall.
 
-The current research build has no Authenticode certificate, so Windows
-SmartScreen can show an unknown-publisher warning. The build script creates a
-SHA-256 checksum beside the installer and a per-file payload manifest inside
-the installed directory.
+The 0.4.0 release pipeline fails closed unless a valid production Authenticode
+certificate is supplied through `GAMESHIFT_RELEASE_SIGNING_THUMBPRINT` (or the
+matching command parameter). It signs all owned mutation clients and the final
+installer, verifies the signer allow-list, creates a SHA-256 checksum beside
+the installer and writes a per-file payload manifest inside the installed
+directory.
 
 ## Architecture
 

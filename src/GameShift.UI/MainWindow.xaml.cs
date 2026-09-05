@@ -6,6 +6,7 @@ using System.Runtime.InteropServices;
 using System.Security.Cryptography;
 using GameShift.Contracts.Protocol;
 using GameShift.Core.Activation;
+using GameShift.Core.OptiScaler;
 using GameShift.Core.Product;
 using GameShift.Core.Profiles;
 using GameShift.Core.Updates;
@@ -14,6 +15,7 @@ using GameShift.Data.Storage;
 using GameShift.Data.UserData;
 using GameShift.UI.Services;
 using GameShift.UI.ViewModels;
+using GameShift.Windows.OptiScaler;
 using GameShift.Windows.Platform;
 using GameShift.Windows.Processes;
 using GameShift.Windows.Profiles;
@@ -79,6 +81,12 @@ public sealed partial class MainWindow : Window, IDisposable
     private readonly DiagnosticsProbeService _diagnostics;
     private readonly SessionClientService _sessions;
     private readonly UpdateClientService _updates;
+    private readonly MemoryOptimizerComponentService _memoryOptimizer;
+    private readonly SystemOptimizerComponentService _systemOptimizer;
+    private readonly OptiScalerManager _optiScaler = new();
+    private readonly NvidiaDriverStoreProbe _driverStoreProbe = new();
+    private readonly MemoryOptimizerGameStateExporter
+        _memoryOptimizerGameStateExporter;
     private readonly LocalSystemMetricsSampler _systemMetrics = new();
     private readonly UiActivationServer _activationServer;
     private readonly TrayIconService? _trayIcon;
@@ -87,6 +95,7 @@ public sealed partial class MainWindow : Window, IDisposable
     private readonly string _userSid;
     private readonly ImageSource? _dashboardFallbackArtwork;
     private readonly ObservableCollection<ProfileListItem> _profiles = [];
+    private readonly ObservableCollection<ProfileListItem> _libraryView = [];
     private readonly Queue<double> _dashboardFrameTimes = [];
     private readonly ObservableCollection<HistoryListItem> _history = [];
     private readonly ObservableCollection<SessionPlanActionListItem>
@@ -118,7 +127,9 @@ public sealed partial class MainWindow : Window, IDisposable
     private bool _isSynchronizingProfileSelection;
     private bool _isLoadingOptimizationPreferences;
     private bool _isLoadingOverlayPreferences;
+    private bool _suppressFpsSettingEvents;
     private bool _isOverlaySettingsSaveRunning;
+    private int _frameRateTrackingUpdateRevision;
     private bool _isLoadingUpdatePreferences;
     private bool _isUpdateOperationRunning;
     private bool _deferredStartupPending;
@@ -154,7 +165,12 @@ public sealed partial class MainWindow : Window, IDisposable
         _updates = new(
             _userDataStore,
             GameShiftStoragePaths.UserUpdatesDirectory);
-        ProfilesList.ItemsSource = _profiles;
+        _memoryOptimizer = new(_userSid);
+        _systemOptimizer = new(_userSid);
+        _memoryOptimizerGameStateExporter = new(_userSid);
+        ProfilesList.ItemsSource = _libraryView;
+        _profiles.CollectionChanged += (_, _) => ApplyLibraryFilter();
+        ApplyLibraryFilter();
         DashboardGameRail.ItemsSource = _profiles;
         GameProfileSelector.ItemsSource = _profiles;
         HistoryList.ItemsSource = _history;
@@ -212,6 +228,7 @@ public sealed partial class MainWindow : Window, IDisposable
         UpdateGamingDiagnostics();
         UpdatesCurrentVersionText.Text =
             ProductInformation.FullDisplayName;
+        SettingsVersionText.Text = ProductInformation.FullDisplayName;
         UpdateServiceAddressText.Text =
             new Uri(ProductInformation.UpdateServiceBaseUri).Host;
         Closed += OnWindowClosed;
@@ -258,6 +275,8 @@ public sealed partial class MainWindow : Window, IDisposable
         if (!_lifetime.IsCancellationRequested)
         {
             await RefreshAllAsync(_lifetime.Token);
+            await RefreshMemoryOptimizerStatusAsync(_lifetime.Token);
+            await RefreshSystemOptimizerStatusAsync(_lifetime.Token);
         }
 
         if (!_lifetime.IsCancellationRequested)
@@ -289,7 +308,87 @@ public sealed partial class MainWindow : Window, IDisposable
         _ = DispatcherQueue.TryEnqueue(ShowFromTray);
 
     private void OnTrayExitRequested(object? sender, EventArgs args) =>
-        _ = DispatcherQueue.TryEnqueue(Close);
+        _ = DispatcherQueue.TryEnqueue(
+            () => _ = ShutdownGamingComponentsAsync());
+
+    private async Task ShutdownGamingComponentsAsync()
+    {
+        try
+        {
+            RecoveryJournalInspection journal =
+                await RecoveryJournalInspector.InspectAsync(
+                    GameShiftStoragePaths.UserRecoveryJournalPath,
+                    _lifetime.Token);
+            if (!journal.IsClean || _activeSession is not null ||
+                _pendingPlan is not null)
+            {
+                ShowFromTray();
+                _trayIcon?.ShowNotification(
+                    "GameShift — wyłączenie zablokowane",
+                    !journal.IsClean
+                        ? "Najpierw zakończ recovery aktywnej sesji."
+                        : "Najpierw zakończ aktywną sesję lub przygotowany plan.");
+                return;
+            }
+
+            SessionShutdownReadinessClientSnapshot readiness =
+                await _sessions.ShutdownComponentsAsync(_lifetime.Token);
+            if (!readiness.CanShutdown)
+            {
+                ShowFromTray();
+                _trayIcon?.ShowNotification(
+                    "GameShift — wyłączenie zablokowane",
+                    readiness.Message);
+                return;
+            }
+
+            string helperPath = Path.GetFullPath(Path.Combine(
+                AppContext.BaseDirectory,
+                "GameShift.SessionHost.exe"));
+            if (!File.Exists(helperPath) ||
+                !StringComparer.OrdinalIgnoreCase.Equals(
+                    Path.GetDirectoryName(helperPath)?.TrimEnd(
+                        Path.DirectorySeparatorChar),
+                    Path.GetFullPath(AppContext.BaseDirectory).TrimEnd(
+                        Path.DirectorySeparatorChar)))
+            {
+                throw new FileNotFoundException(
+                    "Brakuje bezpiecznego helpera zamykania GameShift.",
+                    helperPath);
+            }
+
+            using Process? helper = Process.Start(new ProcessStartInfo
+            {
+                FileName = helperPath,
+                Arguments = "--shutdown-components",
+                WorkingDirectory = AppContext.BaseDirectory,
+                UseShellExecute = false,
+                CreateNoWindow = true,
+            });
+            if (helper is null)
+            {
+                throw new InvalidOperationException(
+                    "Windows nie uruchomił bezpiecznej bramy zamykania.");
+            }
+
+            await helper.WaitForExitAsync(_lifetime.Token);
+            if (helper.ExitCode != 0)
+            {
+                throw new InvalidOperationException(
+                    "Bezpieczna brama nie zatrzymała składników GameShift " +
+                    $"(kod {helper.ExitCode}).");
+            }
+
+            Close();
+        }
+        catch (Exception exception) when (IsExpectedUiFailure(exception))
+        {
+            ShowFromTray();
+            _trayIcon?.ShowNotification(
+                "GameShift — nie wyłączono",
+                exception.Message);
+        }
+    }
 
     private void HandleActivationRequest(UiActivationRequest request)
     {
@@ -591,8 +690,44 @@ public sealed partial class MainWindow : Window, IDisposable
 
     private async void OnRefreshDiagnosticsClicked(
         object sender,
-        RoutedEventArgs args) =>
+        RoutedEventArgs args)
+    {
         await RefreshDiagnosticsAsync(_lifetime.Token);
+        await RefreshMemoryOptimizerStatusAsync(_lifetime.Token);
+        await RefreshSystemOptimizerStatusAsync(_lifetime.Token);
+    }
+
+    private async void OnOpenMemoryOptimizerClicked(
+        object sender,
+        RoutedEventArgs args)
+    {
+        try
+        {
+            await _memoryOptimizer.OpenAsync(_lifetime.Token);
+            await RefreshMemoryOptimizerStatusAsync(_lifetime.Token);
+        }
+        catch (Exception exception) when (IsExpectedUiFailure(exception))
+        {
+            MemoryOptimizerStatusText.Text = "Nie można uruchomić";
+            MemoryOptimizerDetailsText.Text = exception.Message;
+        }
+    }
+
+    private async void OnOpenSystemOptimizerClicked(
+        object sender,
+        RoutedEventArgs args)
+    {
+        try
+        {
+            await _systemOptimizer.OpenAsync(_lifetime.Token);
+            await RefreshSystemOptimizerStatusAsync(_lifetime.Token);
+        }
+        catch (Exception exception) when (IsExpectedUiFailure(exception))
+        {
+            SystemOptimizerStatusText.Text = "Nie można uruchomić";
+            SystemOptimizerProfileText.Text = exception.Message;
+        }
+    }
 
     private async void OnDiscoverGamesClicked(
         object sender,
@@ -644,7 +779,116 @@ public sealed partial class MainWindow : Window, IDisposable
     private void OnFpsOverlaySettingChanged(
         object sender,
         RoutedEventArgs args) =>
+        ApplyFpsOverlaySettingFromToggle(sender);
+
+    private async void OnFpsTrackingSettingChanged(
+        object sender,
+        RoutedEventArgs args)
+    {
+        if (_suppressFpsSettingEvents)
+        {
+            return;
+        }
+
+        bool enabled = sender is ToggleSwitch toggle
+            ? toggle.IsOn
+            : FpsTrackingToggleSwitch.IsOn;
+        SetFpsTrackingToggleValues(enabled);
         ApplyOverlaySettingsFromControls(scheduleSave: true);
+        if (_isLoadingOverlayPreferences
+            || !_isLoaded
+            || _activeSession is null
+            || !_sessionEndpointAvailable
+            || _lifetime.IsCancellationRequested)
+        {
+            return;
+        }
+
+        int revision = ++_frameRateTrackingUpdateRevision;
+        try
+        {
+            SessionStateClientSnapshot updated =
+                await _sessions.SetFrameRateTrackingAsync(
+                    _activeSession.SessionId,
+                    enabled,
+                    _lifetime.Token);
+            if (revision != _frameRateTrackingUpdateRevision
+                || _activeSession?.SessionId != updated.SessionId)
+            {
+                return;
+            }
+
+            _activeSession = updated;
+            ApplyActiveSession(updated);
+        }
+        catch (OperationCanceledException)
+            when (_lifetime.IsCancellationRequested)
+        {
+        }
+        catch (Exception exception) when (IsExpectedUiFailure(exception))
+        {
+            ShowInfo(
+                DashboardInfoBar,
+                InfoBarSeverity.Warning,
+                "Nie zmieniono pomiaru FPS",
+                exception.Message);
+        }
+    }
+
+    private void ApplyFpsOverlaySettingFromToggle(object sender)
+    {
+        if (_suppressFpsSettingEvents)
+        {
+            return;
+        }
+
+        bool enabled = sender is ToggleSwitch toggle
+            ? toggle.IsOn
+            : FpsOverlayToggleSwitch.IsOn;
+        SetFpsOverlayToggleValues(enabled);
+
+        ApplyOverlaySettingsFromControls(scheduleSave: true);
+    }
+
+    private void SetFpsTrackingToggleValues(bool enabled)
+    {
+        if (FpsTrackingToggleSwitch is null
+            || FpsTrackingSettingsToggleSwitch is null)
+        {
+            return;
+        }
+
+        _suppressFpsSettingEvents = true;
+        try
+        {
+            FpsTrackingToggleSwitch.IsOn = enabled;
+            FpsTrackingSettingsToggleSwitch.IsOn = enabled;
+        }
+        finally
+        {
+            _suppressFpsSettingEvents = false;
+        }
+    }
+
+    private void SetFpsOverlayToggleValues(bool enabled)
+    {
+        if (FpsOverlayToggleSwitch is null
+            || FpsOverlaySettingsToggleSwitch is null)
+        {
+            return;
+        }
+
+        _suppressFpsSettingEvents = true;
+        try
+        {
+            FpsOverlayToggleSwitch.IsOn = enabled;
+            FpsOverlaySettingsToggleSwitch.IsOn = enabled;
+        }
+        finally
+        {
+            _suppressFpsSettingEvents = false;
+        }
+    }
 
     private void OnFpsOverlayStyleChanged(
         object sender,
@@ -916,6 +1160,69 @@ public sealed partial class MainWindow : Window, IDisposable
         HandleGameProfileChanged();
     }
 
+    private void OnLibrarySearchTextChanged(
+        object sender,
+        TextChangedEventArgs args) => ApplyLibraryFilter();
+
+    /// <summary>
+    /// Rebuilds the library view from the current search text. Only the
+    /// library list is filtered; the dashboard rail and the profile picker
+    /// keep showing every game, so a filter never hides the active session.
+    /// </summary>
+    private void ApplyLibraryFilter()
+    {
+        string query = LibrarySearchBox?.Text?.Trim() ?? string.Empty;
+        ProfileListItem? selected = ProfilesList.SelectedItem as ProfileListItem;
+
+        _libraryView.Clear();
+        foreach (ProfileListItem item in _profiles)
+        {
+            if (query.Length == 0
+                || item.DisplayName.Contains(
+                    query,
+                    StringComparison.CurrentCultureIgnoreCase))
+            {
+                _libraryView.Add(item);
+            }
+        }
+
+        if (selected is not null && _libraryView.Contains(selected))
+        {
+            ProfilesList.SelectedItem = selected;
+        }
+
+        if (LibrarySearchSummary is null)
+        {
+            return;
+        }
+
+        LibrarySearchSummary.Text = query.Length == 0
+            ? _profiles.Count switch
+            {
+                0 => string.Empty,
+                1 => "1 gra",
+                _ => $"{_profiles.Count} gier",
+            }
+            : $"{_libraryView.Count} z {_profiles.Count}";
+    }
+
+    /// <summary>
+    /// Clears the search when a selection made elsewhere points at a game the
+    /// filter is hiding, so the library never appears to ignore the choice.
+    /// </summary>
+    private void RevealProfileInLibrary(ProfileListItem? item)
+    {
+        if (item is null
+            || _libraryView.Contains(item)
+            || LibrarySearchBox is null)
+        {
+            return;
+        }
+
+        LibrarySearchBox.Text = string.Empty;
+        ApplyLibraryFilter();
+    }
+
     private void OnDashboardGameRailSelectionChanged(
         object sender,
         SelectionChangedEventArgs args)
@@ -926,6 +1233,7 @@ public sealed partial class MainWindow : Window, IDisposable
         }
 
         _isSynchronizingProfileSelection = true;
+        RevealProfileInLibrary(DashboardGameRail.SelectedItem as ProfileListItem);
         ProfilesList.SelectedItem = DashboardGameRail.SelectedItem;
         GameProfileSelector.SelectedItem = DashboardGameRail.SelectedItem;
         _isSynchronizingProfileSelection = false;
@@ -942,6 +1250,7 @@ public sealed partial class MainWindow : Window, IDisposable
         }
 
         _isSynchronizingProfileSelection = true;
+        RevealProfileInLibrary(GameProfileSelector.SelectedItem as ProfileListItem);
         ProfilesList.SelectedItem = GameProfileSelector.SelectedItem;
         DashboardGameRail.SelectedItem = GameProfileSelector.SelectedItem;
         _isSynchronizingProfileSelection = false;
@@ -1161,6 +1470,667 @@ public sealed partial class MainWindow : Window, IDisposable
             _lifetime.Token);
     }
 
+    private async void OnManageOptiScalerClicked(
+        object sender,
+        RoutedEventArgs args)
+    {
+        if (_isBusy
+            || sender is not Button
+            {
+                DataContext: ProfileListItem selected,
+            } button)
+        {
+            return;
+        }
+
+        ProfilesList.SelectedItem = selected;
+        button.IsEnabled = false;
+        try
+        {
+            string profileId = selected.Profile.ProfileId.Value.ToString("D");
+            OptiScalerInstallationStatus status = _optiScaler.GetStatus(
+                profileId);
+            Task<IReadOnlyList<OptiScalerReleaseOption>>[] releaseTasks =
+            [
+                LoadOptiScalerVersionsAsync(
+                    OptiScalerReleaseChannel.Stable,
+                    _lifetime.Token),
+                LoadOptiScalerVersionsAsync(
+                    OptiScalerReleaseChannel.Beta,
+                    _lifetime.Token),
+                LoadOptiScalerVersionsAsync(
+                    OptiScalerReleaseChannel.Nightly,
+                    _lifetime.Token),
+                LoadOptiScalerVersionsAsync(
+                    OptiScalerReleaseChannel.DlssNeuralRendering,
+                    _lifetime.Token),
+            ];
+            OptiScalerReleaseOption[] availableReleases =
+                (await Task.WhenAll(releaseTasks))
+                .SelectMany(releases => releases)
+                .ToArray();
+            OptiScalerInstallRequest preflightRequest = new(
+                profileId,
+                selected.Profile.ExecutablePath,
+                selected.Profile.WorkingDirectory,
+                status.Proxy,
+                OfflineUseConfirmed: false);
+            OptiScalerInstallPreflight preflight =
+                _optiScaler.EvaluateInstall(preflightRequest);
+            bool hardBlocked = preflight.Safety.BlockReason is
+                OptiScalerSafetyBlockReason.GameRunning
+                or OptiScalerSafetyBlockReason.AntiCheatDetected;
+            ComboBox proxySelector = BuildOptiScalerProxySelector(status.Proxy);
+            ComboBox channelSelector = BuildOptiScalerChannelSelector(
+                status.Channel);
+            ComboBox versionSelector = new()
+            {
+                Header = "Wersja",
+                HorizontalAlignment = HorizontalAlignment.Stretch,
+            };
+            CheckBox offlineConfirmation = new()
+            {
+                IsEnabled = !hardBlocked,
+                Content = new TextBlock
+                {
+                    MaxWidth = 500,
+                    Text = "Potwierdzam użycie wyłącznie offline lub "
+                        + "w trybie single-player. Rozumiem, że modyfikacje "
+                        + "DLL mogą uruchomić ochronę anti-cheat.",
+                    TextWrapping = TextWrapping.Wrap,
+                },
+            };
+            CheckBox experimentalConfirmation = new()
+            {
+                IsEnabled = !hardBlocked,
+                Visibility = Visibility.Collapsed,
+                Content = new TextBlock
+                {
+                    MaxWidth = 500,
+                    Text = "Rozumiem, że wersje Beta/Nightly są "
+                        + "eksperymentalne i mogą powodować awarie gry.",
+                    TextWrapping = TextWrapping.Wrap,
+                },
+            };
+            // Probing the driver store touches the file system and verifies
+            // signatures, so keep it off the UI thread.
+            NvidiaDriverStoreSnapshot driverStore = await Task.Run(
+                _driverStoreProbe.Probe,
+                _lifetime.Token);
+            OptiScalerSafetyDecision neuralDecision =
+                NeuralRenderingPolicy.Evaluate(
+                    new(true, OptiScalerSafetyBlockReason.None),
+                    driverStore.Capability);
+            CheckBox neuralRendering = new()
+            {
+                IsEnabled = !hardBlocked && neuralDecision.CanInstall,
+                IsChecked = neuralDecision.CanInstall,
+                Visibility = Visibility.Collapsed,
+                Content = new TextBlock
+                {
+                    MaxWidth = 500,
+                    Text = "Włącz DLSS Neural Rendering. GameShift skopiuje "
+                        + "model ze sterownika NVIDIA i ustawi DLSS jako "
+                        + "upscaler.",
+                    TextWrapping = TextWrapping.Wrap,
+                },
+            };
+            TextBlock neuralStatus = new()
+            {
+                Foreground = (Brush)Application.Current.Resources[
+                    "GameShiftMutedTextBrush"],
+                MaxWidth = 500,
+                Text = DescribeNeuralRenderingCapability(
+                    driverStore,
+                    neuralDecision),
+                TextWrapping = TextWrapping.Wrap,
+                Visibility = Visibility.Collapsed,
+            };
+            InfoBar safetyNotice = new()
+            {
+                IsClosable = false,
+                IsOpen = true,
+                Severity = hardBlocked
+                    ? InfoBarSeverity.Error
+                    : InfoBarSeverity.Warning,
+                Title = hardBlocked
+                    ? "Instalacja zablokowana"
+                    : "Tylko gry offline",
+                Message = DescribeOptiScalerPreflight(preflight),
+            };
+            StackPanel content = new()
+            {
+                MaxWidth = 540,
+                Spacing = 12,
+            };
+            content.Children.Add(new TextBlock
+            {
+                Text = status.IsInstalled
+                    ? $"Zainstalowano OptiScaler {status.Version} "
+                        + $"({GetOptiScalerChannelLabel(status.Channel)})."
+                    : "GameShift pobierze wybrane wydanie, sprawdzi SHA-256 "
+                        + "i umieści pliki obok właściwego EXE gry.",
+                TextWrapping = TextWrapping.Wrap,
+            });
+            content.Children.Add(new TextBlock
+            {
+                Foreground = (Brush)Application.Current.Resources[
+                    "GameShiftMutedTextBrush"],
+                Text = $"Cel: {preflight.TargetExecutablePath}",
+                TextWrapping = TextWrapping.Wrap,
+            });
+            content.Children.Add(proxySelector);
+            content.Children.Add(channelSelector);
+            content.Children.Add(versionSelector);
+            content.Children.Add(safetyNotice);
+            content.Children.Add(offlineConfirmation);
+            content.Children.Add(experimentalConfirmation);
+            content.Children.Add(neuralRendering);
+            content.Children.Add(neuralStatus);
+
+            ContentDialog dialog = new()
+            {
+                XamlRoot = RootLayout.XamlRoot,
+                Title = $"OptiScaler — {selected.DisplayName}",
+                Content = content,
+                PrimaryButtonText = status.IsInstalled
+                    ? "Zaktualizuj"
+                    : "Zainstaluj",
+                SecondaryButtonText = status.IsInstalled ? "Usuń" : string.Empty,
+                CloseButtonText = "Anuluj",
+                DefaultButton = ContentDialogButton.Close,
+                IsPrimaryButtonEnabled = false,
+            };
+
+            void UpdatePrimaryButton()
+            {
+                OptiScalerReleaseChannel channel =
+                    GetSelectedOptiScalerChannel(channelSelector);
+                dialog.IsPrimaryButtonEnabled = !hardBlocked
+                    && offlineConfirmation.IsChecked == true
+                    && versionSelector.SelectedItem is not null
+                    && (!OptiScalerReleaseChannelPolicy.IsExperimental(channel)
+                        || experimentalConfirmation.IsChecked == true);
+            }
+
+            void UpdateSelectedChannel()
+            {
+                OptiScalerReleaseChannel channel =
+                    GetSelectedOptiScalerChannel(channelSelector);
+                OptiScalerReleaseOption[] channelReleases = availableReleases
+                    .Where(release => release.Channel == channel)
+                    .ToArray();
+                versionSelector.Items.Clear();
+                foreach (OptiScalerReleaseOption release in channelReleases)
+                {
+                    ComboBoxItem item = new()
+                    {
+                        Content = release.PublishedAtUtc is DateTimeOffset published
+                            ? $"{release.Version}  •  {published:yyyy-MM-dd}"
+                            : release.Version,
+                        Tag = release,
+                    };
+                    versionSelector.Items.Add(item);
+                    if (channel == status.Channel
+                        && string.Equals(
+                            release.Version,
+                            status.Version,
+                            StringComparison.OrdinalIgnoreCase))
+                    {
+                        versionSelector.SelectedItem = item;
+                    }
+                }
+
+                if (versionSelector.SelectedItem is null
+                    && versionSelector.Items.Count > 0)
+                {
+                    versionSelector.SelectedIndex = 0;
+                }
+
+                bool isExperimental =
+                    OptiScalerReleaseChannelPolicy.IsExperimental(channel);
+                experimentalConfirmation.Visibility = isExperimental
+                    ? Visibility.Visible
+                    : Visibility.Collapsed;
+                Visibility neuralVisibility =
+                    channel == OptiScalerReleaseChannel.DlssNeuralRendering
+                        ? Visibility.Visible
+                        : Visibility.Collapsed;
+                neuralRendering.Visibility = neuralVisibility;
+                neuralStatus.Visibility = neuralVisibility;
+                safetyNotice.Message = channelReleases.Length == 0
+                    ? "Nie udało się pobrać listy wersji dla tego kanału."
+                    : DescribeOptiScalerChannel(channel, preflight);
+                UpdatePrimaryButton();
+            }
+
+            channelSelector.SelectionChanged += (_, _) =>
+                UpdateSelectedChannel();
+            versionSelector.SelectionChanged += (_, _) =>
+                UpdatePrimaryButton();
+            offlineConfirmation.Checked += (_, _) => UpdatePrimaryButton();
+            offlineConfirmation.Unchecked += (_, _) => UpdatePrimaryButton();
+            experimentalConfirmation.Checked += (_, _) =>
+                UpdatePrimaryButton();
+            experimentalConfirmation.Unchecked += (_, _) =>
+                UpdatePrimaryButton();
+            UpdateSelectedChannel();
+
+            ContentDialogResult choice = await dialog.ShowAsync();
+            if (choice == ContentDialogResult.None
+                || _lifetime.IsCancellationRequested)
+            {
+                return;
+            }
+
+            _isBusy = true;
+            OptiScalerOperationResult operation;
+            try
+            {
+                if (choice == ContentDialogResult.Secondary)
+                {
+                    operation = await _optiScaler.RemoveAsync(
+                        profileId,
+                        _lifetime.Token);
+                }
+                else
+                {
+                    OptiScalerProxy proxy =
+                        proxySelector.SelectedItem is ComboBoxItem
+                        {
+                            Tag: OptiScalerProxy selectedProxy,
+                        }
+                            ? selectedProxy
+                            : OptiScalerProxy.Dxgi;
+                    OptiScalerReleaseChannel channel =
+                        GetSelectedOptiScalerChannel(channelSelector);
+                    string? version =
+                        versionSelector.SelectedItem is ComboBoxItem
+                        {
+                            Tag: OptiScalerReleaseOption selectedRelease,
+                        }
+                            ? selectedRelease.Version
+                            : null;
+                    operation = await RunOptiScalerInstallWithProgressAsync(
+                        RootLayout.XamlRoot,
+                        selected.DisplayName,
+                        preflightRequest with
+                        {
+                            Proxy = proxy,
+                            Channel = channel,
+                            Version = version,
+                            OfflineUseConfirmed =
+                                offlineConfirmation.IsChecked == true,
+                            ExperimentalUseConfirmed =
+                                experimentalConfirmation.IsChecked == true,
+                            EnableNeuralRendering =
+                                channel
+                                    == OptiScalerReleaseChannel
+                                        .DlssNeuralRendering
+                                && neuralRendering.IsChecked == true,
+                        });
+                }
+            }
+            finally
+            {
+                _isBusy = false;
+                UpdateSessionControls();
+            }
+
+            await ShowOptiScalerResultAsync(
+                RootLayout.XamlRoot,
+                selected.DisplayName,
+                operation);
+        }
+        catch (OperationCanceledException)
+            when (_lifetime.IsCancellationRequested)
+        {
+        }
+        catch (Exception exception) when (IsExpectedUiFailure(exception))
+        {
+            await ShowOptiScalerResultAsync(
+                RootLayout.XamlRoot,
+                selected.DisplayName,
+                new(false, exception.Message));
+        }
+        finally
+        {
+            button.IsEnabled = true;
+        }
+    }
+
+    private static readonly (OptiScalerInstallStage Stage, string Label)[]
+        OptiScalerStages =
+        [
+            (OptiScalerInstallStage.Preparing, "Kontrola bezpieczeństwa"),
+            (OptiScalerInstallStage.CheckingHardware, "Sprawdzenie sprzętu"),
+            (OptiScalerInstallStage.Downloading, "Pobieranie pakietu"),
+            (OptiScalerInstallStage.Extracting, "Rozpakowanie"),
+            (OptiScalerInstallStage.ConfiguringNeuralRendering,
+                "Konfiguracja Neural Rendering"),
+            (OptiScalerInstallStage.CollectingDriverFiles,
+                "Pliki DLSS ze sterownika"),
+            (OptiScalerInstallStage.BackingUp, "Kopia zapasowa gry"),
+            (OptiScalerInstallStage.CopyingFiles, "Instalacja plików"),
+            (OptiScalerInstallStage.Completed, "Zakończono"),
+        ];
+
+    /// <summary>
+    /// Runs an OptiScaler installation behind a dialog that names the stage in
+    /// progress. Without it the window sits silent through a package download
+    /// and a copy of well over a hundred megabytes.
+    /// </summary>
+    private async Task<OptiScalerOperationResult>
+        RunOptiScalerInstallWithProgressAsync(
+            XamlRoot xamlRoot,
+            string gameDisplayName,
+            OptiScalerInstallRequest request)
+    {
+        using CancellationTokenSource cancellation =
+            CancellationTokenSource.CreateLinkedTokenSource(_lifetime.Token);
+
+        Brush mutedBrush = (Brush)Application.Current.Resources[
+            "GameShiftMutedTextBrush"];
+        ProgressBar progressBar = new()
+        {
+            CornerRadius = new CornerRadius(3),
+            Foreground = (Brush)Application.Current.Resources[
+                "GameShiftAccentBrush"],
+            Height = 6,
+            IsIndeterminate = true,
+            Maximum = 100,
+            Minimum = 0,
+        };
+        TextBlock messageText = new()
+        {
+            MaxWidth = 460,
+            Text = "Przygotowywanie…",
+            TextWrapping = TextWrapping.Wrap,
+        };
+        StackPanel stageList = new() { Spacing = 4 };
+        Dictionary<OptiScalerInstallStage, TextBlock> stageRows = [];
+        foreach ((OptiScalerInstallStage stage, string label) in OptiScalerStages)
+        {
+            TextBlock row = new()
+            {
+                Foreground = mutedBrush,
+                Text = $"○  {label}",
+            };
+            stageRows[stage] = row;
+            stageList.Children.Add(row);
+        }
+
+        StackPanel content = new() { MaxWidth = 500, Spacing = 12 };
+        content.Children.Add(messageText);
+        content.Children.Add(progressBar);
+        content.Children.Add(stageList);
+
+        ContentDialog dialog = new()
+        {
+            CloseButtonText = "Anuluj",
+            Content = content,
+            DefaultButton = ContentDialogButton.None,
+            Title = $"Instalowanie OptiScaler — {gameDisplayName}",
+            XamlRoot = xamlRoot,
+        };
+        dialog.CloseButtonClick += (_, _) => cancellation.Cancel();
+
+        int reached = 0;
+        Progress<OptiScalerInstallProgress> progress = new(update =>
+        {
+            messageText.Text = update.Message;
+            if (update.Percent is double percent)
+            {
+                progressBar.IsIndeterminate = false;
+                progressBar.Value = percent;
+            }
+            else
+            {
+                progressBar.IsIndeterminate = true;
+            }
+
+            reached = Math.Max(reached, (int)update.Stage);
+            foreach ((OptiScalerInstallStage stage, string label) in
+                     OptiScalerStages)
+            {
+                TextBlock row = stageRows[stage];
+                int index = (int)stage;
+                if (index < reached)
+                {
+                    row.Text = $"●  {label}";
+                    row.Foreground = mutedBrush;
+                }
+                else if (index == reached)
+                {
+                    row.Text = $"▸  {label}";
+                    row.ClearValue(TextBlock.ForegroundProperty);
+                }
+                else
+                {
+                    row.Text = $"○  {label}";
+                    row.Foreground = mutedBrush;
+                }
+            }
+        });
+
+        Task<OptiScalerOperationResult> install =
+            _optiScaler.InstallAsync(request, progress, cancellation.Token)
+                .AsTask();
+        _ = dialog.ShowAsync();
+        try
+        {
+            return await install;
+        }
+        catch (OperationCanceledException)
+        {
+            return new(
+                false,
+                "Instalacja została anulowana. Katalog gry wrócił do stanu "
+                    + "sprzed zmiany.");
+        }
+        finally
+        {
+            dialog.Hide();
+        }
+    }
+
+    private static ComboBox BuildOptiScalerProxySelector(
+        OptiScalerProxy selectedProxy)
+    {
+        ComboBox selector = new()
+        {
+            Header = "Proxy DLL",
+            HorizontalAlignment = HorizontalAlignment.Stretch,
+        };
+        foreach ((OptiScalerProxy proxy, string label) in new[]
+                 {
+                     (OptiScalerProxy.Dxgi, "dxgi.dll — zalecany"),
+                     (OptiScalerProxy.Winmm, "winmm.dll"),
+                     (OptiScalerProxy.Version, "version.dll"),
+                     (OptiScalerProxy.D3d12, "d3d12.dll"),
+                 })
+        {
+            ComboBoxItem item = new()
+            {
+                Content = label,
+                Tag = proxy,
+            };
+            selector.Items.Add(item);
+            if (proxy == selectedProxy)
+            {
+                selector.SelectedItem = item;
+            }
+        }
+
+        return selector;
+    }
+
+    private static ComboBox BuildOptiScalerChannelSelector(
+        OptiScalerReleaseChannel selectedChannel)
+    {
+        ComboBox selector = new()
+        {
+            Header = "Kanał wersji",
+            HorizontalAlignment = HorizontalAlignment.Stretch,
+        };
+        foreach ((OptiScalerReleaseChannel channel, string label) in new[]
+                 {
+                     (OptiScalerReleaseChannel.Stable, "Stabilny — zalecany"),
+                     (OptiScalerReleaseChannel.Beta, "Beta — społecznościowy"),
+                     (OptiScalerReleaseChannel.Nightly,
+                         "Nightly — oficjalny codzienny"),
+                     (OptiScalerReleaseChannel.DlssNeuralRendering,
+                         "DLSS 5 Neural Rendering — fork"),
+                 })
+        {
+            ComboBoxItem item = new()
+            {
+                Content = label,
+                Tag = channel,
+            };
+            selector.Items.Add(item);
+            if (channel == selectedChannel)
+            {
+                selector.SelectedItem = item;
+            }
+        }
+
+        return selector;
+    }
+
+    private static OptiScalerReleaseChannel GetSelectedOptiScalerChannel(
+        ComboBox selector) =>
+        selector.SelectedItem is ComboBoxItem
+        {
+            Tag: OptiScalerReleaseChannel channel,
+        }
+            ? channel
+            : OptiScalerReleaseChannel.Stable;
+
+    private async Task<IReadOnlyList<OptiScalerReleaseOption>>
+        LoadOptiScalerVersionsAsync(
+            OptiScalerReleaseChannel channel,
+            CancellationToken cancellationToken)
+    {
+        try
+        {
+            return await _optiScaler.GetAvailableVersionsAsync(
+                channel,
+                cancellationToken);
+        }
+        catch (Exception exception) when (IsExpectedUiFailure(exception))
+        {
+            return [];
+        }
+        catch (HttpRequestException)
+        {
+            return [];
+        }
+        catch (OperationCanceledException)
+            when (!cancellationToken.IsCancellationRequested)
+        {
+            return [];
+        }
+    }
+
+    private static string GetOptiScalerChannelLabel(
+        OptiScalerReleaseChannel channel) =>
+        channel switch
+        {
+            OptiScalerReleaseChannel.Beta => "Beta społecznościowa",
+            OptiScalerReleaseChannel.Nightly => "Nightly oficjalny",
+            OptiScalerReleaseChannel.DlssNeuralRendering =>
+                "DLSS 5 Neural Rendering",
+            _ => "kanał stabilny",
+        };
+
+    private static string DescribeOptiScalerPreflight(
+        OptiScalerInstallPreflight preflight) =>
+        preflight.Safety.BlockReason switch
+        {
+            OptiScalerSafetyBlockReason.GameRunning =>
+                "Najpierw zamknij grę.",
+            OptiScalerSafetyBlockReason.AntiCheatDetected =>
+                "Wykryto grę online albo ochronę anti-cheat: "
+                    + preflight.Safety.Evidence
+                    + ". GameShift nie wstrzyknie do niej OptiScaler.",
+            _ => "Nie używaj OptiScaler w grach online. Błędny proxy DLL "
+                + "może uniemożliwić start gry; GameShift zachowa kopię "
+                + "kolidującego pliku i pozwoli przywrócić stan.",
+        };
+
+    private static string DescribeNeuralRenderingCapability(
+        NvidiaDriverStoreSnapshot driverStore,
+        OptiScalerSafetyDecision decision)
+    {
+        if (decision.CanInstall)
+        {
+            return $"Wykryto {driverStore.Capability.Generation}, sterownik "
+                + $"{driverStore.Capability.DriverVersion}. Model "
+                + "nvngx_dlssnr.dll jest dostępny w magazynie sterowników.";
+        }
+
+        return decision.BlockReason switch
+        {
+            OptiScalerSafetyBlockReason.GpuNotSupported =>
+                "Neural Rendering wymaga karty GeForce RTX 50 lub nowszej. "
+                    + decision.Evidence,
+            OptiScalerSafetyBlockReason.DriverTooOld =>
+                $"Wymagany sterownik NVIDIA "
+                    + $"{NeuralRenderingPolicy.MinimumDriverVersion} lub "
+                    + $"nowszy. {decision.Evidence}",
+            OptiScalerSafetyBlockReason.NeuralRenderingModelMissing =>
+                "Sterownik nie zawiera pliku nvngx_dlssnr.dll. Zaktualizuj "
+                    + "sterownik NVIDIA.",
+            _ => "Neural Rendering jest niedostępny na tym komputerze.",
+        };
+    }
+
+    private static string DescribeOptiScalerChannel(
+        OptiScalerReleaseChannel channel,
+        OptiScalerInstallPreflight preflight) =>
+        channel switch
+        {
+            OptiScalerReleaseChannel.Beta =>
+                "Beta pochodzi ze społecznościowego, nieoficjalnego repozytorium "
+                    + "Optiscaler-Betas. GameShift sprawdzi źródło i SHA-256. "
+                    + DescribeOptiScalerPreflight(preflight),
+            OptiScalerReleaseChannel.Nightly =>
+                "Nightly to oficjalne codzienne wydanie OptiScaler. Może być "
+                    + "niestabilne. GameShift sprawdzi źródło i SHA-256. "
+                    + DescribeOptiScalerPreflight(preflight),
+            OptiScalerReleaseChannel.DlssNeuralRendering =>
+                "Fork społecznościowy z DLSS 5 Neural Rendering. GameShift "
+                    + "instaluje wyłącznie jedno, przypięte i zweryfikowane "
+                    + "wydanie; binarki nie da się odtworzyć z kodu, więc "
+                    + "opiera się to na zaufaniu do autora. "
+                    + DescribeOptiScalerPreflight(preflight),
+            _ => DescribeOptiScalerPreflight(preflight),
+        };
+
+    private static async Task ShowOptiScalerResultAsync(
+        XamlRoot xamlRoot,
+        string gameDisplayName,
+        OptiScalerOperationResult result)
+    {
+        ContentDialog resultDialog = new()
+        {
+            XamlRoot = xamlRoot,
+            Title = result.Succeeded
+                ? $"OptiScaler — {gameDisplayName}"
+                : "Nie wykonano operacji OptiScaler",
+            Content = new TextBlock
+            {
+                MaxWidth = 520,
+                Text = result.Message,
+                TextWrapping = TextWrapping.Wrap,
+            },
+            CloseButtonText = "OK",
+            DefaultButton = ContentDialogButton.Close,
+        };
+        _ = await resultDialog.ShowAsync();
+    }
+
     private async Task LaunchProfileThroughGameShiftAsync(
         ProfileListItem selected,
         bool keepWindowHidden,
@@ -1221,7 +2191,8 @@ public sealed partial class MainWindow : Window, IDisposable
                 await _sessions.StartAsync(
                     plan.PlanId,
                     plan.SessionId,
-                    cancellationToken);
+                    cancellationToken,
+                    enableFrameRateTracking: FpsTrackingToggleSwitch.IsOn);
             _pendingPlan = null;
             _planActions.Clear();
             _activeSession = active;
@@ -1407,7 +2378,8 @@ public sealed partial class MainWindow : Window, IDisposable
                 await _sessions.StartAsync(
                     plan.PlanId,
                     plan.SessionId,
-                    _lifetime.Token);
+                    _lifetime.Token,
+                    enableFrameRateTracking: FpsTrackingToggleSwitch.IsOn);
             _sessionEndpointAvailable = true;
             _pendingPlan = null;
             _planActions.Clear();
@@ -1991,6 +2963,11 @@ public sealed partial class MainWindow : Window, IDisposable
             _updatePreferences = result.Preferences;
             UpdateLastCheckText(result.Preferences);
             UpdatesStatusText.Text = result.Message;
+            if (result.Manifest is null)
+            {
+                _availableUpdate = null;
+                _stagedInstallerPath = null;
+            }
 
             switch (result.State)
             {
@@ -1999,8 +2976,8 @@ public sealed partial class MainWindow : Window, IDisposable
                     UpdateActivitySpinner.Visibility = Visibility.Collapsed;
                     return;
                 case UpdateCheckState.UpToDate:
-                    _availableUpdate = null;
-                    _stagedInstallerPath = null;
+                case UpdateCheckState.AheadOfChannel:
+                case UpdateCheckState.ManualUpgradeRequired:
                     UpdateActivitySpinner.IsActive = false;
                     UpdateActivitySpinner.Visibility = Visibility.Collapsed;
                     ApplyNoAvailableUpdate();
@@ -2008,8 +2985,17 @@ public sealed partial class MainWindow : Window, IDisposable
                     {
                         ShowInfo(
                             UpdateInfoBar,
-                            InfoBarSeverity.Success,
-                            "GameShift jest aktualny",
+                            result.State == UpdateCheckState.UpToDate
+                                ? InfoBarSeverity.Success
+                                : InfoBarSeverity.Informational,
+                            result.State switch
+                            {
+                                UpdateCheckState.AheadOfChannel =>
+                                    "Wersja nowsza niż kanał",
+                                UpdateCheckState.ManualUpgradeRequired =>
+                                    "Wymagana ręczna reinstalacja",
+                                _ => "GameShift jest aktualny",
+                            },
                             result.Message);
                     }
 
@@ -2478,6 +3464,26 @@ public sealed partial class MainWindow : Window, IDisposable
             DashboardSystemAgentStatusGlyph);
     }
 
+    private async Task RefreshMemoryOptimizerStatusAsync(
+        CancellationToken cancellationToken)
+    {
+        MemoryOptimizerComponentSnapshot snapshot =
+            await _memoryOptimizer.GetStatusAsync(cancellationToken);
+        MemoryOptimizerStatusText.Text = snapshot.DisplayState;
+        MemoryOptimizerDetailsText.Text = snapshot.Details;
+        OpenMemoryOptimizerButton.IsEnabled = snapshot.CanOpen;
+    }
+
+    private async Task RefreshSystemOptimizerStatusAsync(
+        CancellationToken cancellationToken)
+    {
+        SystemOptimizerComponentSnapshot snapshot =
+            await _systemOptimizer.GetStatusAsync(cancellationToken);
+        SystemOptimizerStatusText.Text = snapshot.DisplayState;
+        SystemOptimizerProfileText.Text = snapshot.Details;
+        OpenSystemOptimizerButton.IsEnabled = snapshot.CanOpen;
+    }
+
     private async Task RefreshDashboardRecoveryStatusAsync(
         CancellationToken cancellationToken)
     {
@@ -2691,7 +3697,8 @@ public sealed partial class MainWindow : Window, IDisposable
             SessionStateClientSnapshot active = await _sessions.StartAsync(
                 plan.PlanId,
                 plan.SessionId,
-                _lifetime.Token);
+                _lifetime.Token,
+                enableFrameRateTracking: FpsTrackingToggleSwitch.IsOn);
 
             _sessionEndpointAvailable = true;
             _pendingPlan = null;
@@ -2758,6 +3765,7 @@ public sealed partial class MainWindow : Window, IDisposable
 
     private void ApplyActiveSession(SessionStateClientSnapshot session)
     {
+        _ = TryRenewActiveGameLeaseAsync(session, _lifetime.Token);
         if (_dashboardFrameSessionId != session.SessionId)
         {
             _dashboardFrameSessionId = session.SessionId;
@@ -2774,8 +3782,12 @@ public sealed partial class MainWindow : Window, IDisposable
             $"Od {session.StartedAtUtc.ToLocalTime():g}. "
             + $"Zastosowane akcje: {session.AppliedActionCount}. "
             + session.Message;
-        if (session.FramesPerSecond is double framesPerSecond)
+        if (FpsTrackingToggleSwitch.IsOn
+            && session.FramesPerSecond is double framesPerSecond
+            && double.IsFinite(framesPerSecond)
+            && framesPerSecond > 0)
         {
+            SetDashboardTelemetryAvailability(hasValidSample: true);
             SetDashboardFrameRateStatus(
                 "Pomiar aktywny",
                 DashboardStatusKind.Ready);
@@ -2791,22 +3803,31 @@ public sealed partial class MainWindow : Window, IDisposable
         }
         else
         {
+            bool trackingDisabled = !FpsTrackingToggleSwitch.IsOn;
+            SetDashboardTelemetryAvailability(hasValidSample: false);
             SetDashboardFrameRateStatus(
-                session.State == "Active" ? "Oczekiwanie na klatki" : stateLabel,
-                session.State == "Active"
+                trackingDisabled
+                    ? "Wyłączony"
+                    : session.State == "Active"
+                        ? "Oczekiwanie na klatki"
+                        : stateLabel,
+                trackingDisabled
+                    ? DashboardStatusKind.Pending
+                    : session.State == "Active"
                     ? DashboardStatusKind.Warning
                     : DashboardStatusKind.Pending);
             ActiveFpsText.Text = "—";
             ActiveFrameTimeText.Text = "— ms";
         }
 
-        ActiveFrameRateStatusText.Text =
-            (string.IsNullOrWhiteSpace(session.FrameRateStatus)
+        ActiveFrameRateStatusText.Text = !FpsTrackingToggleSwitch.IsOn
+            ? "Pomiar FPS jest wyłączony w ustawieniach GameShift."
+            : (string.IsNullOrWhiteSpace(session.FrameRateStatus)
                 ? "PresentMon nie zwrócił stanu pomiaru."
                 : session.FrameRateStatus)
-            + (session.FrameRateProcessId is int processId
-                ? $" Proces gry: PID {processId}."
-                : string.Empty);
+                + (session.FrameRateProcessId is int processId
+                    ? $" Proces gry: PID {processId}."
+                    : string.Empty);
         UpdatePerformanceOverlay();
         PlanStateTitleText.Text =
             $"Sesja aktywna: {session.GameDisplayName}";
@@ -2817,6 +3838,67 @@ public sealed partial class MainWindow : Window, IDisposable
         PlanActionsList.Visibility = Visibility.Collapsed;
         UpdateDashboardHero();
         UpdateSessionControls();
+    }
+
+    private async Task TryExportKnownGamesAsync(
+        IReadOnlyList<ProfileListItem> profiles,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            await _memoryOptimizerGameStateExporter.ExportKnownGamesAsync(
+                profiles.Select(item => new KnownGameExportItem(
+                    item.Profile.ProfileId.Value,
+                    item.DisplayName,
+                    item.ExecutablePath)),
+                cancellationToken);
+        }
+        catch (Exception exception) when (IsExpectedUiFailure(exception))
+        {
+            Debug.WriteLine(
+                "Memory Optimizer known-games export failed: " +
+                exception.Message);
+        }
+    }
+
+    private async Task TryRenewActiveGameLeaseAsync(
+        SessionStateClientSnapshot session,
+        CancellationToken cancellationToken)
+    {
+        int? processId = session.FrameRateProcessId;
+        if (processId is null or <= 0)
+        {
+            ProfileListItem? profile = _profiles.FirstOrDefault(item =>
+                item.Profile.ProfileId.Value == session.ProfileId);
+            if (profile is not null)
+            {
+                string processName = Path.GetFileNameWithoutExtension(
+                    profile.ExecutablePath);
+                using Process? process = Process.GetProcessesByName(processName)
+                    .FirstOrDefault();
+                processId = process?.Id;
+            }
+        }
+
+        if (processId is null or <= 0)
+        {
+            return;
+        }
+
+        try
+        {
+            await _memoryOptimizerGameStateExporter.RenewActiveGameLeaseAsync(
+                session.ProfileId,
+                session.GameDisplayName,
+                processId.Value,
+                cancellationToken);
+        }
+        catch (Exception exception) when (IsExpectedUiFailure(exception))
+        {
+            Debug.WriteLine(
+                "Memory Optimizer active-game export failed: " +
+                exception.Message);
+        }
     }
 
     private void OnDashboardFrameTimeCanvasSizeChanged(
@@ -2883,7 +3965,8 @@ public sealed partial class MainWindow : Window, IDisposable
                 await _userDataStore
                     .LoadPerformanceOverlayPreferencesAsync(cancellationToken);
             _isLoadingOverlayPreferences = true;
-            FpsOverlayToggleSwitch.IsOn = preferences.IsEnabled;
+            SetFpsTrackingToggleValues(preferences.IsFpsTrackingEnabled);
+            SetFpsOverlayToggleValues(preferences.IsEnabled);
             OverlayOpacitySlider.Value = preferences.OpacityPercent;
             OverlaySizeSlider.Value = preferences.ScalePercent;
             OverlayCornerSelector.SelectedIndex =
@@ -2916,7 +3999,8 @@ public sealed partial class MainWindow : Window, IDisposable
 
     private void ApplyOverlaySettingsFromControls(bool scheduleSave)
     {
-        if (FpsOverlayToggleSwitch is null
+        if (FpsTrackingToggleSwitch is null
+            || FpsOverlayToggleSwitch is null
             || OverlayOpacitySlider is null
             || OverlaySizeSlider is null
             || OverlayCornerSelector is null
@@ -2932,6 +4016,10 @@ public sealed partial class MainWindow : Window, IDisposable
         int scalePercent = GetOverlayScalePercent();
         OverlayOpacityValueText.Text = $"{opacityPercent}%";
         OverlaySizeValueText.Text = $"{scalePercent}%";
+        if (!FpsTrackingToggleSwitch.IsOn)
+        {
+            ClearFrameRateTelemetryForDisabledTracking();
+        }
         UpdatePerformanceOverlay();
 
         if (scheduleSave
@@ -2989,6 +4077,7 @@ public sealed partial class MainWindow : Window, IDisposable
         CreatePerformanceOverlayPreferencesFromControls() =>
         new(
             FpsOverlayToggleSwitch.IsOn,
+            FpsTrackingToggleSwitch.IsOn,
             GetOverlayOpacityPercent(),
             GetOverlayScalePercent(),
             GetSelectedOverlayCorner(),
@@ -3050,9 +4139,9 @@ public sealed partial class MainWindow : Window, IDisposable
         PerformanceOverlayStyle style) =>
         style switch
         {
+            PerformanceOverlayStyle.MinimalText => 0,
             PerformanceOverlayStyle.CompactBar => 1,
-            PerformanceOverlayStyle.MinimalText => 2,
-            _ => 0,
+            _ => 2,
         };
 
     private PerformanceOverlayTheme GetSelectedOverlayTheme() =>
@@ -3089,7 +4178,8 @@ public sealed partial class MainWindow : Window, IDisposable
 
     private void UpdatePerformanceOverlay()
     {
-        if (FpsOverlayToggleSwitch.IsOn is false
+        if (FpsTrackingToggleSwitch.IsOn is false
+            || FpsOverlayToggleSwitch.IsOn is false
             || _activeSession is null)
         {
             HidePerformanceOverlay();
@@ -3115,6 +4205,20 @@ public sealed partial class MainWindow : Window, IDisposable
 
     private void HidePerformanceOverlay() =>
         _performanceOverlay?.SetRequestedVisibility(false);
+
+    private void ClearFrameRateTelemetryForDisabledTracking()
+    {
+        _dashboardFrameTimes.Clear();
+        DashboardFrameTimeGraph.Points.Clear();
+        ActiveFpsText.Text = "—";
+        ActiveFrameTimeText.Text = "— ms";
+        ActiveFrameRateStatusText.Text =
+            "Pomiar FPS jest wyłączony w ustawieniach GameShift.";
+        SetDashboardTelemetryAvailability(hasValidSample: false);
+        SetDashboardFrameRateStatus(
+            "Wyłączony",
+            DashboardStatusKind.Pending);
+    }
 
     private void ApplyCompletedSession(SessionStateClientSnapshot session)
     {
@@ -3158,6 +4262,16 @@ public sealed partial class MainWindow : Window, IDisposable
         UpdateDashboardHero();
     }
 
+    private void SetDashboardTelemetryAvailability(bool hasValidSample)
+    {
+        DashboardFpsNoDataState.Visibility = hasValidSample
+            ? Visibility.Collapsed
+            : Visibility.Visible;
+        DashboardFpsTelemetryContent.Visibility = hasValidSample
+            ? Visibility.Visible
+            : Visibility.Collapsed;
+    }
+
     private void ResetFrameRateDisplay()
     {
         _dashboardFrameSessionId = null;
@@ -3165,10 +4279,12 @@ public sealed partial class MainWindow : Window, IDisposable
         DashboardFrameTimeGraph.Points.Clear();
         ActiveFpsText.Text = "—";
         ActiveFrameTimeText.Text = "— ms";
-        ActiveFrameRateStatusText.Text =
-            "PresentMon uruchomi się automatycznie razem z grą.";
+        ActiveFrameRateStatusText.Text = FpsTrackingToggleSwitch.IsOn
+            ? "PresentMon uruchomi się automatycznie razem z grą."
+            : "Pomiar FPS jest wyłączony w ustawieniach GameShift.";
+        SetDashboardTelemetryAvailability(hasValidSample: false);
         SetDashboardFrameRateStatus(
-            "Oczekuje",
+            FpsTrackingToggleSwitch.IsOn ? "Oczekuje" : "Wyłączony",
             DashboardStatusKind.Pending);
     }
 
@@ -3190,6 +4306,7 @@ public sealed partial class MainWindow : Window, IDisposable
         ActiveFrameRateStatusText.Text =
             "Brak połączenia z SessionHost; GameShift nie pokazuje "
             + "niepotwierdzonego FPS.";
+        SetDashboardTelemetryAvailability(hasValidSample: false);
         SetDashboardFrameRateStatus(
             "Niedostępny",
             DashboardStatusKind.Error);
@@ -3275,10 +4392,17 @@ public sealed partial class MainWindow : Window, IDisposable
         UpdateDashboardHero();
         UpdateSessionControls();
 
+        await TryExportKnownGamesAsync(
+            profileItems,
+            cancellationToken);
+
         await Task.WhenAll(profileItems.Select(async item =>
         {
-            item.ArtworkSource = await LocalArtworkImageLoader.LoadAsync(
-                item.ArtworkPath,
+            item.PosterArtworkSource = await LocalArtworkImageLoader.LoadAsync(
+                item.PosterArtworkPath,
+                cancellationToken);
+            item.HeroArtworkSource = await LocalArtworkImageLoader.LoadAsync(
+                item.HeroArtworkPath,
                 cancellationToken);
         }));
         UpdateDashboardHero();
@@ -3382,7 +4506,8 @@ public sealed partial class MainWindow : Window, IDisposable
 
     private void SetDashboardArtwork(ProfileListItem? profile)
     {
-        DashboardHeroImage.Source = profile?.ArtworkSource
+        DashboardHeroImage.Source = profile?.HeroArtworkSource
+            ?? profile?.PosterArtworkSource
             ?? _dashboardFallbackArtwork;
     }
 
@@ -3436,9 +4561,7 @@ public sealed partial class MainWindow : Window, IDisposable
     {
         _isBusy = isBusy;
         GlobalProgress.IsActive = isBusy;
-        GlobalProgress.Visibility = isBusy
-            ? Visibility.Visible
-            : Visibility.Collapsed;
+        GlobalProgress.Opacity = isBusy ? 1 : 0;
         AddProfileButton.IsEnabled = !isBusy;
         DiscoverGamesButton.IsEnabled = !isBusy;
         ProfilesList.IsEnabled = !isBusy;
@@ -4213,6 +5336,8 @@ public sealed partial class MainWindow : Window, IDisposable
 
         _sessions.Dispose();
         _updates.Dispose();
+        _systemOptimizer.Dispose();
+        _optiScaler.Dispose();
         _userDataStore.Dispose();
         _externalLaunchGate.Dispose();
         _lifetime.Dispose();

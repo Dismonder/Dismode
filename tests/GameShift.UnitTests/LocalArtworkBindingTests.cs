@@ -4,7 +4,7 @@ namespace GameShift.UnitTests;
 public sealed class LocalArtworkBindingTests
 {
     [TestMethod]
-    public void LocalArtworkUsesStreamLoadingAndKeepsFallback()
+    public void LocalArtworkUsesSeparatePosterAndHeroStreamsWithFallback()
     {
         string repositoryRoot = FindRepositoryRoot();
         string uiDirectory = Path.Combine(
@@ -26,9 +26,10 @@ public sealed class LocalArtworkBindingTests
                 "ViewModels",
                 "ProfileListItem.cs"));
 
-        StringAssert.Contains(
-            xaml,
-            "Source=\"{Binding ArtworkSource}\"");
+        StringAssert.Contains(xaml, "{Binding PosterArtworkSource}");
+        Assert.IsFalse(xaml.Contains(
+            "Source=\"{Binding ArtworkSource}\"",
+            StringComparison.Ordinal));
         Assert.IsFalse(
             xaml.Contains("ArtworkUri", StringComparison.Ordinal));
         Assert.IsFalse(
@@ -36,7 +37,10 @@ public sealed class LocalArtworkBindingTests
         StringAssert.Contains(loader, ".GetFileFromPathAsync(fullPath)");
         StringAssert.Contains(loader, ".OpenReadAsync()");
         StringAssert.Contains(loader, ".SetSourceAsync(stream)");
-        StringAssert.Contains(mainWindow, "profile?.ArtworkSource");
+        StringAssert.Contains(mainWindow, "item.PosterArtworkSource");
+        StringAssert.Contains(mainWindow, "item.HeroArtworkSource");
+        StringAssert.Contains(mainWindow, "profile?.HeroArtworkSource");
+        StringAssert.Contains(mainWindow, "profile?.PosterArtworkSource");
         StringAssert.Contains(mainWindow, "?? _dashboardFallbackArtwork");
     }
 

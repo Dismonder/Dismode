@@ -12,14 +12,17 @@ public sealed class RuntimeProcessEcoQosAction :
     IRecoveryDecisionProvider<RuntimeProcessEcoQosState>
 {
     private readonly ProcessIdentity _expectedIdentity;
+    private readonly bool _desiredEnabled;
     private readonly IProcessIdentityProvider _identityProvider;
 
     public RuntimeProcessEcoQosAction(
         ActionId actionId,
         ProcessIdentity expectedIdentity,
+        bool desiredEnabled = true,
         IProcessIdentityProvider? identityProvider = null)
     {
         _expectedIdentity = expectedIdentity;
+        _desiredEnabled = desiredEnabled;
         _identityProvider =
             identityProvider ?? new ProcessIdentityProvider();
         Descriptor = new(
@@ -50,7 +53,7 @@ public sealed class RuntimeProcessEcoQosAction :
             original,
             new(
                 IsRunning: true,
-                ExecutionSpeedThrottled: true),
+                ExecutionSpeedThrottled: _desiredEnabled),
             DateTimeOffset.UtcNow);
     }
 
@@ -89,8 +92,11 @@ public sealed class RuntimeProcessEcoQosAction :
                 .ConfigureAwait(false);
         ProcessPowerThrottlingController.Set(
             process,
-            enabled: true);
-        _ = ProcessMemoryTrimmer.TryTrimWorkingSet(process, out _);
+            _desiredEnabled);
+        if (_desiredEnabled)
+        {
+            _ = ProcessMemoryTrimmer.TryTrimWorkingSet(process, out _);
+        }
     }
 
     public ValueTask<ActionVerificationResult> VerifyAsync(

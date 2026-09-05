@@ -9,4 +9,5 @@ public enum FrameRateStatus
     Measuring = 5,
     AccessDenied = 6,
     Failed = 7,
+    Disabled = 8,
 }

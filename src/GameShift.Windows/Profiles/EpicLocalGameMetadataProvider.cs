@@ -56,13 +56,8 @@ public sealed class EpicLocalGameMetadataProvider : IGameMetadataProvider
 
         string? launcherPath = _launcherPaths.FirstOrDefault(
             IsSafeExistingExecutable);
-        string? heroArtworkPath =
-            LocalGameArtworkResolver.IsSafeArtworkFile(profile.ArtworkPath)
-                ? Path.GetFullPath(profile.ArtworkPath!)
-                : null;
         if (launcherPath is null
-            && lastPlayedAtUtc is null
-            && heroArtworkPath is null)
+            && lastPlayedAtUtc is null)
         {
             return null;
         }
@@ -71,7 +66,7 @@ public sealed class EpicLocalGameMetadataProvider : IGameMetadataProvider
             launcherPath,
             lastPlayedAtUtc,
             TotalPlaytimeMinutes: null,
-            heroArtworkPath);
+            HeroArtworkPath: null);
     }
 
     private static async ValueTask<DateTimeOffset?> ReadLatestLastPlayedAsync(

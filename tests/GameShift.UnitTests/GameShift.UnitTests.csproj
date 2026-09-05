@@ -15,5 +15,13 @@
     <ProjectReference Include="..\..\src\GameShift.Contracts\GameShift.Contracts.csproj" />
     <ProjectReference Include="..\..\src\GameShift.Core\GameShift.Core.csproj" />
   </ItemGroup>
-</Project>
 
+  <ItemGroup>
+    <Compile Include="..\..\tools\GameShift.UpdatePublisher\UpdatePublisherTrust.cs"
+             Link="Updates\UpdatePublisherTrust.cs" />
+    <Compile Include="..\..\src\GameShift.UI\Services\MemoryOptimizerComponentStatus.cs"
+             Link="UI\MemoryOptimizerComponentStatus.cs" />
+    <Compile Include="..\..\src\GameShift.UI\Services\SystemOptimizerComponentStatus.cs"
+             Link="UI\SystemOptimizerComponentStatus.cs" />
+  </ItemGroup>
+</Project>

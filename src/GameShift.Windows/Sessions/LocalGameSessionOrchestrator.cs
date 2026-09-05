@@ -20,6 +20,8 @@ namespace GameShift.Windows.Sessions;
 public sealed class LocalGameSessionOrchestrator : IAsyncDisposable
 {
     private static readonly TimeSpan PlanLifetime = TimeSpan.FromMinutes(10);
+    private static readonly TimeSpan ShutdownReservationLifetime =
+        TimeSpan.FromSeconds(30);
     private static readonly TimeSpan DefaultMonitorInterval =
         TimeSpan.FromSeconds(1);
     private static readonly TimeSpan ForcedGameExitTimeout =
@@ -43,12 +45,14 @@ public sealed class LocalGameSessionOrchestrator : IAsyncDisposable
     private readonly SavedBackgroundRuleResolver _savedRuleResolver;
     private readonly IGameMetadataRepository? _gameMetadataRepository;
     private readonly GameMetadataRefreshService? _metadataRefreshService;
+    private readonly ISystemGameProfileCoordinator _systemProfileCoordinator;
     private readonly TimeProvider _timeProvider;
     private readonly TimeSpan _monitorInterval;
     private readonly SemaphoreSlim _gate = new(1, 1);
     private readonly CancellationTokenSource _lifetime = new();
     private PendingPlan? _pendingPlan;
     private ActiveRuntime? _activeSession;
+    private DateTimeOffset? _shutdownReservedUntilUtc;
     private Task _monitorTask = Task.CompletedTask;
     private bool _initialized;
     private bool _disposed;
@@ -67,7 +71,8 @@ public sealed class LocalGameSessionOrchestrator : IAsyncDisposable
         IGameOptimizationPreferencesRepository? optimizationPreferences = null,
         SavedBackgroundRuleResolver? savedRuleResolver = null,
         IGameMetadataRepository? gameMetadataRepository = null,
-        GameMetadataRefreshService? metadataRefreshService = null)
+        GameMetadataRefreshService? metadataRefreshService = null,
+        ISystemGameProfileCoordinator? systemProfileCoordinator = null)
     {
         _profiles = profiles;
         _history = history;
@@ -91,6 +96,8 @@ public sealed class LocalGameSessionOrchestrator : IAsyncDisposable
         _metadataRefreshService = _gameMetadataRepository is null
             ? null
             : metadataRefreshService ?? new GameMetadataRefreshService();
+        _systemProfileCoordinator =
+            systemProfileCoordinator ?? NullSystemGameProfileCoordinator.Instance;
         _timeProvider = timeProvider ?? TimeProvider.System;
         _monitorInterval = monitorInterval ?? DefaultMonitorInterval;
 
@@ -215,6 +222,7 @@ public sealed class LocalGameSessionOrchestrator : IAsyncDisposable
         await _gate.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
+            EnsureShutdownNotReserved();
             if (_activeSession is not null)
             {
                 throw new InvalidOperationException(
@@ -376,12 +384,14 @@ public sealed class LocalGameSessionOrchestrator : IAsyncDisposable
     public async ValueTask<GameSessionSnapshot> StartAsync(
         Guid planId,
         SessionId sessionId,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        bool enableFrameRateTracking = true)
     {
         EnsureReady();
         await _gate.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
+            EnsureShutdownNotReserved();
             if (_activeSession is not null)
             {
                 if (_activeSession.PlanId == planId
@@ -447,7 +457,8 @@ public sealed class LocalGameSessionOrchestrator : IAsyncDisposable
                     .Select(ToRecoveryMetadata)
                     .ToArray(),
                 GamePriority: null,
-                AppliedActionCount: 0);
+                AppliedActionCount: 0,
+                FrameRateTrackingEnabled: enableFrameRateTracking);
             await RecordCheckpointAsync(
                     plan.SessionId,
                     SessionCheckpoint.SnapshotComplete,
@@ -507,10 +518,17 @@ public sealed class LocalGameSessionOrchestrator : IAsyncDisposable
                             startedAtUtc,
                             CancellationToken.None)
                         .ConfigureAwait(false);
+                SystemGameProfileOperationResult systemProfile =
+                    await _systemProfileCoordinator.ActivateAsync(
+                            currentProfile.ProfileId,
+                            launched.Identity,
+                            CancellationToken.None)
+                        .ConfigureAwait(false);
                 metadata = metadata with
                 {
                     AppliedActionCount =
                         appliedActionCount + gamePriorityActionCount,
+                    SystemProfileActive = systemProfile.WasApplied,
                 };
                 await RecordCheckpointAsync(
                         plan.SessionId,
@@ -546,11 +564,15 @@ public sealed class LocalGameSessionOrchestrator : IAsyncDisposable
                     plan.BackgroundApplications,
                     metadata.GamePriority,
                     appliedActionCount + gamePriorityActionCount,
-                    recoveredFromHostCrash: false);
-                runtime.FrameRate = await _frameRateProvider.SampleAsync(
-                        [launched.Identity.RuntimeKey.ProcessId],
-                        CancellationToken.None)
-                    .ConfigureAwait(false);
+                    recoveredFromHostCrash: false,
+                    frameRateTrackingEnabled: enableFrameRateTracking,
+                    systemProfileActive: systemProfile.WasApplied);
+                runtime.FrameRate = enableFrameRateTracking
+                    ? await _frameRateProvider.SampleAsync(
+                            [launched.Identity.RuntimeKey.ProcessId],
+                            CancellationToken.None)
+                        .ConfigureAwait(false)
+                    : FrameRateSample.Disabled();
                 _activeSession = runtime;
                 _pendingPlan = null;
                 StartMonitor(runtime);
@@ -633,6 +655,49 @@ public sealed class LocalGameSessionOrchestrator : IAsyncDisposable
         }
     }
 
+    public async ValueTask<GameSessionSnapshot> SetFrameRateTrackingAsync(
+        SessionId sessionId,
+        bool enabled,
+        CancellationToken cancellationToken)
+    {
+        EnsureReady();
+        await _gate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            ActiveRuntime runtime = _activeSession is not null
+                && _activeSession.SessionId == sessionId
+                    ? _activeSession
+                    : throw new InvalidOperationException(
+                        "The requested game session is not active.");
+
+            if (runtime.FrameRateTrackingEnabled == enabled)
+            {
+                return ToSnapshot(
+                    runtime,
+                    enabled
+                        ? "Pomiar FPS jest już włączony."
+                        : "Pomiar FPS jest już wyłączony w ustawieniach GameShift.");
+            }
+
+            runtime.FrameRateTrackingEnabled = enabled;
+            await _frameRateProvider.StopAsync(cancellationToken)
+                .ConfigureAwait(false);
+            runtime.FrameRate = enabled
+                ? FrameRateSample.WaitingForGame(
+                    runtime.RootProcess.RuntimeKey.ProcessId)
+                : FrameRateSample.Disabled();
+            return ToSnapshot(
+                runtime,
+                enabled
+                    ? "Pomiar FPS został włączony. PresentMon rozpocznie pracę przy następnej próbce."
+                    : "Pomiar FPS został wyłączony. PresentMon został zatrzymany.");
+        }
+        finally
+        {
+            _gate.Release();
+        }
+    }
+
     public async ValueTask<GameSessionSnapshot?> GetActiveAsync(
         CancellationToken cancellationToken)
     {
@@ -645,6 +710,79 @@ public sealed class LocalGameSessionOrchestrator : IAsyncDisposable
                 : ToSnapshot(
                     _activeSession,
                     "The game session is being monitored locally.");
+        }
+        finally
+        {
+            _gate.Release();
+        }
+    }
+
+    public async ValueTask<SessionShutdownReadiness> GetShutdownReadinessAsync(
+        CancellationToken cancellationToken)
+    {
+        EnsureReady();
+        await _gate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            bool hasActiveSession = _activeSession is not null;
+            if (_pendingPlan is not null &&
+                _pendingPlan.ExpiresAtUtc < _timeProvider.GetUtcNow())
+            {
+                _pendingPlan = null;
+            }
+
+            bool hasPreparedPlan = _pendingPlan is not null;
+            bool canShutdown = !hasActiveSession && !hasPreparedPlan;
+            string message = hasActiveSession
+                ? "An optimization session is active. Restore it before shutdown."
+                : hasPreparedPlan
+                    ? "An approved session plan is waiting to start."
+                    : "Gaming components can be stopped safely.";
+            return new(
+                canShutdown,
+                hasActiveSession,
+                hasPreparedPlan,
+                message);
+        }
+        finally
+        {
+            _gate.Release();
+        }
+    }
+
+    public async ValueTask<SessionShutdownReadiness> ReserveShutdownAsync(
+        CancellationToken cancellationToken)
+    {
+        EnsureReady();
+        await _gate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            DateTimeOffset now = _timeProvider.GetUtcNow();
+            ExpireShutdownReservation(now);
+            bool hasActiveSession = _activeSession is not null;
+            if (_pendingPlan is not null && _pendingPlan.ExpiresAtUtc < now)
+            {
+                _pendingPlan = null;
+            }
+
+            bool hasPreparedPlan = _pendingPlan is not null;
+            if (hasActiveSession || hasPreparedPlan)
+            {
+                return new(
+                    false,
+                    hasActiveSession,
+                    hasPreparedPlan,
+                    hasActiveSession
+                        ? "An optimization session is active. Restore it before shutdown."
+                        : "An approved session plan is waiting to start.");
+            }
+
+            _shutdownReservedUntilUtc = now + ShutdownReservationLifetime;
+            return new(
+                true,
+                false,
+                false,
+                "Gaming component shutdown was reserved safely.");
         }
         finally
         {
@@ -894,15 +1032,20 @@ public sealed class LocalGameSessionOrchestrator : IAsyncDisposable
                         backgroundApplications,
                         metadata.GamePriority,
                         metadata.AppliedActionCount,
-                        recoveredFromHostCrash: true);
-                    recovered.FrameRate =
-                        await _frameRateProvider.SampleAsync(
+                        recoveredFromHostCrash: true,
+                        frameRateTrackingEnabled:
+                            metadata.FrameRateTrackingEnabled,
+                        systemProfileActive:
+                            metadata.SystemProfileActive);
+                    recovered.FrameRate = metadata.FrameRateTrackingEnabled
+                        ? await _frameRateProvider.SampleAsync(
                                 observation.RunningProcesses
                                     .Select(identity =>
                                         identity.RuntimeKey.ProcessId)
                                     .ToArray(),
                                 cancellationToken)
-                            .ConfigureAwait(false);
+                            .ConfigureAwait(false)
+                        : FrameRateSample.Disabled();
                     _activeSession = recovered;
                     if (observation.NewlyDiscoveredCount > 0)
                     {
@@ -1026,9 +1169,10 @@ public sealed class LocalGameSessionOrchestrator : IAsyncDisposable
                 return;
             }
 
-            if (observation.HasRunningProcess)
+            if (observation.HasRunningProcess
+                && runtime.FrameRateTrackingEnabled)
             {
-                runtime.FrameRate =
+                FrameRateSample sample =
                     await _frameRateProvider.SampleAsync(
                             observation.RunningProcesses
                                 .Select(identity =>
@@ -1036,6 +1180,20 @@ public sealed class LocalGameSessionOrchestrator : IAsyncDisposable
                                 .ToArray(),
                             cancellationToken)
                         .ConfigureAwait(false);
+                if (runtime.FrameRateTrackingEnabled)
+                {
+                    runtime.FrameRate = sample;
+                }
+                else
+                {
+                    await _frameRateProvider.StopAsync(cancellationToken)
+                        .ConfigureAwait(false);
+                    runtime.FrameRate = FrameRateSample.Disabled();
+                }
+            }
+            else if (!runtime.FrameRateTrackingEnabled)
+            {
+                runtime.FrameRate = FrameRateSample.Disabled();
             }
 
             if (observation.NewlyDiscoveredCount > 0)
@@ -1333,6 +1491,19 @@ public sealed class LocalGameSessionOrchestrator : IAsyncDisposable
                 CancellationToken.None)
             .ConfigureAwait(false);
 
+        SystemGameProfileOperationResult systemProfileRecovery =
+            runtime.SystemProfileActive
+                ? await _systemProfileCoordinator.RestoreAsync(
+                        runtime.ProfileId,
+                        CancellationToken.None)
+                    .ConfigureAwait(false)
+                : SystemGameProfileOperationResult.Skipped(
+                    "Zewnętrzny profil systemowy nie był aktywny.");
+        if (systemProfileRecovery.Succeeded)
+        {
+            runtime.SystemProfileActive = false;
+        }
+
         BackgroundRecoveryTotals priorityRecovery =
             await RestoreGamePriorityAsync(
                     runtime.SessionId,
@@ -1350,6 +1521,14 @@ public sealed class LocalGameSessionOrchestrator : IAsyncDisposable
         BackgroundRecoveryTotals recovery = MergeRecoveryTotals(
             priorityRecovery,
             applicationRecovery);
+        if (!systemProfileRecovery.Succeeded)
+        {
+            recovery = recovery with
+            {
+                ErrorCount = recovery.ErrorCount + 1,
+            };
+        }
+
         if (frameRateCleanupFailure is not null)
         {
             recovery = recovery with
@@ -1482,7 +1661,9 @@ public sealed class LocalGameSessionOrchestrator : IAsyncDisposable
                 .Select(ToRecoveryMetadata)
                 .ToArray(),
             runtime.GamePriority,
-            runtime.AppliedActionCount);
+            runtime.AppliedActionCount,
+            runtime.FrameRateTrackingEnabled,
+            runtime.SystemProfileActive);
 
     private GameProcessTreeSessionTracker CreateGameProcessTreeTracker(
         ProcessIdentity root,
@@ -2175,6 +2356,26 @@ public sealed class LocalGameSessionOrchestrator : IAsyncDisposable
         ?? throw new InvalidDataException(
             "The session recovery metadata was null.");
 
+    private void EnsureShutdownNotReserved()
+    {
+        DateTimeOffset now = _timeProvider.GetUtcNow();
+        ExpireShutdownReservation(now);
+        if (_shutdownReservedUntilUtc is not null)
+        {
+            throw new InvalidOperationException(
+                "Gaming component shutdown is already in progress.");
+        }
+    }
+
+    private void ExpireShutdownReservation(DateTimeOffset now)
+    {
+        if (_shutdownReservedUntilUtc is { } reservedUntil &&
+            reservedUntil <= now)
+        {
+            _shutdownReservedUntilUtc = null;
+        }
+    }
+
     private void EnsureReady()
     {
         ThrowIfDisposed();
@@ -2240,7 +2441,9 @@ public sealed class LocalGameSessionOrchestrator : IAsyncDisposable
         IReadOnlyList<PlannedBackgroundApplication> backgroundApplications,
         GamePriorityRecoveryMetadata? gamePriority,
         int appliedActionCount,
-        bool recoveredFromHostCrash)
+        bool recoveredFromHostCrash,
+        bool frameRateTrackingEnabled = true,
+        bool systemProfileActive = false)
     {
         internal Guid PlanId { get; } = planId;
 
@@ -2296,6 +2499,12 @@ public sealed class LocalGameSessionOrchestrator : IAsyncDisposable
 
         internal bool RecoveredFromHostCrash { get; } =
             recoveredFromHostCrash;
+
+        internal bool FrameRateTrackingEnabled { get; set; } =
+            frameRateTrackingEnabled;
+
+        internal bool SystemProfileActive { get; set; } =
+            systemProfileActive;
     }
 
     private sealed record SessionRecoveryMetadata(
@@ -2307,7 +2516,9 @@ public sealed class LocalGameSessionOrchestrator : IAsyncDisposable
         IReadOnlyList<BackgroundApplicationRecoveryMetadata>?
             BackgroundApplications,
         GamePriorityRecoveryMetadata? GamePriority,
-        int AppliedActionCount);
+        int AppliedActionCount,
+        bool FrameRateTrackingEnabled = true,
+        bool SystemProfileActive = false);
 
     private sealed record BackgroundApplicationRecoveryMetadata(
         Guid ActionId,

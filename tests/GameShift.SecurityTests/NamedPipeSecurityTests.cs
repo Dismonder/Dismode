@@ -67,6 +67,49 @@ public sealed class NamedPipeSecurityTests
     }
 
     [TestMethod]
+    public void SystemServicePipeAllowsAuthenticatedClientsButNotAnonymousOrEveryone()
+    {
+        SecurityIdentifier localSystem = new(
+            WellKnownSidType.LocalSystemSid,
+            null);
+        SecurityIdentifier administrators = new(
+            WellKnownSidType.BuiltinAdministratorsSid,
+            null);
+        SecurityIdentifier authenticatedUsers = new(
+            WellKnownSidType.AuthenticatedUserSid,
+            null);
+        SecurityIdentifier everyone = new(
+            WellKnownSidType.WorldSid,
+            null);
+        SecurityIdentifier anonymous = new(
+            WellKnownSidType.AnonymousSid,
+            null);
+
+        PipeSecurity security = NamedPipeSecurityFactory.CreateSystemService();
+        PipeAccessRule[] rules = security.GetAccessRules(
+                includeExplicit: true,
+                includeInherited: false,
+                typeof(SecurityIdentifier))
+            .Cast<PipeAccessRule>()
+            .ToArray();
+        SecurityIdentifier[] identities = rules
+            .Select(rule => (SecurityIdentifier)rule.IdentityReference)
+            .ToArray();
+
+        Assert.IsTrue(security.AreAccessRulesProtected);
+        CollectionAssert.Contains(identities, localSystem);
+        CollectionAssert.Contains(identities, administrators);
+        CollectionAssert.Contains(identities, authenticatedUsers);
+        CollectionAssert.DoesNotContain(identities, everyone);
+        CollectionAssert.DoesNotContain(identities, anonymous);
+        PipeAccessRule authenticatedRule = rules.Single(rule =>
+            Equals(rule.IdentityReference, authenticatedUsers));
+        Assert.AreEqual(
+            PipeAccessRights.ReadWrite,
+            authenticatedRule.PipeAccessRights & PipeAccessRights.ReadWrite);
+    }
+
+    [TestMethod]
     public void NativeInteropLoadsLibrariesOnlyFromSystem32()
     {
         DefaultDllImportSearchPathsAttribute? attribute =

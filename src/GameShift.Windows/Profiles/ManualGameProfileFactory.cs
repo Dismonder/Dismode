@@ -34,6 +34,8 @@ public sealed class ManualGameProfileFactory
         return await CreateCoreAsync(
                 manualGame,
                 preset,
+                artworkPath: null,
+                resolveArtwork: true,
                 cancellationToken)
             .ConfigureAwait(false);
     }
@@ -44,12 +46,34 @@ public sealed class ManualGameProfileFactory
         CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(game);
-        return CreateCoreAsync(game, preset, cancellationToken);
+        return CreateCoreAsync(
+            game,
+            preset,
+            artworkPath: null,
+            resolveArtwork: true,
+            cancellationToken);
+    }
+
+    internal ValueTask<ManualGameProfile> CreateDetectedWithArtworkAsync(
+        DetectedGame game,
+        OptimizationPreset preset,
+        string? artworkPath,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(game);
+        return CreateCoreAsync(
+            game,
+            preset,
+            artworkPath,
+            resolveArtwork: false,
+            cancellationToken);
     }
 
     private async ValueTask<ManualGameProfile> CreateCoreAsync(
         DetectedGame game,
         OptimizationPreset preset,
+        string? artworkPath,
+        bool resolveArtwork,
         CancellationToken cancellationToken)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(game.ExecutablePath);
@@ -72,13 +96,18 @@ public sealed class ManualGameProfileFactory
                 fullPath,
                 cancellationToken)
             .ConfigureAwait(false);
-        GameArtwork? artwork = await _artworkResolver.ResolveAsync(
-                game with
-                {
-                    ExecutablePath = fullPath,
-                },
-                cancellationToken)
-            .ConfigureAwait(false);
+        if (resolveArtwork)
+        {
+            GameArtwork? artwork = await _artworkResolver.ResolveAsync(
+                    game with
+                    {
+                        ExecutablePath = fullPath,
+                    },
+                    cancellationToken)
+                .ConfigureAwait(false);
+            artworkPath = artwork?.LocalPath;
+        }
+
         DateTimeOffset now = _timeProvider.GetUtcNow();
 
         return new(
@@ -92,6 +121,6 @@ public sealed class ManualGameProfileFactory
             isEnabled: true,
             now,
             now,
-            artwork?.LocalPath);
+            artworkPath);
     }
 }

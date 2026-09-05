@@ -6,8 +6,29 @@ namespace GameShift.UnitTests;
 [TestClass]
 public sealed class UiResourceReferenceTests
 {
+    private static readonly XNamespace XamlNamespace =
+        "http://schemas.microsoft.com/winfx/2006/xaml";
+
     private static readonly string[] ExpectedMissingNestedResourceKeys =
         ["GameShiftMissingBrush"];
+
+    private static readonly string[] ExpectedOverlayModes =
+    [
+        "MinimalText|Tylko FPS",
+        "CompactBar|FPS + ms",
+        "FullDeck|Wszystkie szczegóły",
+    ];
+
+    private static readonly string[] ExpectedDashboardRows = ["Auto", "*"];
+
+    private static readonly string[] ExpectedBannerTitleColumns = ["Auto", "*"];
+
+    private static readonly string[] ExpectedLibraryActionHandlers =
+    [
+        "OnLaunchGameFromLibraryClicked",
+        "OnOpenGameModeClicked",
+        "OnManageOptiScalerClicked",
+    ];
 
     private static readonly char[] DirectorySeparators =
         [Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar];
@@ -36,6 +57,589 @@ public sealed class UiResourceReferenceTests
         Assert.IsEmpty(
             missing,
             "Brak definicji zasobów UI: " + string.Join(", ", missing));
+    }
+
+    [TestMethod]
+    public void PerformanceOverlayLayoutsDoNotRenderBackgroundSurfaces()
+    {
+        XDocument overlay = LoadUiXaml("PerformanceOverlayWindow.xaml");
+        string[] surfaceNames =
+        [
+            "OverlayRoot",
+            "OverlayStatisticsContent",
+            "OverlaySurfaceBorder",
+            "FullDeckLayout",
+            "StatusBadgeBorder",
+            "FpsPanelBorder",
+            "FrameTimePanelBorder",
+            "AutoRestoreBadgeBorder",
+            "TelemetryStripBorder",
+            "CompactBarLayout",
+            "MinimalTextLayout",
+        ];
+
+        foreach (string surfaceName in surfaceNames)
+        {
+            XElement surface = FindNamedElement(overlay, surfaceName);
+            Assert.AreEqual(
+                "Transparent",
+                (string?)surface.Attribute("Background"),
+                $"Element {surfaceName} must not render a background.");
+
+            XAttribute? borderThickness =
+                surface.Attribute("BorderThickness");
+            if (borderThickness is not null)
+            {
+                Assert.AreEqual(
+                    "0",
+                    borderThickness.Value,
+                    $"Element {surfaceName} must not render a border.");
+            }
+        }
+    }
+
+    [TestMethod]
+    public void PerformanceOverlayModesExposeOnlyRequestedStatistics()
+    {
+        XDocument overlay = LoadUiXaml("PerformanceOverlayWindow.xaml");
+        XElement full = FindNamedElement(overlay, "FullDeckLayout");
+        XElement compact = FindNamedElement(overlay, "CompactBarLayout");
+        XElement fpsOnly = FindNamedElement(overlay, "MinimalTextLayout");
+
+        string[] fullDetailElements =
+        [
+            "GameNameText",
+            "FpsValueText",
+            "FrameTimeValueText",
+            "AutoRestoreStatusText",
+            "FrameGraphLine",
+            "SourceStatusText",
+        ];
+        foreach (string elementName in fullDetailElements)
+        {
+            Assert.IsTrue(
+                ContainsNamedElement(full, elementName),
+                $"Full details mode is missing {elementName}.");
+        }
+
+        Assert.IsFalse(
+            ContainsNamedElement(full, "FullDeckBadgeIconBorder"),
+            "Full details mode must not render a decorative logo tile.");
+        Assert.IsTrue(ContainsNamedElement(compact, "CompactFpsValueText"));
+        Assert.IsTrue(
+            ContainsNamedElement(compact, "CompactFrameTimeValueText"));
+        Assert.IsFalse(
+            ContainsNamedElement(compact, "CompactGameNameText"),
+            "FPS with minimum details must not add the game name.");
+        Assert.IsFalse(
+            ContainsNamedElement(compact, "CompactSourceIndicator"),
+            "FPS with minimum details must not add a source badge.");
+        Assert.IsTrue(ContainsNamedElement(fpsOnly, "MinimalFpsValueText"));
+        Assert.IsFalse(
+            ContainsNamedElement(fpsOnly, "MinimalFrameTimeValueText"),
+            "FPS-only mode must not render frame time.");
+    }
+
+    [TestMethod]
+    public void PerformanceOverlayFullDetailsUsesCompactTwoTierHierarchy()
+    {
+        XDocument overlay = LoadUiXaml("PerformanceOverlayWindow.xaml");
+        XElement full = FindNamedElement(overlay, "FullDeckLayout");
+        XElement primary = FindNamedElement(full, "FullDeckPrimaryMetrics");
+        XElement status = FindNamedElement(full, "FullDeckStatusRow");
+
+        Assert.AreEqual("8,5,8,5", (string?)full.Attribute("Margin"));
+        Assert.IsTrue(ContainsNamedElement(primary, "FpsValueText"));
+        Assert.IsTrue(ContainsNamedElement(primary, "FrameTimeValueText"));
+        Assert.IsTrue(ContainsNamedElement(status, "TelemetryStripBorder"));
+        Assert.IsTrue(ContainsNamedElement(status, "AutoRestoreBadgeBorder"));
+
+        string codeBehind = LoadUiSource("PerformanceOverlayWindow.xaml.cs");
+        StringAssert.Contains(codeBehind, "private const int OverlayWidth = 328;");
+        StringAssert.Contains(codeBehind, "private const int OverlayHeight = 120;");
+        StringAssert.Contains(codeBehind, "private const double GraphWidth = 58d;");
+    }
+
+    [TestMethod]
+    public void PerformanceOverlaySelectorListsModesFromLeastToMostDetailed()
+    {
+        XDocument mainWindow = LoadUiXaml("MainWindow.xaml");
+        XElement selector =
+            FindNamedElement(mainWindow, "OverlayStyleSelector");
+        string[] modes = selector
+            .Elements()
+            .Where(element => element.Name.LocalName == "ComboBoxItem")
+            .Select(element =>
+                $"{(string?)element.Attribute("Tag")}|"
+                + $"{(string?)element.Attribute("Content")}")
+            .ToArray();
+
+        CollectionAssert.AreEqual(
+            ExpectedOverlayModes,
+            modes);
+    }
+
+    [TestMethod]
+    public void FpsTrackingAndOverlayHaveIndependentSettings()
+    {
+        XDocument mainWindow = LoadUiXaml("MainWindow.xaml");
+        XElement tracking = FindNamedElement(
+            mainWindow,
+            "FpsTrackingToggleSwitch");
+        XElement overlay = FindNamedElement(
+            mainWindow,
+            "FpsOverlayToggleSwitch");
+        XElement settingsTracking = FindNamedElement(
+            mainWindow,
+            "FpsTrackingSettingsToggleSwitch");
+        XElement settingsOverlay = FindNamedElement(
+            mainWindow,
+            "FpsOverlaySettingsToggleSwitch");
+
+        Assert.AreEqual("True", (string?)tracking.Attribute("IsOn"));
+        Assert.AreEqual("True", (string?)overlay.Attribute("IsOn"));
+        Assert.AreEqual("True", (string?)settingsTracking.Attribute("IsOn"));
+        Assert.AreEqual("True", (string?)settingsOverlay.Attribute("IsOn"));
+        Assert.AreNotEqual(
+            (string?)tracking.Attribute(XamlNamespace + "Name"),
+            (string?)overlay.Attribute(XamlNamespace + "Name"));
+        Assert.AreNotEqual(
+            (string?)settingsTracking.Attribute(XamlNamespace + "Name"),
+            (string?)settingsOverlay.Attribute(XamlNamespace + "Name"));
+
+        string codeBehind = LoadUiSource("MainWindow.xaml.cs");
+        StringAssert.Contains(codeBehind, "IsFpsTrackingEnabled");
+        StringAssert.Contains(codeBehind, "SetFrameRateTrackingAsync");
+        StringAssert.Contains(codeBehind, "FpsTrackingSettingsToggleSwitch");
+        StringAssert.Contains(codeBehind, "FpsOverlaySettingsToggleSwitch");
+    }
+
+    [TestMethod]
+    public void DiagnosticsExposesSeparateSystemOptimizerCard()
+    {
+        XDocument mainWindow = LoadUiXaml("MainWindow.xaml");
+        XElement card = FindNamedElement(mainWindow, "SystemOptimizerCard");
+
+        // Karta ma byc osobna i na pelna szerokosc; konkretny numer wiersza
+        // jest szczegolem ukladu i zmienia sie przy przebudowie ustawien.
+        Assert.AreEqual("2", (string?)card.Attribute("Grid.ColumnSpan"));
+        Assert.IsNotNull(
+            card.Attribute("Grid.Row"),
+            "Karta musi byc jawnie umieszczona w wierszu siatki ustawien.");
+        Assert.IsTrue(ContainsNamedElement(card, "SystemOptimizerStatusText"));
+        Assert.IsTrue(ContainsNamedElement(card, "SystemOptimizerProfileText"));
+        XElement button = FindNamedElement(card, "OpenSystemOptimizerButton");
+        Assert.AreEqual(
+            "OnOpenSystemOptimizerClicked",
+            (string?)button.Attribute("Click"));
+    }
+
+    [TestMethod]
+    public void DashboardNotificationsUseDedicatedAutoRowOutsideCanvas()
+    {
+        XDocument mainWindow = LoadUiXaml("MainWindow.xaml");
+        XElement dashboard = FindNamedElement(mainWindow, "DashboardPage");
+        XElement notificationRow =
+            FindNamedElement(dashboard, "DashboardNotificationRow");
+        XElement content =
+            FindNamedElement(dashboard, "DashboardContentViewbox");
+
+        string[] rowHeights = dashboard
+            .Elements()
+            .Single(element => element.Name.LocalName == "Grid.RowDefinitions")
+            .Elements()
+            .Select(element => (string?)element.Attribute("Height") ?? "*")
+            .ToArray();
+        CollectionAssert.AreEqual(ExpectedDashboardRows, rowHeights);
+        Assert.AreEqual("0", (string?)content.Attribute("Grid.Row"));
+        Assert.AreEqual("2", (string?)content.Attribute("Grid.RowSpan"));
+        Assert.AreEqual("100", (string?)notificationRow.Attribute("Canvas.ZIndex"));
+        Assert.IsNull(notificationRow.Attribute("RowSpacing"));
+
+        foreach (string name in new[]
+                 {
+                     "DashboardInfoBar",
+                     "UnoptimizedGameBanner",
+                 })
+        {
+            XElement notification = FindNamedElement(dashboard, name);
+            Assert.IsTrue(notification.Ancestors().Contains(notificationRow));
+            Assert.IsFalse(notification.Ancestors().Any(
+                element => element.Name.LocalName == "Canvas"));
+        }
+
+        Assert.AreEqual(
+            "0,8,0,0",
+            (string?)FindNamedElement(
+                notificationRow,
+                "UnoptimizedGameBanner").Attribute("Margin"));
+    }
+
+    [TestMethod]
+    public void GlobalProgressReservesOverlaySpaceInsteadOfChangingLayout()
+    {
+        XDocument mainWindow = LoadUiXaml("MainWindow.xaml");
+        XElement progress = FindNamedElement(mainWindow, "GlobalProgress");
+
+        Assert.AreEqual("Visible", (string?)progress.Attribute("Visibility"));
+        Assert.AreEqual("0", (string?)progress.Attribute("Opacity"));
+        Assert.AreEqual("False", (string?)progress.Attribute("IsHitTestVisible"));
+        Assert.AreEqual("10", (string?)progress.Attribute("Canvas.ZIndex"));
+
+        string codeBehind = LoadUiSource("MainWindow.xaml.cs");
+        StringAssert.Contains(codeBehind, "GlobalProgress.Opacity = isBusy ? 1 : 0;");
+        Assert.IsFalse(codeBehind.Contains(
+            "GlobalProgress.Visibility",
+            StringComparison.Ordinal));
+    }
+
+    [TestMethod]
+    public void UnoptimizedGameBannerConstrainsNameAndStacksActionWhenCompact()
+    {
+        XDocument mainWindow = LoadUiXaml("MainWindow.xaml");
+        XElement banner =
+            FindNamedElement(mainWindow, "UnoptimizedGameBanner");
+        XElement titleLayout =
+            FindNamedElement(banner, "UnoptimizedGameTitleLayout");
+        XElement gameName =
+            FindNamedElement(titleLayout, "UnoptimizedGameNameText");
+        XElement actions =
+            FindNamedElement(banner, "UnoptimizedGameActions");
+        XElement compactState =
+            FindNamedElement(mainWindow, "CompactWindowLayout");
+
+        string[] titleColumns = titleLayout
+            .Elements()
+            .Single(element => element.Name.LocalName == "Grid.ColumnDefinitions")
+            .Elements()
+            .Select(element => (string?)element.Attribute("Width") ?? "*")
+            .ToArray();
+        CollectionAssert.AreEqual(ExpectedBannerTitleColumns, titleColumns);
+        Assert.AreEqual("1", (string?)gameName.Attribute("Grid.Column"));
+        Assert.AreEqual("Wrap", (string?)gameName.Attribute("TextWrapping"));
+        Assert.AreEqual("2", (string?)actions.Attribute("Grid.Column"));
+        Assert.AreEqual(
+            "1",
+            FindVisualStateSetterValue(
+                compactState,
+                "UnoptimizedGameActions.(Grid.Row)"));
+        Assert.AreEqual(
+            "1",
+            FindVisualStateSetterValue(
+                compactState,
+                "UnoptimizedGameActions.(Grid.Column)"));
+    }
+
+    [TestMethod]
+    public void DashboardFpsSeparatesNoDataFromTelemetryAndTogglesBoth()
+    {
+        XDocument mainWindow = LoadUiXaml("MainWindow.xaml");
+        XElement noData =
+            FindNamedElement(mainWindow, "DashboardFpsNoDataState");
+        XElement telemetry =
+            FindNamedElement(mainWindow, "DashboardFpsTelemetryContent");
+        string codeBehind = LoadUiSource("MainWindow.xaml.cs");
+
+        Assert.AreEqual("Visible", (string?)noData.Attribute("Visibility"));
+        Assert.AreEqual(
+            "Collapsed",
+            (string?)telemetry.Attribute("Visibility"));
+        StringAssert.Contains(
+            codeBehind,
+            "private void SetDashboardTelemetryAvailability(bool hasValidSample)");
+        StringAssert.Contains(
+            codeBehind,
+            "DashboardFpsNoDataState.Visibility = hasValidSample");
+        StringAssert.Contains(
+            codeBehind,
+            "DashboardFpsTelemetryContent.Visibility = hasValidSample");
+        StringAssert.Contains(
+            codeBehind,
+            "SetDashboardTelemetryAvailability(hasValidSample: true);");
+        StringAssert.Contains(
+            codeBehind,
+            "SetDashboardTelemetryAvailability(hasValidSample: false);");
+    }
+
+    [TestMethod]
+    public void LibraryUsesResponsivePosterGridAndCompactContainers()
+    {
+        XDocument mainWindow = LoadUiXaml("MainWindow.xaml");
+        XElement page = FindNamedElement(mainWindow, "ProfilesPage");
+        XElement list = FindNamedElement(page, "ProfilesList");
+        XElement wrapGrid = list
+            .Descendants()
+            .Single(element => element.Name.LocalName == "ItemsWrapGrid");
+        XElement containerStyle = list
+            .Descendants()
+            .Single(element => element.Name.LocalName == "Style"
+                && string.Equals(
+                    (string?)element.Attribute("TargetType"),
+                    "ListViewItem",
+                    StringComparison.Ordinal));
+        XElement compactButtonStyle = page
+            .Descendants()
+            .Single(element => element.Name.LocalName == "Style"
+                && string.Equals(
+                    (string?)element.Attribute(XamlNamespace + "Key"),
+                    "GameShiftLibraryCompactButtonStyle",
+                    StringComparison.Ordinal));
+
+        Assert.AreEqual("1680", (string?)page.Attribute("MaxWidth"));
+        Assert.AreEqual("280", (string?)wrapGrid.Attribute("ItemWidth"));
+        Assert.AreEqual("0", FindSetterValue(containerStyle, "Padding"));
+        Assert.AreEqual("0", FindSetterValue(containerStyle, "Margin"));
+        Assert.AreEqual("Button", (string?)compactButtonStyle.Attribute("TargetType"));
+        Assert.IsNull(compactButtonStyle.Attribute("BasedOn"));
+        Assert.AreEqual("0", FindSetterValue(compactButtonStyle, "MinHeight"));
+        XElement itemTemplate = list
+            .Descendants()
+            .Single(element => element.Name.LocalName == "DataTemplate");
+        XElement profileState =
+            FindNamedElement(itemTemplate, "LibraryProfileStateText");
+        XElement gameInfo =
+            FindNamedElement(itemTemplate, "LibraryGameInfo");
+        Assert.AreEqual(
+            "{Binding StateLabel}",
+            (string?)profileState.Attribute("Text"));
+        Assert.AreEqual(
+            "Wrap",
+            (string?)profileState.Attribute("TextWrapping"));
+        Assert.IsFalse(gameInfo
+            .Descendants()
+            .Any(element => element.Name.LocalName == "Ellipse"));
+        Assert.HasCount(
+            3,
+            list.Descendants()
+                .Where(element => element.Name.LocalName == "Button")
+                .Where(element => string.Equals(
+                    (string?)element.Attribute("Style"),
+                    "{StaticResource GameShiftLibraryCompactButtonStyle}",
+                    StringComparison.Ordinal)));
+        CollectionAssert.AreEqual(
+            ExpectedLibraryActionHandlers,
+            itemTemplate
+                .Descendants()
+                .Where(element => element.Name.LocalName == "Button")
+                .Select(element => (string?)element.Attribute("Click"))
+                .Where(handler => handler is not null)
+                .Select(handler => handler!)
+                .ToArray());
+    }
+
+    [TestMethod]
+    public void PosterAndHeroArtworkAreUsedByTheirIntendedSurfaces()
+    {
+        XDocument mainWindow = LoadUiXaml("MainWindow.xaml");
+        XElement railPoster =
+            FindNamedElement(mainWindow, "DashboardRailPosterImage");
+        XElement libraryPoster =
+            FindNamedElement(mainWindow, "LibraryPosterImage");
+        string codeBehind = LoadUiSource("MainWindow.xaml.cs");
+
+        Assert.AreEqual(
+            "{Binding PosterArtworkSource}",
+            (string?)railPoster.Attribute("Source"));
+        Assert.AreEqual(
+            "{Binding PosterArtworkSource}",
+            (string?)libraryPoster.Attribute("Source"));
+        StringAssert.Contains(
+            codeBehind,
+            "item.PosterArtworkSource = await LocalArtworkImageLoader.LoadAsync(");
+        StringAssert.Contains(
+            codeBehind,
+            "item.HeroArtworkSource = await LocalArtworkImageLoader.LoadAsync(");
+        StringAssert.Contains(codeBehind, "profile?.HeroArtworkSource");
+        StringAssert.Contains(codeBehind, "?? profile?.PosterArtworkSource");
+    }
+
+    [TestMethod]
+    public void MainLayoutStacksWideSectionsBelow1320()
+    {
+        XDocument mainWindow = LoadUiXaml("MainWindow.xaml");
+        Assert.IsTrue(mainWindow
+            .Descendants()
+            .Any(element => element.Name.LocalName == "AdaptiveTrigger"
+                && string.Equals(
+                    (string?)element.Attribute("MinWindowWidth"),
+                    "1320",
+                    StringComparison.Ordinal)));
+
+        HashSet<string> setterTargets = mainWindow
+            .Descendants()
+            .Where(element => element.Name.LocalName == "Setter")
+            .Select(element => (string?)element.Attribute("Target"))
+            .Where(target => target is not null)
+            .Select(target => target!)
+            .ToHashSet(StringComparer.Ordinal);
+        string[] requiredTargets =
+        [
+            "ProfilesHeaderActions.(Grid.Row)",
+            "PlanSecondarySection.(Grid.Row)",
+            "HistoryHeaderAction.(Grid.Row)",
+            "CheckForUpdatesButton.(Grid.Row)",
+            "UpdatesSettingsCard.(Grid.Row)",
+            "DiagnosticsStatusCard.(Grid.Row)",
+        ];
+        foreach (string target in requiredTargets)
+        {
+            Assert.Contains(target, setterTargets);
+        }
+    }
+
+    [TestMethod]
+    public void HistoryAndDiagnosticsAllowLongLocalizedTextToWrap()
+    {
+        XDocument mainWindow = LoadUiXaml("MainWindow.xaml");
+        string[] wrappingTextNames =
+        [
+            "HistoryGameNameText",
+            "HistoryStatusText",
+            "HistoryActionSummaryText",
+            "HistoryEndedAtText",
+            "DiagnosticsGamingEnvironmentText",
+            "DiagnosticsGamingRecommendationsText",
+            "DiagnosticsSessionHostText",
+            "DiagnosticsSystemAgentText",
+        ];
+
+        foreach (string name in wrappingTextNames)
+        {
+            XElement text = FindNamedElement(mainWindow, name);
+            Assert.IsNull(text.Attribute("Width"));
+            Assert.IsNull(text.Attribute("MaxWidth"));
+            Assert.AreEqual(
+                "Wrap",
+                (string?)text.Attribute("TextWrapping"),
+                $"Element {name} must wrap instead of forcing clipping.");
+        }
+
+        Assert.AreEqual(
+            "Top",
+            (string?)FindNamedElement(
+                mainWindow,
+                "DiagnosticsGamingCard").Attribute("VerticalAlignment"));
+
+        XElement historyIdentity =
+            FindNamedElement(mainWindow, "HistoryIdentityLayout");
+        XElement historyStatus =
+            FindNamedElement(historyIdentity, "HistoryStatusText");
+        Assert.AreSame(historyIdentity, historyStatus.Parent);
+        Assert.AreEqual("1", (string?)historyStatus.Attribute("Grid.Row"));
+        Assert.IsFalse(historyIdentity
+            .Elements()
+            .Any(element => element.Name.LocalName == "Grid.ColumnDefinitions"));
+    }
+
+    [TestMethod]
+    public void SystemImpactReservesMoreWidthForLongMetrics()
+    {
+        XDocument mainWindow = LoadUiXaml("MainWindow.xaml");
+        XElement metrics =
+            FindNamedElement(mainWindow, "DashboardSystemImpactMetrics");
+        double[] widths = metrics
+            .Elements()
+            .Single(element => element.Name.LocalName == "Grid.ColumnDefinitions")
+            .Elements()
+            .Select(element => ParseStarWidth(
+                (string?)element.Attribute("Width") ?? "1*"))
+            .ToArray();
+
+        Assert.HasCount(5, widths);
+        Assert.IsGreaterThan(widths[0], widths[2]);
+        Assert.IsGreaterThan(widths[2], widths[3]);
+        Assert.IsGreaterThan(widths[3], widths[4]);
+        foreach (string name in new[]
+                 {
+                     "DashboardCpuText",
+                     "DashboardGpuText",
+                     "DashboardMemoryText",
+                     "DashboardDiskText",
+                     "DashboardRecoveredMemoryText",
+                 })
+        {
+            Assert.AreEqual(
+                "Wrap",
+                (string?)FindNamedElement(mainWindow, name)
+                    .Attribute("TextWrapping"));
+        }
+    }
+
+    [TestMethod]
+    public void ProductNameComesFromProductInformationInsteadOfOldVersionLiteral()
+    {
+        string xaml = LoadUiSource("MainWindow.xaml");
+        string codeBehind = LoadUiSource("MainWindow.xaml.cs");
+
+        Assert.IsFalse(Regex.IsMatch(
+            xaml,
+            @"GameShift\s+\d+\.\d+\.\d+",
+            RegexOptions.CultureInvariant));
+        StringAssert.Contains(
+            codeBehind,
+            "UpdatesCurrentVersionText.Text =\n            ProductInformation.FullDisplayName;");
+        StringAssert.Contains(
+            codeBehind,
+            "SettingsVersionText.Text = ProductInformation.FullDisplayName;");
+    }
+
+    [TestMethod]
+    public void OptiScalerDialogExposesStableBetaAndNightlyVersions()
+    {
+        string codeBehind = LoadUiSource("MainWindow.xaml.cs");
+
+        StringAssert.Contains(codeBehind, "Header = \"Kanał wersji\"");
+        StringAssert.Contains(codeBehind, "Header = \"Wersja\"");
+        StringAssert.Contains(codeBehind, "Stabilny — zalecany");
+        StringAssert.Contains(codeBehind, "Beta — społecznościowy");
+        StringAssert.Contains(codeBehind, "Nightly — oficjalny codzienny");
+        StringAssert.Contains(codeBehind, "GetAvailableVersionsAsync");
+        StringAssert.Contains(codeBehind, "ExperimentalUseConfirmed");
+    }
+
+    [TestMethod]
+    public void OverlayOpacityTargetsStatisticsContentAndKeepsWindowFlags()
+    {
+        string codeBehind = LoadUiSource("PerformanceOverlayWindow.xaml.cs");
+        int methodStart = codeBehind.IndexOf(
+            "private void ApplyWindowOpacity(int opacityPercent)",
+            StringComparison.Ordinal);
+        int methodEnd = codeBehind.IndexOf(
+            "public void SetRequestedVisibility",
+            methodStart,
+            StringComparison.Ordinal);
+        string opacityMethod = codeBehind[methodStart..methodEnd];
+
+        StringAssert.Contains(
+            opacityMethod,
+            "OverlayStatisticsContent.Opacity = opacity;");
+        Assert.IsFalse(opacityMethod.Contains(
+            "OverlayRoot.Opacity",
+            StringComparison.Ordinal));
+        Assert.IsFalse(opacityMethod.Contains(
+            "SetLayeredWindowAttributes",
+            StringComparison.Ordinal));
+        StringAssert.Contains(codeBehind, "WsExLayered");
+        StringAssert.Contains(codeBehind, "WsExTransparent");
+        StringAssert.Contains(codeBehind, "WsExNoActivate");
+        StringAssert.Contains(
+            codeBehind,
+            "private const uint LwaColorKey = 0x00000001;");
+        StringAssert.Contains(
+            codeBehind,
+            "private const uint TransparentColorKey = 0x00000000;");
+        StringAssert.Contains(
+            codeBehind,
+            "SetLayeredWindowAttributes(\n                _windowHandle,\n                TransparentColorKey,\n                byte.MaxValue,\n                LwaColorKey)");
+        StringAssert.Contains(
+            codeBehind,
+            "presenter.SetBorderAndTitleBar(\n                hasBorder: false,\n                hasTitleBar: false);");
+        Assert.IsFalse(codeBehind.Contains(
+            "SystemBackdrop =",
+            StringComparison.Ordinal));
+        Assert.IsFalse(codeBehind.Contains(
+            "DwmExtendFrameIntoClientArea",
+            StringComparison.Ordinal));
     }
 
     [TestMethod]
@@ -133,6 +737,84 @@ public sealed class UiResourceReferenceTests
             .Order(StringComparer.Ordinal)
             .ToArray();
     }
+
+    private static string LoadUiSource(string fileName)
+    {
+        string repositoryRoot = FindRepositoryRoot();
+        return File.ReadAllText(
+            Path.Combine(
+                repositoryRoot,
+                "src",
+                "GameShift.UI",
+                fileName));
+    }
+
+    private static string? FindSetterValue(
+        XElement style,
+        string propertyName) =>
+        style
+            .Elements()
+            .Single(element => element.Name.LocalName == "Setter"
+                && string.Equals(
+                    (string?)element.Attribute("Property"),
+                    propertyName,
+                    StringComparison.Ordinal))
+            .Attribute("Value")
+            ?.Value;
+
+    private static string? FindVisualStateSetterValue(
+        XElement visualState,
+        string target) =>
+        visualState
+            .Descendants()
+            .Single(element => element.Name.LocalName == "Setter"
+                && string.Equals(
+                    (string?)element.Attribute("Target"),
+                    target,
+                    StringComparison.Ordinal))
+            .Attribute("Value")
+            ?.Value;
+
+    private static double ParseStarWidth(string value)
+    {
+        string multiplier = value.TrimEnd('*');
+        return string.IsNullOrEmpty(multiplier)
+            ? 1d
+            : double.Parse(
+                multiplier,
+                System.Globalization.CultureInfo.InvariantCulture);
+    }
+
+    private static XDocument LoadUiXaml(string fileName)
+    {
+        string repositoryRoot = FindRepositoryRoot();
+        return XDocument.Load(
+            Path.Combine(
+                repositoryRoot,
+                "src",
+                "GameShift.UI",
+                fileName));
+    }
+
+    private static XElement FindNamedElement(
+        XContainer container,
+        string name) =>
+        container
+            .Descendants()
+            .Single(element => string.Equals(
+                (string?)element.Attribute(XamlNamespace + "Name"),
+                name,
+                StringComparison.Ordinal));
+
+    private static bool ContainsNamedElement(
+        XContainer container,
+        string name) =>
+        container
+            .Descendants()
+            .Any(element => string.Equals(
+                (string?)element.Attribute(XamlNamespace + "Name"),
+                name,
+                StringComparison.Ordinal));
 
     private static IEnumerable<string> EnumerateSourceXamlFiles(
         string uiDirectory)
