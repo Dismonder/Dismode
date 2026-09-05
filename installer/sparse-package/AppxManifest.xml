@@ -30,7 +30,7 @@
   <Dependencies>
     <TargetDeviceFamily
       Name="Windows.Desktop"
-      MinVersion="10.0.22000.0"
+      MinVersion="10.0.22631.0"
       MaxVersionTested="10.0.26100.0" />
   </Dependencies>
 
@@ -48,7 +48,7 @@
       <uap:VisualElements
         AppListEntry="none"
         DisplayName="GameShift"
-        Description="GameShift Technical Preview"
+        Description="GameShift Gaming Edition"
         BackgroundColor="transparent"
         Square150x150Logo="Assets\GameShift.png"
         Square44x44Logo="Assets\GameShift.png" />

@@ -6,5 +6,37 @@ informacjami licencyjnymi, między innymi:
 - .NET i Windows App SDK — licencje Microsoft właściwe dla dystrybucji.
 - Microsoft.Data.Sqlite / SQLitePCLRaw — informacje licencyjne dostawców.
 - gRPC for .NET — Apache-2.0.
+- SharpCompress 1.0.0 — MIT; używany wyłącznie do bezpiecznego rozpakowania
+  archiwów OptiScaler; https://github.com/adamhathcock/sharpcompress.
+- Pakiety OptiScaler nie są dołączone do instalatora. Menedżer pobiera je na
+  żądanie z przypiętych repozytoriów: oficjalnego Stable/Nightly albo wyraźnie
+  oznaczonego, społecznościowego i nieoficjalnego kanału Beta. Licencje
+  właściwe dla wybranego pakietu są zachowywane przy instalacji gry.
+- GameShift Memory Optimizer — niezależny program GPL-3.0-only,
+  wywodzący się z Windows Memory Cleaner 3.0.8 © Igor Mundstein;
+  https://github.com/IgorMundstein/WinMemoryCleaner. Jego katalog zawiera
+  pełną licencję, listę modyfikacji, metadane wydania i dokładne odpowiadające
+  archiwum źródłowe z sumą SHA-256.
 
 Pełny, automatycznie generowany SBOM zostanie dołączony do artefaktu wydania.
+
+SharpCompress 1.0.0
+Copyright (c) 2025 Adam Hathcock
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
