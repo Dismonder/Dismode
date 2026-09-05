@@ -16,7 +16,11 @@ public sealed class DiagnosticsProbeService
         TimeSpan.FromSeconds(10);
     private const int MaximumDiscoveryItems = 500;
 
+    private static readonly TimeSpan DiscoveryCacheLifetime =
+        TimeSpan.FromSeconds(30);
+
     private readonly string _callerSid;
+    private volatile CachedDiscovery? _cachedDiscovery;
 
     public DiagnosticsProbeService(string callerSid)
     {
@@ -50,13 +54,15 @@ public sealed class DiagnosticsProbeService
                         CommandKind.GetComponentStatus),
                 },
                 cancellationToken: timeout.Token);
-            DiscoveryReply discovery = await client.DiscoverAsync(
-                new DiscoveryRequest
-                {
-                    Metadata = CreateMetadata(CommandKind.DiscoverSystem),
-                    MaximumItems = MaximumDiscoveryItems,
-                },
-                cancellationToken: timeout.Token);
+
+            // Czas odpowiedzi ma opisywac odpowiedz komponentu. Wczesniej
+            // obejmowal takze pelna inwentaryzacje procesow i uslug, przez co
+            // pokazywal sekundy tam, gdzie host odpowiada od razu.
+            long latencyMilliseconds = stopwatch.ElapsedMilliseconds;
+
+            DiscoveryReply discovery = await GetDiscoveryAsync(
+                client,
+                timeout.Token);
 
             return new(
                 component,
@@ -73,7 +79,7 @@ public sealed class DiagnosticsProbeService
                     discovery.TotalServiceCount,
                     discovery.Services.Count),
                 discovery.Truncated,
-                stopwatch.ElapsedMilliseconds);
+                latencyMilliseconds);
         }
         catch (OperationCanceledException)
             when (!cancellationToken.IsCancellationRequested)
@@ -110,6 +116,39 @@ public sealed class DiagnosticsProbeService
                 stopwatch.ElapsedMilliseconds);
         }
     }
+
+    /// <summary>
+    /// Returns the system inventory, reusing a recent result. The reply is
+    /// machine-wide and identical for every component, so probing SessionHost
+    /// and the agent used to enumerate every process and service twice for a
+    /// single counter on screen.
+    /// </summary>
+    private async Task<DiscoveryReply> GetDiscoveryAsync(
+        GameShiftDiagnostics.GameShiftDiagnosticsClient client,
+        CancellationToken cancellationToken)
+    {
+        DateTimeOffset now = DateTimeOffset.UtcNow;
+        if (_cachedDiscovery is { } cached && cached.ExpiresAtUtc > now)
+        {
+            return cached.Reply;
+        }
+
+        DiscoveryReply reply = await client.DiscoverAsync(
+            new DiscoveryRequest
+            {
+                Metadata = CreateMetadata(CommandKind.DiscoverSystem),
+                MaximumItems = MaximumDiscoveryItems,
+            },
+            cancellationToken: cancellationToken);
+        _cachedDiscovery = new(
+            reply,
+            DateTimeOffset.UtcNow.Add(DiscoveryCacheLifetime));
+        return reply;
+    }
+
+    private sealed record CachedDiscovery(
+        DiscoveryReply Reply,
+        DateTimeOffset ExpiresAtUtc);
 
     public async Task<IReadOnlyList<DiscoveredProcessClientSnapshot>>
         DiscoverProcessesAsync(CancellationToken cancellationToken)
