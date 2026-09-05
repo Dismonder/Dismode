@@ -14,6 +14,6 @@
   },
   "vars": {
     "ENVIRONMENT": "development",
-    "PRODUCT_NAME": "GameShift Technical Preview"
+    "PRODUCT_NAME": "GameShift Gaming Edition"
   }
 }

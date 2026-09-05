@@ -35,7 +35,7 @@ main{max-width:960px;margin:auto;padding:48px 24px}.hero,.card{border:1px solid 
 function productPage(productName: string): Response {
   return htmlResponse(
     "Produkt",
-    `<section class="hero"><p>TECHNICAL PREVIEW</p><h1>${productName}</h1><p>Lokalny, odwracalny optymalizator sesji gry dla komputerów stacjonarnych z Windows 11.</p></section>
+    `<section class="hero"><p>GAMING EDITION</p><h1>${productName}</h1><p>Lokalny, odwracalny optymalizator sesji gry dla komputerów stacjonarnych z Windows 11.</p></section>
 <section class="grid"><article class="card"><h2>Pomiar</h2><p>Rzeczywisty frametime i FPS pochodzą z PresentMon. Brak danych nie jest zastępowany wynikiem szacowanym.</p></article><article class="card"><h2>Bezpieczeństwo</h2><p>Zmiany procesu są weryfikowane i journalowane, a aktualizacja jest blokowana do zakończenia recovery.</p></article><article class="card"><h2>Aktualizacje</h2><p>Pakiety i manifesty są weryfikowane kryptograficznie przed uruchomieniem instalatora.</p></article></section>`,
   );
 }
@@ -84,7 +84,12 @@ export function isAllowedUpdateAssetPath(pathname: string): boolean {
 async function serveUpdateAsset(request: Request, env: Env): Promise<Response> {
   const assetResponse = await env.ASSETS.fetch(request);
   if (assetResponse.status === 404) {
+    await assetResponse.body?.cancel();
     return jsonResponse({ error: "not_found" }, 404);
+  }
+  if (![200, 206, 304, 416].includes(assetResponse.status)) {
+    await assetResponse.body?.cancel();
+    return jsonResponse({ error: "asset_unavailable" }, 502);
   }
 
   const headers = new Headers(assetResponse.headers);
@@ -94,11 +99,13 @@ async function serveUpdateAsset(request: Request, env: Env): Promise<Response> {
   const pathname = new URL(request.url).pathname;
   headers.set(
     "Cache-Control",
-    pathname.endsWith("/manifest.json")
-      ? "public, max-age=300, must-revalidate"
-      : "public, max-age=31536000, immutable",
+    assetResponse.status === 416
+      ? "no-store"
+      : pathname.endsWith("/manifest.json")
+        ? "public, max-age=300, must-revalidate"
+        : "public, max-age=31536000, immutable",
   );
-  return new Response(request.method === "HEAD" ? null : assetResponse.body, {
+  return new Response(assetResponse.body, {
     status: assetResponse.status,
     statusText: assetResponse.statusText,
     headers,
@@ -123,13 +130,13 @@ async function handleRequest(request: Request, env: Env): Promise<Response> {
     });
   }
   if (url.pathname === "/") {
-    return request.method === "HEAD" ? new Response(null, productPage(env.PRODUCT_NAME)) : productPage(env.PRODUCT_NAME);
+    return productPage(env.PRODUCT_NAME);
   }
   if (url.pathname === "/support") {
-    return request.method === "HEAD" ? new Response(null, supportPage()) : supportPage();
+    return supportPage();
   }
   if (url.pathname === "/privacy") {
-    return request.method === "HEAD" ? new Response(null, privacyPage()) : privacyPage();
+    return privacyPage();
   }
 
   if (!isAllowedUpdateAssetPath(url.pathname)) {
@@ -141,10 +148,10 @@ async function handleRequest(request: Request, env: Env): Promise<Response> {
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
     const path = new URL(request.url).pathname;
+    let response: Response;
     try {
-      const response = await handleRequest(request, env);
+      response = await handleRequest(request, env);
       console.log(JSON.stringify({ message: "request", method: request.method, path, status: response.status }));
-      return response;
     } catch (error) {
       console.error(
         JSON.stringify({
@@ -154,7 +161,12 @@ export default {
           error: error instanceof Error ? error.message : "unknown_error",
         }),
       );
-      return jsonResponse({ error: "internal_server_error" }, 500);
+      response = jsonResponse({ error: "internal_server_error" }, 500);
     }
+    if (request.method === "HEAD") {
+      await response.body?.cancel();
+      return new Response(null, response);
+    }
+    return response;
   },
 } satisfies ExportedHandler<Env>;
