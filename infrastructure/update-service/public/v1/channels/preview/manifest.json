@@ -1,44 +1,78 @@
 {
   "schemaVersion": 1,
   "channel": "preview",
-  "version": "0.1.1",
+  "version": "0.4.1",
   "minimumSupportedVersion": "0.1.1",
-  "publishedAtUtc": "2026-08-01T17:10:41.1501948+00:00",
-  "displayName": "GameShift 0.1.1 Technical Preview",
+  "publishedAtUtc": "2026-09-05T19:49:00.8900798+00:00",
+  "displayName": "GameShift 0.4.1 Gaming Edition",
   "releaseNotes": [
-    "Dodano Uruchom przez GameShift do menu kontekstowego Windows.",
-    "Dodano bezpieczny tryb t\u0142a z ikon\u0105 w zasobniku systemowym.",
-    "Gra uruchamia si\u0119 przed odroczonym skanowaniem biblioteki i zadaniami konserwacyjnymi.",
-    "Dodano podpisane aktualizacje r\u0119czne i automatyczne sprawdzane najwy\u017Cej co 30 dni."
+    "Naprawiono deinstalator: nieudany restore nie blokuje juz usuniecia programu i nie zostawia uslug na autostarcie.",
+    "Brama recovery odroznia zmiany trwale od przejsciowych i nie zada przywracania, gdy nie ma czego cofac.",
+    "Modul DLSS 5 Neural Rendering dla kart GeForce RTX 50 ze sterownikiem 616.56 lub nowszym."
   ],
   "installer": {
-    "fileName": "GameShift-Setup-0.1.1-win-x64.exe",
-    "sizeBytes": 80803708,
-    "sha256": "A288FD24969004BE53C02E4055417407D93AD5E1DC6D527E0671E9E5C22B5793",
+    "fileName": "GameShift-Setup-0.4.1-win-x64.exe",
+    "sizeBytes": 223993976,
+    "sha256": "E383CC6478FCD3E9C4CCE5A8918B79097F8C136BABB2163798A68CC1691E06E0",
     "chunks": [
       {
-        "path": "/v1/packages/0.1.1/GameShift-Setup-0.1.1-win-x64.part-0001.bin",
+        "path": "/v1/packages/0.4.1/GameShift-Setup-0.4.1-win-x64.part-0001.bin",
         "sizeBytes": 20971520,
-        "sha256": "8BC24B74B95E07CCD824F9842FDDC64FFF5BE27E10B725B9DA9D8BBFCAA3BEA9"
+        "sha256": "8CEC4B5BE13114FCA9425A23761227E9639412FC78DDD0F2B57BD69AF416724B"
       },
       {
-        "path": "/v1/packages/0.1.1/GameShift-Setup-0.1.1-win-x64.part-0002.bin",
+        "path": "/v1/packages/0.4.1/GameShift-Setup-0.4.1-win-x64.part-0002.bin",
         "sizeBytes": 20971520,
-        "sha256": "D42B355C7CE8E20F907E75D5F3229E0A79530120B1D166155E48F88BF1900FB1"
+        "sha256": "35084944C4C6818A4DBF8388E51A0DC966C1C975864CEC217DBCE3A929FFFB98"
       },
       {
-        "path": "/v1/packages/0.1.1/GameShift-Setup-0.1.1-win-x64.part-0003.bin",
+        "path": "/v1/packages/0.4.1/GameShift-Setup-0.4.1-win-x64.part-0003.bin",
         "sizeBytes": 20971520,
-        "sha256": "B6D67A5BD746EBE8D89FE170213F85DEC8A2F7D5C005724784E9812F2BFFB34D"
+        "sha256": "CD4686ABBB73924DF72A900AB571B2EB0D2B28EE25B7158DEAD819D58384CED0"
       },
       {
-        "path": "/v1/packages/0.1.1/GameShift-Setup-0.1.1-win-x64.part-0004.bin",
-        "sizeBytes": 17889148,
-        "sha256": "7EB6314289B916FC9275F2F1544F2D53616F8DB634D2A7B7F7BE68EACFD53373"
+        "path": "/v1/packages/0.4.1/GameShift-Setup-0.4.1-win-x64.part-0004.bin",
+        "sizeBytes": 20971520,
+        "sha256": "33F284BF043E9EF3D6D02ADDE47928C32C7AAEC7E64CCDEE208769633F9FDE0A"
+      },
+      {
+        "path": "/v1/packages/0.4.1/GameShift-Setup-0.4.1-win-x64.part-0005.bin",
+        "sizeBytes": 20971520,
+        "sha256": "E76A3CE01ADEC28BE16245BEAE2C26FE2D0FC19027EDFC69D6F6749F765CA718"
+      },
+      {
+        "path": "/v1/packages/0.4.1/GameShift-Setup-0.4.1-win-x64.part-0006.bin",
+        "sizeBytes": 20971520,
+        "sha256": "DD32918B9F35C1F9D0480BE1F133A611AC52EE112830E8523E45D9C648704732"
+      },
+      {
+        "path": "/v1/packages/0.4.1/GameShift-Setup-0.4.1-win-x64.part-0007.bin",
+        "sizeBytes": 20971520,
+        "sha256": "73184A52025DD4F77613345DD48C3E091ED1EA2FE9F51E5DADE792E714786458"
+      },
+      {
+        "path": "/v1/packages/0.4.1/GameShift-Setup-0.4.1-win-x64.part-0008.bin",
+        "sizeBytes": 20971520,
+        "sha256": "768BBF2C14284C6094BBD9357049193CF5C7279307D23F082AE23ADC6D6F4F24"
+      },
+      {
+        "path": "/v1/packages/0.4.1/GameShift-Setup-0.4.1-win-x64.part-0009.bin",
+        "sizeBytes": 20971520,
+        "sha256": "AED3D3121A1B6654F45506A24A342E457A3473F1FFAAF9841FEA4629D0D716B1"
+      },
+      {
+        "path": "/v1/packages/0.4.1/GameShift-Setup-0.4.1-win-x64.part-0010.bin",
+        "sizeBytes": 20971520,
+        "sha256": "9DA4FDAB1E1D9E9DAFED6CE29B983C0FA66E4BB195980E8C6391CFACA82FACAB"
+      },
+      {
+        "path": "/v1/packages/0.4.1/GameShift-Setup-0.4.1-win-x64.part-0011.bin",
+        "sizeBytes": 14278776,
+        "sha256": "365E14D2A393696A5F39EDDAF48F5EA126DC001FCD3A752E833148468C3A2FFA"
       }
     ]
   },
   "keyId": "gameshift-development-2026-01",
   "signatureAlgorithm": "ECDSA_P256_SHA256_P1363",
-  "signature": "kFtZT9MY5Bg3YiPEmFe3iE987/Aou5zLWMKkbGo3fbmaLZL4\u002Bgk3OaO3Yg6HNCiBH3VhPhUswr\u002BpSBDaP77Kkw=="
+  "signature": "PA2Esrhwkic0wfB\u002BTYW2Cc3Y73ZZ11/RrNhc4FX2Lu9GViIuaVUBXu0fiX\u002BOxMIZO4uJk0tpDS0pYpvv2lW/6g=="
 }
