@@ -33,6 +33,17 @@ public static class OptiScalerIniPatcher
         new("DlssNr", "Enabled", "true"),
     ];
 
+    /// <summary>
+    /// Refreshes the DirectX 12 Agility SDK that ships inside the package.
+    /// Some titles will not run OptiScaler without it, and the package
+    /// documents the requirement: the D3D12_OptiScaler folder must sit inside
+    /// the OptiScaler folder. The switch is off by default upstream.
+    /// </summary>
+    public static IReadOnlyList<OptiScalerIniSetting> AgilitySdkSettings =>
+    [
+        new("FSR", "FsrAgilitySDKUpgrade", "true"),
+    ];
+
     public static OptiScalerIniPatchResult Apply(
         string content,
         IReadOnlyList<OptiScalerIniSetting> settings)
