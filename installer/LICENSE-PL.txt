@@ -1,4 +1,4 @@
-WARUNKI KORZYSTANIA Z GAMESHIFT TECHNICAL PREVIEW
+WARUNKI KORZYSTANIA Z GAMESHIFT GAMING EDITION
 
 1. GameShift jest eksperymentalnym projektem badawczo-rozwojowym. Program
    jest udostępniany bez gwarancji wzrostu FPS, zgodności z każdą grą ani
@@ -23,4 +23,4 @@ WARUNKI KORZYSTANIA Z GAMESHIFT TECHNICAL PREVIEW
    THIRD-PARTY-NOTICES.txt oraz w katalogu Tools\PresentMon.
 
 Instalując program, użytkownik potwierdza, że rozumie eksperymentalny charakter
-wydania Technical Preview i opisane ograniczenia.
+wydania Gaming Edition i opisane ograniczenia.

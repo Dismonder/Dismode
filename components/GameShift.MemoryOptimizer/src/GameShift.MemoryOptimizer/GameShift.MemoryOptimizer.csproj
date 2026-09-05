@@ -1,0 +1,37 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <RootNamespace>GameShift.MemoryOptimizer</RootNamespace>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+    <ApplicationIcon>Assets\MemoryOptimizer.ico</ApplicationIcon>
+    <UseWinUI>true</UseWinUI>
+    <WindowsPackageType>None</WindowsPackageType>
+    <WindowsAppSDKSelfContained>false</WindowsAppSDKSelfContained>
+    <EnableMsixTooling>false</EnableMsixTooling>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.WindowsAppSDK" />
+    <PackageReference Include="System.ServiceProcess.ServiceController" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\GameShift.MemoryOptimizer.Core\GameShift.MemoryOptimizer.Core.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Content Include="Assets\MemoryOptimizer.ico"
+             CopyToOutputDirectory="PreserveNewest"
+             CopyToPublishDirectory="PreserveNewest" />
+  </ItemGroup>
+
+  <Target Name="CopyLooseWinUiResourcesToPublish" AfterTargets="Publish">
+    <ItemGroup>
+      <_LooseWinUiXbf Include="$(TargetDir)**\*.xbf" Exclude="$(PublishDir)**\*.xbf" />
+      <_LooseWinUiResource Include="@(_LooseWinUiXbf)" />
+      <_LooseWinUiResource Include="$(TargetDir)$(TargetName).pri" />
+    </ItemGroup>
+    <Error Condition="'@(_LooseWinUiXbf)' == ''" Text="No compiled WinUI XAML resources were found under $(TargetDir)." />
+    <Copy SourceFiles="@(_LooseWinUiResource)" DestinationFiles="@(_LooseWinUiResource->'$(PublishDir)%(RecursiveDir)%(Filename)%(Extension)')" SkipUnchangedFiles="true" />
+  </Target>
+</Project>

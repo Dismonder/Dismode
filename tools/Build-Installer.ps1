@@ -1,20 +1,59 @@
-[CmdletBinding()]
+﻿[CmdletBinding()]
 param(
     [ValidatePattern("^\d+\.\d+\.\d+$")]
-    [string]$Version = "0.1.9",
+    [string]$Version,
     [string]$InnoCompilerPath,
-    [switch]$SkipTests
+    [switch]$SkipTests,
+    [ValidatePattern("^[A-Fa-f0-9]{40}$")]
+    [string]$CodeSigningCertificateThumbprint =
+        $env:GAMESHIFT_RELEASE_SIGNING_THUMBPRINT,
+    [string]$CodeSigningTimestampUrl = "http://timestamp.digicert.com",
+    [switch]$AllowTestCodeSigningCertificate
 )
 
 $ErrorActionPreference = "Stop"
 
 $repositoryRoot = [IO.Path]::GetFullPath(
     (Join-Path $PSScriptRoot ".."))
+$directoryBuildPropsPath = Join-Path $repositoryRoot "Directory.Build.props"
+if (-not (Test-Path -LiteralPath $directoryBuildPropsPath)) {
+    throw "Brak wymaganego pliku: $directoryBuildPropsPath"
+}
+
+[xml]$versionProperties = Get-Content -LiteralPath (
+    $directoryBuildPropsPath) -Raw
+$versionNode = $versionProperties.SelectSingleNode(
+    "/Project/PropertyGroup/Version")
+if ($null -eq $versionNode -or
+    $versionNode.InnerText -notmatch '^\d+\.\d+\.\d+$') {
+    throw "Directory.Build.props nie zawiera poprawnej wersji SemVer."
+}
+$repositoryVersion = $versionNode.InnerText
+if ($Version -and -not [StringComparer]::Ordinal.Equals(
+        $Version,
+        $repositoryVersion)) {
+    throw "Wersja instalatora $Version nie pasuje do wersji repozytorium " +
+        "$repositoryVersion."
+}
+$Version = $repositoryVersion
+if (-not $CodeSigningCertificateThumbprint) {
+    throw "Wydanie $Version wymaga produkcyjnego certyfikatu. Ustaw " +
+        "GAMESHIFT_RELEASE_SIGNING_THUMBPRINT lub podaj " +
+        "-CodeSigningCertificateThumbprint."
+}
+
 $artifactsRoot = Join-Path $repositoryRoot "artifacts"
-$payloadPath = Join-Path $artifactsRoot "GameShift-Installer-Payload"
+$payloadPath = Join-Path $artifactsRoot "GameShift-App"
 $installerOutputPath = Join-Path $artifactsRoot "installer"
 $installerScript = Join-Path $repositoryRoot "installer\GameShift.iss"
 $releaseScript = Join-Path $PSScriptRoot "Build-LocalRelease.ps1"
+$updatePublisherProject = Join-Path $repositoryRoot (
+    "tools\GameShift.UpdatePublisher\GameShift.UpdatePublisher.csproj")
+$memoryOptimizerBuildScript = Join-Path $repositoryRoot (
+    "components\GameShift.MemoryOptimizer\tools\Build-MemoryOptimizer.ps1")
+$memoryOptimizerPayloadPath = Join-Path $artifactsRoot (
+    "GameShift-MemoryOptimizer")
+$updateAssetsPath = Join-Path $artifactsRoot "update-service-$Version"
 $readmePath = Join-Path $repositoryRoot "README.md"
 
 if (-not $InnoCompilerPath) {
@@ -36,8 +75,11 @@ if (-not $InnoCompilerPath -or
 }
 
 foreach ($sourceFile in @(
+        $directoryBuildPropsPath,
         $installerScript,
         $releaseScript,
+        $updatePublisherProject,
+        $memoryOptimizerBuildScript,
         $readmePath)) {
     if (-not (Test-Path -LiteralPath $sourceFile)) {
         throw "Brak wymaganego pliku: $sourceFile"
@@ -51,6 +93,11 @@ New-Item -ItemType Directory -Path (
 $releaseArguments = @{
     OutputDirectory = $payloadPath
     SelfContained = $true
+    CodeSigningCertificateThumbprint =
+        $CodeSigningCertificateThumbprint
+    CodeSigningTimestampUrl = $CodeSigningTimestampUrl
+    AllowTestCodeSigningCertificate =
+        $AllowTestCodeSigningCertificate
 }
 if ($SkipTests) {
     $releaseArguments.SkipTests = $true
@@ -59,6 +106,23 @@ if ($SkipTests) {
 & $releaseScript @releaseArguments
 if ($LASTEXITCODE -ne 0) {
     throw "Budowa payloadu zakończyła się kodem $LASTEXITCODE."
+}
+
+$memoryOptimizerArguments = @{
+    OutputDirectory = $memoryOptimizerPayloadPath
+}
+$memoryOptimizerArguments.CodeSigningCertificateThumbprint =
+    $CodeSigningCertificateThumbprint
+$memoryOptimizerArguments.CodeSigningTimestampUrl =
+    $CodeSigningTimestampUrl
+if ($SkipTests) {
+    $memoryOptimizerArguments.SkipTests = $true
+}
+$memoryOptimizerArguments.AllowTestCodeSigningCertificate =
+    $AllowTestCodeSigningCertificate
+& $memoryOptimizerBuildScript @memoryOptimizerArguments
+if ($LASTEXITCODE -ne 0) {
+    throw "Budowa Memory Optimizer zakończyła się kodem $LASTEXITCODE."
 }
 
 Copy-Item -LiteralPath $readmePath -Destination (
@@ -86,6 +150,7 @@ $compilerArguments = @(
     "/DOutputDir=$installerOutputPath",
     "/DRepoRoot=$repositoryRoot",
     "/DAppVersion=$Version",
+    "/DMemoryOptimizerDir=$memoryOptimizerPayloadPath",
     $installerScript
 )
 & $InnoCompilerPath @compilerArguments
@@ -97,6 +162,35 @@ $setupPath = Join-Path $installerOutputPath (
     "GameShift-Setup-$Version-win-x64.exe")
 if (-not (Test-Path -LiteralPath $setupPath)) {
     throw "Kompilator nie utworzył oczekiwanego instalatora: $setupPath"
+}
+
+$windowsSdkBinRoot = Join-Path ${env:ProgramFiles(x86)} (
+    "Windows Kits\10\bin")
+$signToolPath = Get-ChildItem -LiteralPath $windowsSdkBinRoot `
+        -Recurse `
+        -Filter "signtool.exe" `
+        -File |
+    Where-Object {
+        $_.FullName.EndsWith(
+            "\x64\signtool.exe",
+            [StringComparison]::OrdinalIgnoreCase)
+    } |
+    Sort-Object FullName -Descending |
+    Select-Object -First 1 -ExpandProperty FullName
+if (-not $signToolPath) {
+    throw "Nie znaleziono x64 SignTool.exe wymaganego do podpisania instalatora."
+}
+
+& $signToolPath `
+    sign `
+    /fd SHA256 `
+    /td SHA256 `
+    /tr $CodeSigningTimestampUrl `
+    /s My `
+    /sha1 $CodeSigningCertificateThumbprint `
+    $setupPath
+if ($LASTEXITCODE -ne 0) {
+    throw "Podpisanie instalatora zakończyło się kodem $LASTEXITCODE."
 }
 
 $setupFile = Get-Item -LiteralPath $setupPath
@@ -126,8 +220,43 @@ $hashPath = "$setupPath.sha256"
     [Text.UTF8Encoding]::new($false))
 
 $signature = Get-AuthenticodeSignature -FilePath $setupPath
+if ($signature.Status -ne "Valid" -or
+    $null -eq $signature.SignerCertificate -or
+    $signature.SignerCertificate.Thumbprint -ne
+        $CodeSigningCertificateThumbprint) {
+    throw "Instalator nie ma oczekiwanego, ważnego podpisu Authenticode."
+}
+$publisherArguments = @(
+    "run",
+    "--project",
+    $updatePublisherProject,
+    "--configuration",
+    "Release",
+    "--no-build",
+    "--no-restore",
+    "--",
+    "stage",
+    "--installer",
+    $setupPath,
+    "--assets",
+    $updateAssetsPath,
+    "--version",
+    $Version,
+    "--channel",
+    "preview",
+    "--minimum-version",
+    "0.3.0",
+    "--note",
+    "GameShift $Version Gaming Edition — lokalny staging preview.")
+& dotnet @publisherArguments
+if ($LASTEXITCODE -ne 0) {
+    throw "Publikacja manifestu aktualizacji zakończyła się kodem $LASTEXITCODE."
+}
+
 Write-Output "Instalator gotowy: $setupPath"
 Write-Output "Rozmiar: $([Math]::Round($setupFile.Length / 1MB, 2)) MiB"
 Write-Output "SHA-256: $setupHash"
 Write-Output "Podpis Authenticode: $($signature.Status)"
 Write-Output "Manifest payloadu: $manifestPath"
+Write-Output "Payload Memory Optimizer: $memoryOptimizerPayloadPath"
+Write-Output "Manifest aktualizacji: $updateAssetsPath"

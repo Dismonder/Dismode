@@ -1,9 +1,13 @@
-[CmdletBinding()]
+﻿[CmdletBinding()]
 param(
     [string]$OutputDirectory = "artifacts\GameShift-App",
     [switch]$CreateDesktopShortcut,
     [switch]$SelfContained,
-    [switch]$SkipTests
+    [switch]$SkipTests,
+    [ValidatePattern("^[A-Fa-f0-9]{40}$")]
+    [string]$CodeSigningCertificateThumbprint,
+    [string]$CodeSigningTimestampUrl = "http://timestamp.digicert.com",
+    [switch]$AllowTestCodeSigningCertificate
 )
 
 $ErrorActionPreference = "Stop"
@@ -50,6 +54,7 @@ $runningComponents = Get-CimInstance Win32_Process |
             [StringComparison]::OrdinalIgnoreCase) -and
         $_.Name -in @(
             "GameShift.UI.exe",
+            "GameShift.SystemOptimizer.exe",
             "GameShift.SessionHost.exe",
             "GameShift.SystemAgent.exe",
             "PresentMon-2.5.1-x64.exe")
@@ -163,6 +168,38 @@ $signToolPath = Join-Path (
 if (-not (Test-Path -LiteralPath $signToolPath)) {
     throw "Nie znaleziono x64 SignTool.exe z Windows SDK."
 }
+$codeSigningOid = "1.3.6.1.5.5.7.3.3"
+$productionSigningCertificate = $null
+if ($CodeSigningCertificateThumbprint) {
+    $normalizedThumbprint =
+        $CodeSigningCertificateThumbprint.ToUpperInvariant()
+    $productionSigningCertificate = Get-ChildItem Cert:\CurrentUser\My |
+        Where-Object {
+            $_.Thumbprint -eq $normalizedThumbprint -and
+            $_.HasPrivateKey -and
+            $_.NotAfter -gt (Get-Date).AddDays(30) -and
+            $_.EnhancedKeyUsageList.ObjectId -contains $codeSigningOid
+        } |
+        Select-Object -First 1
+    if (-not $productionSigningCertificate) {
+        throw "Nie znaleziono ważnego certyfikatu podpisywania kodu " +
+            "$normalizedThumbprint z kluczem prywatnym."
+    }
+
+    if (-not $AllowTestCodeSigningCertificate -and
+        [StringComparer]::OrdinalIgnoreCase.Equals(
+            $productionSigningCertificate.Subject,
+            $productionSigningCertificate.Issuer)) {
+        throw "Wydanie wymaga produkcyjnego certyfikatu; certyfikat " +
+            "$normalizedThumbprint jest samopodpisany."
+    }
+
+    if (-not [Uri]::IsWellFormedUriString(
+            $CodeSigningTimestampUrl,
+            [UriKind]::Absolute)) {
+        throw "Adres serwera znacznika czasu jest nieprawidłowy."
+    }
+}
 
 $projects = @(
     "src\GameShift.Launcher\GameShift.Launcher.csproj",
@@ -170,6 +207,8 @@ $projects = @(
     "src\GameShift.SystemAgent\GameShift.SystemAgent.csproj",
     "src\GameShift.UI\GameShift.UI.csproj"
 )
+$systemOptimizerProject =
+    "src\GameShift.SystemOptimizer\GameShift.SystemOptimizer.csproj"
 $presentMonSourceDirectory = Join-Path (
     $repositoryRoot) "third_party\PresentMon"
 $presentMonExecutableName = "PresentMon-2.5.1-x64.exe"
@@ -191,6 +230,11 @@ $requiredFiles = @(
     "MainWindow.xbf",
     "PerformanceOverlayWindow.xbf",
     "GameShift.UI.pri",
+    "SystemOptimizer\GameShift.SystemOptimizer.exe",
+    "SystemOptimizer\App.xbf",
+    "SystemOptimizer\MainWindow.xbf",
+    "SystemOptimizer\GameShift.SystemOptimizer.pri",
+    "trusted-signers.json",
     "GameShift.ShellExtension.dll",
     "ShellIntegration\GameShift.Sparse.msix",
     "ShellIntegration\GameShift-Development.cer",
@@ -205,7 +249,10 @@ if ($SelfContained) {
     $requiredFiles += @(
         "coreclr.dll",
         "hostfxr.dll",
-        "Microsoft.WindowsAppRuntime.dll"
+        "Microsoft.WindowsAppRuntime.dll",
+        "SystemOptimizer\coreclr.dll",
+        "SystemOptimizer\hostfxr.dll",
+        "SystemOptimizer\Microsoft.WindowsAppRuntime.dll"
     )
 }
 
@@ -303,6 +350,19 @@ try {
                 throw "Restore win-x64 nie powiódł się: $project"
             }
         }
+
+        $systemOptimizerRestoreArguments = @(
+            "restore",
+            $systemOptimizerProject,
+            "--runtime",
+            "win-x64",
+            "-p:WindowsAppSDKSelfContained=true"
+        )
+        & dotnet @systemOptimizerRestoreArguments
+        if ($LASTEXITCODE -ne 0) {
+            throw "Restore win-x64 nie powiódł się: " +
+                $systemOptimizerProject
+        }
     }
 
     New-Item -ItemType Directory -Path $stagingPath | Out-Null
@@ -337,6 +397,34 @@ try {
         }
     }
 
+    $systemOptimizerStagingPath = Join-Path (
+        $stagingPath) "SystemOptimizer"
+    New-Item -ItemType Directory -Path (
+        $systemOptimizerStagingPath) | Out-Null
+    $systemOptimizerPublishArguments = @(
+        "publish",
+        $systemOptimizerProject,
+        "--configuration",
+        "Release",
+        "--no-restore",
+        "--output",
+        $systemOptimizerStagingPath
+    )
+    if ($SelfContained) {
+        $systemOptimizerPublishArguments += @(
+            "--runtime",
+            "win-x64",
+            "--self-contained",
+            "true",
+            "-p:WindowsAppSDKSelfContained=true"
+        )
+    }
+
+    & dotnet @systemOptimizerPublishArguments
+    if ($LASTEXITCODE -ne 0) {
+        throw "Publikacja nie powiodła się: $systemOptimizerProject"
+    }
+
     $presentMonTargetDirectory = Join-Path (
         $stagingPath) "Tools\PresentMon"
     New-Item -ItemType Directory -Path (
@@ -349,6 +437,56 @@ try {
 
     Copy-Item -LiteralPath $nativeShellDll -Destination (
         Join-Path $stagingPath "GameShift.ShellExtension.dll")
+
+    $trustedSignerThumbprints = @()
+    if ($productionSigningCertificate) {
+        $ownedBinaries = Get-ChildItem -LiteralPath $stagingPath `
+                -Recurse `
+                -File |
+            Where-Object {
+                $_.Name.StartsWith(
+                    "GameShift",
+                    [StringComparison]::OrdinalIgnoreCase) -and
+                $_.Extension -in @(".exe", ".dll")
+            } |
+            Sort-Object FullName
+        foreach ($binary in $ownedBinaries) {
+            & $signToolPath `
+                sign `
+                /fd SHA256 `
+                /td SHA256 `
+                /tr $CodeSigningTimestampUrl `
+                /s My `
+                /sha1 $productionSigningCertificate.Thumbprint `
+                $binary.FullName
+            if ($LASTEXITCODE -ne 0) {
+                throw "Podpisanie pliku nie powiodło się: $($binary.FullName)"
+            }
+
+            $binarySignature = Get-AuthenticodeSignature -LiteralPath (
+                $binary.FullName)
+            if ($binarySignature.Status -ne "Valid" -or
+                $null -eq $binarySignature.SignerCertificate -or
+                $binarySignature.SignerCertificate.Thumbprint -ne
+                    $productionSigningCertificate.Thumbprint) {
+                throw "Weryfikacja podpisu nie powiodła się: " +
+                    $binary.FullName
+            }
+        }
+
+        $trustedSignerThumbprints = @(
+            $productionSigningCertificate.Thumbprint.ToUpperInvariant())
+    }
+
+    $trustedSignerPath = Join-Path $stagingPath "trusted-signers.json"
+    $trustedSignerJson = @{
+        schemaVersion = 1
+        thumbprints = $trustedSignerThumbprints
+    } | ConvertTo-Json -Depth 3
+    [IO.File]::WriteAllText(
+        $trustedSignerPath,
+        $trustedSignerJson,
+        [Text.UTF8Encoding]::new($false))
 
     Get-ChildItem -LiteralPath $stagingPath `
         -Recurse `
@@ -397,13 +535,12 @@ try {
     }
 
     $certificateSubject = "CN=GameShift Development"
-    $codeSigningOid = "1.3.6.1.5.5.7.3.3"
     $signingCertificate = Get-ChildItem Cert:\CurrentUser\My |
         Where-Object {
             $_.Subject -eq $certificateSubject -and
             $_.HasPrivateKey -and
             $_.NotAfter -gt (Get-Date).AddDays(30) -and
-            $_.EnhancedKeyUsageList.Value -contains $codeSigningOid
+            $_.EnhancedKeyUsageList.ObjectId -contains $codeSigningOid
         } |
         Sort-Object NotAfter -Descending |
         Select-Object -First 1

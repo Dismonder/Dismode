@@ -2,6 +2,7 @@ using System.Security.Cryptography;
 using System.Text.Json;
 using GameShift.Core.Product;
 using GameShift.Core.Updates;
+using GameShift.UpdatePublisher;
 
 const string defaultKeyName =
     "GameShift Development Update Signing 2026-01";
@@ -36,7 +37,7 @@ catch (Exception exception) when (
 
 static int PrintKeyInfo()
 {
-    using ECDsaCng signer = OpenOrCreateDevelopmentSigningKey();
+    using ECDsaCng signer = OpenTrustedSigningKey();
     Console.WriteLine(JsonSerializer.Serialize(new
     {
         keyId = ProductInformation.TrustedUpdateKeyId,
@@ -55,7 +56,7 @@ static async Task<int> StageReleaseAsync(string[] arguments)
     string versionText = RequireOption(arguments, "--version");
     string channel = ReadOption(arguments, "--channel") ?? "preview";
     string minimumVersionText =
-        ReadOption(arguments, "--minimum-version") ?? versionText;
+        ReadOption(arguments, "--minimum-version") ?? "0.1.1";
     string baseUriText = ReadOption(arguments, "--base-uri")
         ?? ProductInformation.UpdateServiceBaseUri;
     string[] releaseNotes = ReadRepeatedOptions(arguments, "--note");
@@ -67,9 +68,21 @@ static async Task<int> StageReleaseAsync(string[] arguments)
     Version version = UpdateManifestCodec.ParseVersion(
         versionText,
         "version");
-    _ = UpdateManifestCodec.ParseVersion(
+    Version minimumVersion = UpdateManifestCodec.ParseVersion(
         minimumVersionText,
         "minimum supported version");
+    string normalizedVersion = version.ToString(3);
+    if (!string.Equals(
+            normalizedVersion,
+            ProductInformation.CurrentVersion,
+            StringComparison.Ordinal))
+    {
+        throw new ArgumentException(
+            $"Release version {normalizedVersion} does not match "
+                + $"the repository/assembly version "
+                + $"{ProductInformation.CurrentVersion}.");
+    }
+
     if (channel is not ("preview" or "stable"))
     {
         throw new ArgumentException(
@@ -92,9 +105,7 @@ static async Task<int> StageReleaseAsync(string[] arguments)
             fullInstallerPath);
     }
 
-    Directory.CreateDirectory(fullAssetsPath);
     FileInfo installer = new(fullInstallerPath);
-    string normalizedVersion = version.ToString(3);
     string expectedInstallerName =
         $"GameShift-Setup-{normalizedVersion}-win-x64.exe";
     if (!string.Equals(
@@ -113,6 +124,9 @@ static async Task<int> StageReleaseAsync(string[] arguments)
             "The installer size is outside the supported range.");
     }
 
+    // Reject a missing or unrelated signer before writing any package data.
+    using ECDsaCng signer = OpenTrustedSigningKey();
+    Directory.CreateDirectory(fullAssetsPath);
     string packagesRoot = EnsureChildPath(fullAssetsPath, "v1", "packages");
     string channelsRoot = EnsureChildPath(fullAssetsPath, "v1", "channels");
     string packageTarget = EnsureChildPath(packagesRoot, normalizedVersion);
@@ -133,10 +147,10 @@ static async Task<int> StageReleaseAsync(string[] arguments)
             SchemaVersion: UpdateManifestCodec.CurrentSchemaVersion,
             Channel: channel,
             Version: normalizedVersion,
-            MinimumSupportedVersion: minimumVersionText,
+            MinimumSupportedVersion: minimumVersion.ToString(3),
             PublishedAtUtc: DateTimeOffset.UtcNow,
             DisplayName:
-                $"GameShift {normalizedVersion} Technical Preview",
+                $"GameShift {normalizedVersion} Gaming Edition",
             ReleaseNotes: releaseNotes,
             Installer: new(
                 FileName: expectedInstallerName,
@@ -148,7 +162,6 @@ static async Task<int> StageReleaseAsync(string[] arguments)
                 UpdateManifestCodec.EcdsaP256Sha256Algorithm,
             Signature: string.Empty);
 
-        using ECDsaCng signer = OpenOrCreateDevelopmentSigningKey();
         SignedUpdateManifest signedManifest = UpdateManifestCodec.Sign(
             unsignedManifest,
             baseUri,
@@ -159,7 +172,7 @@ static async Task<int> StageReleaseAsync(string[] arguments)
             baseUri,
             channel,
             ProductInformation.TrustedUpdateKeyId,
-            signer.ExportSubjectPublicKeyInfo());
+            UpdatePublisherTrust.TrustedPublicKey);
 
         if (Directory.Exists(packageTarget))
         {
@@ -278,29 +291,28 @@ static async Task<string> ComputeSha256Async(string filePath)
     return Convert.ToHexString(hash);
 }
 
-static ECDsaCng OpenOrCreateDevelopmentSigningKey()
+static ECDsaCng OpenTrustedSigningKey()
 {
     CngProvider provider = CngProvider.MicrosoftSoftwareKeyStorageProvider;
-    CngKey key;
-    if (CngKey.Exists(defaultKeyName, provider))
+    if (!CngKey.Exists(defaultKeyName, provider))
     {
-        key = CngKey.Open(defaultKeyName, provider);
-    }
-    else
-    {
-        CngKeyCreationParameters parameters = new()
-        {
-            Provider = provider,
-            KeyUsage = CngKeyUsages.Signing,
-            ExportPolicy = CngExportPolicies.None,
-        };
-        key = CngKey.Create(
-            CngAlgorithm.ECDsaP256,
-            defaultKeyName,
-            parameters);
+        throw new CryptographicException(
+            "The original update signing key is unavailable on this Windows account. " +
+            "Release publishing must run on the authorized signing machine.");
     }
 
-    return new ECDsaCng(key);
+    using CngKey key = CngKey.Open(defaultKeyName, provider);
+    ECDsaCng signer = new(key);
+    try
+    {
+        UpdatePublisherTrust.EnsureTrustedPublicKey(signer);
+        return signer;
+    }
+    catch
+    {
+        signer.Dispose();
+        throw;
+    }
 }
 
 static string EnsureChildPath(string parent, params string[] components)

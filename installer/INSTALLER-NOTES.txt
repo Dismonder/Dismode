@@ -5,11 +5,20 @@ Instalator:
 - zawiera wymagane środowisko .NET i Windows App Runtime;
 - tworzy wpis w menu Start oraz opcjonalny skrót na pulpicie;
 - dodaje standardowy deinstalator Windows;
+- instaluje GameShift System Optimizer oraz usługę GameShiftSystemAgent
+  działającą jako LocalSystem z opóźnionym startem;
+- domyślnie instaluje opcjonalny, niezależny GameShift Memory Optimizer
+  (GPL-3.0-only) jako zwykły tray i usługę LocalSystem;
 - nie usuwa profili, historii ani journalu odzyskiwania z LocalAppData.
+
+Memory Optimizer pozostaje aktywny po zamknięciu części gamingowej. Można go
+odznaczyć na stronie wyboru składników. Jego licencja, pochodzenie, lista zmian
+i dokładne odpowiadające źródła są dołączone w katalogu komponentu.
 
 Przed instalacją lub aktualizacją zakończ aktywną sesję i zamknij GameShift.
 Instalator celowo nie zabija gry ani procesów odpowiedzialnych za recovery.
 
-To wydanie nie jest podpisane certyfikatem Authenticode. Windows SmartScreen
-może wyświetlić ostrzeżenie wydawcy. Sumę SHA-256 instalatora znajdziesz obok
-pliku EXE.
+Łańcuch wydania 0.4.0 odrzuca instalator bez poprawnego produkcyjnego podpisu
+Authenticode. Podpis obejmuje również klientów uprawnionych do mutacji, a
+usługa porównuje ich certyfikat z zainstalowaną listą zaufanych wydawców.
+Sumę SHA-256 instalatora znajdziesz obok pliku EXE.
