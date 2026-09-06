@@ -74,7 +74,7 @@ public sealed class SchedulingLatencyBenchmarkTests
 
         PriorityProBalanceActuator actuator = new();
         ProBalanceSupervisor supervisor = new(
-            new ProcessInventory(),
+            new CpuProcessSampler(),
             actuator,
             static () => new HashSet<int> { Environment.ProcessId },
             settings: new ProBalanceSettings

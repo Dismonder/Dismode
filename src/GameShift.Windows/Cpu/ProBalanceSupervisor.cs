@@ -34,7 +34,7 @@ public sealed class ProBalanceSupervisor : IAsyncDisposable
 {
     private readonly ProBalanceEngine _engine;
     private readonly IProBalanceActuator _actuator;
-    private readonly IProcessInventory _inventory;
+    private readonly ICpuProcessSource _processes;
     private readonly Func<double?> _systemLoad;
     private readonly Dictionary<ProcessRuntimeKey, CpuReading> _previous = [];
     private readonly Func<IReadOnlySet<int>> _gameProcessIds;
@@ -46,7 +46,7 @@ public sealed class ProBalanceSupervisor : IAsyncDisposable
     private Task? _worker;
 
     public ProBalanceSupervisor(
-        IProcessInventory inventory,
+        ICpuProcessSource processes,
         IProBalanceActuator actuator,
         Func<IReadOnlySet<int>> gameProcessIds,
         ProBalanceSettings? settings = null,
@@ -54,10 +54,10 @@ public sealed class ProBalanceSupervisor : IAsyncDisposable
         TimeProvider? timeProvider = null,
         TimeSpan? interval = null)
     {
-        ArgumentNullException.ThrowIfNull(inventory);
+        ArgumentNullException.ThrowIfNull(processes);
         ArgumentNullException.ThrowIfNull(actuator);
         ArgumentNullException.ThrowIfNull(gameProcessIds);
-        _inventory = inventory;
+        _processes = processes;
         _actuator = actuator;
         _gameProcessIds = gameProcessIds;
         _engine = new(settings);
@@ -140,29 +140,23 @@ public sealed class ProBalanceSupervisor : IAsyncDisposable
         List<ProBalanceObservation> observations = [];
         HashSet<ProcessRuntimeKey> seen = [];
 
-        foreach (ProcessSnapshot snapshot in _inventory.Capture())
+        foreach (CpuProcessSample sample in _processes.Capture())
         {
             cancellationToken.ThrowIfCancellationRequested();
-            if (snapshot.StartedAtUtc is not DateTimeOffset startedAt)
-            {
-                // Bez czasu startu nie ma stabilnego klucza: numer PID sam
-                // w sobie wraca po zakonczeniu procesu i mozna go pomylic.
-                continue;
-            }
-
-            ProcessRuntimeKey key = new(snapshot.ProcessId, startedAt);
+            ProcessRuntimeKey key = new(
+                sample.ProcessId,
+                sample.StartedAtUtc);
             seen.Add(key);
             double cpuCores = MeasureCpuCores(
                 key,
-                snapshot.TotalProcessorTime,
+                sample.TotalProcessorTime,
                 now);
             observations.Add(new(
                 key,
-                snapshot.Name,
+                sample.Name,
                 cpuCores,
-                BackgroundApplicationGuard.IsProtectedProcessName(
-                    snapshot.Name),
-                gameIds.Contains(snapshot.ProcessId)));
+                BackgroundApplicationGuard.IsProtectedProcessName(sample.Name),
+                gameIds.Contains(sample.ProcessId)));
         }
 
         foreach (ProcessRuntimeKey key in _previous.Keys.ToArray())

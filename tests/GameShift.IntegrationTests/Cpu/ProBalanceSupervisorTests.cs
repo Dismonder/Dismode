@@ -159,7 +159,7 @@ public sealed class ProBalanceSupervisorTests
     }
 
     private sealed class StubInventory(bool includeGameAndShell = false)
-        : IProcessInventory
+        : ICpuProcessSource
     {
         private long _hogMilliseconds;
         private long _otherMilliseconds;
@@ -176,44 +176,32 @@ public sealed class ProBalanceSupervisorTests
             _otherMilliseconds += milliseconds;
         }
 
-        public IReadOnlyList<ProcessSnapshot> Capture()
+        public IReadOnlyList<CpuProcessSample> Capture()
         {
-            List<ProcessSnapshot> snapshots =
+            List<CpuProcessSample> samples =
             [
                 new(
                     4242,
                     "indexer",
                     Started,
-                    @"C:\Windows\System32\indexer.exe",
-                    1,
-                    64 * 1024 * 1024,
-                    TimeSpan.FromMilliseconds(_hogMilliseconds),
-                    false),
+                    TimeSpan.FromMilliseconds(_hogMilliseconds)),
             ];
 
             if (includeGameAndShell)
             {
-                snapshots.Add(new(
+                samples.Add(new(
                     1001,
                     "re9",
                     Started,
-                    @"D:\Games\re9.exe",
-                    1,
-                    8L * 1024 * 1024 * 1024,
-                    TimeSpan.FromMilliseconds(_otherMilliseconds),
-                    true));
-                snapshots.Add(new(
+                    TimeSpan.FromMilliseconds(_otherMilliseconds)));
+                samples.Add(new(
                     7,
                     "dwm",
                     Started,
-                    @"C:\Windows\System32\dwm.exe",
-                    1,
-                    128 * 1024 * 1024,
-                    TimeSpan.FromMilliseconds(_otherMilliseconds),
-                    false));
+                    TimeSpan.FromMilliseconds(_otherMilliseconds)));
             }
 
-            return snapshots;
+            return samples;
         }
     }
 

@@ -58,7 +58,7 @@ public sealed class LiveProBalanceTests
 
         PriorityProBalanceActuator actuator = new();
         ProBalanceSupervisor supervisor = new(
-            new ProcessInventory(),
+            new CpuProcessSampler(),
             actuator,
             static () => new HashSet<int>(),
             settings: new ProBalanceSettings
