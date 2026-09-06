@@ -528,6 +528,16 @@ public sealed class LocalGameSessionOrchestrator : IAsyncDisposable
                     gamePriorityActionCount = 1;
                 }
 
+                // Przypiecie gry do rdzeni wydajnych. Na jednorodnym
+                // procesorze polityka odmawia i nic sie nie dzieje.
+                int affinityActionCount = await ApplyGameAffinityAsync(
+                        plan.SessionId,
+                        launched.Identity,
+                        startedAtUtc,
+                        enableProBalance ?? _proBalanceEnabled,
+                        CancellationToken.None)
+                    .ConfigureAwait(false);
+
                 int appliedActionCount =
                     await ApplyBackgroundApplicationsAsync(
                             plan.SessionId,
@@ -580,7 +590,9 @@ public sealed class LocalGameSessionOrchestrator : IAsyncDisposable
                     plan.State,
                     plan.BackgroundApplications,
                     metadata.GamePriority,
-                    appliedActionCount + gamePriorityActionCount,
+                    appliedActionCount
+                        + gamePriorityActionCount
+                        + affinityActionCount,
                     recoveredFromHostCrash: false,
                     frameRateTrackingEnabled: enableFrameRateTracking,
                     systemProfileActive: systemProfile.WasApplied);
@@ -1796,6 +1808,73 @@ public sealed class LocalGameSessionOrchestrator : IAsyncDisposable
             checkpoint,
             JsonSerializer.Serialize(metadata, SerializerOptions),
             cancellationToken);
+
+    /// <summary>
+    /// Pins the game to the machine's performance cores, when the machine has
+    /// any. On a CPU whose cores are all the same speed this does nothing and
+    /// says so — a fixed mask there only takes away the scheduler's freedom to
+    /// react without moving the work anywhere better.
+    /// <para>
+    /// Applied through the same transaction machinery as everything else, so
+    /// the original mask is journaled and put back when the session ends or
+    /// after a crash. Failure is not fatal to the session: a game that runs
+    /// without pinning is better than a session that refuses to start.
+    /// </para>
+    /// </summary>
+    private async ValueTask<int> ApplyGameAffinityAsync(
+        SessionId sessionId,
+        ProcessIdentity gameIdentity,
+        DateTimeOffset requestedAtUtc,
+        bool enabled,
+        CancellationToken cancellationToken)
+    {
+        if (!enabled)
+        {
+            return 0;
+        }
+
+        CpuAffinityDecision decision = CpuAffinityPolicy.Decide(
+            SystemCpuTopologyProvider.Read(),
+            CpuAffinityRole.Foreground);
+        if (!decision.ShouldApply)
+        {
+            return 0;
+        }
+
+        ActionId actionId = new(Guid.NewGuid());
+        ProcessAffinityAction action = new(
+            actionId,
+            gameIdentity,
+            decision.Mask,
+            _identityProvider);
+        ActionExecutionContext context = new(
+            sessionId,
+            actionId,
+            IdempotencyKey.Create(),
+            requestedAtUtc);
+
+        try
+        {
+            ActionExecutionResult result =
+                await new TransactionCoordinator<ProcessAffinityState>(_journal)
+                    .ExecuteAsync(action, context, cancellationToken)
+                    .ConfigureAwait(false);
+            return result.Status is ActionExecutionStatus.AppliedAndVerified
+                or ActionExecutionStatus.AlreadyCompleted
+                ? 1
+                : 0;
+        }
+        catch (Exception exception) when (
+            exception is InvalidOperationException
+                or InvalidDataException
+                or IOException
+                or UnauthorizedAccessException
+                or Win32Exception
+                or TimeoutException)
+        {
+            return 0;
+        }
+    }
 
     private async ValueTask ApplyGamePriorityAsync(
         SessionId sessionId,
