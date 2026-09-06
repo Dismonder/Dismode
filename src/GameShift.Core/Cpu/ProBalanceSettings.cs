@@ -55,4 +55,17 @@ public sealed record ProBalanceSettings
 
     /// <summary>Quiet period after release before the same process can be caught again.</summary>
     public TimeSpan Cooldown { get; init; } = TimeSpan.FromSeconds(30);
+
+    /// <summary>
+    /// How many processes may be held back at once.
+    /// <para>
+    /// Without a cap, a busy machine hands the engine a dozen candidates at
+    /// the same moment and it restrains all of them. That is not what keeps a
+    /// game smooth — one or two genuine hogs are, and lowering everything else
+    /// as well only spreads the disruption. Beyond that, each restraint is a
+    /// journal write and a signature check, so an unbounded count turns a
+    /// two-second tick into a long one.
+    /// </para>
+    /// </summary>
+    public int MaximumRestrained { get; init; } = 3;
 }
