@@ -88,6 +88,27 @@ public sealed class ProBalanceEngine
                 // Powloka, anti-cheat i samo drzewo gry sa poza zasiegiem.
                 // Sciszenie ktoregokolwiek z nich pogarsza dokladnie to, co
                 // ta petla ma poprawiac.
+                //
+                // Ale proces moze wejsc w te kategorie juz po ograniczeniu:
+                // gra rozrasta drzewo i wciaga launcher, ktory chwile wczesniej
+                // byl zwyklym tlem. Samo pominiecie go zostawiloby go na
+                // obnizonym priorytecie do konca sesji, bo nic by juz nie
+                // wydalo zwolnienia — a poniewaz zostal zauwazony, sprzatanie
+                // ponizej tez by go nie ruszylo.
+                if (_tracked.Remove(
+                        observation.RuntimeKey,
+                        out TrackedProcess? excluded)
+                    && excluded.RestrainedSinceUtc is not null)
+                {
+                    decisions.Add(new(
+                        observation.RuntimeKey,
+                        observation.ProcessName,
+                        ProBalanceAction.Release,
+                        observation.BelongsToGame
+                            ? "Proces należy teraz do drzewa gry."
+                            : "Proces jest teraz chroniony."));
+                }
+
                 continue;
             }
 
