@@ -4,11 +4,11 @@ namespace GameShift.Core.OptiScaler;
 /// What a particular game needs before OptiScaler runs in it without crashing:
 /// an extra component, a specific proxy DLL name, or settings that differ from
 /// the package defaults.
-/// GameShift never installs a companion itself: those are third-party
-/// components, and in the RE Engine case the companion works by bypassing the
-/// game's DRM. Installing that on someone's behalf is their decision, not ours.
-/// Settings, by contrast, belong to OptiScaler's own configuration file and are
-/// applied during installation.
+/// Where a companion is marked auto-installable, GameShift can fetch it: that
+/// is currently REFramework, praydog's MIT-licensed mod loader for RE Engine
+/// games, pinned to one build and checked against its SHA-256. It is still only
+/// fetched when the user asks for it. Settings belong to OptiScaler's own
+/// configuration file and are applied during installation.
 /// </summary>
 public sealed record OptiScalerGameRequirement(
     string ExecutableName,
@@ -18,7 +18,8 @@ public sealed record OptiScalerGameRequirement(
     string ReferenceUrl,
     string? CompanionName = null,
     string? CompanionFileName = null,
-    IReadOnlyList<OptiScalerIniSetting>? Settings = null)
+    IReadOnlyList<OptiScalerIniSetting>? Settings = null,
+    bool CompanionAutoInstallable = false)
 {
     public IReadOnlyList<OptiScalerIniSetting> RequiredSettings =>
         Settings ?? [];
@@ -44,11 +45,12 @@ public static class OptiScalerGameRequirements
     private const string ReEngineNotice =
         "Ta gra wymaga REFramework zainstalowanego jako dinput8.dll "
         + "w katalogu gry — bez niego kończy się błędem zaraz po "
-        + "uruchomieniu. GameShift nie pobiera go za Ciebie, bo to "
-        + "komponent zewnętrzny omijający zabezpieczenia gry. Sam "
-        + "OptiScaler zostanie skonfigurowany pod ten silnik: spoofing "
-        + "DXGI wyłączony (inaczej gra się wywala) i overlay przeniesiony "
-        + "z Insert na Home, żeby nie kolidował z REFramework.";
+        + "uruchomieniu. GameShift może go pobrać za Ciebie: to otwarty "
+        + "projekt praydoga na licencji MIT, przypięty do jednego wydania "
+        + "i sprawdzany sumą kontrolną. Sam OptiScaler zostanie "
+        + "skonfigurowany pod ten silnik: spoofing DXGI wyłączony (inaczej "
+        + "gra się wywala) i overlay przeniesiony z Insert na Home, żeby "
+        + "nie kolidował z REFramework.";
 
     /// <summary>
     /// Games known to need something beyond the defaults. Sourced from the
@@ -65,7 +67,8 @@ public static class OptiScalerGameRequirements
             "https://github.com/optiscaler/OptiScaler/wiki/Resident-Evil-9-Requiem",
             CompanionName: "REFramework",
             CompanionFileName: "dinput8.dll",
-            Settings: ReEngineSettings),
+            Settings: ReEngineSettings,
+            CompanionAutoInstallable: true),
         new(
             "MonsterHunterWilds.exe",
             "Monster Hunter Wilds",
@@ -74,7 +77,8 @@ public static class OptiScalerGameRequirements
             "https://github.com/optiscaler/OptiScaler/wiki/Compatibility-List",
             CompanionName: "REFramework",
             CompanionFileName: "dinput8.dll",
-            Settings: ReEngineSettings),
+            Settings: ReEngineSettings,
+            CompanionAutoInstallable: true),
         new(
             "Forspoken.exe",
             "Forspoken",
@@ -88,6 +92,13 @@ public static class OptiScalerGameRequirements
             OptiScalerProxy.Winmm,
             "Diablo II: Resurrected ładuje OptiScaler wyłącznie pod nazwą "
                 + "winmm.dll. Przy innym proxy mod się nie uruchomi.",
+            "https://github.com/optiscaler/OptiScaler/wiki/Compatibility-List"),
+        new(
+            "DOA6.exe",
+            "DEAD OR ALIVE 6: Last Round",
+            OptiScalerProxy.D3d12,
+            "DEAD OR ALIVE 6 ładuje OptiScaler jako d3d12.dll albo "
+                + "version.dll. Przy dxgi.dll mod się nie uruchomi.",
             "https://github.com/optiscaler/OptiScaler/wiki/Compatibility-List"),
     ];
 
