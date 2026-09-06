@@ -2178,6 +2178,10 @@ public sealed partial class MainWindow : Window, IDisposable
                 "Wykryto grę online albo ochronę anti-cheat: "
                     + preflight.Safety.Evidence
                     + ". GameShift nie wstrzyknie do niej OptiScaler.",
+            OptiScalerSafetyBlockReason.RequiredCompanionMissing
+                or OptiScalerSafetyBlockReason.ProxyNotSupportedByGame =>
+                "Ta gra ma własne wymagania OptiScalera — szczegóły pojawią "
+                    + "się po uruchomieniu instalacji.",
             _ => "Nie używaj OptiScaler w grach online. Błędny proxy DLL "
                 + "może uniemożliwić start gry; GameShift zachowa kopię "
                 + "kolidującego pliku i pozwoli przywrócić stan.",
@@ -2204,8 +2208,14 @@ public sealed partial class MainWindow : Window, IDisposable
                     + $"{NeuralRenderingPolicy.MinimumDriverVersion} lub "
                     + $"nowszy. {decision.Evidence}",
             OptiScalerSafetyBlockReason.NeuralRenderingModelMissing =>
-                "Sterownik nie zawiera pliku nvngx_dlssnr.dll. Zaktualizuj "
-                    + "sterownik NVIDIA.",
+                "Na tym komputerze nie ma pliku nvngx_dlssnr.dll — to sam "
+                    + "model Neural Rendering. Nie każdy pakiet sterownika go "
+                    + "zawiera i nowsza wersja nie musi tego zmienić "
+                    + "(sprawdzone na RTX 5070 ze sterownikiem 616.64: pakiet "
+                    + "instaluje wyłącznie nvngx_dlssg.dll). Plik nie jest też "
+                    + "częścią paczki OptiScalera i nie ma go skąd pobrać "
+                    + "legalnie w sposób zautomatyzowany, więc musisz "
+                    + "dostarczyć go sam — jedna kopia na grę.",
             _ => "Neural Rendering jest niedostępny na tym komputerze.",
         };
     }

@@ -780,6 +780,55 @@ public sealed class OptiScalerManagerTests
             CancellationToken.None);
 
         Assert.IsTrue(allowed.Succeeded, allowed.Message);
+
+        // Silnik RE wywala sie przy wlaczonym spoofingu DXGI, a REFramework
+        // zajmuje ten sam klawisz overlaya co OptiScaler. Instalacja ma to
+        // rozstrzygnac sama, bez odsylania uzytkownika do pliku INI.
+        string installedIni = File.ReadAllText(
+            Path.Combine(context.GameDirectory, "OptiScaler.ini"));
+        StringAssert.Contains(installedIni, "Dxgi=false");
+        StringAssert.Contains(installedIni, "ShortcutKey=0x24");
+    }
+
+    [TestMethod]
+    public async Task GameIsBlockedWhenProxyIsNotTheOneItLoads()
+    {
+        // Diablo II: Resurrected laduje OptiScalera tylko jako winmm.dll.
+        // Instalacja pod dxgi.dll przeszlaby bez bledu i nie zrobila nic,
+        // wiec odmawiamy zamiast zostawiac martwy plik w katalogu gry.
+        using OptiScalerTestContext context = new();
+        string game = context.CreateGameFile("D2R.exe", "game");
+        context.CreatePayloadFile("OptiScaler.dll", "proxy");
+        context.CreatePayloadIni(withBom: false, complete: true);
+        OptiScalerManager manager = context.CreateManager();
+
+        OptiScalerOperationResult blocked = await manager.InstallAsync(
+            new OptiScalerInstallRequest(
+                "profile-d2r",
+                game,
+                context.GameDirectory,
+                OptiScalerProxy.Dxgi,
+                OfflineUseConfirmed: true),
+            CancellationToken.None);
+
+        Assert.IsFalse(blocked.Succeeded);
+        Assert.AreEqual(
+            OptiScalerSafetyBlockReason.ProxyNotSupportedByGame,
+            blocked.BlockReason);
+        StringAssert.Contains(blocked.Message, "winmm.dll");
+        Assert.IsFalse(File.Exists(
+            Path.Combine(context.GameDirectory, "dxgi.dll")));
+
+        OptiScalerOperationResult allowed = await manager.InstallAsync(
+            new OptiScalerInstallRequest(
+                "profile-d2r",
+                game,
+                context.GameDirectory,
+                OptiScalerProxy.Winmm,
+                OfflineUseConfirmed: true),
+            CancellationToken.None);
+
+        Assert.IsTrue(allowed.Succeeded, allowed.Message);
     }
 
     [TestMethod]
@@ -787,6 +836,13 @@ public sealed class OptiScalerManagerTests
     {
         Assert.IsNull(OptiScalerGameRequirements.Find(@"C:\Gry\Inna\game.exe"));
         Assert.IsNotNull(OptiScalerGameRequirements.Find(@"C:\Gry\RE9\re9.exe"));
+
+        // Gra moze wymagac konkretnego proxy, nie wymagajac zadnego dodatku.
+        OptiScalerGameRequirement forspoken =
+            OptiScalerGameRequirements.Find(@"C:\Gry\Forspoken\Forspoken.exe")!;
+        Assert.IsFalse(forspoken.NeedsCompanion);
+        Assert.AreEqual(OptiScalerProxy.D3d12, forspoken.RequiredProxy);
+        Assert.IsTrue(OptiScalerGameRequirements.IsSatisfied(forspoken, []));
     }
 
     private static async Task<OptiScalerOperationResult>
@@ -912,6 +968,10 @@ public sealed class OptiScalerManagerTests
                     "Enabled=auto",
                     "[FSR]",
                     "FsrAgilitySDKUpgrade=auto",
+                    "[Menu]",
+                    "ShortcutKey=auto",
+                    "[Spoofing]",
+                    "Dxgi=auto",
                 ]
                 : ["[Upscalers]", "Dx12Upscaler=auto"];
             string content = string.Join("\r\n", lines) + "\r\n";

@@ -91,27 +91,9 @@ public sealed class NvidiaDriverStoreProbe
     private (string? Directory, IReadOnlyList<NvidiaModelFile> Files)
         FindModelFiles()
     {
-        if (!Directory.Exists(_driverStoreRoot))
-        {
-            return (null, []);
-        }
-
         string? bestDirectory = null;
         List<NvidiaModelFile> bestFiles = [];
-        IEnumerable<string> candidates;
-        try
-        {
-            candidates = Directory.EnumerateDirectories(
-                _driverStoreRoot,
-                "nv_dispi.inf_amd64_*");
-        }
-        catch (Exception exception) when (
-            exception is IOException or UnauthorizedAccessException)
-        {
-            return (null, []);
-        }
-
-        foreach (string candidate in candidates)
+        foreach (string candidate in EnumerateCandidateDirectories())
         {
             List<NvidiaModelFile> files = [];
             foreach (string fileName in ModelFileNames)
@@ -132,6 +114,57 @@ public sealed class NvidiaDriverStoreProbe
         }
 
         return (bestDirectory, bestFiles);
+    }
+
+    /// <summary>
+    /// Directories a driver may lay the NGX model files down in. The
+    /// DriverStore revision folders are the documented home, but measured on
+    /// an RTX 5070 with driver 616.64 the only model the package installs —
+    /// nvngx_dlssg.dll — also sits under Program Files\NVIDIA Corporation, so
+    /// looking in one place alone under-reports what the machine has.
+    /// </summary>
+    private IEnumerable<string> EnumerateCandidateDirectories()
+    {
+        foreach (string candidate in SafeEnumerateDirectories(
+            _driverStoreRoot,
+            "nv_dispi.inf_amd64_*"))
+        {
+            yield return candidate;
+        }
+
+        string nvidiaRoot = Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles),
+            "NVIDIA Corporation");
+        if (!Directory.Exists(nvidiaRoot))
+        {
+            yield break;
+        }
+
+        yield return nvidiaRoot;
+        foreach (string candidate in SafeEnumerateDirectories(nvidiaRoot, "*"))
+        {
+            yield return candidate;
+        }
+    }
+
+    private static IReadOnlyList<string> SafeEnumerateDirectories(
+        string root,
+        string pattern)
+    {
+        if (!Directory.Exists(root))
+        {
+            return [];
+        }
+
+        try
+        {
+            return [.. Directory.EnumerateDirectories(root, pattern)];
+        }
+        catch (Exception exception) when (
+            exception is IOException or UnauthorizedAccessException)
+        {
+            return [];
+        }
     }
 
     private bool HasValidSignature(string path)
