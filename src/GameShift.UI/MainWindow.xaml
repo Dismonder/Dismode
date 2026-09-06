@@ -552,39 +552,39 @@
                         <StackPanel Orientation="Horizontal" Spacing="10">
                           <FontIcon
                               Width="20"
-                              Foreground="#C9D1D8DC"
+                              Foreground="{ThemeResource GameShiftSecondaryTextBrush}"
                               FontSize="17"
                               Glyph="&#xE7B8;" />
                           <TextBlock
                               x:Name="DashboardHeroSourceText"
                               VerticalAlignment="Center"
-                              Foreground="#D8DDE2E5"
+                              Foreground="{ThemeResource GameShiftPrimaryTextBrush}"
                               FontSize="15"
                               Text="Biblioteka lokalna" />
                         </StackPanel>
                         <StackPanel Orientation="Horizontal" Spacing="10">
                           <FontIcon
                               Width="20"
-                              Foreground="#C9D1D8DC"
+                              Foreground="{ThemeResource GameShiftSecondaryTextBrush}"
                               FontSize="17"
                               Glyph="&#xE823;" />
                           <TextBlock
                               x:Name="DashboardHeroLastPlayedText"
                               VerticalAlignment="Center"
-                              Foreground="#D8DDE2E5"
+                              Foreground="{ThemeResource GameShiftPrimaryTextBrush}"
                               FontSize="15"
                               Text="Ostatnio grano: brak danych" />
                         </StackPanel>
                         <StackPanel Orientation="Horizontal" Spacing="10">
                           <FontIcon
                               Width="20"
-                              Foreground="#C9D1D8DC"
+                              Foreground="{ThemeResource GameShiftSecondaryTextBrush}"
                               FontSize="17"
                               Glyph="&#xE916;" />
                           <TextBlock
                               x:Name="DashboardHeroPlaytimeText"
                               VerticalAlignment="Center"
-                              Foreground="#D8DDE2E5"
+                              Foreground="{ThemeResource GameShiftPrimaryTextBrush}"
                               FontSize="15"
                               Text="Czas gry: brak danych" />
                         </StackPanel>
@@ -665,7 +665,7 @@
                     Canvas.Left="171"
                     Canvas.Top="372"
                     Padding="18,15"
-                    Background="#F211171C"
+                    Background="{ThemeResource GameShiftCardBrush}"
                     BorderBrush="{ThemeResource GameShiftCardBorderBrush}"
                     BorderThickness="1"
                     CornerRadius="11">
@@ -849,7 +849,7 @@
                     Canvas.Left="895"
                     Canvas.Top="372"
                     Padding="22,17"
-                    Background="#F211171C"
+                    Background="{ThemeResource GameShiftCardBrush}"
                     BorderBrush="{ThemeResource GameShiftCardBorderBrush}"
                     BorderThickness="1"
                     CornerRadius="11">
@@ -1000,12 +1000,12 @@
                         <RowDefinition Height="*" />
                         <RowDefinition Height="*" />
                       </Grid.RowDefinitions>
-                      <Border Grid.Row="0" Height="1" VerticalAlignment="Top" Background="#26394349" />
-                      <Border Grid.Row="1" Height="1" VerticalAlignment="Top" Background="#26394349" />
-                      <Border Grid.Row="2" Height="1" VerticalAlignment="Top" Background="#26394349" />
-                      <TextBlock Margin="0,-8,0,0" Foreground="#77889097" FontSize="10" Text="20 ms" />
-                      <TextBlock Grid.Row="1" Margin="0,-8,0,0" Foreground="#77889097" FontSize="10" Text="10 ms" />
-                      <TextBlock Grid.Row="2" Margin="0,-8,0,0" Foreground="#77889097" FontSize="10" Text="0 ms" />
+                      <Border Grid.Row="0" Height="1" VerticalAlignment="Top" Background="{ThemeResource GameShiftDividerBrush}" />
+                      <Border Grid.Row="1" Height="1" VerticalAlignment="Top" Background="{ThemeResource GameShiftDividerBrush}" />
+                      <Border Grid.Row="2" Height="1" VerticalAlignment="Top" Background="{ThemeResource GameShiftDividerBrush}" />
+                      <TextBlock Margin="0,-8,0,0" Foreground="{ThemeResource GameShiftSubtleTextBrush}" FontSize="10" Text="20 ms" />
+                      <TextBlock Grid.Row="1" Margin="0,-8,0,0" Foreground="{ThemeResource GameShiftSubtleTextBrush}" FontSize="10" Text="10 ms" />
+                      <TextBlock Grid.Row="2" Margin="0,-8,0,0" Foreground="{ThemeResource GameShiftSubtleTextBrush}" FontSize="10" Text="0 ms" />
                       <Canvas
                           x:Name="DashboardFrameTimeCanvas"
                           Grid.RowSpan="3"
@@ -1038,7 +1038,7 @@
                     Canvas.Left="171"
                     Canvas.Top="660"
                     Padding="18,15"
-                    Background="#F211171C"
+                    Background="{ThemeResource GameShiftCardBrush}"
                     BorderBrush="{ThemeResource GameShiftCardBorderBrush}"
                     BorderThickness="1"
                     CornerRadius="11">
@@ -1069,15 +1069,15 @@
                       </Grid.ColumnDefinitions>
                       <StackPanel Padding="4,0,16,0" Spacing="7">
                         <StackPanel Orientation="Horizontal" Spacing="8">
-                          <FontIcon Foreground="#BAC5CACD" FontSize="20" Glyph="&#xE950;" />
+                          <FontIcon Foreground="{ThemeResource GameShiftTertiaryTextBrush}" FontSize="20" Glyph="&#xE950;" />
                           <TextBlock VerticalAlignment="Center" Text="CPU" />
                         </StackPanel>
                         <TextBlock x:Name="DashboardCpuText" FontSize="20" FontWeight="SemiBold" Text="—" TextWrapping="Wrap" />
                         <ProgressBar x:Name="DashboardCpuBar" Height="4" Value="0" />
                       </StackPanel>
-                      <StackPanel Grid.Column="1" Padding="16,0" BorderBrush="#26394349" BorderThickness="1,0,0,0" Spacing="7">
+                      <StackPanel Grid.Column="1" Padding="16,0" BorderBrush="{ThemeResource GameShiftCardBorderBrush}" BorderThickness="1,0,0,0" Spacing="7">
                         <StackPanel Orientation="Horizontal" Spacing="8">
-                          <FontIcon Foreground="#BAC5CACD" FontSize="20" Glyph="&#xE7F4;" />
+                          <FontIcon Foreground="{ThemeResource GameShiftTertiaryTextBrush}" FontSize="20" Glyph="&#xE7F4;" />
                           <TextBlock VerticalAlignment="Center" Text="GPU" />
                         </StackPanel>
                         <TextBlock x:Name="DashboardGpuText" FontSize="20" FontWeight="SemiBold" Text="—" TextWrapping="Wrap" />
@@ -1087,17 +1087,17 @@
                             ToolTipService.ToolTip="GPU zostanie pokazane po dodaniu potwierdzonego kanału telemetrii."
                             Value="0" />
                       </StackPanel>
-                      <StackPanel Grid.Column="2" Padding="16,0" BorderBrush="#26394349" BorderThickness="1,0,0,0" Spacing="7">
+                      <StackPanel Grid.Column="2" Padding="16,0" BorderBrush="{ThemeResource GameShiftCardBorderBrush}" BorderThickness="1,0,0,0" Spacing="7">
                         <StackPanel Orientation="Horizontal" Spacing="8">
-                          <FontIcon Foreground="#BAC5CACD" FontSize="20" Glyph="&#xE964;" />
+                          <FontIcon Foreground="{ThemeResource GameShiftTertiaryTextBrush}" FontSize="20" Glyph="&#xE964;" />
                           <TextBlock VerticalAlignment="Center" Text="RAM" />
                         </StackPanel>
                         <TextBlock x:Name="DashboardMemoryText" FontSize="20" FontWeight="SemiBold" Text="—" TextWrapping="Wrap" />
                         <ProgressBar x:Name="DashboardMemoryBar" Height="4" Value="0" />
                       </StackPanel>
-                      <StackPanel Grid.Column="3" Padding="16,0" BorderBrush="#26394349" BorderThickness="1,0,0,0" Spacing="7">
+                      <StackPanel Grid.Column="3" Padding="16,0" BorderBrush="{ThemeResource GameShiftCardBorderBrush}" BorderThickness="1,0,0,0" Spacing="7">
                         <StackPanel Orientation="Horizontal" Spacing="8">
-                          <FontIcon Foreground="#BAC5CACD" FontSize="20" Glyph="&#xEDA2;" />
+                          <FontIcon Foreground="{ThemeResource GameShiftTertiaryTextBrush}" FontSize="20" Glyph="&#xEDA2;" />
                           <TextBlock VerticalAlignment="Center" Text="Dysk zajęty" />
                         </StackPanel>
                         <TextBlock x:Name="DashboardDiskText" FontSize="20" FontWeight="SemiBold" Text="—" TextWrapping="Wrap" />
@@ -1107,7 +1107,7 @@
                             ToolTipService.ToolTip="Zajętość woluminu systemowego."
                             Value="0" />
                       </StackPanel>
-                      <StackPanel Grid.Column="4" Padding="22,0,0,0" BorderBrush="#26394349" BorderThickness="1,0,0,0" Spacing="5">
+                      <StackPanel Grid.Column="4" Padding="22,0,0,0" BorderBrush="{ThemeResource GameShiftCardBorderBrush}" BorderThickness="1,0,0,0" Spacing="5">
                         <TextBlock Foreground="{ThemeResource GameShiftAmberBrush}" FontSize="13" FontWeight="SemiBold" Text="Odzyskane zasoby" />
                         <TextBlock x:Name="DashboardRecoveredMemoryText" Foreground="{ThemeResource GameShiftAmberBrush}" FontSize="26" FontWeight="SemiBold" Text="—" TextWrapping="Wrap" />
                         <TextBlock Foreground="{ThemeResource GameShiftMutedTextBrush}" FontSize="10" Text="Tylko wynik potwierdzonych działań" TextWrapping="Wrap" />
@@ -1160,7 +1160,7 @@
                         <ColumnDefinition Width="31" />
                         <ColumnDefinition Width="*" />
                       </Grid.ColumnDefinitions>
-                      <Border x:Name="DashboardSessionHostStatusIndicator" Width="25" Height="25" Background="#2420D5DB" CornerRadius="13">
+                      <Border x:Name="DashboardSessionHostStatusIndicator" Width="25" Height="25" Background="{ThemeResource GameShiftAccentSoftBrush}" CornerRadius="13">
                         <FontIcon x:Name="DashboardSessionHostStatusGlyph" Foreground="{ThemeResource GameShiftAccentBrush}" FontSize="12" Glyph="&#xE895;" />
                       </Border>
                       <StackPanel Grid.Column="1" Spacing="2">
@@ -1177,7 +1177,7 @@
                         <ColumnDefinition Width="31" />
                         <ColumnDefinition Width="*" />
                       </Grid.ColumnDefinitions>
-                      <Border x:Name="DashboardSystemAgentStatusIndicator" Width="25" Height="25" Background="#2420D5DB" CornerRadius="13">
+                      <Border x:Name="DashboardSystemAgentStatusIndicator" Width="25" Height="25" Background="{ThemeResource GameShiftAccentSoftBrush}" CornerRadius="13">
                         <FontIcon x:Name="DashboardSystemAgentStatusGlyph" Foreground="{ThemeResource GameShiftAccentBrush}" FontSize="12" Glyph="&#xE895;" />
                       </Border>
                       <StackPanel Grid.Column="1" Spacing="2">
@@ -1194,7 +1194,7 @@
                         <ColumnDefinition Width="31" />
                         <ColumnDefinition Width="*" />
                       </Grid.ColumnDefinitions>
-                      <Border x:Name="DashboardRecoveryStatusIndicator" Width="25" Height="25" Background="#2420D5DB" CornerRadius="13">
+                      <Border x:Name="DashboardRecoveryStatusIndicator" Width="25" Height="25" Background="{ThemeResource GameShiftAccentSoftBrush}" CornerRadius="13">
                         <FontIcon x:Name="DashboardRecoveryStatusGlyph" Foreground="{ThemeResource GameShiftAccentBrush}" FontSize="12" Glyph="&#xE895;" />
                       </Border>
                       <StackPanel Grid.Column="1" Spacing="2">
@@ -1520,7 +1520,7 @@
                         Width="264"
                         Height="382"
                         Margin="0,0,16,16"
-                        Background="#F211171C"
+                        Background="{ThemeResource GameShiftCardBrush}"
                         BorderBrush="{ThemeResource GameShiftCardBorderBrush}"
                         BorderThickness="1"
                         CornerRadius="14">
@@ -1772,7 +1772,7 @@
                   <!-- Game Profile Card -->
                   <Border
                       Padding="20"
-                      Background="#F211171C"
+                      Background="{ThemeResource GameShiftCardBrush}"
                       BorderBrush="{ThemeResource GameShiftCardBorderBrush}"
                       BorderThickness="1"
                       CornerRadius="14">
@@ -1842,7 +1842,7 @@
                   <!-- HUD Overlay Card -->
                   <Border
                       Padding="20"
-                      Background="#F211171C"
+                      Background="{ThemeResource GameShiftCardBrush}"
                       BorderBrush="{ThemeResource GameShiftCardBorderBrush}"
                       BorderThickness="1"
                       CornerRadius="14">
@@ -1993,7 +1993,7 @@
                     </Grid.ColumnDefinitions>
                     <Border
                         Padding="16"
-                        Background="#F211171C"
+                        Background="{ThemeResource GameShiftCardBrush}"
                         BorderBrush="{ThemeResource GameShiftCardBorderBrush}"
                         BorderThickness="1"
                         CornerRadius="14">
@@ -2005,7 +2005,7 @@
                     <Border
                         Grid.Column="1"
                         Padding="16"
-                        Background="#F211171C"
+                        Background="{ThemeResource GameShiftCardBrush}"
                         BorderBrush="{ThemeResource GameShiftCardBorderBrush}"
                         BorderThickness="1"
                         CornerRadius="14">
@@ -2020,7 +2020,7 @@
                   <Border
                       MinHeight="300"
                       Padding="18"
-                      Background="#F211171C"
+                      Background="{ThemeResource GameShiftCardBrush}"
                       BorderBrush="{ThemeResource GameShiftCardBorderBrush}"
                       BorderThickness="1"
                       CornerRadius="14">
@@ -2302,6 +2302,83 @@
               </Grid>
             </Border>
 
+            <Grid
+                x:Name="HistorySummaryPanel"
+                Margin="0,14,0,0"
+                ColumnSpacing="12"
+                Visibility="Collapsed">
+              <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="*" />
+              </Grid.ColumnDefinitions>
+                <Border
+                    Style="{StaticResource GameShiftBentoCardStyle}"
+                    Grid.Column="0">
+                  <StackPanel Spacing="3">
+                    <TextBlock
+                        Foreground="{ThemeResource GameShiftMutedTextBrush}"
+                        FontSize="11.5"
+                        Text="Sesji w historii" />
+                    <TextBlock
+                        x:Name="HistorySessionsValueText"
+                        FontFamily="Segoe UI Variable Display"
+                        FontSize="26"
+                        FontWeight="SemiBold"
+                        Text="—" />
+                  </StackPanel>
+                </Border>
+                <Border
+                    Style="{StaticResource GameShiftBentoCardStyle}"
+                    Grid.Column="1">
+                  <StackPanel Spacing="3">
+                    <TextBlock
+                        Foreground="{ThemeResource GameShiftMutedTextBrush}"
+                        FontSize="11.5"
+                        Text="Łączny czas sesji" />
+                    <TextBlock
+                        x:Name="HistoryPlaytimeValueText"
+                        FontFamily="Segoe UI Variable Display"
+                        FontSize="26"
+                        FontWeight="SemiBold"
+                        Text="—" />
+                  </StackPanel>
+                </Border>
+                <Border
+                    Style="{StaticResource GameShiftBentoCardStyle}"
+                    Grid.Column="2">
+                  <StackPanel Spacing="3">
+                    <TextBlock
+                        Foreground="{ThemeResource GameShiftMutedTextBrush}"
+                        FontSize="11.5"
+                        Text="Zastosowanych akcji" />
+                    <TextBlock
+                        x:Name="HistoryActionsValueText"
+                        FontFamily="Segoe UI Variable Display"
+                        FontSize="26"
+                        FontWeight="SemiBold"
+                        Text="—" />
+                  </StackPanel>
+                </Border>
+                <Border
+                    Style="{StaticResource GameShiftBentoCardStyle}"
+                    Grid.Column="3">
+                  <StackPanel Spacing="3">
+                    <TextBlock
+                        Foreground="{ThemeResource GameShiftMutedTextBrush}"
+                        FontSize="11.5"
+                        Text="Sesji z problemem" />
+                    <TextBlock
+                        x:Name="HistoryTroubledValueText"
+                        FontFamily="Segoe UI Variable Display"
+                        FontSize="26"
+                        FontWeight="SemiBold"
+                        Text="—" />
+                  </StackPanel>
+                </Border>
+            </Grid>
+
             <InfoBar
                 x:Name="HistoryInfoBar"
                 Grid.Row="1"
@@ -2322,7 +2399,7 @@
                     <Border
                         Margin="0,0,0,10"
                         Padding="18,16"
-                        Background="#F211171C"
+                        Background="{ThemeResource GameShiftCardBrush}"
                         BorderBrush="{ThemeResource GameShiftCardBorderBrush}"
                         BorderThickness="1"
                         CornerRadius="14">
@@ -2506,7 +2583,7 @@
                 <!-- Current Build Card -->
                 <Border
                     Padding="22"
-                    Background="#F211171C"
+                    Background="{ThemeResource GameShiftCardBrush}"
                     BorderBrush="{ThemeResource GameShiftCardBorderBrush}"
                     BorderThickness="1"
                     CornerRadius="14">
@@ -2540,7 +2617,7 @@
                     x:Name="UpdatesSettingsCard"
                     Grid.Column="1"
                     Padding="22"
-                    Background="#F211171C"
+                    Background="{ThemeResource GameShiftCardBrush}"
                     BorderBrush="{ThemeResource GameShiftCardBorderBrush}"
                     BorderThickness="1"
                     CornerRadius="14">
@@ -2571,7 +2648,7 @@
                     x:Name="AvailableUpdateCard"
                     Grid.Row="1"
                     Padding="22"
-                    Background="#F211171C"
+                    Background="{ThemeResource GameShiftCardBrush}"
                     BorderBrush="{ThemeResource GameShiftCardBorderBrush}"
                     BorderThickness="1"
                     CornerRadius="14">
@@ -2723,7 +2800,7 @@
                     Grid.Row="1"
                     Grid.Column="1"
                     Padding="22"
-                    Background="#F211171C"
+                    Background="{ThemeResource GameShiftCardBrush}"
                     BorderBrush="{ThemeResource GameShiftCardBorderBrush}"
                     BorderThickness="1"
                     CornerRadius="14">
@@ -2828,7 +2905,7 @@
                     x:Name="DiagnosticsGamingCard"
                     VerticalAlignment="Top"
                     Padding="22"
-                    Background="#F211171C"
+                    Background="{ThemeResource GameShiftCardBrush}"
                     BorderBrush="{ThemeResource GameShiftCardBorderBrush}"
                     BorderThickness="1"
                     CornerRadius="14">
@@ -2864,7 +2941,7 @@
                     Grid.Column="1"
                     VerticalAlignment="Top"
                     Padding="22"
-                    Background="#F211171C"
+                    Background="{ThemeResource GameShiftCardBrush}"
                     BorderBrush="{ThemeResource GameShiftCardBorderBrush}"
                     BorderThickness="1"
                     CornerRadius="14">
@@ -2926,7 +3003,7 @@
                     Grid.Row="1"
                     VerticalAlignment="Top"
                     Padding="22"
-                    Background="#F211171C"
+                    Background="{ThemeResource GameShiftCardBrush}"
                     BorderBrush="{ThemeResource GameShiftCardBorderBrush}"
                     BorderThickness="1"
                     CornerRadius="14">
@@ -3004,7 +3081,7 @@
                     Grid.Column="1"
                     VerticalAlignment="Top"
                     Padding="22"
-                    Background="#F211171C"
+                    Background="{ThemeResource GameShiftCardBrush}"
                     BorderBrush="{ThemeResource GameShiftCardBorderBrush}"
                     BorderThickness="1"
                     CornerRadius="14">
@@ -3071,7 +3148,7 @@
                     Grid.ColumnSpan="2"
                     VerticalAlignment="Top"
                     Padding="22"
-                    Background="#F211171C"
+                    Background="{ThemeResource GameShiftCardBrush}"
                     BorderBrush="{ThemeResource GameShiftCardBorderBrush}"
                     BorderThickness="1"
                     CornerRadius="14">
@@ -3120,7 +3197,7 @@
                     Grid.Row="3"
                     Grid.ColumnSpan="2"
                     Padding="22"
-                    Background="#F211171C"
+                    Background="{ThemeResource GameShiftCardBrush}"
                     BorderBrush="{ThemeResource GameShiftCardBorderBrush}"
                     BorderThickness="1"
                     CornerRadius="14">
@@ -3153,7 +3230,7 @@
                     Grid.Row="4"
                     Grid.ColumnSpan="2"
                     Padding="22"
-                    Background="#F211171C"
+                    Background="{ThemeResource GameShiftCardBrush}"
                     BorderBrush="{ThemeResource GameShiftCardBorderBrush}"
                     BorderThickness="1"
                     CornerRadius="14">
