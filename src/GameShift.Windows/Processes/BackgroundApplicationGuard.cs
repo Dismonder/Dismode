@@ -243,6 +243,19 @@ public sealed class BackgroundApplicationGuard
         }
     }
 
+    /// <summary>
+    /// True for processes GameShift must leave alone. The shell, the input
+    /// stack and the compositor are here because touching them is felt
+    /// immediately by the person at the keyboard: trimming their working set
+    /// costs far more in stutter and slow redraws than it ever returns in
+    /// memory. Anti-cheat and GameShift's own services are here for the
+    /// obvious reasons.
+    /// </summary>
+    public static bool IsProtectedProcessName(string? processName) =>
+        !string.IsNullOrWhiteSpace(processName)
+        && (ProtectedProcessNames.Contains(processName)
+            || ProtectedLauncherNames.Contains(processName));
+
     private static void EnsureNameAllowed(string processName)
     {
         if (ProtectedProcessNames.Contains(processName))

@@ -19,7 +19,8 @@ public sealed record OptiScalerInstallRequest(
     bool EnableNeuralRendering = false,
     bool UpgradeAgilitySdk = false,
     string? NeuralRenderingModelPath = null,
-    bool UnverifiedNeuralModelAccepted = false);
+    bool UnverifiedNeuralModelAccepted = false,
+    bool InstallRequiredCompanion = false);
 
 public sealed record OptiScalerOperationResult(
     bool Succeeded,
@@ -143,6 +144,7 @@ public sealed class OptiScalerManager : IDisposable
     private readonly Func<string, bool> _isExecutableRunning;
     private readonly Func<NvidiaDriverStoreSnapshot> _driverStoreProbe;
     private readonly NeuralRenderingModelImporter _modelImporter;
+    private readonly REFrameworkCompanionSource _companionSource;
     private readonly ConcurrentDictionary<
         OptiScalerReleaseChannel,
         CachedOptiScalerPackages> _releaseCache = new();
@@ -167,7 +169,8 @@ public sealed class OptiScalerManager : IDisposable
         IOptiScalerArchiveExtractor archiveExtractor,
         Func<string, bool> isExecutableRunning,
         Func<NvidiaDriverStoreSnapshot>? driverStoreProbe = null,
-        NeuralRenderingModelImporter? modelImporter = null)
+        NeuralRenderingModelImporter? modelImporter = null,
+        REFrameworkCompanionSource? companionSource = null)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(stateDirectory);
         ArgumentNullException.ThrowIfNull(packageSource);
@@ -180,6 +183,7 @@ public sealed class OptiScalerManager : IDisposable
         _driverStoreProbe = driverStoreProbe
             ?? (static () => new NvidiaDriverStoreProbe().Probe());
         _modelImporter = modelImporter ?? new NeuralRenderingModelImporter();
+        _companionSource = companionSource ?? new REFrameworkCompanionSource();
     }
 
     public OptiScalerInstallationStatus GetStatus(string profileId)
@@ -442,6 +446,7 @@ public sealed class OptiScalerManager : IDisposable
         // Niektore gry nie uruchomia OptiScalera bez dodatkowego skladnika.
         // Sprawdzamy to przed pobraniem paczki, bo brak zaleznosci konczy sie
         // wywaleniem gry, a nie lagodnym powrotem do ustawien domyslnych.
+        OptiScalerGameRequirement? companionToInstall = null;
         OptiScalerGameRequirement? requirement =
             OptiScalerGameRequirements.Find(targetExecutable);
         if (requirement is not null)
@@ -462,14 +467,25 @@ public sealed class OptiScalerManager : IDisposable
 
             if (!OptiScalerGameRequirements.IsSatisfied(requirement, names))
             {
-                return new(
-                    false,
-                    $"{requirement.GameName}: wymagany jest "
-                        + $"{requirement.CompanionName} "
-                        + $"({requirement.CompanionFileName}). "
-                        + requirement.Notice,
-                    targetExecutable,
-                    OptiScalerSafetyBlockReason.RequiredCompanionMissing);
+                // GameShift potrafi dostarczyc REFramework — otwarty projekt
+                // na licencji MIT, przypiety i weryfikowany suma kontrolna.
+                // Bez zgody uzytkownika nadal nic nie pobieramy.
+                if (requirement.CompanionAutoInstallable
+                    && request.InstallRequiredCompanion)
+                {
+                    companionToInstall = requirement;
+                }
+                else
+                {
+                    return new(
+                        false,
+                        $"{requirement.GameName}: wymagany jest "
+                            + $"{requirement.CompanionName} "
+                            + $"({requirement.CompanionFileName}). "
+                            + requirement.Notice,
+                        targetExecutable,
+                        OptiScalerSafetyBlockReason.RequiredCompanionMissing);
+                }
             }
 
             // Czesc gier laduje OptiScalera tylko pod jedna nazwa proxy.
@@ -673,6 +689,31 @@ public sealed class OptiScalerManager : IDisposable
                         + "ze sterownika NVIDIA…"));
                 additionalFiles.AddRange(driverStore.ModelFiles.Select(
                     file => new PayloadFile(file.FullPath, file.FileName)));
+            }
+
+            if (companionToInstall is not null)
+            {
+                progress?.Report(new(
+                    OptiScalerInstallStage.Downloading,
+                    $"Pobieranie {companionToInstall.CompanionName}…"));
+                CompanionDownloadResult companion = await _companionSource
+                    .DownloadAsync(
+                        CreateTemporaryDirectory("companion"),
+                        companionToInstall.CompanionFileName!,
+                        cancellationToken)
+                    .ConfigureAwait(false);
+                if (!companion.Succeeded || companion.FilePath is null)
+                {
+                    return new(
+                        false,
+                        companion.Message,
+                        targetExecutable,
+                        OptiScalerSafetyBlockReason.RequiredCompanionMissing);
+                }
+
+                additionalFiles.Add(new(
+                    companion.FilePath,
+                    companionToInstall.CompanionFileName!));
             }
 
             if (suppliedModelPath is not null)

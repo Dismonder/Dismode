@@ -31,6 +31,18 @@ public static class ProcessMemoryTrimmer
                 return false;
             }
 
+            // Powloka, stos wejscia i kompozytor sa poza zasiegiem. Opróżnienie
+            // ich zbioru roboczego widac natychmiast: menu Start i wyszukiwanie
+            // przestaja reagowac, pasek zadan przerysowuje sie z opoznieniem,
+            // a odzyskana pamiec wraca do nich po sekundzie i tak. Lista jest
+            // ta sama, ktora chroni procesy przed usypianiem — jedno zrodlo
+            // prawdy zamiast drugiej kopii, ktora sie rozjedzie.
+            if (BackgroundApplicationGuard.IsProtectedProcessName(
+                    process.ProcessName))
+            {
+                return false;
+            }
+
             process.Refresh();
             long before = process.WorkingSet64;
 

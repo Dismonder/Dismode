@@ -1685,6 +1685,39 @@ public sealed partial class MainWindow : Window, IDisposable
                     TextWrapping = TextWrapping.Wrap,
                 },
             };
+            // Czesc gier nie uruchomi OptiScalera bez dodatkowego skladnika.
+            // Pytamy o zgode z gory, zamiast odbijac uzytkownika bledem
+            // dopiero w polowie instalacji.
+            OptiScalerGameRequirement? gameRequirement =
+                OptiScalerGameRequirements.Find(
+                    preflight.TargetExecutablePath);
+            bool companionMissing =
+                gameRequirement is { CompanionAutoInstallable: true }
+                && !OptiScalerGameRequirements.IsSatisfied(
+                    gameRequirement,
+                    EnumerateGameDirectoryFiles(
+                        preflight.TargetExecutablePath));
+            CheckBox companionInstall = new()
+            {
+                IsEnabled = !hardBlocked,
+                IsChecked = companionMissing,
+                Visibility = companionMissing
+                    ? Visibility.Visible
+                    : Visibility.Collapsed,
+                Content = new TextBlock
+                {
+                    MaxWidth = 500,
+                    Text = gameRequirement is null
+                        ? string.Empty
+                        : $"Pobierz i zainstaluj {gameRequirement.CompanionName}"
+                            + $" ({gameRequirement.CompanionFileName}). "
+                            + "Ta gra bez niego nie uruchomi OptiScalera. "
+                            + "Projekt otwarty na licencji MIT; GameShift "
+                            + "instaluje jedno przypięte wydanie i sprawdza "
+                            + "jego sumę kontrolną.",
+                    TextWrapping = TextWrapping.Wrap,
+                },
+            };
             CheckBox agilitySdkUpgrade = new()
             {
                 IsEnabled = !hardBlocked,
@@ -1775,6 +1808,7 @@ public sealed partial class MainWindow : Window, IDisposable
             content.Children.Add(safetyNotice);
             content.Children.Add(offlineConfirmation);
             content.Children.Add(experimentalConfirmation);
+            content.Children.Add(companionInstall);
             content.Children.Add(agilitySdkUpgrade);
             content.Children.Add(neuralRendering);
             content.Children.Add(neuralStatus);
@@ -1993,6 +2027,8 @@ public sealed partial class MainWindow : Window, IDisposable
                                 && neuralRendering.IsChecked == true,
                             UpgradeAgilitySdk =
                                 agilitySdkUpgrade.IsChecked == true,
+                            InstallRequiredCompanion =
+                                companionInstall.IsChecked == true,
                             NeuralRenderingModelPath = suppliedModelPath,
                             UnverifiedNeuralModelAccepted =
                                 unverifiedModelConfirmation.IsChecked == true,
@@ -2271,6 +2307,25 @@ public sealed partial class MainWindow : Window, IDisposable
                 "DLSS 5 Neural Rendering",
             _ => "kanał stabilny",
         };
+
+    private static IReadOnlyList<string> EnumerateGameDirectoryFiles(
+        string targetExecutablePath)
+    {
+        try
+        {
+            string? directory = Path.GetDirectoryName(targetExecutablePath);
+            return directory is null
+                ? []
+                : [.. Directory.EnumerateFiles(directory, "*.dll")
+                    .Select(Path.GetFileName)
+                    .OfType<string>()];
+        }
+        catch (Exception exception) when (
+            exception is IOException or UnauthorizedAccessException)
+        {
+            return [];
+        }
+    }
 
     private static string DescribeOptiScalerPreflight(
         OptiScalerInstallPreflight preflight) =>
