@@ -216,6 +216,46 @@ public sealed class ProBalanceEngineTests
     }
 
     [TestMethod]
+    public void ProcessAdoptedByTheGameTreeIsReleased()
+    {
+        // Gra rozrasta drzewo i wciaga proces, ktory chwile wczesniej byl
+        // zwyklym tlem i zdazyl zostac ograniczony. Samo pominiecie go
+        // zostawiloby go na obnizonym priorytecie do konca sesji.
+        ProBalanceEngine engine = new();
+        DateTimeOffset clock = Start;
+        Feed(engine, 3, 1.5, 90, ref clock);
+        Assert.AreEqual(1, engine.Restrained.Count);
+
+        IReadOnlyList<ProBalanceDecision> decisions = engine.Evaluate(
+            [new(Hog, "indexer", 1.5, false, true)],
+            90,
+            clock);
+
+        Assert.AreEqual(1, decisions.Count);
+        Assert.AreEqual(ProBalanceAction.Release, decisions[0].Action);
+        StringAssert.Contains(decisions[0].Reason, "drzewa gry");
+        Assert.AreEqual(0, engine.Restrained.Count);
+    }
+
+    [TestMethod]
+    public void ProcessThatBecomesProtectedIsReleased()
+    {
+        ProBalanceEngine engine = new();
+        DateTimeOffset clock = Start;
+        Feed(engine, 3, 1.5, 90, ref clock);
+
+        IReadOnlyList<ProBalanceDecision> decisions = engine.Evaluate(
+            [new(Hog, "indexer", 1.5, true, false)],
+            90,
+            clock);
+
+        Assert.AreEqual(1, decisions.Count);
+        Assert.AreEqual(ProBalanceAction.Release, decisions[0].Action);
+        StringAssert.Contains(decisions[0].Reason, "chroniony");
+        Assert.AreEqual(0, engine.Restrained.Count);
+    }
+
+    [TestMethod]
     public void ProcessVanishingWhileRestrainedIsStillReleased()
     {
         // Znikniecie z inwentaryzacji zwykle znaczy koniec procesu, ale moze

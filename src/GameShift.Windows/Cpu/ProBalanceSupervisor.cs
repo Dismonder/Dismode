@@ -304,6 +304,13 @@ public sealed class ProBalanceSupervisor : IAsyncDisposable
 /// Lowers a process to BelowNormal and puts its original class back.
 /// Only ever lowers: a process already at or below BelowNormal is left alone,
 /// so restraint can never accidentally promote something.
+/// <para>
+/// Every call re-checks that the process behind the id is still the same one.
+/// Windows reuses process ids, and the gap between restraining something and
+/// releasing it is long enough for the original to exit and its number to be
+/// handed to something else — at which point restoring "the original priority"
+/// would be writing one process's setting onto a stranger.
+/// </para>
 /// </summary>
 public sealed class PriorityProBalanceActuator : IProBalanceActuator
 {
@@ -316,8 +323,12 @@ public sealed class PriorityProBalanceActuator : IProBalanceActuator
     {
         try
         {
-            using Process process = Process.GetProcessById(
-                runtimeKey.ProcessId);
+            using Process? process = OpenMatching(runtimeKey);
+            if (process is null)
+            {
+                return ValueTask.FromResult(false);
+            }
+
             ProcessPriorityClass current = process.PriorityClass;
             if (current is ProcessPriorityClass.BelowNormal
                 or ProcessPriorityClass.Idle)
@@ -351,8 +362,14 @@ public sealed class PriorityProBalanceActuator : IProBalanceActuator
 
         try
         {
-            using Process process = Process.GetProcessById(
-                runtimeKey.ProcessId);
+            using Process? process = OpenMatching(runtimeKey);
+            if (process is null)
+            {
+                // Oryginal zniknal. Nie ma czego przywracac, a numer moze juz
+                // nalezec do kogos innego.
+                return ValueTask.FromResult(false);
+            }
+
             process.PriorityClass = original;
             return ValueTask.FromResult(true);
         }
@@ -362,6 +379,42 @@ public sealed class PriorityProBalanceActuator : IProBalanceActuator
                 or System.ComponentModel.Win32Exception)
         {
             return ValueTask.FromResult(false);
+        }
+    }
+
+    /// <summary>
+    /// The process behind the id, but only if its start time still matches the
+    /// one the key was made from. Null when the id now belongs to something
+    /// else, or to nothing.
+    /// </summary>
+    private static Process? OpenMatching(ProcessRuntimeKey runtimeKey)
+    {
+        Process? process = null;
+        try
+        {
+            process = Process.GetProcessById(runtimeKey.ProcessId);
+            DateTimeOffset startedAt = process.StartTime.ToUniversalTime();
+
+            // Czasy startu roznia sie o ulamki sekundy miedzy odczytami przez
+            // rozne API, wiec porownanie co do taktu odrzucaloby wlasciwy
+            // proces. Sekunda wystarczy, zeby odroznic go od nastepnego
+            // wlasciciela tego samego numeru.
+            if (Math.Abs(
+                    (startedAt - runtimeKey.StartedAtUtc).TotalSeconds) > 1)
+            {
+                process.Dispose();
+                return null;
+            }
+
+            return process;
+        }
+        catch (Exception exception) when (
+            exception is ArgumentException
+                or InvalidOperationException
+                or System.ComponentModel.Win32Exception)
+        {
+            process?.Dispose();
+            return null;
         }
     }
 }
