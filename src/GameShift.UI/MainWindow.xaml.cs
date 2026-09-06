@@ -6,6 +6,7 @@ using System.Runtime.InteropServices;
 using System.Security.Cryptography;
 using GameShift.Contracts.Protocol;
 using GameShift.Core.Activation;
+using GameShift.Core.Cpu;
 using GameShift.Core.OptiScaler;
 using GameShift.Core.Product;
 using GameShift.Core.Profiles;
@@ -15,6 +16,7 @@ using GameShift.Data.Storage;
 using GameShift.Data.UserData;
 using GameShift.UI.Services;
 using GameShift.UI.ViewModels;
+using GameShift.Windows.Cpu;
 using GameShift.Windows.OptiScaler;
 using GameShift.Windows.Platform;
 using GameShift.Windows.Processes;
@@ -250,6 +252,16 @@ public sealed partial class MainWindow : Window, IDisposable
 
         await LoadPerformanceOverlayPreferencesAsync(_lifetime.Token);
         await LoadUpdatePreferencesAsync(_lifetime.Token);
+
+        // Odczyt topologii dotyka rejestru i CPU sets, wiec nie na watku UI.
+        await Task.Run(
+            () =>
+            {
+                CpuTopology? topology = SystemCpuTopologyProvider.Read();
+                DispatcherQueue.TryEnqueue(
+                    () => ApplyCpuTopologyDescription(topology));
+            },
+            _lifetime.Token);
 
         if (_launchOptions.GameExecutablePath is string executablePath)
         {
@@ -783,6 +795,66 @@ public sealed partial class MainWindow : Window, IDisposable
         object sender,
         RoutedEventArgs args) =>
         ApplyFpsOverlaySettingFromToggle(sender);
+
+    /// <summary>
+    /// Fills in what the machine actually reports, so the setting below is read
+    /// against a fact rather than a hope. On a CPU whose cores are all the same
+    /// speed there is nothing to pin a game to, and saying so plainly is more
+    /// use than an option that silently does nothing.
+    /// </summary>
+    private void ApplyCpuTopologyDescription(CpuTopology? topology)
+    {
+        if (topology is null || topology.Processors.Count == 0)
+        {
+            CpuTopologyText.Text =
+                "Nie udało się odczytać topologii procesora.";
+            return;
+        }
+
+        int physical = CpuTopology.CountPhysicalCores(topology.Processors);
+        if (!topology.IsHybrid)
+        {
+            CpuTopologyText.Text =
+                $"{physical} rdzeni, {topology.Processors.Count} wątków, "
+                + "wszystkie tej samej klasy wydajności. Przypinanie gry do "
+                + "rdzeni nic by tu nie zmieniło, więc GameShift tego nie "
+                + "robi.";
+            return;
+        }
+
+        int performance =
+            CpuTopology.CountPhysicalCores(topology.PerformanceCores);
+        int efficiency =
+            CpuTopology.CountPhysicalCores(topology.EfficiencyCores);
+        CpuAffinityDecision decision = CpuAffinityPolicy.Decide(
+            topology,
+            CpuAffinityRole.Foreground);
+        CpuTopologyText.Text =
+            $"{performance} rdzeni wydajnych i {efficiency} energooszczędnych, "
+            + $"{topology.Processors.Count} wątków. {decision.Explanation}";
+    }
+
+    private void OnProBalanceSettingChanged(
+        object sender,
+        RoutedEventArgs args)
+    {
+        if (sender is not ToggleSwitch toggle)
+        {
+            return;
+        }
+
+        // Ustawienie dotyczy nastepnej sesji: zmiana w trakcie trwajacej
+        // oznaczalaby wlaczenie lub wylaczenie nadzorcy w polowie, a on trzyma
+        // stan tego, co juz ograniczyl.
+        ProBalanceDescriptionText.Text = toggle.IsOn
+            ? "Zadziała od następnej sesji. GameShift obniża priorytet "
+                + "procesom, które zaczynają zjadać procesor już w trakcie "
+                + "gry, i oddaje go po sesji. Powłoki, anti-cheat i samej gry "
+                + "nie dotyka."
+            : "GameShift obniża priorytet procesom, które zaczynają zjadać "
+                + "procesor już w trakcie gry, i oddaje go po sesji. Powłoki, "
+                + "anti-cheat i samej gry nie dotyka.";
+    }
 
     private async void OnFpsTrackingSettingChanged(
         object sender,

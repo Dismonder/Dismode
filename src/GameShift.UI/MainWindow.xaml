@@ -3160,6 +3160,50 @@
                             Toggled="OnFpsOverlaySettingChanged" />
                       </Grid>
                     </StackPanel>
+
+                    <!-- Procesor: co GameShift wykrył i co wolno mu z tym
+                         zrobić. Opis stanu jest odczytem z maszyny, nie
+                         obietnicą — na jednorodnym procesorze przypinanie do
+                         rdzeni nic nie daje i pole to mówi. -->
+                    <StackPanel Spacing="10" Margin="0,18,0,0">
+                      <TextBlock
+                          FontWeight="SemiBold"
+                          FontSize="13"
+                          Text="Procesor" />
+
+                      <TextBlock
+                          x:Name="CpuTopologyText"
+                          Foreground="{ThemeResource GameShiftMutedTextBrush}"
+                          FontSize="11"
+                          Text="Odczytywanie topologii procesora…"
+                          TextWrapping="Wrap" />
+
+                      <Grid ColumnSpacing="12">
+                        <Grid.ColumnDefinitions>
+                          <ColumnDefinition Width="*" />
+                          <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+                        <StackPanel VerticalAlignment="Center" Spacing="2">
+                          <TextBlock
+                              FontSize="13"
+                              Text="Ograniczaj procesy tła w trakcie gry" />
+                          <TextBlock
+                              x:Name="ProBalanceDescriptionText"
+                              Foreground="{ThemeResource GameShiftMutedTextBrush}"
+                              FontSize="11"
+                              Text="GameShift obniża priorytet procesom, które zaczynają zjadać procesor już w trakcie gry, i oddaje go po sesji. Powłoki, anti-cheat i samej gry nie dotyka."
+                              TextWrapping="Wrap" />
+                        </StackPanel>
+                        <ToggleSwitch
+                            x:Name="ProBalanceToggleSwitch"
+                            Grid.Column="1"
+                            AutomationProperties.Name="Ograniczaj procesy tła w trakcie gry"
+                            IsOn="False"
+                            OffContent="WYŁ."
+                            OnContent="WŁ."
+                            Toggled="OnProBalanceSettingChanged" />
+                      </Grid>
+                    </StackPanel>
                   </StackPanel>
                 </Border>
 
