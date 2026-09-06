@@ -156,8 +156,24 @@ public sealed class ManualGameProfileLauncher
 
             if (process.HasExited)
             {
+                // Launchery sklepow i zabezpieczenia DRM czesto przejmuja
+                // uruchomienie: proces wystartowany przez nas konczy sie od
+                // razu, a wlasciwa gra dziala juz pod innym PID. Zanim
+                // uznamy to za blad, szukamy tego przejetego procesu.
+                ProcessIdentity? relaunched =
+                    await WaitForRelaunchedGameAsync(
+                            profile,
+                            timeout.Token)
+                        .ConfigureAwait(false);
+                if (relaunched is not null)
+                {
+                    return new(relaunched, WasAlreadyRunning: false);
+                }
+
                 throw new InvalidOperationException(
-                    "The selected game exited before identity verification.");
+                    "The selected game exited before identity verification. "
+                        + "Jesli gra wymaga launchera sklepu, uruchom ja stamtad "
+                        + "- GameShift dolaczy sie do dzialajacego procesu.");
             }
 
             await Task.Delay(
@@ -165,6 +181,42 @@ public sealed class ManualGameProfileLauncher
                     timeout.Token)
                 .ConfigureAwait(false);
         }
+    }
+
+    /// <summary>
+    /// Waits briefly for the game to reappear under a new process id. A store
+    /// launcher or DRM wrapper commonly restarts the executable, which ends
+    /// the process GameShift started; without this the launch is reported as
+    /// a failure even though the game is coming up normally.
+    /// </summary>
+    private async ValueTask<ProcessIdentity?> WaitForRelaunchedGameAsync(
+        ManualGameProfile profile,
+        CancellationToken cancellationToken)
+    {
+        while (!cancellationToken.IsCancellationRequested)
+        {
+            ProcessIdentity? identity =
+                await TryFindRunningGameAsync(profile, cancellationToken)
+                    .ConfigureAwait(false);
+            if (identity is not null)
+            {
+                return identity;
+            }
+
+            try
+            {
+                await Task.Delay(
+                        TimeSpan.FromMilliseconds(250),
+                        cancellationToken)
+                    .ConfigureAwait(false);
+            }
+            catch (OperationCanceledException)
+            {
+                break;
+            }
+        }
+
+        return null;
     }
 
     private async ValueTask<ProcessIdentity?> TryFindRunningGameAsync(
@@ -186,7 +238,7 @@ public sealed class ManualGameProfileLauncher
                 {
                     if (process.SessionId != currentSessionId
                         || !StringComparer.OrdinalIgnoreCase.Equals(
-                            process.MainModule?.FileName,
+                            ProcessImagePath.TryRead(process),
                             profile.ExecutablePath))
                     {
                         continue;
