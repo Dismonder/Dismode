@@ -21,7 +21,7 @@ public sealed class ReleaseVersionAndUpdateUiContractTests
         XElement informationalVersion = group.Element(
             "InformationalVersion")!;
 
-        Assert.AreEqual("0.4.9", version.Value);
+        Assert.AreEqual("0.5.0", version.Value);
         Assert.AreEqual("$(Version).0", assemblyVersion.Value);
         Assert.AreEqual("$(Version).0", fileVersion.Value);
         Assert.AreEqual(
