@@ -216,6 +216,26 @@ public sealed class ProBalanceEngineTests
     }
 
     [TestMethod]
+    public void ProcessVanishingWhileRestrainedIsStillReleased()
+    {
+        // Znikniecie z inwentaryzacji zwykle znaczy koniec procesu, ale moze
+        // tez znaczyc jedna nieudana probke. Bez wydania zwolnienia proces,
+        // ktory nadal zyje, zostalby przy obnizonym priorytecie na zawsze.
+        ProBalanceEngine engine = new();
+        DateTimeOffset clock = Start;
+        Feed(engine, 3, 1.5, 90, ref clock);
+        Assert.AreEqual(1, engine.Restrained.Count);
+
+        IReadOnlyList<ProBalanceDecision> decisions =
+            engine.Evaluate([], 90, clock);
+
+        Assert.AreEqual(1, decisions.Count);
+        Assert.AreEqual(ProBalanceAction.Release, decisions[0].Action);
+        Assert.AreEqual(Hog, decisions[0].RuntimeKey);
+        Assert.AreEqual(0, engine.Restrained.Count);
+    }
+
+    [TestMethod]
     public void VanishedProcessDoesNotLeakState()
     {
         // Proces, ktory sie zakonczyl, znika z probki. Trzymanie jego stanu
