@@ -4563,6 +4563,55 @@ public sealed partial class MainWindow : Window, IDisposable
             : Visibility.Collapsed;
         HistoryCountText.Text = _history.Count.ToString(
             System.Globalization.CultureInfo.CurrentCulture);
+        UpdateHistorySummary();
+    }
+
+    /// <summary>
+    /// Summarises the sessions above the log. On its own the list answers
+    /// "what happened last time"; the strip answers "what has GameShift
+    /// actually done for me", which the page could not show before.
+    /// </summary>
+    private void UpdateHistorySummary()
+    {
+        if (HistorySummaryPanel is null)
+        {
+            return;
+        }
+
+        if (_history.Count == 0)
+        {
+            HistorySummaryPanel.Visibility = Visibility.Collapsed;
+            return;
+        }
+
+        HistorySummaryPanel.Visibility = Visibility.Visible;
+
+        TimeSpan played = TimeSpan.Zero;
+        int appliedActions = 0;
+        int troubled = 0;
+        foreach (HistoryListItem item in _history)
+        {
+            Core.History.SessionSummary summary = item.Summary;
+            played += summary.EndedAtUtc - summary.StartedAtUtc;
+            appliedActions += summary.AppliedActionCount;
+            if (summary.ErrorCount > 0 || summary.ConflictCount > 0)
+            {
+                troubled++;
+            }
+        }
+
+        HistorySessionsValueText.Text = _history.Count.ToString(
+            System.Globalization.CultureInfo.CurrentCulture);
+        HistoryPlaytimeValueText.Text = played.TotalHours >= 1
+            ? $"{played.TotalHours:0.#} godz."
+            : $"{played.TotalMinutes:0} min";
+        HistoryActionsValueText.Text = appliedActions.ToString(
+            System.Globalization.CultureInfo.CurrentCulture);
+        HistoryTroubledValueText.Text = troubled.ToString(
+            System.Globalization.CultureInfo.CurrentCulture);
+        HistoryTroubledValueText.Foreground = troubled > 0
+            ? (Brush)Application.Current.Resources["GameShiftAmberBrush"]
+            : (Brush)Application.Current.Resources["GameShiftSuccessBrush"];
     }
 
     private void UpdateDashboardHero()
