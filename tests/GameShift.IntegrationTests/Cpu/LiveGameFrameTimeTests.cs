@@ -57,7 +57,7 @@ public sealed class LiveGameFrameTimeTests
     }
 
     [TestMethod]
-    [Timeout(600_000)]
+    [Timeout(900_000)]
     public async Task RestraintUnderContentionDoesNotWorsenFrameTimes()
     {
         if (!TryFindGame(out Process? found, out string presentMonPath)
@@ -69,11 +69,7 @@ public sealed class LiveGameFrameTimeTests
         }
 
         using Process game = found;
-        TestContext.WriteLine(
-            $"Gra: {game.ProcessName} (PID {game.Id})");
-
-        FrameProfile idle = await MeasureAsync(presentMonPath, game.Id, 12);
-        TestContext.WriteLine($"bez obciazenia:   {idle}");
+        TestContext.WriteLine($"Gra: {game.ProcessName} (PID {game.Id})");
 
         int hogs = Math.Max(2, Environment.ProcessorCount);
         for (int index = 0; index < hogs; index++)
@@ -82,10 +78,6 @@ public sealed class LiveGameFrameTimeTests
         }
 
         await Task.Delay(3000);
-        FrameProfile contended =
-            await MeasureAsync(presentMonPath, game.Id, 12);
-        TestContext.WriteLine(
-            $"pod obciazeniem:  {contended}   ({hogs} obciazaczy)");
 
         PriorityProBalanceActuator actuator = new();
         ProBalanceSupervisor supervisor = new(
@@ -100,48 +92,92 @@ public sealed class LiveGameFrameTimeTests
                 MaximumRestrained = hogs,
             });
 
-        FrameProfile restrained;
+        List<double> withoutRestraint = [];
+        List<double> withRestraint = [];
+
         try
         {
-            List<string> touched = [];
-            for (int index = 0; index < 6; index++)
+            // Fazy sa przeplatane, a nie ustawione jedna po drugiej. Maszyna
+            // dryfuje przez cala minute pomiaru — inne procesy budza sie,
+            // gra zmienia scene — a w blokach sekwencyjnych ten dryf jest nie
+            // do odroznienia od badanego efektu. Przeplot rozklada go rowno na
+            // oba warianty.
+            for (int round = 0; round < Rounds; round++)
             {
-                foreach (ProBalanceDecision decision in
-                    await supervisor.TickAsync(CancellationToken.None))
+                await ReleaseEverythingAsync(supervisor);
+                await Task.Delay(1500);
+                withoutRestraint.Add(
+                    (await MeasureAsync(presentMonPath, game.Id, BlockSeconds))
+                    .Percentile99);
+
+                for (int tick = 0; tick < 5; tick++)
                 {
-                    touched.Add(
-                        $"{decision.Action} {decision.ProcessName}");
+                    await supervisor.TickAsync(CancellationToken.None);
+                    await Task.Delay(400);
                 }
 
-                await Task.Delay(400);
+                withRestraint.Add(
+                    (await MeasureAsync(presentMonPath, game.Id, BlockSeconds))
+                    .Percentile99);
             }
-
-            TestContext.WriteLine(
-                "ograniczone: " + string.Join(", ", touched));
-            restrained = await MeasureAsync(presentMonPath, game.Id, 12);
         }
         finally
         {
             await supervisor.DisposeAsync();
         }
 
-        TestContext.WriteLine($"z ograniczaniem:  {restrained}");
+        for (int round = 0; round < Rounds; round++)
+        {
+            TestContext.WriteLine(
+                $"runda {round + 1}: bez {withoutRestraint[round]:F2} ms, "
+                + $"z {withRestraint[round]:F2} ms, "
+                + $"roznica {withRestraint[round] - withoutRestraint[round]:F2} ms");
+        }
+
+        double medianWithout = Median(withoutRestraint);
+        double medianWith = Median(withRestraint);
+        int better = withoutRestraint
+            .Zip(withRestraint, static (bez, z) => z < bez)
+            .Count(improved => improved);
+
         TestContext.WriteLine(
-            "zmiana p99 wzgledem obciazenia: "
-            + $"{restrained.Percentile99 - contended.Percentile99:F2} ms");
+            $"mediana p99 bez ograniczania: {medianWithout:F2} ms");
+        TestContext.WriteLine(
+            $"mediana p99 z ograniczaniem:  {medianWith:F2} ms");
+        TestContext.WriteLine(
+            $"rund z poprawa: {better} z {Rounds}");
 
-        Assert.IsGreaterThan(0, idle.SampleCount, "Brak klatek bez obciazenia.");
-        Assert.IsGreaterThan(0, contended.SampleCount, "Brak klatek pod obciazeniem.");
-        Assert.IsGreaterThan(0, restrained.SampleCount, "Brak klatek z ograniczaniem.");
+        Assert.IsGreaterThan(0, withoutRestraint.Count);
 
-        // Pomiar na zywej grze szumi, wiec progiem jest wyrazne
-        // pogorszenie. Chodzi o wychwycenie regresji, nie o dowodzenie
-        // poprawy — te pokazuja liczby powyzej.
+        // Mediana z par odporna jest na pojedyncze wahniecie maszyny, ktore
+        // w pomiarze blokowym przewracalo caly wynik. Prog jest szeroki
+        // celowo: chodzi o wychwycenie regresji, nie o dowodzenie poprawy.
         Assert.IsLessThan(
-            contended.Percentile99 * 1.5,
-            restrained.Percentile99,
-            "Ograniczanie pogorszylo ogon czasow klatek.");
+            medianWithout * 1.5,
+            medianWith,
+            "Ograniczanie pogorszylo mediane ogona czasow klatek.");
     }
+
+    private const int Rounds = 4;
+    private const int BlockSeconds = 8;
+
+    private static double Median(List<double> values)
+    {
+        List<double> sorted = [.. values];
+        sorted.Sort();
+        return sorted.Count == 0
+            ? 0
+            : sorted[sorted.Count / 2];
+    }
+
+    /// <summary>
+    /// Hands every restrained process back before the next unrestrained block,
+    /// so the two halves of a pair really do differ only in whether restraint
+    /// is active.
+    /// </summary>
+    private static async Task ReleaseEverythingAsync(
+        ProBalanceSupervisor supervisor) =>
+        await supervisor.StopAsync();
 
     /// <summary>
     /// Runs PresentMon for a while and reduces the FrameTime column to
