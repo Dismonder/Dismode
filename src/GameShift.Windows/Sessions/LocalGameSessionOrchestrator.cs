@@ -1709,6 +1709,7 @@ public sealed class LocalGameSessionOrchestrator : IAsyncDisposable
                 ? OptimizationSessionState.Completed
                 : OptimizationSessionState.CompletedWithWarnings);
         await StopProBalanceAsync(runtime).ConfigureAwait(false);
+        ClearGameCpuSets(runtime);
         _activeSession = null;
         await TryRefreshCompletedSessionMetadataAsync(
                 runtime.ProfileId,
@@ -1833,12 +1834,26 @@ public sealed class LocalGameSessionOrchestrator : IAsyncDisposable
             return 0;
         }
 
+        CpuTopology? topology = SystemCpuTopologyProvider.Read();
         CpuAffinityDecision decision = CpuAffinityPolicy.Decide(
-            SystemCpuTopologyProvider.Read(),
+            topology,
             CpuAffinityRole.Foreground);
-        if (!decision.ShouldApply)
+        if (!decision.ShouldApply || topology is null)
         {
             return 0;
+        }
+
+        // Domyslne zbiory procesorow sa podpowiedzia, nie regula: harmonogram
+        // trzyma gre na wskazanych rdzeniach, dopoki moze, i wychodzi poza nie,
+        // gdy musi. Twarda maska tego nie potrafi i zbyt waska zaglodzi gre,
+        // wiec zbiory ida pierwsze.
+        //
+        // Wyjatek: proces z juz zawezonym affinity ignoruje zbiory calkowicie,
+        // a odczyt zwrotny i tak zwroci to, co zapisano. Wtedy jedyna droga,
+        // ktora naprawde dziala, jest maska.
+        if (TryApplyCpuSets(gameIdentity, topology, decision.Mask))
+        {
+            return 1;
         }
 
         ActionId actionId = new(Guid.NewGuid());
@@ -1874,6 +1889,62 @@ public sealed class LocalGameSessionOrchestrator : IAsyncDisposable
         {
             return 0;
         }
+    }
+
+    /// <summary>
+    /// Gives the game back the whole machine by clearing its default CPU sets.
+    /// Cheap and safe to call when nothing was ever assigned.
+    /// </summary>
+    private static void ClearGameCpuSets(ActiveRuntime runtime) =>
+        _ = ProcessCpuSets.TryApply(
+            runtime.RootProcess.RuntimeKey.ProcessId,
+            []);
+
+    /// <summary>
+    /// Installs default CPU sets matching the wanted mask. Returns false when
+    /// the process cannot honour them, leaving the caller to fall back to a
+    /// hard affinity mask.
+    /// <para>
+    /// Not journaled: clearing the assignment restores the machine-wide
+    /// default, which is what the process had, and the session-end path clears
+    /// it. A crash leaves a preference behind, not a restriction — the process
+    /// keeps running on every core either way, and the assignment dies with the
+    /// process.
+    /// </para>
+    /// </summary>
+    private static bool TryApplyCpuSets(
+        ProcessIdentity gameIdentity,
+        CpuTopology topology,
+        ulong desiredMask)
+    {
+        int processId = gameIdentity.RuntimeKey.ProcessId;
+        ulong currentAffinity;
+        try
+        {
+            using Process process = Process.GetProcessById(processId);
+            currentAffinity = (ulong)process.ProcessorAffinity.ToInt64();
+        }
+        catch (Exception exception) when (
+            exception is ArgumentException
+                or InvalidOperationException
+                or Win32Exception)
+        {
+            return false;
+        }
+
+        if (ProcessCpuSets.WouldBeDefeatedByAffinity(
+                currentAffinity,
+                desiredMask))
+        {
+            return false;
+        }
+
+        uint[] ids = [.. topology.Processors
+            .Where(processor =>
+                processor.LogicalProcessorIndex < 64
+                && (desiredMask & (1UL << processor.LogicalProcessorIndex)) != 0)
+            .Select(processor => processor.Id)];
+        return ids.Length > 0 && ProcessCpuSets.TryApply(processId, ids);
     }
 
     private async ValueTask ApplyGamePriorityAsync(
