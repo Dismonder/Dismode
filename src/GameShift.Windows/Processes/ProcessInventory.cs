@@ -76,7 +76,7 @@ public sealed class ProcessInventory : IProcessInventory
     {
         try
         {
-            return process.MainModule?.FileName;
+            return ProcessImagePath.TryRead(process);
         }
         catch (Exception exception) when (
             exception is InvalidOperationException

@@ -133,7 +133,7 @@ public sealed class ProcessIdentityProvider : IProcessIdentityProvider
                 TimeSpan.Zero));
 
     private static string ReadExecutablePath(Process process) =>
-        process.MainModule?.FileName
+        ProcessImagePath.TryRead(process)
         ?? throw new InvalidOperationException(
             "The process executable path is unavailable.");
 
