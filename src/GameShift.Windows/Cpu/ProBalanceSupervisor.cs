@@ -1,0 +1,351 @@
+using System.Diagnostics;
+using GameShift.Core.Cpu;
+using GameShift.Core.Domain.Processes;
+using GameShift.Windows.Processes;
+
+namespace GameShift.Windows.Cpu;
+
+/// <summary>
+/// Applies and undoes a restraint on one process.
+/// </summary>
+public interface IProBalanceActuator
+{
+    ValueTask<bool> RestrainAsync(
+        ProcessRuntimeKey runtimeKey,
+        CancellationToken cancellationToken);
+
+    ValueTask<bool> ReleaseAsync(
+        ProcessRuntimeKey runtimeKey,
+        CancellationToken cancellationToken);
+}
+
+/// <summary>
+/// Drives <see cref="ProBalanceEngine"/> against the running machine: samples
+/// processes, asks the engine what to do, and carries the answer out.
+/// <para>
+/// Not yet wired into a session. The engine's decisions are journaled only once
+/// this runs under the orchestrator, which owns the session and the recovery
+/// journal; until then the actuator undoes its own work on stop, and a crash
+/// mid-session would leave a background process at a lowered priority until it
+/// next restarts.
+/// </para>
+/// </summary>
+public sealed class ProBalanceSupervisor : IAsyncDisposable
+{
+    private readonly ProBalanceEngine _engine;
+    private readonly IProBalanceActuator _actuator;
+    private readonly IProcessInventory _inventory;
+    private readonly Func<double?> _systemLoad;
+    private readonly Dictionary<ProcessRuntimeKey, CpuReading> _previous = [];
+    private readonly Func<IReadOnlySet<int>> _gameProcessIds;
+    private readonly TimeProvider _timeProvider;
+    private readonly TimeSpan _interval;
+    private readonly SemaphoreSlim _gate = new(1, 1);
+
+    private CancellationTokenSource? _loop;
+    private Task? _worker;
+
+    public ProBalanceSupervisor(
+        IProcessInventory inventory,
+        IProBalanceActuator actuator,
+        Func<IReadOnlySet<int>> gameProcessIds,
+        ProBalanceSettings? settings = null,
+        Func<double?>? systemLoad = null,
+        TimeProvider? timeProvider = null,
+        TimeSpan? interval = null)
+    {
+        ArgumentNullException.ThrowIfNull(inventory);
+        ArgumentNullException.ThrowIfNull(actuator);
+        ArgumentNullException.ThrowIfNull(gameProcessIds);
+        _inventory = inventory;
+        _actuator = actuator;
+        _gameProcessIds = gameProcessIds;
+        _engine = new(settings);
+        _systemLoad = systemLoad ?? new SystemCpuLoadSampler().Sample;
+        _timeProvider = timeProvider ?? TimeProvider.System;
+        _interval = interval ?? TimeSpan.FromSeconds(2);
+    }
+
+    public void Start()
+    {
+        if (_worker is not null)
+        {
+            return;
+        }
+
+        _loop = new();
+        _worker = RunAsync(_loop.Token);
+    }
+
+    public async ValueTask StopAsync()
+    {
+        if (_loop is not null)
+        {
+            await _loop.CancelAsync().ConfigureAwait(false);
+            if (_worker is not null)
+            {
+                try
+                {
+                    await _worker.ConfigureAwait(false);
+                }
+                catch (OperationCanceledException)
+                {
+                }
+            }
+
+            _loop.Dispose();
+            _loop = null;
+            _worker = null;
+        }
+
+        // Zwolnienie nastepuje takze wtedy, gdy petla nigdy nie wystartowala:
+        // nadzorca da sie prowadzic recznie przez TickAsync i wtedy tez trzyma
+        // procesy, ktore trzeba oddac.
+        await ReleaseEverythingAsync(CancellationToken.None)
+            .ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// One pass: sample, decide, act. Exposed so a test can step the loop
+    /// without a timer, and so the caller can drive it from its own cadence.
+    /// </summary>
+    public async ValueTask<IReadOnlyList<ProBalanceDecision>> TickAsync(
+        CancellationToken cancellationToken)
+    {
+        double? systemCpu = _systemLoad();
+        if (systemCpu is not double load)
+        {
+            // Pierwsza probka nie ma sie do czego odniesc.
+            return [];
+        }
+
+        IReadOnlySet<int> gameIds = _gameProcessIds();
+        DateTimeOffset now = _timeProvider.GetUtcNow();
+        List<ProBalanceObservation> observations = [];
+        HashSet<ProcessRuntimeKey> seen = [];
+
+        foreach (ProcessSnapshot snapshot in _inventory.Capture())
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            if (snapshot.StartedAtUtc is not DateTimeOffset startedAt)
+            {
+                // Bez czasu startu nie ma stabilnego klucza: numer PID sam
+                // w sobie wraca po zakonczeniu procesu i mozna go pomylic.
+                continue;
+            }
+
+            ProcessRuntimeKey key = new(snapshot.ProcessId, startedAt);
+            seen.Add(key);
+            double cpuCores = MeasureCpuCores(
+                key,
+                snapshot.TotalProcessorTime,
+                now);
+            observations.Add(new(
+                key,
+                snapshot.Name,
+                cpuCores,
+                BackgroundApplicationGuard.IsProtectedProcessName(
+                    snapshot.Name),
+                gameIds.Contains(snapshot.ProcessId)));
+        }
+
+        foreach (ProcessRuntimeKey key in _previous.Keys.ToArray())
+        {
+            if (!seen.Contains(key))
+            {
+                _previous.Remove(key);
+            }
+        }
+
+        IReadOnlyList<ProBalanceDecision> decisions = _engine.Evaluate(
+            observations,
+            load,
+            now);
+        foreach (ProBalanceDecision decision in decisions)
+        {
+            await CarryOutAsync(decision, cancellationToken)
+                .ConfigureAwait(false);
+        }
+
+        return decisions;
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        await StopAsync().ConfigureAwait(false);
+        _gate.Dispose();
+    }
+
+    private readonly record struct CpuReading(
+        TimeSpan TotalProcessorTime,
+        DateTimeOffset ObservedAtUtc);
+
+    /// <summary>
+    /// Processor time used since this process was last seen, in cores: the
+    /// ratio of CPU time consumed to wall time elapsed, so 1.0 means one core
+    /// kept busy throughout. Deliberately not divided by the core count —
+    /// a threshold expressed as a share of the machine would catch a
+    /// single-threaded hog on a small box and miss the same one on a large box.
+    /// The first reading for a process has nothing to subtract, so it reports
+    /// zero and the engine's "sustained for several samples" rule absorbs it.
+    /// </summary>
+    private double MeasureCpuCores(
+        ProcessRuntimeKey key,
+        TimeSpan totalProcessorTime,
+        DateTimeOffset now)
+    {
+        double cores = 0;
+        if (_previous.TryGetValue(key, out CpuReading last))
+        {
+            double elapsed = (now - last.ObservedAtUtc).TotalMilliseconds;
+            double used =
+                (totalProcessorTime - last.TotalProcessorTime)
+                .TotalMilliseconds;
+            if (elapsed > 0 && used >= 0)
+            {
+                cores = used / elapsed;
+            }
+        }
+
+        _previous[key] = new(totalProcessorTime, now);
+        return cores;
+    }
+
+    private async Task RunAsync(CancellationToken cancellationToken)
+    {
+        while (!cancellationToken.IsCancellationRequested)
+        {
+            await _gate.WaitAsync(cancellationToken).ConfigureAwait(false);
+            try
+            {
+                await TickAsync(cancellationToken).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException)
+            {
+                return;
+            }
+            catch (Exception exception) when (
+                exception is InvalidOperationException
+                    or UnauthorizedAccessException
+                    or IOException)
+            {
+                // Jedna nieudana probka nie moze zabic petli na cala sesje.
+            }
+            finally
+            {
+                _gate.Release();
+            }
+
+            try
+            {
+                await Task.Delay(_interval, _timeProvider, cancellationToken)
+                    .ConfigureAwait(false);
+            }
+            catch (OperationCanceledException)
+            {
+                return;
+            }
+        }
+    }
+
+    private async ValueTask CarryOutAsync(
+        ProBalanceDecision decision,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            _ = decision.Action switch
+            {
+                ProBalanceAction.Restrain => await _actuator
+                    .RestrainAsync(decision.RuntimeKey, cancellationToken)
+                    .ConfigureAwait(false),
+                ProBalanceAction.Release => await _actuator
+                    .ReleaseAsync(decision.RuntimeKey, cancellationToken)
+                    .ConfigureAwait(false),
+                _ => false,
+            };
+        }
+        catch (Exception exception) when (
+            exception is InvalidOperationException
+                or UnauthorizedAccessException)
+        {
+            // Proces mogl sie zakonczyc miedzy decyzja a jej wykonaniem.
+        }
+    }
+
+    private async ValueTask ReleaseEverythingAsync(
+        CancellationToken cancellationToken)
+    {
+        foreach (ProBalanceDecision decision in _engine.ReleaseAll())
+        {
+            await CarryOutAsync(decision, cancellationToken)
+                .ConfigureAwait(false);
+        }
+    }
+}
+
+/// <summary>
+/// Lowers a process to BelowNormal and puts its original class back.
+/// Only ever lowers: a process already at or below BelowNormal is left alone,
+/// so restraint can never accidentally promote something.
+/// </summary>
+public sealed class PriorityProBalanceActuator : IProBalanceActuator
+{
+    private readonly Dictionary<ProcessRuntimeKey, ProcessPriorityClass>
+        _original = [];
+
+    public ValueTask<bool> RestrainAsync(
+        ProcessRuntimeKey runtimeKey,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            using Process process = Process.GetProcessById(
+                runtimeKey.ProcessId);
+            ProcessPriorityClass current = process.PriorityClass;
+            if (current is ProcessPriorityClass.BelowNormal
+                or ProcessPriorityClass.Idle)
+            {
+                return ValueTask.FromResult(false);
+            }
+
+            _original[runtimeKey] = current;
+            process.PriorityClass = ProcessPriorityClass.BelowNormal;
+            return ValueTask.FromResult(true);
+        }
+        catch (Exception exception) when (
+            exception is ArgumentException
+                or InvalidOperationException
+                or System.ComponentModel.Win32Exception)
+        {
+            return ValueTask.FromResult(false);
+        }
+    }
+
+    public ValueTask<bool> ReleaseAsync(
+        ProcessRuntimeKey runtimeKey,
+        CancellationToken cancellationToken)
+    {
+        if (!_original.Remove(
+                runtimeKey,
+                out ProcessPriorityClass original))
+        {
+            return ValueTask.FromResult(false);
+        }
+
+        try
+        {
+            using Process process = Process.GetProcessById(
+                runtimeKey.ProcessId);
+            process.PriorityClass = original;
+            return ValueTask.FromResult(true);
+        }
+        catch (Exception exception) when (
+            exception is ArgumentException
+                or InvalidOperationException
+                or System.ComponentModel.Win32Exception)
+        {
+            return ValueTask.FromResult(false);
+        }
+    }
+}

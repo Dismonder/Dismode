@@ -9,10 +9,15 @@ public enum ProBalanceAction
     Release = 2,
 }
 
+/// <summary>
+/// One process as seen in a single sample. <paramref name="CpuCores"/> is how
+/// much processor time it used since the previous sample, expressed in cores:
+/// 1.0 means it kept one core busy the whole interval.
+/// </summary>
 public sealed record ProBalanceObservation(
     ProcessRuntimeKey RuntimeKey,
     string ProcessName,
-    double CpuPercent,
+    double CpuCores,
     bool IsProtected,
     bool BelongsToGame);
 
@@ -180,7 +185,7 @@ public sealed class ProBalanceEngine
             return null;
         }
 
-        if (observation.CpuPercent < _settings.RestrainAbovePercent)
+        if (observation.CpuCores < _settings.RestrainAboveCores)
         {
             state.HotSamples = 0;
             return null;
@@ -199,7 +204,7 @@ public sealed class ProBalanceEngine
             observation.RuntimeKey,
             observation.ProcessName,
             ProBalanceAction.Restrain,
-            $"{observation.CpuPercent:F0}% CPU przez "
+            $"{observation.CpuCores:F1} rdzenia przez "
                 + $"{_settings.SustainedSamples} próbki przy obciążeniu "
                 + $"{systemCpuPercent:F0}%.");
     }
@@ -225,7 +230,7 @@ public sealed class ProBalanceEngine
             return null;
         }
 
-        if (observation.CpuPercent >= _settings.ReleaseBelowPercent)
+        if (observation.CpuCores >= _settings.ReleaseBelowCores)
         {
             state.CalmSamples = 0;
             return null;
@@ -238,7 +243,8 @@ public sealed class ProBalanceEngine
                 state,
                 observation,
                 nowUtc,
-                $"Zużycie spadło poniżej {_settings.ReleaseBelowPercent:F0}%.");
+                $"Zużycie spadło poniżej {_settings.ReleaseBelowCores:F2} "
+                    + "rdzenia.");
     }
 
     private ProBalanceDecision Release(
