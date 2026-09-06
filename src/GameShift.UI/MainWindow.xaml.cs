@@ -120,6 +120,12 @@ public sealed partial class MainWindow : Window, IDisposable
     private SessionPlanClientSnapshot? _pendingPlan;
     private SessionStateClientSnapshot? _activeSession;
     private PerformanceOverlayWindow? _performanceOverlay;
+    private ForegroundGameWatcher? _foregroundGameWatcher;
+    private readonly DispatcherTimer _overlayPollTimer = new()
+    {
+        Interval = TimeSpan.FromMilliseconds(500),
+    };
+    private bool _overlayPollInFlight;
     private GameOptimizationPreferences? _loadedPreferences;
     private UpdatePreferences? _updatePreferences;
     private SignedUpdateManifest? _availableUpdate;
@@ -186,6 +192,7 @@ public sealed partial class MainWindow : Window, IDisposable
             _serviceClassifications;
         _sessionPollTimer.Tick += OnSessionPollTick;
         _overlaySettingsSaveTimer.Tick += OnOverlaySettingsSaveTick;
+        _overlayPollTimer.Tick += OnOverlayPollTick;
         string windowIconPath = Path.Combine(
             AppContext.BaseDirectory,
             "Assets",
@@ -4343,10 +4350,6 @@ public sealed partial class MainWindow : Window, IDisposable
             OverlaySizeSlider.Value = preferences.ScalePercent;
             OverlayCornerSelector.SelectedIndex =
                 GetOverlayCornerIndex(preferences.Corner);
-            OverlayStyleSelector.SelectedIndex =
-                GetOverlayStyleIndex(preferences.Style);
-            OverlayThemeSelector.SelectedIndex =
-                GetOverlayThemeIndex(preferences.Theme);
         }
         catch (OperationCanceledException)
             when (_lifetime.IsCancellationRequested)
@@ -4376,8 +4379,6 @@ public sealed partial class MainWindow : Window, IDisposable
             || OverlayOpacitySlider is null
             || OverlaySizeSlider is null
             || OverlayCornerSelector is null
-            || OverlayStyleSelector is null
-            || OverlayThemeSelector is null
             || OverlayOpacityValueText is null
             || OverlaySizeValueText is null)
         {
@@ -4453,8 +4454,8 @@ public sealed partial class MainWindow : Window, IDisposable
             GetOverlayOpacityPercent(),
             GetOverlayScalePercent(),
             GetSelectedOverlayCorner(),
-            GetSelectedOverlayStyle(),
-            GetSelectedOverlayTheme(),
+            PerformanceOverlayStyle.FullDeck,
+            PerformanceOverlayTheme.CyberNeon,
             DateTimeOffset.UtcNow);
 
     private int GetOverlayOpacityPercent() =>
@@ -4496,68 +4497,26 @@ public sealed partial class MainWindow : Window, IDisposable
             _ => 1,
         };
 
-    private PerformanceOverlayStyle GetSelectedOverlayStyle() =>
-        (OverlayStyleSelector?.SelectedItem as ComboBoxItem)?
-            .Tag?.ToString() switch
-        {
-            nameof(PerformanceOverlayStyle.CompactBar) =>
-                PerformanceOverlayStyle.CompactBar,
-            nameof(PerformanceOverlayStyle.MinimalText) =>
-                PerformanceOverlayStyle.MinimalText,
-            _ => PerformanceOverlayStyle.FullDeck,
-        };
-
-    private static int GetOverlayStyleIndex(
-        PerformanceOverlayStyle style) =>
-        style switch
-        {
-            PerformanceOverlayStyle.MinimalText => 0,
-            PerformanceOverlayStyle.CompactBar => 1,
-            _ => 2,
-        };
-
-    private PerformanceOverlayTheme GetSelectedOverlayTheme() =>
-        (OverlayThemeSelector?.SelectedItem as ComboBoxItem)?
-            .Tag?.ToString() switch
-        {
-            nameof(PerformanceOverlayTheme.MatrixGreen) =>
-                PerformanceOverlayTheme.MatrixGreen,
-            nameof(PerformanceOverlayTheme.ToxicGreen) =>
-                PerformanceOverlayTheme.ToxicGreen,
-            nameof(PerformanceOverlayTheme.ApexAmber) =>
-                PerformanceOverlayTheme.ApexAmber,
-            nameof(PerformanceOverlayTheme.CrimsonRed) =>
-                PerformanceOverlayTheme.CrimsonRed,
-            nameof(PerformanceOverlayTheme.PureWhite) =>
-                PerformanceOverlayTheme.PureWhite,
-            nameof(PerformanceOverlayTheme.StealthPurple) =>
-                PerformanceOverlayTheme.StealthPurple,
-            _ => PerformanceOverlayTheme.CyberNeon,
-        };
-
-    private static int GetOverlayThemeIndex(
-        PerformanceOverlayTheme theme) =>
-        theme switch
-        {
-            PerformanceOverlayTheme.MatrixGreen => 1,
-            PerformanceOverlayTheme.ToxicGreen => 2,
-            PerformanceOverlayTheme.ApexAmber => 3,
-            PerformanceOverlayTheme.CrimsonRed => 4,
-            PerformanceOverlayTheme.PureWhite => 5,
-            PerformanceOverlayTheme.StealthPurple => 6,
-            _ => 0,
-        };
-
     private void UpdatePerformanceOverlay()
     {
         if (FpsTrackingToggleSwitch.IsOn is false
-            || FpsOverlayToggleSwitch.IsOn is false
-            || _activeSession is null)
+            || FpsOverlayToggleSwitch.IsOn is false)
         {
+            _overlayPollTimer.Stop();
             HidePerformanceOverlay();
             return;
         }
 
+        // Sesja, gdy jest — ale nakladka nie moze od niej zalezec. Gra
+        // uruchomiona poza GameShiftem to normalny przypadek, a pokazywanie
+        // wtedy myslnikow czyta sie jako zepsute i bylo zepsute.
+        if (_activeSession is null)
+        {
+            _overlayPollTimer.Start();
+            return;
+        }
+
+        _overlayPollTimer.Stop();
         try
         {
             _performanceOverlay ??= new();
@@ -4572,6 +4531,51 @@ public sealed partial class MainWindow : Window, IDisposable
             _performanceOverlay = null;
             ActiveFrameRateStatusText.Text +=
                 $" Nakładka jest niedostępna: {exception.Message}";
+        }
+    }
+
+    /// <summary>
+    /// Feeds the overlay from whatever is in the foreground when no session is
+    /// running. One sample at a time: PresentMon takes a moment to answer, and
+    /// stacking requests would leave the overlay drawing stale numbers while
+    /// queued work piled up behind it.
+    /// </summary>
+    private async void OnOverlayPollTick(object? sender, object args)
+    {
+        if (_overlayPollInFlight || _lifetime.IsCancellationRequested)
+        {
+            return;
+        }
+
+        _overlayPollInFlight = true;
+        try
+        {
+            _foregroundGameWatcher ??= new();
+            ForegroundGameSample sample = await _foregroundGameWatcher
+                .SampleAsync(_lifetime.Token);
+
+            _performanceOverlay ??= new();
+            _performanceOverlay.Update(
+                sample.ProcessName,
+                sample.ProcessId,
+                sample.FramesPerSecond,
+                sample.FrameTimeMilliseconds);
+            _performanceOverlay.ApplyPreferences(
+                CreatePerformanceOverlayPreferencesFromControls());
+        }
+        catch (OperationCanceledException)
+        {
+        }
+        catch (Exception exception) when (
+            exception is InvalidOperationException or COMException)
+        {
+            _overlayPollTimer.Stop();
+            _performanceOverlay?.Dispose();
+            _performanceOverlay = null;
+        }
+        finally
+        {
+            _overlayPollInFlight = false;
         }
     }
 
@@ -5744,6 +5748,10 @@ public sealed partial class MainWindow : Window, IDisposable
         _sessionPollTimer.Tick -= OnSessionPollTick;
         _overlaySettingsSaveTimer.Stop();
         _overlaySettingsSaveTimer.Tick -= OnOverlaySettingsSaveTick;
+        _overlayPollTimer.Stop();
+        _overlayPollTimer.Tick -= OnOverlayPollTick;
+        _ = _foregroundGameWatcher?.DisposeAsync().AsTask();
+        _foregroundGameWatcher = null;
         _lifetime.Cancel();
         _performanceOverlay?.Dispose();
         _performanceOverlay = null;

@@ -1904,41 +1904,6 @@
                         </StackPanel>
                       </Grid>
 
-                      <!-- Style and Theme Selectors -->
-                      <Grid ColumnSpacing="12">
-                        <Grid.ColumnDefinitions>
-                          <ColumnDefinition Width="*" />
-                          <ColumnDefinition Width="*" />
-                        </Grid.ColumnDefinitions>
-                        <ComboBox
-                            x:Name="OverlayStyleSelector"
-                            HorizontalAlignment="Stretch"
-                            AutomationProperties.Name="Styl wyglądu nakładki"
-                            Header="Wygląd nakładki"
-                            SelectedIndex="0"
-                            SelectionChanged="OnFpsOverlayStyleChanged">
-                          <ComboBoxItem Content="Tylko FPS" Tag="MinimalText" />
-                          <ComboBoxItem Content="FPS + ms" Tag="CompactBar" />
-                          <ComboBoxItem Content="Wszystkie szczegóły" Tag="FullDeck" />
-                        </ComboBox>
-                        <ComboBox
-                            x:Name="OverlayThemeSelector"
-                            Grid.Column="1"
-                            HorizontalAlignment="Stretch"
-                            AutomationProperties.Name="Kolor akcentu nakładki"
-                            Header="Kolor akcentu"
-                            SelectedIndex="0"
-                            SelectionChanged="OnFpsOverlayThemeChanged">
-                          <ComboBoxItem Content="Cyber Neon (Cyjan)" Tag="CyberNeon" />
-                          <ComboBoxItem Content="Matrix Green (Zieleń)" Tag="MatrixGreen" />
-                          <ComboBoxItem Content="Toxic Green (Jaskrawy)" Tag="ToxicGreen" />
-                          <ComboBoxItem Content="Apex Amber (Złoty)" Tag="ApexAmber" />
-                          <ComboBoxItem Content="Crimson Red (Czerwony)" Tag="CrimsonRed" />
-                          <ComboBoxItem Content="Pure White (Biały)" Tag="PureWhite" />
-                          <ComboBoxItem Content="Stealth Purple (Fiolet)" Tag="StealthPurple" />
-                        </ComboBox>
-                      </Grid>
-
                       <Grid ColumnSpacing="12" RowSpacing="10">
                         <Grid.ColumnDefinitions>
                           <ColumnDefinition Width="*" />

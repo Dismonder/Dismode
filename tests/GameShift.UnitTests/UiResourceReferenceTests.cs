@@ -60,123 +60,93 @@ public sealed class UiResourceReferenceTests
     }
 
     [TestMethod]
-    public void PerformanceOverlayLayoutsDoNotRenderBackgroundSurfaces()
+    public void PerformanceOverlayShowsTheThreeNumbersThatMatter()
     {
+        // FPS mowi, jak jest srednio. 1% low mowi, jak jest w najgorszym
+        // momencie — i to ten moment gracz odczuwa jako przyciecie. Czas
+        // klatki daje jednostke, w ktorej da sie o tym mysliec.
         XDocument overlay = LoadUiXaml("PerformanceOverlayWindow.xaml");
-        string[] surfaceNames =
-        [
-            "OverlayRoot",
-            "OverlayStatisticsContent",
-            "OverlaySurfaceBorder",
-            "FullDeckLayout",
-            "StatusBadgeBorder",
-            "FpsPanelBorder",
-            "FrameTimePanelBorder",
-            "AutoRestoreBadgeBorder",
-            "TelemetryStripBorder",
+
+        foreach (string name in new[]
+        {
+            "FpsValueText",
+            "OnePercentLowText",
+            "FrameTimeValueText",
+            "FrameGraphLine",
+        })
+        {
+            Assert.IsNotNull(
+                FindNamedElement(overlay, name),
+                $"Nakladka musi zawierac {name}.");
+        }
+    }
+
+    [TestMethod]
+    public void PerformanceOverlayUsesAMonospacedFaceForValues()
+    {
+        // Przy czcionce o zmiennej szerokosci liczba skacze w poziomie przy
+        // kazdej zmianie wartosci i widac to katem oka w trakcie gry. Stala
+        // szerokosc znaku jest tu funkcja, nie stylistyka.
+        XDocument overlay = LoadUiXaml("PerformanceOverlayWindow.xaml");
+
+        foreach (string name in new[]
+        {
+            "FpsValueText",
+            "OnePercentLowText",
+            "FrameTimeValueText",
+        })
+        {
+            XElement element = FindNamedElement(overlay, name);
+            Assert.AreEqual(
+                "Consolas",
+                (string?)element.Attribute("FontFamily"),
+                $"{name} musi uzywac czcionki o stalej szerokosci.");
+        }
+    }
+
+    [TestMethod]
+    public void PerformanceOverlayHasOneLayoutAndNoAccentPalette()
+    {
+        // Trzy uklady i siedem nazwanych kolorow akcentu byly wyborem bez
+        // znaczenia: nie zmienialy tego, co panel pokazuje, ani czy dziala.
+        string settings = LoadUiSource("MainWindow.xaml");
+
+        Assert.IsFalse(
+            settings.Contains("OverlayThemeSelector", StringComparison.Ordinal),
+            "Paleta kolorow akcentu powinna byc usunieta.");
+        Assert.IsFalse(
+            settings.Contains("OverlayStyleSelector", StringComparison.Ordinal),
+            "Wybor ukladu nakladki powinien byc usuniety.");
+
+        XDocument overlay = LoadUiXaml("PerformanceOverlayWindow.xaml");
+        foreach (string gone in new[]
+        {
             "CompactBarLayout",
             "MinimalTextLayout",
-        ];
-
-        foreach (string surfaceName in surfaceNames)
+            "CompactFpsValueText",
+        })
         {
-            XElement surface = FindNamedElement(overlay, surfaceName);
-            Assert.AreEqual(
-                "Transparent",
-                (string?)surface.Attribute("Background"),
-                $"Element {surfaceName} must not render a background.");
-
-            XAttribute? borderThickness =
-                surface.Attribute("BorderThickness");
-            if (borderThickness is not null)
-            {
-                Assert.AreEqual(
-                    "0",
-                    borderThickness.Value,
-                    $"Element {surfaceName} must not render a border.");
-            }
+            Assert.IsNull(
+                overlay.Descendants().FirstOrDefault(element =>
+                    (string?)element.Attribute(XamlNamespace + "Name") == gone),
+                $"Element {gone} nalezy do usunietych ukladow.");
         }
     }
 
     [TestMethod]
-    public void PerformanceOverlayModesExposeOnlyRequestedStatistics()
+    public void PerformanceOverlayDrawsWithoutASessionAsWell()
     {
-        XDocument overlay = LoadUiXaml("PerformanceOverlayWindow.xaml");
-        XElement full = FindNamedElement(overlay, "FullDeckLayout");
-        XElement compact = FindNamedElement(overlay, "CompactBarLayout");
-        XElement fpsOnly = FindNamedElement(overlay, "MinimalTextLayout");
+        // Gra uruchomiona poza GameShiftem to normalny przypadek. Nakladka
+        // ograniczona do telemetrii sesji pokazywala wtedy myslniki, co czyta
+        // sie jako zepsute — i bylo zepsute.
+        string overlaySource = LoadUiSource("PerformanceOverlayWindow.xaml.cs");
+        string windowSource = LoadUiSource("MainWindow.xaml.cs");
 
-        string[] fullDetailElements =
-        [
-            "GameNameText",
-            "FpsValueText",
-            "FrameTimeValueText",
-            "AutoRestoreStatusText",
-            "FrameGraphLine",
-            "SourceStatusText",
-        ];
-        foreach (string elementName in fullDetailElements)
-        {
-            Assert.IsTrue(
-                ContainsNamedElement(full, elementName),
-                $"Full details mode is missing {elementName}.");
-        }
-
-        Assert.IsFalse(
-            ContainsNamedElement(full, "FullDeckBadgeIconBorder"),
-            "Full details mode must not render a decorative logo tile.");
-        Assert.IsTrue(ContainsNamedElement(compact, "CompactFpsValueText"));
-        Assert.IsTrue(
-            ContainsNamedElement(compact, "CompactFrameTimeValueText"));
-        Assert.IsFalse(
-            ContainsNamedElement(compact, "CompactGameNameText"),
-            "FPS with minimum details must not add the game name.");
-        Assert.IsFalse(
-            ContainsNamedElement(compact, "CompactSourceIndicator"),
-            "FPS with minimum details must not add a source badge.");
-        Assert.IsTrue(ContainsNamedElement(fpsOnly, "MinimalFpsValueText"));
-        Assert.IsFalse(
-            ContainsNamedElement(fpsOnly, "MinimalFrameTimeValueText"),
-            "FPS-only mode must not render frame time.");
-    }
-
-    [TestMethod]
-    public void PerformanceOverlayFullDetailsUsesCompactTwoTierHierarchy()
-    {
-        XDocument overlay = LoadUiXaml("PerformanceOverlayWindow.xaml");
-        XElement full = FindNamedElement(overlay, "FullDeckLayout");
-        XElement primary = FindNamedElement(full, "FullDeckPrimaryMetrics");
-        XElement status = FindNamedElement(full, "FullDeckStatusRow");
-
-        Assert.AreEqual("8,5,8,5", (string?)full.Attribute("Margin"));
-        Assert.IsTrue(ContainsNamedElement(primary, "FpsValueText"));
-        Assert.IsTrue(ContainsNamedElement(primary, "FrameTimeValueText"));
-        Assert.IsTrue(ContainsNamedElement(status, "TelemetryStripBorder"));
-        Assert.IsTrue(ContainsNamedElement(status, "AutoRestoreBadgeBorder"));
-
-        string codeBehind = LoadUiSource("PerformanceOverlayWindow.xaml.cs");
-        StringAssert.Contains(codeBehind, "private const int OverlayWidth = 328;");
-        StringAssert.Contains(codeBehind, "private const int OverlayHeight = 120;");
-        StringAssert.Contains(codeBehind, "private const double GraphWidth = 58d;");
-    }
-
-    [TestMethod]
-    public void PerformanceOverlaySelectorListsModesFromLeastToMostDetailed()
-    {
-        XDocument mainWindow = LoadUiXaml("MainWindow.xaml");
-        XElement selector =
-            FindNamedElement(mainWindow, "OverlayStyleSelector");
-        string[] modes = selector
-            .Elements()
-            .Where(element => element.Name.LocalName == "ComboBoxItem")
-            .Select(element =>
-                $"{(string?)element.Attribute("Tag")}|"
-                + $"{(string?)element.Attribute("Content")}")
-            .ToArray();
-
-        CollectionAssert.AreEqual(
-            ExpectedOverlayModes,
-            modes);
+        StringAssert.Contains(
+            overlaySource,
+            "public void Update(\n        string gameName,".Replace("\n", "\n"));
+        StringAssert.Contains(windowSource, "ForegroundGameWatcher");
+        StringAssert.Contains(windowSource, "OnOverlayPollTick");
     }
 
     [TestMethod]
