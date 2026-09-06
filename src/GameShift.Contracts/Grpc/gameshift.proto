@@ -187,6 +187,9 @@ message StartSessionRequest {
   RpcRequestMetadata metadata = 1;
   string plan_id = 2;
   optional bool enable_frame_rate_tracking = 3;
+  // Reactive background restraint for this session. Absent means the host's
+  // own default, which is off.
+  optional bool enable_pro_balance = 4;
 }
 
 message GetActiveSessionRequest {

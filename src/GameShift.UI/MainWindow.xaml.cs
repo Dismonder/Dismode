@@ -2561,7 +2561,8 @@ public sealed partial class MainWindow : Window, IDisposable
                     plan.PlanId,
                     plan.SessionId,
                     cancellationToken,
-                    enableFrameRateTracking: FpsTrackingToggleSwitch.IsOn);
+                    enableFrameRateTracking: FpsTrackingToggleSwitch.IsOn,
+                enableProBalance: ProBalanceToggleSwitch.IsOn);
             _pendingPlan = null;
             _planActions.Clear();
             _activeSession = active;
@@ -2748,7 +2749,8 @@ public sealed partial class MainWindow : Window, IDisposable
                     plan.PlanId,
                     plan.SessionId,
                     _lifetime.Token,
-                    enableFrameRateTracking: FpsTrackingToggleSwitch.IsOn);
+                    enableFrameRateTracking: FpsTrackingToggleSwitch.IsOn,
+                enableProBalance: ProBalanceToggleSwitch.IsOn);
             _sessionEndpointAvailable = true;
             _pendingPlan = null;
             _planActions.Clear();
@@ -4067,7 +4069,8 @@ public sealed partial class MainWindow : Window, IDisposable
                 plan.PlanId,
                 plan.SessionId,
                 _lifetime.Token,
-                enableFrameRateTracking: FpsTrackingToggleSwitch.IsOn);
+                enableFrameRateTracking: FpsTrackingToggleSwitch.IsOn,
+                enableProBalance: ProBalanceToggleSwitch.IsOn);
 
             _sessionEndpointAvailable = true;
             _pendingPlan = null;

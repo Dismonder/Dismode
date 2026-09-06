@@ -401,7 +401,8 @@ public sealed class LocalGameSessionOrchestrator : IAsyncDisposable
         Guid planId,
         SessionId sessionId,
         CancellationToken cancellationToken,
-        bool enableFrameRateTracking = true)
+        bool enableFrameRateTracking = true,
+        bool? enableProBalance = null)
     {
         EnsureReady();
         await _gate.WaitAsync(cancellationToken).ConfigureAwait(false);
@@ -591,7 +592,9 @@ public sealed class LocalGameSessionOrchestrator : IAsyncDisposable
                     : FrameRateSample.Disabled();
                 _activeSession = runtime;
                 _pendingPlan = null;
-                StartProBalance(runtime);
+                StartProBalance(
+                    runtime,
+                    enableProBalance ?? _proBalanceEnabled);
                 StartMonitor(runtime);
                 int closedApplicationCount =
                     plan.BackgroundApplications.Count(application =>
@@ -1181,9 +1184,9 @@ public sealed class LocalGameSessionOrchestrator : IAsyncDisposable
     /// at session start cover what was busy then; this covers what turns up
     /// later.
     /// </summary>
-    private void StartProBalance(ActiveRuntime runtime)
+    private void StartProBalance(ActiveRuntime runtime, bool enabled)
     {
-        if (!_proBalanceEnabled)
+        if (!enabled)
         {
             return;
         }

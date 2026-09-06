@@ -234,6 +234,12 @@ public sealed class UiResourceReferenceTests
         StringAssert.Contains(codeBehind, "ApplyCpuTopologyDescription");
         StringAssert.Contains(codeBehind, "OnProBalanceSettingChanged");
 
+        // Przelacznik ma faktycznie dojechac do sesji. Sam opis pod nim to
+        // usterka gorsza niz brak opcji: wyglada na dzialajaca i nie dziala.
+        StringAssert.Contains(
+            codeBehind,
+            "enableProBalance: ProBalanceToggleSwitch.IsOn");
+
         // Odczyt topologii dotyka rejestru i CPU sets, wiec nie moze blokowac
         // watku interfejsu.
         StringAssert.Contains(codeBehind, "await Task.Run(");
