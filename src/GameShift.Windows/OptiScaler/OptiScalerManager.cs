@@ -434,6 +434,40 @@ public sealed class OptiScalerManager : IDisposable
                 OptiScalerSafetyBlockReason.ExperimentalUseNotConfirmed);
         }
 
+        // Niektore gry nie uruchomia OptiScalera bez dodatkowego skladnika.
+        // Sprawdzamy to przed pobraniem paczki, bo brak zaleznosci konczy sie
+        // wywaleniem gry, a nie lagodnym powrotem do ustawien domyslnych.
+        OptiScalerGameRequirement? requirement =
+            OptiScalerGameRequirements.Find(targetExecutable);
+        if (requirement is not null)
+        {
+            string gameDirectory = Path.GetDirectoryName(targetExecutable)!;
+            IEnumerable<string> names;
+            try
+            {
+                names = Directory.EnumerateFiles(gameDirectory, "*.dll")
+                    .Select(Path.GetFileName)
+                    .OfType<string>();
+            }
+            catch (Exception exception) when (
+                exception is IOException or UnauthorizedAccessException)
+            {
+                names = [];
+            }
+
+            if (!OptiScalerGameRequirements.IsSatisfied(requirement, names))
+            {
+                return new(
+                    false,
+                    $"{requirement.GameName}: wymagany jest "
+                        + $"{requirement.CompanionName} "
+                        + $"({requirement.CompanionFileName}). "
+                        + requirement.Notice,
+                    targetExecutable,
+                    OptiScalerSafetyBlockReason.RequiredCompanionMissing);
+            }
+        }
+
         NvidiaDriverStoreSnapshot? driverStore = null;
         if (request.EnableNeuralRendering)
         {
