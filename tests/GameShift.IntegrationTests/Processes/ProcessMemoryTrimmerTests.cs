@@ -38,6 +38,14 @@ public sealed class ProcessMemoryTrimmerTests
             "RuntimeBroker",
         ];
 
+        // Wlasne narzedzie pomiarowe GameShifta. Zagłodzone gubi zdarzenia
+        // ETW, a zgubione zdarzenia odczytuja sie jako dlugie klatki — program
+        // raportowalby przyciecie, ktore sam wywolal.
+        Assert.IsTrue(
+            BackgroundApplicationGuard.IsProtectedProcessName(
+                "PresentMon-2.5.1-x64"),
+            "PresentMon musi byc chroniony niezaleznie od wersji w nazwie.");
+
         foreach (string name in neverTrim)
         {
             Assert.IsTrue(
