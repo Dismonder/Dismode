@@ -215,6 +215,31 @@ public sealed class UiResourceReferenceTests
     }
 
     [TestMethod]
+    public void CpuSectionStatesWhatTheMachineCanDoAndDefaultsToOff()
+    {
+        XDocument mainWindow = LoadUiXaml("MainWindow.xaml");
+        XElement topology = FindNamedElement(mainWindow, "CpuTopologyText");
+        XElement toggle = FindNamedElement(mainWindow, "ProBalanceToggleSwitch");
+
+        // Ograniczanie procesow tla siega po procesy, ktorych uzytkownik nie
+        // wskazal w planie, wiec musi startowac wylaczone.
+        Assert.AreEqual("False", (string?)toggle.Attribute("IsOn"));
+
+        // Opis topologii jest wypelniany odczytem z maszyny; wartosc w XAML to
+        // tylko stan przejsciowy do czasu odczytu.
+        Assert.IsNotNull((string?)topology.Attribute("Text"));
+
+        string codeBehind = LoadUiSource("MainWindow.xaml.cs");
+        StringAssert.Contains(codeBehind, "SystemCpuTopologyProvider.Read()");
+        StringAssert.Contains(codeBehind, "ApplyCpuTopologyDescription");
+        StringAssert.Contains(codeBehind, "OnProBalanceSettingChanged");
+
+        // Odczyt topologii dotyka rejestru i CPU sets, wiec nie moze blokowac
+        // watku interfejsu.
+        StringAssert.Contains(codeBehind, "await Task.Run(");
+    }
+
+    [TestMethod]
     public void DiagnosticsExposesSeparateSystemOptimizerCard()
     {
         XDocument mainWindow = LoadUiXaml("MainWindow.xaml");
