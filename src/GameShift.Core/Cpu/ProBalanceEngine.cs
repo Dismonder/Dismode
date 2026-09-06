@@ -80,7 +80,11 @@ public sealed class ProBalanceEngine
         List<ProBalanceDecision> decisions = [];
         HashSet<ProcessRuntimeKey> seen = [];
 
-        foreach (ProBalanceObservation observation in observations)
+        // Najciezsi pierwsi. Gdy kandydatow jest wiecej niz wolno ograniczyc,
+        // to oni maja zajac miejsca — a nie ten, kto trafil sie wczesniej
+        // w kolejnosci inwentaryzacji.
+        foreach (ProBalanceObservation observation in observations
+            .OrderByDescending(candidate => candidate.CpuCores))
         {
             seen.Add(observation.RuntimeKey);
             if (observation.IsProtected || observation.BelongsToGame)
@@ -234,6 +238,13 @@ public sealed class ProBalanceEngine
             return null;
         }
 
+        if (CountRestrained() >= _settings.MaximumRestrained)
+        {
+            // Limit wyczerpany. Licznik zostaje, wiec proces zlapie sie od
+            // razu, gdy zwolni sie miejsce — nie musi zbierac probek od nowa.
+            return null;
+        }
+
         state.HotSamples = 0;
         state.CalmSamples = 0;
         state.RestrainedSinceUtc = nowUtc;
@@ -245,6 +256,9 @@ public sealed class ProBalanceEngine
                 + $"{_settings.SustainedSamples} próbki przy obciążeniu "
                 + $"{systemCpuPercent:F0}%.");
     }
+
+    private int CountRestrained() => _tracked.Count(
+        entry => entry.Value.RestrainedSinceUtc is not null);
 
     private ProBalanceDecision? AdvanceRestrained(
         TrackedProcess state,

@@ -4,6 +4,7 @@ using System.Diagnostics;
 using System.Text.Json;
 using GameShift.Contracts.Protocol;
 using GameShift.Core.Actions;
+using GameShift.Core.Cpu;
 using GameShift.Core.Domain.Identifiers;
 using GameShift.Core.Domain.Processes;
 using GameShift.Core.History;
@@ -12,6 +13,7 @@ using GameShift.Core.Profiles;
 using GameShift.Core.Recovery;
 using GameShift.Core.Sessions;
 using GameShift.Core.Transactions;
+using GameShift.Windows.Cpu;
 using GameShift.Windows.Processes;
 using GameShift.Windows.Profiles;
 
@@ -48,6 +50,8 @@ public sealed class LocalGameSessionOrchestrator : IAsyncDisposable
     private readonly ISystemGameProfileCoordinator _systemProfileCoordinator;
     private readonly TimeProvider _timeProvider;
     private readonly TimeSpan _monitorInterval;
+    private readonly bool _proBalanceEnabled;
+    private readonly ProBalanceSettings? _proBalanceSettings;
     private readonly SemaphoreSlim _gate = new(1, 1);
     private readonly CancellationTokenSource _lifetime = new();
     private PendingPlan? _pendingPlan;
@@ -72,7 +76,9 @@ public sealed class LocalGameSessionOrchestrator : IAsyncDisposable
         SavedBackgroundRuleResolver? savedRuleResolver = null,
         IGameMetadataRepository? gameMetadataRepository = null,
         GameMetadataRefreshService? metadataRefreshService = null,
-        ISystemGameProfileCoordinator? systemProfileCoordinator = null)
+        ISystemGameProfileCoordinator? systemProfileCoordinator = null,
+        bool enableProBalance = false,
+        ProBalanceSettings? proBalanceSettings = null)
     {
         _profiles = profiles;
         _history = history;
@@ -100,6 +106,16 @@ public sealed class LocalGameSessionOrchestrator : IAsyncDisposable
             systemProfileCoordinator ?? NullSystemGameProfileCoordinator.Instance;
         _timeProvider = timeProvider ?? TimeProvider.System;
         _monitorInterval = monitorInterval ?? DefaultMonitorInterval;
+
+        // Domyslnie wylaczone. Reszta tego, co GameShift rusza, przechodzi
+        // przez plan zatwierdzony przez uzytkownika; ta petla siega po procesy,
+        // ktorych nikt nie wskazal, wiec wlacza sie dopiero razem z wlasnym
+        // przelacznikiem w interfejsie.
+        _proBalanceEnabled = enableProBalance;
+
+        // Progi sa wystawione, bo maja byc dostrajane pomiarem czasow klatek,
+        // a nie przyjete raz na zawsze.
+        _proBalanceSettings = proBalanceSettings;
 
         if (_monitorInterval <= TimeSpan.Zero
             || _monitorInterval > TimeSpan.FromMinutes(1))
@@ -575,6 +591,7 @@ public sealed class LocalGameSessionOrchestrator : IAsyncDisposable
                     : FrameRateSample.Disabled();
                 _activeSession = runtime;
                 _pendingPlan = null;
+                StartProBalance(runtime);
                 StartMonitor(runtime);
                 int closedApplicationCount =
                     plan.BackgroundApplications.Count(application =>
@@ -948,6 +965,16 @@ public sealed class LocalGameSessionOrchestrator : IAsyncDisposable
         }
 
         _lifetime.Cancel();
+
+        // Nadzorca ma wlasny cykl zycia i nie sluchа tokenu sesji. Bez tego
+        // jego petla przezywa orkiestrator, a to, co obnizyl, zostaje
+        // obnizone — widoczne, gdy sesja konczy sie inaczej niz przez
+        // Restore, na przyklad przy zamknieciu aplikacji.
+        if (_activeSession is { } runtime)
+        {
+            await StopProBalanceAsync(runtime).ConfigureAwait(false);
+        }
+
         try
         {
             await _monitorTask.ConfigureAwait(false);
@@ -1146,6 +1173,72 @@ public sealed class LocalGameSessionOrchestrator : IAsyncDisposable
     private void StartMonitor(ActiveRuntime runtime)
     {
         _monitorTask = MonitorAsync(runtime, _lifetime.Token);
+    }
+
+    /// <summary>
+    /// Starts watching for background processes that begin hogging the CPU
+    /// after the session is already running. The one-off priority changes made
+    /// at session start cover what was busy then; this covers what turns up
+    /// later.
+    /// </summary>
+    private void StartProBalance(ActiveRuntime runtime)
+    {
+        if (!_proBalanceEnabled)
+        {
+            return;
+        }
+
+        try
+        {
+            ProBalanceSupervisor supervisor = new(
+                new ProcessInventory(),
+                new JournaledProBalanceActuator(
+                    _journal,
+                    runtime.SessionId,
+                    _identityProvider,
+                    _timeProvider),
+                () => runtime.ProcessTree
+                    .GetKnownProcesses()
+                    .Select(identity => identity.RuntimeKey.ProcessId)
+                    .ToHashSet(),
+                settings: _proBalanceSettings,
+                timeProvider: _timeProvider);
+            runtime.ProBalance = supervisor;
+            supervisor.Start();
+        }
+        catch (Exception exception) when (
+            exception is InvalidOperationException
+                or UnauthorizedAccessException
+                or IOException)
+        {
+            // Sesja ma dzialac takze wtedy, gdy ta czesc nie wstala.
+            runtime.ProBalance = null;
+        }
+    }
+
+    /// <summary>
+    /// Stops the watcher and gives back every priority it lowered. Called
+    /// before the session is cleared, so a failure here still leaves the
+    /// journal able to finish the job on the next start.
+    /// </summary>
+    private static async ValueTask StopProBalanceAsync(ActiveRuntime runtime)
+    {
+        if (runtime.ProBalance is not { } supervisor)
+        {
+            return;
+        }
+
+        runtime.ProBalance = null;
+        try
+        {
+            await supervisor.DisposeAsync().ConfigureAwait(false);
+        }
+        catch (Exception exception) when (
+            exception is InvalidOperationException
+                or UnauthorizedAccessException
+                or IOException)
+        {
+        }
     }
 
     private async Task MonitorAsync(
@@ -1600,6 +1693,7 @@ public sealed class LocalGameSessionOrchestrator : IAsyncDisposable
             recovery.ConflictCount == 0
                 ? OptimizationSessionState.Completed
                 : OptimizationSessionState.CompletedWithWarnings);
+        await StopProBalanceAsync(runtime).ConfigureAwait(false);
         _activeSession = null;
         await TryRefreshCompletedSessionMetadataAsync(
                 runtime.ProfileId,
@@ -2459,6 +2553,12 @@ public sealed class LocalGameSessionOrchestrator : IAsyncDisposable
 
         internal GameProcessTreeSessionTracker ProcessTree { get; } =
             processTree;
+
+        /// <summary>
+        /// Reactive background restraint, running for as long as the session
+        /// does. Null when the feature is off for this orchestrator.
+        /// </summary>
+        internal ProBalanceSupervisor? ProBalance { get; set; }
 
         private FrameRateSample _frameRate =
             FrameRateSample.WaitingForGame();
