@@ -118,6 +118,59 @@ public sealed class CpuAffinityPolicyTests
         }
     }
 
+    /// <summary>
+    /// Ryzen 9 9950X: sixteen cores with SMT across two CCDs, every core the
+    /// same efficiency class, but two separate last-level caches.
+    /// </summary>
+    private static CpuTopology DualCcdRyzen()
+    {
+        List<CpuLogicalProcessor> processors = [];
+        byte index = 0;
+        for (uint core = 0; core < 32; core += 2)
+        {
+            byte cache = (byte)(core < 16 ? 0 : 1);
+            processors.Add(new(index, 0, index, core, 0, false, true, cache));
+            index++;
+            processors.Add(new(index, 0, index, core, 0, false, true, cache));
+            index++;
+        }
+
+        return new(processors);
+    }
+
+    [TestMethod]
+    public void SeparateCacheGroupsAreRecognisedOnAUniformCpu()
+    {
+        CpuTopology ryzen = DualCcdRyzen();
+
+        // Klasa wydajnosci nic tu nie mowi — granica jest w cache.
+        Assert.IsFalse(ryzen.IsHybrid);
+        Assert.IsTrue(ryzen.HasSeparateCacheGroups);
+        Assert.AreEqual(32, ryzen.Processors.Count);
+        Assert.AreEqual(
+            8,
+            CpuTopology.CountPhysicalCores(ryzen.LargestCacheGroup));
+    }
+
+    [TestMethod]
+    public void GameIsKeptInsideOneCacheGroup()
+    {
+        // Watki rozrzucone po obu CCD rozmawiaja przez pamiec zamiast przez
+        // wspolny cache. Wczesniej polityka odmawiala tu calkowicie.
+        CpuAffinityDecision game = CpuAffinityPolicy.Decide(
+            DualCcdRyzen(),
+            CpuAffinityRole.Foreground);
+        CpuAffinityDecision background = CpuAffinityPolicy.Decide(
+            DualCcdRyzen(),
+            CpuAffinityRole.Background);
+
+        Assert.IsTrue(game.ShouldApply, game.Explanation);
+        Assert.IsTrue(background.ShouldApply, background.Explanation);
+        Assert.AreEqual(0x0000FFFFUL, game.Mask);
+        Assert.AreEqual(0xFFFF0000UL, background.Mask);
+        Assert.AreEqual(0UL, game.Mask & background.Mask);
+    }
+
     [TestMethod]
     public void SmallPerformanceTierIsLeftAlone()
     {

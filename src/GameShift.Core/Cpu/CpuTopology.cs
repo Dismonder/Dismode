@@ -18,7 +18,8 @@ public sealed record CpuLogicalProcessor(
     uint CoreIndex,
     byte EfficiencyClass,
     bool Parked,
-    bool Allocated);
+    bool Allocated,
+    byte LastLevelCacheIndex = 0);
 
 public sealed record CpuTopology(IReadOnlyList<CpuLogicalProcessor> Processors)
 {
@@ -38,6 +39,34 @@ public sealed record CpuTopology(IReadOnlyList<CpuLogicalProcessor> Processors)
     public byte LowestEfficiencyClass => Processors.Count == 0
         ? (byte)0
         : Processors.Min(processor => processor.EfficiencyClass);
+
+    /// <summary>
+    /// True when the machine's cores do not all share one last-level cache.
+    /// <para>
+    /// This is what a multi-CCD Ryzen looks like, and it matters more than it
+    /// sounds: two cores in different cache groups talk to each other through
+    /// memory rather than through shared cache, and a game's threads scattered
+    /// across the boundary pay that cost on every exchange. The tiers are the
+    /// same speed, so nothing about efficiency class reveals it.
+    /// </para>
+    /// </summary>
+    public bool HasSeparateCacheGroups => Processors
+        .Select(processor => (processor.Group, processor.LastLevelCacheIndex))
+        .Distinct()
+        .Count() > 1;
+
+    /// <summary>
+    /// The cache group with the most physical cores, or the lowest index among
+    /// equals so the choice is stable between reads.
+    /// </summary>
+    public IReadOnlyList<CpuLogicalProcessor> LargestCacheGroup => Processors
+        .GroupBy(processor =>
+            (processor.Group, processor.LastLevelCacheIndex))
+        .OrderByDescending(group => CountPhysicalCores(group))
+        .ThenBy(group => group.Key.Group)
+        .ThenBy(group => group.Key.LastLevelCacheIndex)
+        .Select(group => (IReadOnlyList<CpuLogicalProcessor>)[.. group])
+        .FirstOrDefault() ?? [];
 
     /// <summary>
     /// Logical processors in the fastest tier — Intel's P-cores on a hybrid

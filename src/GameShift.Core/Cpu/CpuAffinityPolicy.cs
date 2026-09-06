@@ -13,7 +13,10 @@ public enum CpuAffinityDecline
 {
     None = 0,
 
-    /// <summary>Every core is the same speed, so pinning moves nothing.</summary>
+    /// <summary>
+    /// Every core is the same speed and they all share one last-level cache,
+    /// so there is no boundary worth keeping the game on one side of.
+    /// </summary>
     UniformTopology = 1,
 
     /// <summary>Too few fast cores to hold a game without starving it.</summary>
@@ -21,6 +24,12 @@ public enum CpuAffinityDecline
 
     /// <summary>Too few slow cores to be worth exiling anything to.</summary>
     EfficiencyTierTooSmall = 3,
+
+    /// <summary>
+    /// The machine has separate cache groups but the largest one is too small
+    /// to hold a game without starving it.
+    /// </summary>
+    CacheGroupTooSmall = 6,
 
     /// <summary>
     /// More than 64 logical processors, so affinity spans processor groups.
@@ -90,12 +99,20 @@ public static class CpuAffinityPolicy
 
         if (!topology.IsHybrid)
         {
-            return new(
-                false,
-                0,
-                CpuAffinityDecline.UniformTopology,
-                "Wszystkie rdzenie są tej samej klasy wydajności, więc "
-                    + "przypinanie do rdzeni niczego by nie zmieniło.");
+            // Rdzenie tej samej klasy nadal moga byc podzielone cache'em
+            // ostatniego poziomu — tak wyglada Ryzen z kilkoma CCD. Watki
+            // rozrzucone po obu stronach tej granicy rozmawiaja przez pamiec
+            // zamiast przez wspolny cache, a klasa wydajnosci nic o tym nie
+            // mowi.
+            return topology.HasSeparateCacheGroups
+                ? DecideByCacheGroup(topology, role)
+                : new(
+                    false,
+                    0,
+                    CpuAffinityDecline.UniformTopology,
+                    "Wszystkie rdzenie są tej samej klasy wydajności i dzielą "
+                        + "wspólny cache, więc przypinanie niczego by nie "
+                        + "zmieniło.");
         }
 
         IReadOnlyList<CpuLogicalProcessor> performance =
@@ -149,6 +166,62 @@ public static class CpuAffinityPolicy
                         + $"({target.Count} procesorów logicznych)."
                     : $"Procesy tła trafią na {efficiencyCores} wolnych "
                         + $"rdzeni ({target.Count} procesorów logicznych).");
+    }
+
+    /// <summary>
+    /// Keeps the game inside one cache group and pushes background work to the
+    /// rest. On a machine whose cores are all the same speed this is the only
+    /// boundary that means anything, and on a multi-CCD part it is a sharper
+    /// one than the performance tiers ever are.
+    /// </summary>
+    private static CpuAffinityDecision DecideByCacheGroup(
+        CpuTopology topology,
+        CpuAffinityRole role)
+    {
+        IReadOnlyList<CpuLogicalProcessor> largest = topology.LargestCacheGroup;
+        int cores = CpuTopology.CountPhysicalCores(largest);
+        if (cores < MinimumPerformancePhysicalCores)
+        {
+            return new(
+                false,
+                0,
+                CpuAffinityDecline.CacheGroupTooSmall,
+                $"Największa grupa cache ma tylko {cores} rdzeni; poniżej "
+                    + $"{MinimumPerformancePhysicalCores} przypięcie gry "
+                    + "częściej szkodzi, niż pomaga.");
+        }
+
+        IReadOnlyList<CpuLogicalProcessor> rest =
+            [.. topology.Processors.Except(largest)];
+        if (CpuTopology.CountPhysicalCores(rest)
+            < MinimumEfficiencyPhysicalCores)
+        {
+            return new(
+                false,
+                0,
+                CpuAffinityDecline.CacheGroupTooSmall,
+                "Poza największą grupą cache zostaje za mało rdzeni, żeby "
+                    + "przenieść tam procesy tła.");
+        }
+
+        IReadOnlyList<CpuLogicalProcessor> target =
+            role == CpuAffinityRole.Foreground ? largest : rest;
+        ulong mask = BuildMask(target);
+        return mask == 0
+            ? new(
+                false,
+                0,
+                CpuAffinityDecline.TopologyUnavailable,
+                "Wyliczona maska rdzeni jest pusta.")
+            : new(
+                true,
+                mask,
+                CpuAffinityDecline.None,
+                role == CpuAffinityRole.Foreground
+                    ? $"Gra zostanie w jednej grupie cache: {cores} rdzeni "
+                        + $"({target.Count} procesorów logicznych)."
+                    : "Procesy tła trafią poza grupę cache gry "
+                        + $"({target.Count} procesorów logicznych).");
     }
 
     /// <summary>

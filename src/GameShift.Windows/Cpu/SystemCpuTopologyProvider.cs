@@ -4,11 +4,15 @@ using GameShift.Core.Cpu;
 namespace GameShift.Windows.Cpu;
 
 /// <summary>
-/// Reads the machine's CPU sets. This is the API that knows about performance
-/// tiers: GetLogicalProcessorInformationEx describes cache and package layout
-/// but says nothing about how fast a core is, and Win32_Processor reports one
-/// row for the whole package. Only a CPU set carries EfficiencyClass per
-/// logical processor, which is what separates P-cores from E-cores.
+/// Reads the machine's CPU sets.
+/// <para>
+/// GetLogicalProcessorInformationEx would also work — its PROCESSOR_RELATIONSHIP
+/// carries EfficiencyClass too — but it reports per physical core and needs the
+/// group masks unpacked to get back to logical processors. A CPU set is already
+/// one record per logical processor and carries the core index, the efficiency
+/// class and the last-level cache index together, which is exactly the shape
+/// the policy wants. Win32_Processor is no use here: one row per package.
+/// </para>
 /// </summary>
 public static partial class SystemCpuTopologyProvider
 {
@@ -85,7 +89,8 @@ public static partial class SystemCpuTopologyProvider
                     entry.CoreIndex,
                     entry.EfficiencyClass,
                     (entry.AllFlags & ParkedFlag) != 0,
-                    (entry.AllFlags & AllocatedFlag) != 0));
+                    (entry.AllFlags & AllocatedFlag) != 0,
+                    entry.LastLevelCacheIndex));
             }
 
             offset += entry.Size;
