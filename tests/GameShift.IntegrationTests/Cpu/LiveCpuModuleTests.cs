@@ -101,7 +101,7 @@ public sealed class LiveCpuModuleTests
     {
         NoOpActuator actuator = new();
         await using ProBalanceSupervisor supervisor = new(
-            new ProcessInventory(),
+            new CpuProcessSampler(),
             actuator,
             static () => new HashSet<int> { Environment.ProcessId },
             // Prog obciazenia podniesiony ponad maksimum, wiec silnik nigdy

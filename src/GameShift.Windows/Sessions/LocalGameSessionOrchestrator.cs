@@ -1206,7 +1206,7 @@ public sealed class LocalGameSessionOrchestrator : IAsyncDisposable
         try
         {
             ProBalanceSupervisor supervisor = new(
-                new ProcessInventory(),
+                new CpuProcessSampler(),
                 new JournaledProBalanceActuator(
                     _journal,
                     runtime.SessionId,
