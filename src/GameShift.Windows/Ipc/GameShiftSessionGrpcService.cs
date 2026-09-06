@@ -145,7 +145,10 @@ public sealed class GameShiftSessionGrpcService :
                     context.CancellationToken,
                     request.HasEnableFrameRateTracking
                         ? request.EnableFrameRateTracking
-                        : true);
+                        : true,
+                    request.HasEnableProBalance
+                        ? request.EnableProBalance
+                        : null);
             return ToReply(snapshot);
         }
         catch (Exception exception) when (IsExpectedSessionFailure(exception))
