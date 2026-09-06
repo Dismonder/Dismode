@@ -112,6 +112,22 @@ public sealed class ProBalanceSupervisor : IAsyncDisposable
     public async ValueTask<IReadOnlyList<ProBalanceDecision>> TickAsync(
         CancellationToken cancellationToken)
     {
+        // Petla i wywolanie reczne dziela slownik poprzednich odczytow oraz
+        // stan silnika. Bez tej bramki rownolegly przebieg uszkodzilby oba.
+        await _gate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            return await TickCoreAsync(cancellationToken).ConfigureAwait(false);
+        }
+        finally
+        {
+            _gate.Release();
+        }
+    }
+
+    private async ValueTask<IReadOnlyList<ProBalanceDecision>> TickCoreAsync(
+        CancellationToken cancellationToken)
+    {
         double? systemCpu = _systemLoad();
         if (systemCpu is not double load)
         {
@@ -218,7 +234,7 @@ public sealed class ProBalanceSupervisor : IAsyncDisposable
             await _gate.WaitAsync(cancellationToken).ConfigureAwait(false);
             try
             {
-                await TickAsync(cancellationToken).ConfigureAwait(false);
+                await TickCoreAsync(cancellationToken).ConfigureAwait(false);
             }
             catch (OperationCanceledException)
             {

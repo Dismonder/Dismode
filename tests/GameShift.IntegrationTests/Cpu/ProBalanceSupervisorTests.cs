@@ -120,6 +120,44 @@ public sealed class ProBalanceSupervisorTests
             new ProcessRuntimeKey(4242, Started));
     }
 
+    [TestMethod]
+    public async Task ConcurrentTicksDoNotCorruptState()
+    {
+        // Petla i wywolanie reczne dziela slownik poprzednich odczytow oraz
+        // stan silnika. Bez bramki rownolegly przebieg uszkadza oba.
+        AdvancingTimeProvider time = new(
+            new DateTimeOffset(2026, 9, 6, 12, 0, 0, TimeSpan.Zero));
+        StubInventory inventory = new();
+        RecordingActuator actuator = new();
+        await using ProBalanceSupervisor supervisor = new(
+            inventory,
+            actuator,
+            static () => new HashSet<int>(),
+            systemLoad: static () => 90,
+            timeProvider: time);
+
+        inventory.Set(cpuMilliseconds: 0);
+        await supervisor.TickAsync(CancellationToken.None);
+
+        for (int round = 0; round < 6; round++)
+        {
+            time.Advance(TimeSpan.FromSeconds(2));
+            inventory.Advance(1600);
+            await Task.WhenAll(
+                Enumerable.Range(0, 8).Select(_ =>
+                    supervisor.TickAsync(CancellationToken.None).AsTask()));
+        }
+
+        // Bramka nie gwarantuje jednego ograniczenia — kazdy tick przesuwa
+        // licznik probek — ale gwarantuje, ze nic sie nie wysypie i ze proces
+        // nie zostanie ograniczony wielokrotnie bez zwolnienia miedzy tym.
+        Assert.IsTrue(
+            actuator.Restrained.Count
+                <= actuator.Released.Count + 1,
+            $"Ograniczen {actuator.Restrained.Count} przy "
+                + $"{actuator.Released.Count} zwolnieniach.");
+    }
+
     private sealed class StubInventory(bool includeGameAndShell = false)
         : IProcessInventory
     {

@@ -60,13 +60,18 @@ public static partial class SystemCpuTopologyProvider
         uint length)
     {
         List<CpuLogicalProcessor> processors = [];
+        uint entrySize = checked((uint)Marshal.SizeOf<SystemCpuSetInformation>());
         uint offset = 0;
-        while (offset + SystemCpuSetInformation.HeaderSize <= length)
+
+        // Cala struktura musi sie miescic w buforze, nie tylko jej naglowek:
+        // PtrToStructure czyta pelne 32 bajty niezaleznie od tego, ile zostalo,
+        // wiec sprawdzenie samego naglowka pozwalaloby czytac poza buforem.
+        while (offset + entrySize <= length)
         {
             SystemCpuSetInformation entry =
                 Marshal.PtrToStructure<SystemCpuSetInformation>(
                     buffer + checked((int)offset));
-            if (entry.Size == 0 || offset + entry.Size > length)
+            if (entry.Size < entrySize || offset + entry.Size > length)
             {
                 break;
             }
@@ -109,8 +114,6 @@ public static partial class SystemCpuTopologyProvider
     [StructLayout(LayoutKind.Sequential)]
     private struct SystemCpuSetInformation
     {
-        internal const uint HeaderSize = 8;
-
         internal uint Size;
         internal uint Type;
         internal uint Id;

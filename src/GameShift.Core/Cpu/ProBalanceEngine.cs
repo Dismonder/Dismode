@@ -110,13 +110,29 @@ public sealed class ProBalanceEngine
             }
         }
 
-        // Proces, ktory zniknal z probki, juz sie zakonczyl. Nie ma czego
-        // przywracac, ale trzymanie jego stanu w nieskonczonosc to wyciek.
+        // Proces zniknal z probki. Zwykle znaczy to, ze sie zakonczyl — ale
+        // moze tez znaczyc, ze jedna inwentaryzacja go nie zobaczyla, na
+        // przyklad przez odmowe dostepu. Gdyby po prostu zapomniec o nim
+        // stanu, proces wciaz zyjacy zostalby przy obnizonym priorytecie na
+        // zawsze, bo nikt juz nie wydalby polecenia zwolnienia. Dlatego
+        // wychodzac, emitujemy zwolnienie; jesli proces naprawde zniknal,
+        // aktuator nieszkodliwie nic nie zrobi.
         foreach (ProcessRuntimeKey key in _tracked.Keys.ToArray())
         {
-            if (!seen.Contains(key))
+            if (seen.Contains(key))
             {
-                _tracked.Remove(key);
+                continue;
+            }
+
+            TrackedProcess vanished = _tracked[key];
+            _tracked.Remove(key);
+            if (vanished.RestrainedSinceUtc is not null)
+            {
+                decisions.Add(new(
+                    key,
+                    vanished.ProcessName,
+                    ProBalanceAction.Release,
+                    "Proces zniknął z inwentaryzacji."));
             }
         }
 
