@@ -385,7 +385,7 @@ public sealed class UiResourceReferenceTests
                     "GameShiftLibraryCompactButtonStyle",
                     StringComparison.Ordinal));
 
-        Assert.AreEqual("1680", (string?)page.Attribute("MaxWidth"));
+        Assert.AreEqual("2560", (string?)page.Attribute("MaxWidth"));
         Assert.AreEqual("280", (string?)wrapGrid.Attribute("ItemWidth"));
         Assert.AreEqual("0", FindSetterValue(containerStyle, "Padding"));
         Assert.AreEqual("0", FindSetterValue(containerStyle, "Margin"));
