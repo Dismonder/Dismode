@@ -17,10 +17,10 @@ public sealed class ProductInformationTests
             expected: assemblyVersion.ToString(3),
             actual: ProductInformation.CurrentVersion);
         Assert.AreEqual(
-            expected: "0.4.7",
+            expected: "0.4.8",
             actual: assemblyVersion.ToString(3));
         Assert.AreEqual(
-            expected: "GameShift 0.4.7 Gaming Edition",
+            expected: "GameShift 0.4.8 Gaming Edition",
             actual: ProductInformation.FullDisplayName);
         Assert.IsNotNull(
             typeof(ProductInformation).GetProperty(
