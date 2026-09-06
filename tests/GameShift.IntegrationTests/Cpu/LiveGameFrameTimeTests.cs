@@ -19,12 +19,24 @@ namespace GameShift.IntegrationTests.Cpu;
 [TestClass]
 public sealed class LiveGameFrameTimeTests
 {
+    /// <summary>
+    /// Games the measurement knows how to attach to, most CPU-hungry first.
+    /// Order matters: a title whose frame time is decided by the processor is
+    /// the only one that can show whether restraint does anything, and picking
+    /// a GPU-limited one instead produces a confident-looking null result.
+    /// </summary>
     private static readonly string[] KnownGameProcessNames =
     [
-        "RobloxPlayerBeta",
+        "7DaysToDie",
+        "pcsx2-qt",
+        "rpcs3",
         "re9",
         "MonsterHunterWilds",
         "Cyberpunk2077",
+        "SonsOfTheForest",
+        "TheForest",
+        "Raft",
+        "RobloxPlayerBeta",
     ];
 
     private readonly List<Process> _load = [];
