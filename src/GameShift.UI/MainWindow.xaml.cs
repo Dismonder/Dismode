@@ -1696,6 +1696,35 @@ public sealed partial class MainWindow : Window, IDisposable
                     TextWrapping = TextWrapping.Wrap,
                 },
             };
+            string? suppliedModelPath = null;
+            TextBlock suppliedModelStatus = new()
+            {
+                Foreground = (Brush)Application.Current.Resources[
+                    "GameShiftMutedTextBrush"],
+                MaxWidth = 500,
+                Text = "Nie wybrano pliku.",
+                TextWrapping = TextWrapping.Wrap,
+                Visibility = Visibility.Collapsed,
+            };
+            Button pickModelButton = new()
+            {
+                Content = "Wskaż nvngx_dlssnr.dll…",
+                IsEnabled = !hardBlocked,
+                Visibility = Visibility.Collapsed,
+            };
+            CheckBox unverifiedModelConfirmation = new()
+            {
+                Visibility = Visibility.Collapsed,
+                Content = new TextBlock
+                {
+                    MaxWidth = 500,
+                    Text = "Użyj tego pliku mimo nieudanej weryfikacji. "
+                        + "Rozumiem, że Windows nie potwierdził, iż to "
+                        + "niezmieniony kod NVIDII, i że zostanie on "
+                        + "załadowany do gry z pełnymi prawami procesu gry.",
+                    TextWrapping = TextWrapping.Wrap,
+                },
+            };
             TextBlock neuralStatus = new()
             {
                 Foreground = (Brush)Application.Current.Resources[
@@ -1749,6 +1778,9 @@ public sealed partial class MainWindow : Window, IDisposable
             content.Children.Add(agilitySdkUpgrade);
             content.Children.Add(neuralRendering);
             content.Children.Add(neuralStatus);
+            content.Children.Add(pickModelButton);
+            content.Children.Add(suppliedModelStatus);
+            content.Children.Add(unverifiedModelConfirmation);
 
             ContentDialog dialog = new()
             {
@@ -1820,11 +1852,80 @@ public sealed partial class MainWindow : Window, IDisposable
                         : Visibility.Collapsed;
                 neuralRendering.Visibility = neuralVisibility;
                 neuralStatus.Visibility = neuralVisibility;
+
+                // Model bierzemy ze sterownika, jesli tam jest. Jesli nie ma —
+                // a na RTX 5070 ze sterownikiem 616.64 nie ma — uzytkownik
+                // wskazuje plik sam, a my sprawdzamy jego podpis.
+                Visibility pickerVisibility =
+                    neuralVisibility == Visibility.Visible
+                        && !driverStore.Capability.NeuralRenderingModelAvailable
+                            ? Visibility.Visible
+                            : Visibility.Collapsed;
+                pickModelButton.Visibility = pickerVisibility;
+                suppliedModelStatus.Visibility = pickerVisibility;
+                if (pickerVisibility == Visibility.Collapsed)
+                {
+                    unverifiedModelConfirmation.Visibility =
+                        Visibility.Collapsed;
+                }
                 safetyNotice.Message = channelReleases.Length == 0
                     ? "Nie udało się pobrać listy wersji dla tego kanału."
                     : DescribeOptiScalerChannel(channel, preflight);
                 UpdatePrimaryButton();
             }
+
+            unverifiedModelConfirmation.Checked += (_, _) =>
+            {
+                neuralRendering.IsEnabled = !hardBlocked;
+                neuralRendering.IsChecked = true;
+            };
+            unverifiedModelConfirmation.Unchecked += (_, _) =>
+            {
+                neuralRendering.IsEnabled = false;
+                neuralRendering.IsChecked = false;
+            };
+
+            pickModelButton.Click += async (_, _) =>
+            {
+                FileOpenPicker modelPicker = new();
+                modelPicker.FileTypeFilter.Add(".dll");
+                modelPicker.SuggestedStartLocation =
+                    PickerLocationId.ComputerFolder;
+                WinRT.Interop.InitializeWithWindow.Initialize(
+                    modelPicker,
+                    WinRT.Interop.WindowNative.GetWindowHandle(this));
+
+                StorageFile? modelFile =
+                    await modelPicker.PickSingleFileAsync();
+                if (modelFile is null || _lifetime.IsCancellationRequested)
+                {
+                    return;
+                }
+
+                // Weryfikacja czyta podpis z dysku, wiec nie na watku UI.
+                NeuralRenderingModelImportResult import = await Task.Run(
+                    () => new NeuralRenderingModelImporter().Inspect(
+                        modelFile.Path),
+                    _lifetime.Token);
+                // Plik zostaje zapamietany takze wtedy, gdy nie przeszedl
+                // weryfikacji — ale wlaczyc go moze dopiero osobna, swiadoma
+                // zgoda ponizej. Kazda krazaca publicznie kopia modelu jest
+                // zmieniona, wiec bez tej furtki funkcja nie dziala wcale.
+                suppliedModelPath =
+                    import.Accepted || import.IsOverridable
+                        ? import.SourcePath
+                        : null;
+                suppliedModelStatus.Text = import.Accepted
+                    ? $"Przyjęto: {import.SourcePath}. {import.Message}"
+                    : $"Odrzucono. {import.Message}";
+                unverifiedModelConfirmation.IsChecked = false;
+                unverifiedModelConfirmation.Visibility =
+                    !import.Accepted && import.IsOverridable
+                        ? Visibility.Visible
+                        : Visibility.Collapsed;
+                neuralRendering.IsEnabled = !hardBlocked && import.Accepted;
+                neuralRendering.IsChecked = import.Accepted;
+            };
 
             channelSelector.SelectionChanged += (_, _) =>
                 UpdateSelectedChannel();
@@ -1892,6 +1993,9 @@ public sealed partial class MainWindow : Window, IDisposable
                                 && neuralRendering.IsChecked == true,
                             UpgradeAgilitySdk =
                                 agilitySdkUpgrade.IsChecked == true,
+                            NeuralRenderingModelPath = suppliedModelPath,
+                            UnverifiedNeuralModelAccepted =
+                                unverifiedModelConfirmation.IsChecked == true,
                         });
                 }
             }

@@ -7,6 +7,8 @@ public sealed partial class AuthenticodeSignatureVerifier
     private static readonly Guid GenericVerifyV2 = new(
         "00AAC56B-CD44-11d0-8CC2-00C04FC295EE");
 
+    private const uint CertificateNameSimpleDisplayType = 4;
+
     private readonly HashSet<string> _trustedThumbprints;
 
     public AuthenticodeSignatureVerifier(
@@ -29,7 +31,8 @@ public sealed partial class AuthenticodeSignatureVerifier
                 "The caller executable no longer exists.");
         }
 
-        (int trustStatus, string? thumbprint) = VerifyFileTrust(fullPath);
+        (int trustStatus, string? thumbprint, string? subject) =
+            VerifyFileTrust(fullPath);
         if (trustStatus != 0 || string.IsNullOrWhiteSpace(thumbprint))
         {
             return AuthenticodeVerificationResult.Failed(
@@ -45,11 +48,12 @@ public sealed partial class AuthenticodeSignatureVerifier
                 ? "No production signer is configured; mutations remain read-only."
                 : _trustedThumbprints.Contains(normalizedThumbprint)
                     ? "The Authenticode signer is trusted."
-                    : "The Authenticode signature is valid but its signer is not allow-listed.");
+                    : "The Authenticode signature is valid but its signer is not allow-listed.",
+            SignerSubject: subject);
     }
 
-    private static (int Status, string? Thumbprint) VerifyFileTrust(
-        string path)
+    private static (int Status, string? Thumbprint, string? Subject)
+        VerifyFileTrust(string path)
     {
         nint pathPointer = 0;
         nint fileInfoPointer = 0;
@@ -83,9 +87,14 @@ public sealed partial class AuthenticodeSignatureVerifier
                 new nint(-1),
                 in action,
                 ref trustData);
-            return status == 0
-                ? (status, ReadSignerThumbprint(trustData.StateData))
-                : (status, null);
+            if (status != 0)
+            {
+                return (status, null, null);
+            }
+
+            (string? thumbprint, string? subject) =
+                ReadSigner(trustData.StateData);
+            return (status, thumbprint, subject);
         }
         finally
         {
@@ -111,12 +120,13 @@ public sealed partial class AuthenticodeSignatureVerifier
         }
     }
 
-    private static string? ReadSignerThumbprint(nint stateData)
+    private static (string? Thumbprint, string? Subject) ReadSigner(
+        nint stateData)
     {
         nint providerData = WTHelperProvDataFromStateData(stateData);
         if (providerData == 0)
         {
-            return null;
+            return (null, null);
         }
 
         nint signerPointer = WTHelperGetProvSignerFromChain(
@@ -126,14 +136,14 @@ public sealed partial class AuthenticodeSignatureVerifier
             counterSignerIndex: 0);
         if (signerPointer == 0)
         {
-            return null;
+            return (null, null);
         }
 
         CryptProviderSigner signer =
             Marshal.PtrToStructure<CryptProviderSigner>(signerPointer);
         if (signer.CertificateCount == 0 || signer.CertificateChain == 0)
         {
-            return null;
+            return (null, null);
         }
 
         CryptProviderCertificateHeader certificate =
@@ -141,7 +151,7 @@ public sealed partial class AuthenticodeSignatureVerifier
                 signer.CertificateChain);
         if (certificate.CertificateContext == 0)
         {
-            return null;
+            return (null, null);
         }
 
         uint size = 0;
@@ -153,16 +163,51 @@ public sealed partial class AuthenticodeSignatureVerifier
             || size == 0
             || size > 128)
         {
-            return null;
+            return (null, null);
         }
 
         byte[] hash = new byte[size];
-        return CertGetCertificateContextProperty(
-            certificate.CertificateContext,
-            CertificateSha1HashProperty,
-            hash,
-            ref size)
-                ? Convert.ToHexString(hash.AsSpan(0, checked((int)size)))
+        if (!CertGetCertificateContextProperty(
+                certificate.CertificateContext,
+                CertificateSha1HashProperty,
+                hash,
+                ref size))
+        {
+            return (null, null);
+        }
+
+        return (
+            Convert.ToHexString(hash.AsSpan(0, checked((int)size))),
+            ReadSubjectName(certificate.CertificateContext));
+    }
+
+    /// <summary>
+    /// The signer's display name, so a caller can insist on a particular
+    /// vendor without pinning a thumbprint that expires when they rotate keys.
+    /// </summary>
+    private static string? ReadSubjectName(nint certificateContext)
+    {
+        uint length = CertGetNameString(
+            certificateContext,
+            CertificateNameSimpleDisplayType,
+            flags: 0,
+            typeParameter: 0,
+            null,
+            0);
+        if (length <= 1 || length > 1024)
+        {
+            return null;
+        }
+
+        char[] buffer = new char[length];
+        return CertGetNameString(
+            certificateContext,
+            CertificateNameSimpleDisplayType,
+            flags: 0,
+            typeParameter: 0,
+            buffer,
+            length) > 1
+                ? new string(buffer, 0, (int)length - 1)
                 : null;
     }
 
@@ -177,6 +222,18 @@ public sealed partial class AuthenticodeSignatureVerifier
         nint windowHandle,
         in Guid actionId,
         ref WinTrustData trustData);
+
+    [LibraryImport(
+        "crypt32.dll",
+        EntryPoint = "CertGetNameStringW",
+        StringMarshalling = StringMarshalling.Utf16)]
+    private static partial uint CertGetNameString(
+        nint certificateContext,
+        uint type,
+        uint flags,
+        nint typeParameter,
+        [Out] char[]? nameString,
+        uint nameStringSize);
 
     [LibraryImport("wintrust.dll", EntryPoint = "WTHelperProvDataFromStateData")]
     private static partial nint WTHelperProvDataFromStateData(nint stateData);
@@ -287,7 +344,8 @@ public sealed record AuthenticodeVerificationResult(
     bool HasValidAuthenticodeSignature,
     bool IsTrustedSigner,
     string? SignerThumbprint,
-    string Details)
+    string Details,
+    string? SignerSubject = null)
 {
     public static AuthenticodeVerificationResult Failed(string details) =>
         new(
