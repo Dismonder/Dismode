@@ -392,8 +392,13 @@ public sealed class UiResourceReferenceTests
         Assert.AreEqual("Button", (string?)compactButtonStyle.Attribute("TargetType"));
         Assert.IsNull(compactButtonStyle.Attribute("BasedOn"));
         Assert.AreEqual("0", FindSetterValue(compactButtonStyle, "MinHeight"));
+        // Lista ma teraz dwa szablony: naglowek polki i element. Test dotyczy
+        // elementu, wiec celuje w ListView.ItemTemplate zamiast zakladac,
+        // ze szablon jest tylko jeden.
         XElement itemTemplate = list
             .Descendants()
+            .Single(element => element.Name.LocalName == "ListView.ItemTemplate")
+            .Elements()
             .Single(element => element.Name.LocalName == "DataTemplate");
         XElement profileState =
             FindNamedElement(itemTemplate, "LibraryProfileStateText");

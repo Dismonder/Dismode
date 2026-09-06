@@ -46,6 +46,12 @@ public sealed class ProfileListItem : INotifyPropertyChanged
 
     public GameMetadata? Metadata { get; }
 
+    /// <summary>
+    /// Sortable last-played moment. LastPlayedLabel is display text only, so
+    /// shelves and the hero tile order by this instead of parsing it back.
+    /// </summary>
+    public DateTimeOffset? LastPlayedAtUtc => Metadata?.LastPlayedAtUtc;
+
     public string DisplayName { get; }
 
     public string Initial { get; }

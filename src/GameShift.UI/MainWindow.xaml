@@ -1252,8 +1252,13 @@
                 <Setter Property="BorderThickness" Value="1" />
                 <Setter Property="CornerRadius" Value="8" />
               </Style>
+              <CollectionViewSource
+                  x:Name="LibraryShelvesSource"
+                  IsSourceGrouped="True"
+                  ItemsPath="Items" />
             </Grid.Resources>
             <Grid.RowDefinitions>
+              <RowDefinition Height="Auto" />
               <RowDefinition Height="Auto" />
               <RowDefinition Height="Auto" />
               <RowDefinition Height="*" />
@@ -1369,21 +1374,130 @@
               </Grid>
             </Border>
 
+            <Border
+                x:Name="LibraryHeroPanel"
+                Grid.Row="1"
+                Height="252"
+                Margin="0,14,0,0"
+                BorderBrush="{ThemeResource GameShiftCardBorderBrush}"
+                BorderThickness="1"
+                CornerRadius="16">
+              <Grid>
+                <Image
+                    x:Name="LibraryHeroImage"
+                    HorizontalAlignment="Right"
+                    Stretch="UniformToFill" />
+                <Border Background="{ThemeResource GameShiftHeroScrimBrush}" />
+                <StackPanel
+                    MaxWidth="640"
+                    Margin="28,0,28,24"
+                    HorizontalAlignment="Left"
+                    VerticalAlignment="Bottom"
+                    Spacing="10">
+                  <StackPanel Orientation="Horizontal" Spacing="9">
+                    <Border
+                        Height="23"
+                        Padding="9,0"
+                        VerticalAlignment="Center"
+                        Background="{ThemeResource GameShiftAccentSoftBrush}"
+                        CornerRadius="6">
+                      <TextBlock
+                          VerticalAlignment="Center"
+                          Foreground="{ThemeResource GameShiftAccentBrush}"
+                          FontSize="10.5"
+                          FontWeight="SemiBold"
+                          Text="OSTATNIO GRANE" />
+                    </Border>
+                    <Border
+                        Height="23"
+                        Padding="9,0"
+                        VerticalAlignment="Center"
+                        Background="{ThemeResource GameShiftPanelBrush}"
+                        CornerRadius="6">
+                      <TextBlock
+                          x:Name="LibraryHeroStateText"
+                          VerticalAlignment="Center"
+                          Foreground="{ThemeResource GameShiftMutedTextBrush}"
+                          FontSize="10.5"
+                          FontWeight="SemiBold"
+                          Text="" />
+                    </Border>
+                  </StackPanel>
+                  <TextBlock
+                      x:Name="LibraryHeroTitleText"
+                      FontSize="36"
+                      Style="{StaticResource GameShiftPageTitleStyle}"
+                      Text=""
+                      TextTrimming="CharacterEllipsis" />
+                  <TextBlock
+                      x:Name="LibraryHeroMetaText"
+                      Foreground="{ThemeResource GameShiftMutedTextBrush}"
+                      FontSize="13"
+                      Text=""
+                      TextTrimming="CharacterEllipsis" />
+                  <StackPanel Margin="0,3,0,0" Orientation="Horizontal" Spacing="10">
+                    <Button
+                        x:Name="LibraryHeroLaunchButton"
+                        Style="{StaticResource GameShiftPrimaryButtonStyle}"
+                        AutomationProperties.Name="Uruchom ostatnio graną grę przez GameShift"
+                        Click="OnLibraryHeroLaunchClicked">
+                      <StackPanel Orientation="Horizontal" Spacing="9">
+                        <FontIcon FontSize="14" Glyph="&#xE768;" />
+                        <TextBlock Text="Uruchom z GameShift" />
+                      </StackPanel>
+                    </Button>
+                    <Button
+                        Style="{StaticResource GameShiftSecondaryButtonStyle}"
+                        AutomationProperties.Name="Otwórz plan optymalizacji dla ostatnio granej gry"
+                        Click="OnLibraryHeroPlanClicked">
+                      <StackPanel Orientation="Horizontal" Spacing="9">
+                        <FontIcon FontSize="14" Glyph="&#xE9D9;" />
+                        <TextBlock Text="Dostosuj plan" />
+                      </StackPanel>
+                    </Button>
+                  </StackPanel>
+                </StackPanel>
+              </Grid>
+            </Border>
+
             <InfoBar
                 x:Name="ProfilesInfoBar"
-                Grid.Row="1"
+                Grid.Row="2"
                 Margin="0,12,0,10"
                 IsClosable="True"
                 IsOpen="False"
                 Title="Biblioteka" />
 
             <!-- Bento Games Grid with Clean Poster Artwork Display -->
-            <Grid Grid.Row="2" Margin="0,12,0,0">
+            <Grid Grid.Row="3" Margin="0,12,0,0">
               <ListView
                   x:Name="ProfilesList"
                   AutomationProperties.Name="Lista profili gier"
                   SelectionChanged="OnProfileSelectionChanged"
                   SelectionMode="Single">
+                <ListView.GroupStyle>
+                  <GroupStyle HidesIfEmpty="True">
+                    <GroupStyle.HeaderTemplate>
+                      <DataTemplate>
+                        <StackPanel
+                            Margin="0,14,0,8"
+                            Orientation="Horizontal"
+                            Spacing="11">
+                          <TextBlock
+                              VerticalAlignment="Bottom"
+                              FontSize="15"
+                              FontWeight="SemiBold"
+                              Text="{Binding Title}" />
+                          <TextBlock
+                              VerticalAlignment="Bottom"
+                              Foreground="{ThemeResource GameShiftMutedTextBrush}"
+                              FontSize="12"
+                              Text="{Binding CountLabel}" />
+                        </StackPanel>
+                      </DataTemplate>
+                    </GroupStyle.HeaderTemplate>
+                  </GroupStyle>
+                </ListView.GroupStyle>
                 <ListView.ItemContainerStyle>
                   <Style TargetType="ListViewItem">
                     <Setter Property="Padding" Value="0" />
