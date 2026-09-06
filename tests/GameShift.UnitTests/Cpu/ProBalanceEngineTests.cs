@@ -26,7 +26,7 @@ public sealed class ProBalanceEngineTests
     private static List<ProBalanceDecision> Feed(
         ProBalanceEngine engine,
         int samples,
-        double processCpu,
+        double processCores,
         double systemCpu,
         ref DateTimeOffset clock,
         TimeSpan? step = null)
@@ -36,7 +36,7 @@ public sealed class ProBalanceEngineTests
         for (int index = 0; index < samples; index++)
         {
             all.AddRange(engine.Evaluate(
-                [Busy(processCpu)],
+                [Busy(processCores)],
                 systemCpu,
                 clock));
             clock += interval;
@@ -54,7 +54,7 @@ public sealed class ProBalanceEngineTests
         DateTimeOffset clock = Start;
 
         List<ProBalanceDecision> decisions =
-            Feed(engine, 2, 40, 90, ref clock);
+            Feed(engine, 2, 1.5, 90, ref clock);
 
         Assert.AreEqual(0, decisions.Count);
         Assert.AreEqual(0, engine.Restrained.Count);
@@ -67,7 +67,7 @@ public sealed class ProBalanceEngineTests
         DateTimeOffset clock = Start;
 
         List<ProBalanceDecision> decisions =
-            Feed(engine, 3, 40, 90, ref clock);
+            Feed(engine, 3, 1.5, 90, ref clock);
 
         Assert.AreEqual(1, decisions.Count);
         Assert.AreEqual(ProBalanceAction.Restrain, decisions[0].Action);
@@ -84,7 +84,7 @@ public sealed class ProBalanceEngineTests
         DateTimeOffset clock = Start;
 
         List<ProBalanceDecision> decisions =
-            Feed(engine, 10, 40, 20, ref clock);
+            Feed(engine, 10, 1.5, 20, ref clock);
 
         Assert.AreEqual(0, decisions.Count);
     }
@@ -119,10 +119,10 @@ public sealed class ProBalanceEngineTests
         // za dwie probki.
         ProBalanceEngine engine = new();
         DateTimeOffset clock = Start;
-        Feed(engine, 3, 40, 90, ref clock);
+        Feed(engine, 3, 1.5, 90, ref clock);
 
         List<ProBalanceDecision> decisions =
-            Feed(engine, 1, 1, 90, ref clock);
+            Feed(engine, 1, 0.05, 90, ref clock);
 
         Assert.AreEqual(0, decisions.Count);
         CollectionAssert.Contains(engine.Restrained.ToList(), Hog);
@@ -133,12 +133,12 @@ public sealed class ProBalanceEngineTests
     {
         ProBalanceEngine engine = new();
         DateTimeOffset clock = Start;
-        Feed(engine, 3, 40, 90, ref clock);
+        Feed(engine, 3, 1.5, 90, ref clock);
 
         // Minimalne przytrzymanie to 5 s, wiec przy krokach 2 s pierwsze
         // spokojne probki jeszcze nie licza sie do zwolnienia.
         List<ProBalanceDecision> decisions =
-            Feed(engine, 8, 1, 90, ref clock);
+            Feed(engine, 8, 0.05, 90, ref clock);
 
         Assert.AreEqual(1, decisions.Count);
         Assert.AreEqual(ProBalanceAction.Release, decisions[0].Action);
@@ -152,12 +152,12 @@ public sealed class ProBalanceEngineTests
         // wraca do 40% zaraz po zwolnieniu i zaczyna migotac miedzy stanami.
         ProBalanceEngine engine = new();
         DateTimeOffset clock = Start;
-        Feed(engine, 3, 40, 90, ref clock);
-        Feed(engine, 8, 1, 90, ref clock);
+        Feed(engine, 3, 1.5, 90, ref clock);
+        Feed(engine, 8, 0.05, 90, ref clock);
         Assert.AreEqual(0, engine.Restrained.Count);
 
         List<ProBalanceDecision> decisions =
-            Feed(engine, 10, 40, 90, ref clock);
+            Feed(engine, 10, 1.5, 90, ref clock);
 
         Assert.AreEqual(
             0,
@@ -171,12 +171,12 @@ public sealed class ProBalanceEngineTests
         // Proces trzymany od dwoch minut nie jest juz chwilowym zrywem.
         ProBalanceEngine engine = new();
         DateTimeOffset clock = Start;
-        Feed(engine, 3, 40, 90, ref clock);
+        Feed(engine, 3, 1.5, 90, ref clock);
 
         List<ProBalanceDecision> decisions = Feed(
             engine,
             30,
-            40,
+            1.5,
             90,
             ref clock,
             TimeSpan.FromSeconds(10));
@@ -205,7 +205,7 @@ public sealed class ProBalanceEngineTests
     {
         ProBalanceEngine engine = new();
         DateTimeOffset clock = Start;
-        Feed(engine, 3, 40, 90, ref clock);
+        Feed(engine, 3, 1.5, 90, ref clock);
         Assert.AreEqual(1, engine.Restrained.Count);
 
         IReadOnlyList<ProBalanceDecision> released = engine.ReleaseAll();
@@ -222,7 +222,7 @@ public sealed class ProBalanceEngineTests
         // w nieskonczonosc to wyciek w petli chodzacej cala sesje.
         ProBalanceEngine engine = new();
         DateTimeOffset clock = Start;
-        Feed(engine, 3, 40, 90, ref clock);
+        Feed(engine, 3, 1.5, 90, ref clock);
         Assert.AreEqual(1, engine.Restrained.Count);
 
         engine.Evaluate([], 90, clock);

@@ -18,15 +18,22 @@ public sealed record ProBalanceSettings
     /// </summary>
     public double SystemLoadPercent { get; init; } = 70;
 
-    /// <summary>Share of one machine's CPU that makes a process a candidate.</summary>
-    public double RestrainAbovePercent { get; init; } = 8;
+    /// <summary>
+    /// How much CPU a process must be using to become a candidate, counted in
+    /// cores rather than as a share of the machine. A share would mean the
+    /// threshold quietly stops working on bigger hardware: one thread spinning
+    /// flat out is 12.5% of an eight-thread box but 5% of a twenty-thread one,
+    /// so the same process would be caught on one machine and ignored on the
+    /// other. Cores are the same everywhere.
+    /// </summary>
+    public double RestrainAboveCores { get; init; } = 0.75;
 
     /// <summary>
-    /// Lower than <see cref="RestrainAbovePercent"/> on purpose. Releasing at
-    /// the same number a process was caught at makes it flap in and out of
+    /// Lower than <see cref="RestrainAboveCores"/> on purpose. Releasing at the
+    /// same number a process was caught at makes it flap in and out of
     /// restraint every other sample.
     /// </summary>
-    public double ReleaseBelowPercent { get; init; } = 4;
+    public double ReleaseBelowCores { get; init; } = 0.35;
 
     /// <summary>Consecutive samples above the threshold before acting.</summary>
     public int SustainedSamples { get; init; } = 3;
