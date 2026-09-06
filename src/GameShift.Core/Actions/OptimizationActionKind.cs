@@ -15,4 +15,5 @@ public enum OptimizationActionKind
     BoostGamePriority = 10,
     ConfigureHibernation = 11,
     ConfigureSystemTweak = 12,
+    RestrictProcessAffinity = 13,
 }
