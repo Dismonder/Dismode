@@ -1211,7 +1211,8 @@ public sealed class LocalGameSessionOrchestrator : IAsyncDisposable
                     _journal,
                     runtime.SessionId,
                     _identityProvider,
-                    _timeProvider),
+                    _timeProvider,
+                    ResolveBackgroundCpuSetIds()),
                 () => runtime.ProcessTree
                     .GetKnownProcesses()
                     .Select(identity => identity.RuntimeKey.ProcessId)
@@ -1889,6 +1890,31 @@ public sealed class LocalGameSessionOrchestrator : IAsyncDisposable
         {
             return 0;
         }
+    }
+
+    /// <summary>
+    /// The processors background work should be steered onto: the slow tier on
+    /// a hybrid machine, or the cache groups the game is not in. Empty when the
+    /// hardware gives no such split, in which case restraint stays a matter of
+    /// priority alone.
+    /// </summary>
+    private static IReadOnlyList<uint> ResolveBackgroundCpuSetIds()
+    {
+        CpuTopology? topology = SystemCpuTopologyProvider.Read();
+        CpuAffinityDecision decision = CpuAffinityPolicy.Decide(
+            topology,
+            CpuAffinityRole.Background);
+        if (!decision.ShouldApply || topology is null)
+        {
+            return [];
+        }
+
+        return [.. topology.Processors
+            .Where(processor =>
+                processor.LogicalProcessorIndex < 64
+                && (decision.Mask
+                    & (1UL << processor.LogicalProcessorIndex)) != 0)
+            .Select(processor => processor.Id)];
     }
 
     /// <summary>

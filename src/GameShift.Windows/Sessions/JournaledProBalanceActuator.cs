@@ -29,6 +29,7 @@ public sealed class JournaledProBalanceActuator : IProBalanceActuator
     private readonly SessionId _sessionId;
     private readonly IProcessIdentityProvider _identityProvider;
     private readonly TimeProvider _timeProvider;
+    private readonly IReadOnlyList<uint> _backgroundCpuSetIds;
     private readonly Dictionary<ProcessRuntimeKey, RestraintRecord> _applied =
         [];
 
@@ -36,13 +37,15 @@ public sealed class JournaledProBalanceActuator : IProBalanceActuator
         IRecoveryJournal journal,
         SessionId sessionId,
         IProcessIdentityProvider? identityProvider = null,
-        TimeProvider? timeProvider = null)
+        TimeProvider? timeProvider = null,
+        IReadOnlyList<uint>? backgroundCpuSetIds = null)
     {
         ArgumentNullException.ThrowIfNull(journal);
         _journal = journal;
         _sessionId = sessionId;
         _identityProvider = identityProvider ?? new ProcessIdentityProvider();
         _timeProvider = timeProvider ?? TimeProvider.System;
+        _backgroundCpuSetIds = backgroundCpuSetIds ?? [];
     }
 
     public async ValueTask<bool> RestrainAsync(
@@ -92,7 +95,15 @@ public sealed class JournaledProBalanceActuator : IProBalanceActuator
                 return false;
             }
 
-            _applied[runtimeKey] = new(identity, actionId, idempotencyKey);
+            // Odsuniecie od rdzeni gry. Idzie po ograniczeniu priorytetu,
+            // bo tamto jest wazniejsze i nie chcemy, zeby nieudane sterowanie
+            // zbiorami przeslonilo udane obnizenie priorytetu.
+            bool steered = TrySteerAway(runtimeKey);
+            _applied[runtimeKey] = new(
+                identity,
+                actionId,
+                idempotencyKey,
+                steered);
             return true;
         }
         catch (Exception exception) when (IsExpected(exception))
@@ -108,6 +119,12 @@ public sealed class JournaledProBalanceActuator : IProBalanceActuator
         if (!_applied.Remove(runtimeKey, out RestraintRecord? record))
         {
             return false;
+        }
+
+        if (record.Steered)
+        {
+            // Wyczyszczenie oddaje procesowi cala maszyne.
+            _ = ProcessCpuSets.TryApply(runtimeKey.ProcessId, []);
         }
 
         RuntimeProcessPriorityAction action = new(
@@ -192,8 +209,39 @@ public sealed class JournaledProBalanceActuator : IProBalanceActuator
             or Win32Exception
             or TimeoutException;
 
+    /// <summary>
+    /// Steers a restrained process onto the processors the game is not using.
+    /// <para>
+    /// Lowering a priority only asks the scheduler to prefer the game when both
+    /// want the same core. This moves the other process off those cores
+    /// altogether, which on a machine with performance tiers or separate cache
+    /// groups is the stronger of the two levers. It stays a preference, so a
+    /// process that genuinely needs more still gets it — a hard mask here would
+    /// risk stalling something the user never asked us to touch.
+    /// </para>
+    /// </summary>
+    private bool TrySteerAway(ProcessRuntimeKey runtimeKey)
+    {
+        if (_backgroundCpuSetIds.Count == 0)
+        {
+            return false;
+        }
+
+        try
+        {
+            return ProcessCpuSets.TryApply(
+                runtimeKey.ProcessId,
+                _backgroundCpuSetIds);
+        }
+        catch (Exception exception) when (IsExpected(exception))
+        {
+            return false;
+        }
+    }
+
     private sealed record RestraintRecord(
         ProcessIdentity Identity,
         ActionId ActionId,
-        IdempotencyKey IdempotencyKey);
+        IdempotencyKey IdempotencyKey,
+        bool Steered);
 }
