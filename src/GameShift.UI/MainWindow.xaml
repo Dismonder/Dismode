@@ -1235,7 +1235,7 @@
 
           <Grid
               x:Name="ProfilesPage"
-              MaxWidth="1680"
+              MaxWidth="2560"
               Margin="24,18,24,30"
               HorizontalAlignment="Stretch"
               Visibility="Collapsed">
@@ -1350,13 +1350,14 @@
                 <Grid
                     Grid.Row="1"
                     Grid.ColumnSpan="2"
-                    ColumnSpacing="12">
+                    ColumnSpacing="0">
                   <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="*" />
                     <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="*" />
                   </Grid.ColumnDefinitions>
                   <TextBox
                       x:Name="LibrarySearchBox"
+                      MinWidth="320"
                       MaxWidth="420"
                       HorizontalAlignment="Left"
                       AutomationProperties.Name="Szukaj gry w bibliotece"
@@ -1366,6 +1367,8 @@
                   <TextBlock
                       x:Name="LibrarySearchSummary"
                       Grid.Column="1"
+                      Margin="14,0,0,0"
+                      HorizontalAlignment="Left"
                       VerticalAlignment="Center"
                       Foreground="{ThemeResource GameShiftMutedTextBrush}"
                       FontSize="13"
@@ -1377,16 +1380,23 @@
             <Border
                 x:Name="LibraryHeroPanel"
                 Grid.Row="1"
-                Height="252"
+                Height="208"
                 Margin="0,14,0,0"
                 BorderBrush="{ThemeResource GameShiftCardBorderBrush}"
                 BorderThickness="1"
                 CornerRadius="16">
               <Grid>
-                <Image
-                    x:Name="LibraryHeroImage"
+                <Border
+                    Width="420"
                     HorizontalAlignment="Right"
-                    Stretch="UniformToFill" />
+                    CornerRadius="0,16,16,0">
+                  <Border.Clip>
+                    <RectangleGeometry Rect="0,0,420,208" />
+                  </Border.Clip>
+                  <Image
+                      x:Name="LibraryHeroImage"
+                      Stretch="UniformToFill" />
+                </Border>
                 <Border Background="{ThemeResource GameShiftHeroScrimBrush}" />
                 <StackPanel
                     MaxWidth="640"
@@ -1475,6 +1485,16 @@
                   AutomationProperties.Name="Lista profili gier"
                   SelectionChanged="OnProfileSelectionChanged"
                   SelectionMode="Single">
+                <ListView.Resources>
+                  <!-- Karta rysuje wlasne zaznaczenie; domyslne tlo kontenera
+                       wystawalo spod niej jasnym paskiem. -->
+                  <SolidColorBrush x:Key="ListViewItemBackground" Color="Transparent" />
+                  <SolidColorBrush x:Key="ListViewItemBackgroundPointerOver" Color="Transparent" />
+                  <SolidColorBrush x:Key="ListViewItemBackgroundPressed" Color="Transparent" />
+                  <SolidColorBrush x:Key="ListViewItemBackgroundSelected" Color="Transparent" />
+                  <SolidColorBrush x:Key="ListViewItemBackgroundSelectedPointerOver" Color="Transparent" />
+                  <SolidColorBrush x:Key="ListViewItemBackgroundSelectedPressed" Color="Transparent" />
+                </ListView.Resources>
                 <ListView.GroupStyle>
                   <GroupStyle HidesIfEmpty="True">
                     <GroupStyle.HeaderTemplate>
@@ -1500,6 +1520,7 @@
                 </ListView.GroupStyle>
                 <ListView.ItemContainerStyle>
                   <Style TargetType="ListViewItem">
+                    <Setter Property="Background" Value="Transparent" />
                     <Setter Property="Padding" Value="0" />
                     <Setter Property="Margin" Value="0" />
                     <Setter Property="HorizontalContentAlignment" Value="Stretch" />
