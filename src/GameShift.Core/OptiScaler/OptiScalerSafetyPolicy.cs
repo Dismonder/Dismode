@@ -39,6 +39,7 @@ public enum OptiScalerSafetyBlockReason
     GpuNotSupported = 5,
     DriverTooOld = 6,
     NeuralRenderingModelMissing = 7,
+    RequiredCompanionMissing = 8,
 }
 
 public sealed record OptiScalerSafetyDecision(

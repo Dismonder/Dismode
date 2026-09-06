@@ -737,6 +737,58 @@ public sealed class OptiScalerManagerTests
             "D3D12Core.dll")));
     }
 
+    [TestMethod]
+    public async Task GameRequiringACompanionIsBlockedUntilItIsPresent()
+    {
+        // RESIDENT EVIL Requiem wywala sie przy starcie, jesli OptiScaler
+        // zostanie zainstalowany bez REFramework. Lepiej odmowic z powodem
+        // niz zainstalowac cos, co konczy sie crashem gry.
+        using OptiScalerTestContext context = new();
+        string game = context.CreateGameFile("re9.exe", "game");
+        context.CreatePayloadFile("OptiScaler.dll", "proxy");
+        context.CreatePayloadIni(withBom: true, complete: true);
+        OptiScalerManager manager = context.CreateManager();
+
+        OptiScalerOperationResult blocked = await manager.InstallAsync(
+            new OptiScalerInstallRequest(
+                "profile-re9",
+                game,
+                context.GameDirectory,
+                OptiScalerProxy.Dxgi,
+                OfflineUseConfirmed: true),
+            CancellationToken.None);
+
+        Assert.IsFalse(blocked.Succeeded);
+        Assert.AreEqual(
+            OptiScalerSafetyBlockReason.RequiredCompanionMissing,
+            blocked.BlockReason);
+        StringAssert.Contains(blocked.Message, "REFramework");
+        StringAssert.Contains(blocked.Message, "dinput8.dll");
+        Assert.IsFalse(File.Exists(
+            Path.Combine(context.GameDirectory, "dxgi.dll")));
+
+        // Po dostarczeniu skladnika instalacja przechodzi.
+        context.CreateGameFile("dinput8.dll", "reframework");
+
+        OptiScalerOperationResult allowed = await manager.InstallAsync(
+            new OptiScalerInstallRequest(
+                "profile-re9",
+                game,
+                context.GameDirectory,
+                OptiScalerProxy.Dxgi,
+                OfflineUseConfirmed: true),
+            CancellationToken.None);
+
+        Assert.IsTrue(allowed.Succeeded, allowed.Message);
+    }
+
+    [TestMethod]
+    public void UnknownGameHasNoCompanionRequirement()
+    {
+        Assert.IsNull(OptiScalerGameRequirements.Find(@"C:\Gry\Inna\game.exe"));
+        Assert.IsNotNull(OptiScalerGameRequirements.Find(@"C:\Gry\RE9\re9.exe"));
+    }
+
     private static async Task<OptiScalerOperationResult>
         RunBlockedNeuralInstallAsync(
             Func<OptiScalerTestContext, NvidiaDriverStoreSnapshot> driverStore)
