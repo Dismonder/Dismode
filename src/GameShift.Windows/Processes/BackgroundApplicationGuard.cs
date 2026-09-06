@@ -254,7 +254,23 @@ public sealed class BackgroundApplicationGuard
     public static bool IsProtectedProcessName(string? processName) =>
         !string.IsNullOrWhiteSpace(processName)
         && (ProtectedProcessNames.Contains(processName)
-            || ProtectedLauncherNames.Contains(processName));
+            || ProtectedLauncherNames.Contains(processName)
+            || IsMeasurementComponent(processName));
+
+    /// <summary>
+    /// GameShift's own frame-time capture. Matched by prefix because the
+    /// executable carries its version in the file name, and pinning the exact
+    /// name here would quietly stop protecting it after the next component
+    /// update.
+    /// <para>
+    /// Throttling it does not merely lose data. It consumes ETW events in real
+    /// time, so starving it makes it drop events, and dropped events read back
+    /// as long frames — GameShift would report a stutter it caused itself, and
+    /// any measurement taken while restraint is active would be worthless.
+    /// </para>
+    /// </summary>
+    private static bool IsMeasurementComponent(string processName) =>
+        processName.StartsWith("PresentMon", StringComparison.OrdinalIgnoreCase);
 
     private static void EnsureNameAllowed(string processName)
     {
