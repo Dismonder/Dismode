@@ -1,7 +1,8 @@
 # Plan wykonawczy: moduł CPU
 
-Status: podstawa zbudowana i zmierzona, rozbudowa nierozpoczęta
+Status: podstawa zbudowana i zmierzona, rozbudowa w toku
 Utworzono: 2026-09-06
+Ostatnia aktualizacja: 2026-09-06
 
 ## Cel
 
@@ -21,7 +22,13 @@ Zbudowane i sprawdzone na maszynie:
   ograniczenia, karencją i limitem jednoczesnych ograniczeń;
 - nadzorca z aktuatorem zapisującym do journala;
 - akcja affinity: nałożenie, weryfikacja, odtworzenie z journala;
-- przełącznik w ustawieniach dociągnięty przez gRPC do sesji.
+- przełącznik w ustawieniach dociągnięty przez gRPC do sesji;
+- przypinanie świadome cache ostatniego poziomu — gra zostaje w jednej
+  grupie cache na procesorze o jednorodnych rdzeniach, gdzie wcześniej
+  polityka odmawiała całkowicie;
+- domyślne zbiory procesorów jako mechanizm podstawowy, twarda maska
+  awaryjnie;
+- odsuwanie ograniczonych procesów tła na rdzenie poza grą.
 
 Zmierzone na i7-11700F, 16 obciążaczy na 16 wątkach, cztery przebiegi:
 p99 opóźnienia wybudzenia spadło o 1,2–7,7 ms (średnio ~5 ms), mediana
@@ -73,38 +80,71 @@ zostaną domknięte, każda liczba w tym planie jest wstępna.
 Obniżenie priorytetu to najsłabsza z dostępnych dźwigni. Windows daje mocniejsze
 i GameShift już ich używa gdzie indziej.
 
-7. Ograniczanie stopniowane: priorytet → ECO QoS → przypięcie do rdzeni
-   energooszczędnych. Eskalacja tylko wtedy, gdy słabszy stopień nie pomógł
-   przez kilka próbek, żeby proces jednorazowo ożywiony nie dostał od razu
-   najmocniejszego środka.
-8. Przypinanie tła do rdzeni energooszczędnych na procesorze hybrydowym.
-   Na Arrow Lake to prawdopodobnie mocniejsza dźwignia niż priorytet, bo
-   fizycznie odsuwa pracę od rdzeni, których używa gra.
-9. Priorytet pamięci i wejścia-wyjścia dla procesów ograniczonych —
-   `SetProcessInformation` z `ProcessMemoryPriority` i `IoPriorityHint`.
-   Proces czytający z dysku potrafi psuć płynność, nie zjadając procesora.
+7. Ograniczanie stopniowane: priorytet → ECO QoS → mocniejsze odsunięcie.
+   Dziś priorytet i odsunięcie nakładają się razem, przy pierwszym złapaniu.
+   Eskalacja ma dawać słabszy środek najpierw i sięgać po mocniejszy dopiero,
+   gdy przez kilka próbek nie pomógł — proces jednorazowo ożywiony nie
+   powinien od razu dostawać wszystkiego.
+8. ~~Odsuwanie tła od rdzeni gry~~ — zrobione przez domyślne zbiory
+   procesorów, sprawdzone na żywym procesie.
+9. Priorytet pamięci dla procesów ograniczonych — `SetProcessInformation`
+   z `ProcessMemoryPriority`. Proces czytający z dysku potrafi psuć płynność,
+   nie zjadając procesora. Priorytet wejścia-wyjścia jest osiągalny tylko
+   przez nieudokumentowane `NtSetInformationProcess`, więc wchodzi wyłącznie
+   wtedy, gdy pomiar pokaże, że sam priorytet pamięci nie wystarcza.
+10. Przypisanie per wątek zamiast per proces. Gra ma jeden wątek renderujący,
+    który liczy się bardziej niż reszta jej wątków, a
+    `SetThreadSelectedCpuSets` pozwala go wyróżnić. Wymaga rozpoznania, który
+    wątek to jest — samo zgadywanie po zużyciu procesora jest zawodne.
 
-### 4. Koszt własny pętli
+### 4. Koszt własny pętli i zasilanie
 
 Nadzorca ma pilnować płynności, więc sam nie może jej psuć. Zmierzone: pełne
 przejście mieści się w interwale z zapasem, ale to pomiar na bezczynnej maszynie
 i przy pustym aktuatorze.
 
-10. Zmienny interwał: rzadziej, gdy maszyna jest spokojna, gęściej pod
+11. Zmienny interwał: rzadziej, gdy maszyna jest spokojna, gęściej pod
     obciążeniem. Stała częstotliwość płaci pełny koszt wtedy, gdy nic się nie
     dzieje.
-11. Ograniczyć inwentaryzację do procesów, które mogą być kandydatami —
+12. Ograniczyć inwentaryzację do procesów, które mogą być kandydatami —
     pełne wyliczenie wszystkich procesów co dwie sekundy jest pracą wykonywaną
     w trakcie gry.
-12. Dodać do pomiaru wariant z aktywnym aktuatorem, żeby koszt zapisu do
+13. Dodać do pomiaru wariant z aktywnym aktuatorem, żeby koszt zapisu do
     journala i kontroli podpisu był policzony, a nie założony.
+14. Ograniczyć zużycie zasobów przez sam GameShift w trakcie sesji. Narzędzie
+    pilnujące płynności, które samo zjada rdzeń, jest gorsze niż jego brak.
+15. Bramka na przełączanie planu zasilania, żeby krótka zmiana obciążenia nie
+    powodowała migotania między planami.
+16. Żądania zasilania na czas sesji, blokujące dławienie i usypianie —
+    `PowerSetRequest` z `PowerRequestExecutionRequired`.
 
 ### 5. Trwałość i zakres
 
-13. Zapamiętywanie ustawień CPU per gra w istniejących profilach optymalizacji,
+17. Zapamiętywanie ustawień CPU per gra w istniejących profilach optymalizacji,
     zamiast jednego przełącznika globalnego.
-14. Pokazywanie w interfejsie, co zostało ograniczone i dlaczego — silnik zna
+18. Pokazywanie w interfejsie, co zostało ograniczone i dlaczego — silnik zna
     powód każdej decyzji, a obecnie nikt go nie widzi.
+19. Obsługa więcej niż jednej grupy procesorów. Dziś polityka odmawia powyżej
+    64 procesorów logicznych; domyślne zbiory nie mają tego ograniczenia, więc
+    droga jest otwarta. Poza sprzętem, o który tu chodzi, ale to jedyne
+    miejsce, gdzie moduł odmawia z powodu własnego ograniczenia, a nie
+    dlatego, że nie ma czego poprawiać.
+
+## Skąd wzięły się niektóre rozwiązania
+
+Dwie rzeczy w tym module pochodzą z lektury ThreadPilota
+(`PrimeBuild-pc/ThreadPilot`, AGPL-3.0). Kod jest własny; stamtąd pochodzi
+rozpoznanie problemu.
+
+Pierwsza: rdzenie tej samej klasy wydajności potrafią być podzielone cache'em
+ostatniego poziomu. Polityka widziała wyłącznie klasę wydajności i na Ryzenie
+z kilkoma CCD odmawiała, choć właśnie tam jest duży zysk.
+
+Druga, ważniejsza: maska affinity jest regułą, a domyślne zbiory procesorów są
+podpowiedzią. Maska zbyt wąska zagłodzi grę, zbiory nie. Do tego pułapka —
+proces z już zawężonym affinity ignoruje zbiory całkowicie, a odczyt zwrotny
+mimo to zwraca zapisane wartości, więc sama weryfikacja przez odczyt zgłosiłaby
+sukces przypisania, które nie ma prawa zadziałać.
 
 ## Inwarianty
 
@@ -117,6 +157,9 @@ i przy pustym aktuatorze.
   wybudzenia — wiążący jest czas klatki gry.
 - Nie kopiujemy algorytmu Process Lasso. Progi mają wynikać z pomiaru na
   konkretnym sprzęcie, a nie z odtwarzania cudzych stałych.
+- Sterowanie procesami tła pozostaje podpowiedzią, nie regułą. Twarda maska
+  na cudzym procesie mogłaby go zatrzymać, a nikt nas nie prosił o ruszanie
+  go w ogóle.
 
 ## Walidacja
 
