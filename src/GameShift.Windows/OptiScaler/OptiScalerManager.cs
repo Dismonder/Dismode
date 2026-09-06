@@ -17,7 +17,9 @@ public sealed record OptiScalerInstallRequest(
     string? Version = null,
     bool ExperimentalUseConfirmed = false,
     bool EnableNeuralRendering = false,
-    bool UpgradeAgilitySdk = false);
+    bool UpgradeAgilitySdk = false,
+    string? NeuralRenderingModelPath = null,
+    bool UnverifiedNeuralModelAccepted = false);
 
 public sealed record OptiScalerOperationResult(
     bool Succeeded,
@@ -140,6 +142,7 @@ public sealed class OptiScalerManager : IDisposable
     private readonly IOptiScalerArchiveExtractor _archiveExtractor;
     private readonly Func<string, bool> _isExecutableRunning;
     private readonly Func<NvidiaDriverStoreSnapshot> _driverStoreProbe;
+    private readonly NeuralRenderingModelImporter _modelImporter;
     private readonly ConcurrentDictionary<
         OptiScalerReleaseChannel,
         CachedOptiScalerPackages> _releaseCache = new();
@@ -163,7 +166,8 @@ public sealed class OptiScalerManager : IDisposable
         IOptiScalerPackageSource packageSource,
         IOptiScalerArchiveExtractor archiveExtractor,
         Func<string, bool> isExecutableRunning,
-        Func<NvidiaDriverStoreSnapshot>? driverStoreProbe = null)
+        Func<NvidiaDriverStoreSnapshot>? driverStoreProbe = null,
+        NeuralRenderingModelImporter? modelImporter = null)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(stateDirectory);
         ArgumentNullException.ThrowIfNull(packageSource);
@@ -175,6 +179,7 @@ public sealed class OptiScalerManager : IDisposable
         _isExecutableRunning = isExecutableRunning;
         _driverStoreProbe = driverStoreProbe
             ?? (static () => new NvidiaDriverStoreProbe().Probe());
+        _modelImporter = modelImporter ?? new NeuralRenderingModelImporter();
     }
 
     public OptiScalerInstallationStatus GetStatus(string profileId)
@@ -485,15 +490,48 @@ public sealed class OptiScalerManager : IDisposable
         }
 
         NvidiaDriverStoreSnapshot? driverStore = null;
+        string? suppliedModelPath = null;
         if (request.EnableNeuralRendering)
         {
             progress?.Report(new(
                 OptiScalerInstallStage.CheckingHardware,
                 "Sprawdzanie karty graficznej i sterownika NVIDIA…"));
             driverStore = _driverStoreProbe();
+            NvidiaGpuCapability capability = driverStore.Capability;
+
+            // Sterownik nie musi zawierac modelu Neural Rendering — zmierzone
+            // na RTX 5070 ze sterownikiem 616.64 nie zawiera go wcale. Wtedy
+            // uzytkownik wskazuje plik sam, a my sprawdzamy, czy Windows uznaje
+            // go za kod podpisany przez NVIDIE.
+            if (!capability.NeuralRenderingModelAvailable
+                && !string.IsNullOrWhiteSpace(request.NeuralRenderingModelPath))
+            {
+                NeuralRenderingModelImportResult import =
+                    _modelImporter.Inspect(request.NeuralRenderingModelPath);
+                bool overridden = !import.Accepted
+                    && import.IsOverridable
+                    && request.UnverifiedNeuralModelAccepted;
+                if (!import.Accepted && !overridden)
+                {
+                    return new(
+                        false,
+                        "Wskazany nvngx_dlssnr.dll nie przeszedl weryfikacji: "
+                            + import.Message,
+                        targetExecutable,
+                        OptiScalerSafetyBlockReason.NeuralRenderingModelMissing,
+                        [import.SourcePath ?? request.NeuralRenderingModelPath]);
+                }
+
+                suppliedModelPath = import.SourcePath;
+                capability = capability with
+                {
+                    NeuralRenderingModelAvailable = true,
+                };
+            }
+
             OptiScalerSafetyDecision neural = NeuralRenderingPolicy.Evaluate(
                 decision,
-                driverStore.Capability);
+                capability);
             if (!neural.CanInstall)
             {
                 return new(
@@ -635,6 +673,13 @@ public sealed class OptiScalerManager : IDisposable
                         + "ze sterownika NVIDIA…"));
                 additionalFiles.AddRange(driverStore.ModelFiles.Select(
                     file => new PayloadFile(file.FullPath, file.FileName)));
+            }
+
+            if (suppliedModelPath is not null)
+            {
+                additionalFiles.Add(new(
+                    suppliedModelPath,
+                    NvidiaDriverStoreProbe.NeuralRenderingModelFileName));
             }
 
             List<PayloadFile> payload = BuildPayload(
