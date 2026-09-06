@@ -62,9 +62,28 @@ public sealed class REFrameworkCompanionSource
     public async ValueTask<CompanionDownloadResult> DownloadAsync(
         string destinationDirectory,
         string companionFileName,
+        CancellationToken cancellationToken) =>
+        await DownloadAsync(
+                destinationDirectory,
+                companionFileName,
+                companionFileName,
+                cancellationToken)
+            .ConfigureAwait(false);
+
+    /// <summary>
+    /// REFramework ships its loader as dinput8.dll, but the RE Engine layout
+    /// that actually works installs it as ReShade64.dll so OptiScaler
+    /// chainloads it instead of Windows loading both in parallel. So the name
+    /// inside the archive and the name on disk are two different things.
+    /// </summary>
+    public async ValueTask<CompanionDownloadResult> DownloadAsync(
+        string destinationDirectory,
+        string archiveEntryName,
+        string companionFileName,
         CancellationToken cancellationToken)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(destinationDirectory);
+        ArgumentException.ThrowIfNullOrWhiteSpace(archiveEntryName);
         ArgumentException.ThrowIfNullOrWhiteSpace(companionFileName);
 
         string archivePath = Path.Combine(
@@ -130,14 +149,14 @@ public sealed class REFrameworkCompanionSource
                 ZipArchiveEntry? entry = archive.Entries.FirstOrDefault(
                     candidate => string.Equals(
                         candidate.FullName,
-                        companionFileName,
+                        archiveEntryName,
                         StringComparison.OrdinalIgnoreCase));
                 if (entry is null)
                 {
                     return new(
                         false,
                         null,
-                        $"Archiwum REFramework nie zawiera {companionFileName}.");
+                        $"Archiwum REFramework nie zawiera {archiveEntryName}.");
                 }
 
                 if (entry.Length > MaximumEntryBytes)
@@ -145,7 +164,7 @@ public sealed class REFrameworkCompanionSource
                     return new(
                         false,
                         null,
-                        $"{companionFileName} w archiwum jest nieoczekiwanie "
+                        $"{archiveEntryName} w archiwum jest nieoczekiwanie "
                             + "duży.");
                 }
 

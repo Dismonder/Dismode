@@ -332,6 +332,27 @@ public sealed class OptiScalerManager : IDisposable
                         }
                     }
 
+                    // Pliki odsuniete na bok nie sa nasze — wracaja na
+                    // miejsce, zanim uznamy deinstalacje za zakonczona.
+                    foreach (OptiScalerDisplacedFile file in manifest.Displaced)
+                    {
+                        string backup = GetContainedPath(
+                            _stateDirectory,
+                            file.BackupRelativePath);
+                        if (!File.Exists(backup))
+                        {
+                            throw new InvalidDataException(
+                                "Brakuje kopii odsunietego pliku: "
+                                    + file.RelativePath);
+                        }
+
+                        AtomicCopy(
+                            backup,
+                            GetContainedPath(
+                                manifest.TargetDirectory,
+                                file.RelativePath));
+                    }
+
                     DeleteEmptyDirectories(manifest.TargetDirectory, manifest.Files);
                     File.Delete(GetManifestPath(profileId));
                     DeleteBackupDirectory(profileId);
@@ -447,6 +468,7 @@ public sealed class OptiScalerManager : IDisposable
         // Sprawdzamy to przed pobraniem paczki, bo brak zaleznosci konczy sie
         // wywaleniem gry, a nie lagodnym powrotem do ustawien domyslnych.
         OptiScalerGameRequirement? companionToInstall = null;
+        List<string> filesToDisplace = [];
         OptiScalerGameRequirement? requirement =
             OptiScalerGameRequirements.Find(targetExecutable);
         if (requirement is not null)
@@ -465,7 +487,47 @@ public sealed class OptiScalerManager : IDisposable
                 names = [];
             }
 
-            if (!OptiScalerGameRequirements.IsSatisfied(requirement, names))
+            // Drugi loader w katalogu gry to dokladnie ten konflikt hookow,
+            // ktory ten uklad ma omijac. Nie usuwamy cudzych plikow — mowimy,
+            // co jest nie tak, i zostawiamy decyzje uzytkownikowi.
+            string[] nameList = [.. names];
+            string[] present = [.. requirement.Conflicts.Where(
+                candidate => nameList.Any(name => string.Equals(
+                    name,
+                    candidate,
+                    StringComparison.OrdinalIgnoreCase)))];
+            if (present.Length > 0)
+            {
+                // Zgoda na skladnik obejmuje takze przelozenie tego, co go
+                // dubluje: wiki kaze przemianowac dinput8.dll, a nie zostawic
+                // go obok. Bez zgody nie ruszamy cudzych plikow.
+                if (request.InstallRequiredCompanion)
+                {
+                    filesToDisplace.AddRange(present);
+                }
+                else
+                {
+                    return new(
+                        false,
+                        $"W katalogu gry leży {string.Join(", ", present)}. "
+                            + "Przy tym układzie Windows ładuje REFramework "
+                            + "równolegle z OptiScalerem i gra pada na "
+                            + "starcie. Zgódź się na instalację "
+                            + $"{requirement.CompanionName}, a GameShift "
+                            + "odłoży ten plik na bok i poda go OptiScalerowi "
+                            + $"jako {requirement.CompanionFileName}.",
+                        targetExecutable,
+                        OptiScalerSafetyBlockReason.ConflictingModPresent,
+                        present);
+                }
+            }
+
+            string[] remaining = [.. nameList.Where(name =>
+                !filesToDisplace.Any(displaced => string.Equals(
+                    name,
+                    displaced,
+                    StringComparison.OrdinalIgnoreCase)))];
+            if (!OptiScalerGameRequirements.IsSatisfied(requirement, remaining))
             {
                 // GameShift potrafi dostarczyc REFramework — otwarty projekt
                 // na licencji MIT, przypiety i weryfikowany suma kontrolna.
@@ -699,6 +761,7 @@ public sealed class OptiScalerManager : IDisposable
                 CompanionDownloadResult companion = await _companionSource
                     .DownloadAsync(
                         CreateTemporaryDirectory("companion"),
+                        companionToInstall.ArchiveEntryName!,
                         companionToInstall.CompanionFileName!,
                         cancellationToken)
                     .ConfigureAwait(false);
@@ -732,6 +795,7 @@ public sealed class OptiScalerManager : IDisposable
                 targetExecutable,
                 package.Version,
                 payload,
+                filesToDisplace,
                 progress,
                 cancellationToken);
         }
@@ -791,6 +855,7 @@ public sealed class OptiScalerManager : IDisposable
         string targetExecutable,
         string packageVersion,
         IReadOnlyList<PayloadFile> payload,
+        IReadOnlyList<string> filesToDisplace,
         IProgress<OptiScalerInstallProgress>? progress,
         CancellationToken cancellationToken)
     {
@@ -838,6 +903,31 @@ public sealed class OptiScalerManager : IDisposable
             affected,
             transactionDirectory,
             cancellationToken);
+        List<OptiScalerDisplacedFile> displaced = [];
+        foreach (string relativePath in filesToDisplace)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            string source = GetContainedPath(targetDirectory, relativePath);
+            if (!File.Exists(source))
+            {
+                continue;
+            }
+
+            // Kopia zapasowa idzie do tego samego drzewa co reszta, ale pod
+            // wlasny prefiks, zeby nie zderzyla sie z kopia pliku o tej samej
+            // nazwie, ktory instalujemy.
+            string backup = GetContainedPath(
+                backupRoot,
+                Path.Combine("displaced", relativePath));
+            Directory.CreateDirectory(Path.GetDirectoryName(backup)!);
+            File.Copy(source, backup, overwrite: true);
+            newlyCreatedBackups.Add(backup);
+            File.Delete(source);
+            displaced.Add(new(
+                relativePath,
+                Path.GetRelativePath(_stateDirectory, backup)));
+        }
+
         progress?.Report(new(
             OptiScalerInstallStage.CopyingFiles,
             $"Instalowanie {payload.Count} plików w katalogu gry…"));
@@ -909,7 +999,8 @@ public sealed class OptiScalerManager : IDisposable
                 request.Proxy,
                 DateTimeOffset.UtcNow,
                 installedFiles,
-                request.Channel);
+                request.Channel,
+                displaced.Count == 0 ? null : displaced);
             WriteManifestAtomic(manifestPath, manifest);
             progress?.Report(new(
                 OptiScalerInstallStage.Completed,
@@ -1216,6 +1307,19 @@ public sealed class OptiScalerManager : IDisposable
                     file.OriginalBackupRelativePath);
             }
         }
+
+        foreach (OptiScalerDisplacedFile file in manifest.Displaced)
+        {
+            if (string.IsNullOrWhiteSpace(file.RelativePath)
+                || string.IsNullOrWhiteSpace(file.BackupRelativePath))
+            {
+                throw new InvalidDataException(
+                    "Lista odsunietych plikow OptiScaler jest nieprawidlowa.");
+            }
+
+            _ = GetContainedPath(targetDirectory, file.RelativePath);
+            _ = GetContainedPath(_stateDirectory, file.BackupRelativePath);
+        }
     }
 
     private static void WriteManifestAtomic(
@@ -1511,6 +1615,16 @@ public sealed class OptiScalerManager : IDisposable
         string InstalledSha256,
         string? OriginalBackupRelativePath);
 
+    /// <summary>
+    /// A file GameShift moved out of the game folder because leaving it there
+    /// would break the layout — a second mod loader hooking the same entry
+    /// point. It is not ours, so it is copied aside rather than discarded and
+    /// put back on uninstall.
+    /// </summary>
+    private sealed record OptiScalerDisplacedFile(
+        string RelativePath,
+        string BackupRelativePath);
+
     private sealed record OptiScalerInstallationManifest(
         int SchemaVersion,
         string ProfileId,
@@ -1520,5 +1634,10 @@ public sealed class OptiScalerManager : IDisposable
         OptiScalerProxy Proxy,
         DateTimeOffset InstalledAtUtc,
         IReadOnlyList<OptiScalerInstalledFile> Files,
-        OptiScalerReleaseChannel Channel = OptiScalerReleaseChannel.Stable);
+        OptiScalerReleaseChannel Channel = OptiScalerReleaseChannel.Stable,
+        IReadOnlyList<OptiScalerDisplacedFile>? DisplacedFiles = null)
+    {
+        public IReadOnlyList<OptiScalerDisplacedFile> Displaced =>
+            DisplacedFiles ?? [];
+    }
 }

@@ -41,6 +41,7 @@ public enum OptiScalerSafetyBlockReason
     NeuralRenderingModelMissing = 7,
     RequiredCompanionMissing = 8,
     ProxyNotSupportedByGame = 9,
+    ConflictingModPresent = 10,
 }
 
 public sealed record OptiScalerSafetyDecision(

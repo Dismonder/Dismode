@@ -763,12 +763,15 @@ public sealed class OptiScalerManagerTests
             OptiScalerSafetyBlockReason.RequiredCompanionMissing,
             blocked.BlockReason);
         StringAssert.Contains(blocked.Message, "REFramework");
-        StringAssert.Contains(blocked.Message, "dinput8.dll");
+        StringAssert.Contains(blocked.Message, "ReShade64.dll");
         Assert.IsFalse(File.Exists(
             Path.Combine(context.GameDirectory, "dxgi.dll")));
 
-        // Po dostarczeniu skladnika instalacja przechodzi.
-        context.CreateGameFile("dinput8.dll", "reframework");
+        // Po dostarczeniu skladnika instalacja przechodzi. Uklad, ktory
+        // dziala w silniku RE, to REFramework pod nazwa ReShade64.dll —
+        // OptiScaler laduje go sam, zamiast pozwolic Windows uruchomic oba
+        // loadery rownolegle przez dinput8.dll.
+        context.CreateGameFile("ReShade64.dll", "reframework");
 
         OptiScalerOperationResult allowed = await manager.InstallAsync(
             new OptiScalerInstallRequest(
@@ -788,6 +791,65 @@ public sealed class OptiScalerManagerTests
             Path.Combine(context.GameDirectory, "OptiScaler.ini"));
         StringAssert.Contains(installedIni, "Dxgi=false");
         StringAssert.Contains(installedIni, "ShortcutKey=0x24");
+        StringAssert.Contains(installedIni, "LoadReshade=true");
+    }
+
+    [TestMethod]
+    public async Task SecondModLoaderBlocksUntilTheUserAcceptsMovingItAside()
+    {
+        // dinput8.dll obok gry oznacza, ze Windows zaladuje REFramework
+        // rownolegle z OptiScalerem — to jest ten crash na starcie. Bez zgody
+        // nie ruszamy cudzego pliku; ze zgoda odkladamy go i przywracamy przy
+        // deinstalacji.
+        using OptiScalerTestContext context = new();
+        string game = context.CreateGameFile("re9.exe", "game");
+        context.CreateGameFile("dinput8.dll", "stary-loader");
+        context.CreateGameFile("ReShade64.dll", "reframework");
+        context.CreatePayloadFile("OptiScaler.dll", "proxy");
+        context.CreatePayloadIni(withBom: false, complete: true);
+        OptiScalerManager manager = context.CreateManager();
+
+        OptiScalerOperationResult blocked = await manager.InstallAsync(
+            new OptiScalerInstallRequest(
+                "profile-re9",
+                game,
+                context.GameDirectory,
+                OptiScalerProxy.Dxgi,
+                OfflineUseConfirmed: true),
+            CancellationToken.None);
+
+        Assert.IsFalse(blocked.Succeeded);
+        Assert.AreEqual(
+            OptiScalerSafetyBlockReason.ConflictingModPresent,
+            blocked.BlockReason);
+        Assert.IsTrue(File.Exists(
+            Path.Combine(context.GameDirectory, "dinput8.dll")));
+
+        OptiScalerOperationResult allowed = await manager.InstallAsync(
+            new OptiScalerInstallRequest(
+                "profile-re9",
+                game,
+                context.GameDirectory,
+                OptiScalerProxy.Dxgi,
+                OfflineUseConfirmed: true,
+                InstallRequiredCompanion: true),
+            CancellationToken.None);
+
+        Assert.IsTrue(allowed.Succeeded, allowed.Message);
+        Assert.IsFalse(
+            File.Exists(Path.Combine(context.GameDirectory, "dinput8.dll")),
+            "Drugi loader mial zostac odsuniety z katalogu gry.");
+
+        OptiScalerOperationResult removed = await manager.RemoveAsync(
+            "profile-re9",
+            CancellationToken.None);
+
+        Assert.IsTrue(removed.Succeeded, removed.Message);
+        Assert.AreEqual(
+            "stary-loader",
+            File.ReadAllText(
+                Path.Combine(context.GameDirectory, "dinput8.dll")).Trim(),
+            "Odsuniety plik mial wrocic na miejsce po deinstalacji.");
     }
 
     [TestMethod]
@@ -972,6 +1034,8 @@ public sealed class OptiScalerManagerTests
                     "ShortcutKey=auto",
                     "[Spoofing]",
                     "Dxgi=auto",
+                    "[Plugins]",
+                    "LoadReshade=auto",
                 ]
                 : ["[Upscalers]", "Dx12Upscaler=auto"];
             string content = string.Join("\r\n", lines) + "\r\n";

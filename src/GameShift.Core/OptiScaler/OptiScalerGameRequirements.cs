@@ -19,12 +19,28 @@ public sealed record OptiScalerGameRequirement(
     string? CompanionName = null,
     string? CompanionFileName = null,
     IReadOnlyList<OptiScalerIniSetting>? Settings = null,
-    bool CompanionAutoInstallable = false)
+    bool CompanionAutoInstallable = false,
+    string? CompanionArchiveEntry = null,
+    IReadOnlyList<string>? ConflictingFileNames = null)
 {
     public IReadOnlyList<OptiScalerIniSetting> RequiredSettings =>
         Settings ?? [];
 
     public bool NeedsCompanion => CompanionFileName is not null;
+
+    /// <summary>
+    /// Name the companion carries inside its own archive, when that differs
+    /// from the name it has to be installed under.
+    /// </summary>
+    public string? ArchiveEntryName =>
+        CompanionArchiveEntry ?? CompanionFileName;
+
+    /// <summary>
+    /// Files whose presence means another loader is already hooking the game
+    /// the same way. Two of them fighting over one entry point is the crash
+    /// this layout exists to avoid.
+    /// </summary>
+    public IReadOnlyList<string> Conflicts => ConflictingFileNames ?? [];
 }
 
 public static class OptiScalerGameRequirements
@@ -40,17 +56,23 @@ public static class OptiScalerGameRequirements
     [
         new("Spoofing", "Dxgi", "false"),
         new("Menu", "ShortcutKey", "0x24"),
+        // OptiScaler laduje REFramework samo, zamiast pozwolic Windows
+        // zaladowac je rownolegle przez dinput8.dll. Dwa loadery walczace
+        // o ten sam punkt wejscia to wlasnie crash na starcie.
+        new("Plugins", "LoadReshade", "true"),
     ];
 
     private const string ReEngineNotice =
-        "Ta gra wymaga REFramework zainstalowanego jako dinput8.dll "
-        + "w katalogu gry — bez niego kończy się błędem zaraz po "
-        + "uruchomieniu. GameShift może go pobrać za Ciebie: to otwarty "
+        "Ta gra wymaga REFramework — bez niego OptiScaler nie wstaje. "
+        + "GameShift układa to według metody, którą wiki OptiScalera "
+        + "podaje na konflikty hooków: REFramework ląduje obok gry jako "
+        + "ReShade64.dll, a OptiScaler ładuje go sam (LoadReshade=true), "
+        + "zamiast pozwolić Windows uruchomić oba loadery równolegle. "
+        + "Do tego spoofing DXGI wyłączony, bo silnik RE się przy nim "
+        + "wywala, i overlay przeniesiony z Insert na Home, żeby nie "
+        + "kolidował z overlayem REFramework. Sam REFramework to otwarty "
         + "projekt praydoga na licencji MIT, przypięty do jednego wydania "
-        + "i sprawdzany sumą kontrolną. Sam OptiScaler zostanie "
-        + "skonfigurowany pod ten silnik: spoofing DXGI wyłączony (inaczej "
-        + "gra się wywala) i overlay przeniesiony z Insert na Home, żeby "
-        + "nie kolidował z REFramework.";
+        + "i sprawdzany sumą kontrolną.";
 
     /// <summary>
     /// Games known to need something beyond the defaults. Sourced from the
@@ -66,9 +88,11 @@ public static class OptiScalerGameRequirements
             ReEngineNotice,
             "https://github.com/optiscaler/OptiScaler/wiki/Resident-Evil-9-Requiem",
             CompanionName: "REFramework",
-            CompanionFileName: "dinput8.dll",
+            CompanionFileName: "ReShade64.dll",
             Settings: ReEngineSettings,
-            CompanionAutoInstallable: true),
+            CompanionAutoInstallable: true,
+            CompanionArchiveEntry: "dinput8.dll",
+            ConflictingFileNames: ["dinput8.dll"]),
         new(
             "MonsterHunterWilds.exe",
             "Monster Hunter Wilds",
@@ -76,9 +100,11 @@ public static class OptiScalerGameRequirements
             ReEngineNotice,
             "https://github.com/optiscaler/OptiScaler/wiki/Compatibility-List",
             CompanionName: "REFramework",
-            CompanionFileName: "dinput8.dll",
+            CompanionFileName: "ReShade64.dll",
             Settings: ReEngineSettings,
-            CompanionAutoInstallable: true),
+            CompanionAutoInstallable: true,
+            CompanionArchiveEntry: "dinput8.dll",
+            ConflictingFileNames: ["dinput8.dll"]),
         new(
             "Forspoken.exe",
             "Forspoken",

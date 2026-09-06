@@ -1710,11 +1710,15 @@ public sealed partial class MainWindow : Window, IDisposable
                     Text = gameRequirement is null
                         ? string.Empty
                         : $"Pobierz i zainstaluj {gameRequirement.CompanionName}"
-                            + $" ({gameRequirement.CompanionFileName}). "
+                            + $" jako {gameRequirement.CompanionFileName}. "
                             + "Ta gra bez niego nie uruchomi OptiScalera. "
-                            + "Projekt otwarty na licencji MIT; GameShift "
-                            + "instaluje jedno przypięte wydanie i sprawdza "
-                            + "jego sumę kontrolną.",
+                            + "Jeśli w katalogu gry leży już drugi loader "
+                            + "(dinput8.dll), GameShift odłoży go na bok i "
+                            + "przywróci przy deinstalacji — dwa loadery na "
+                            + "raz to właśnie crash na starcie. Projekt "
+                            + "otwarty na licencji MIT; instalowane jest "
+                            + "jedno przypięte wydanie ze sprawdzaną sumą "
+                            + "kontrolną.",
                     TextWrapping = TextWrapping.Wrap,
                 },
             };
