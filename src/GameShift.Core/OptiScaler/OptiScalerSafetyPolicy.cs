@@ -40,6 +40,7 @@ public enum OptiScalerSafetyBlockReason
     DriverTooOld = 6,
     NeuralRenderingModelMissing = 7,
     RequiredCompanionMissing = 8,
+    ProxyNotSupportedByGame = 9,
 }
 
 public sealed record OptiScalerSafetyDecision(

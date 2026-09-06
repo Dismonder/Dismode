@@ -466,6 +466,22 @@ public sealed class OptiScalerManager : IDisposable
                     targetExecutable,
                     OptiScalerSafetyBlockReason.RequiredCompanionMissing);
             }
+
+            // Czesc gier laduje OptiScalera tylko pod jedna nazwa proxy.
+            // Instalacja pod inna konczy sie tym, ze mod milczy albo gra
+            // pada, wiec odmawiamy z podpowiedzia zamiast zostawiac slad.
+            if (request.Proxy != requirement.RequiredProxy)
+            {
+                return new(
+                    false,
+                    $"{requirement.GameName} wymaga proxy "
+                        + OptiScalerSafetyPolicy.GetProxyFileName(
+                            requirement.RequiredProxy)
+                        + ". "
+                        + requirement.Notice,
+                    targetExecutable,
+                    OptiScalerSafetyBlockReason.ProxyNotSupportedByGame);
+            }
         }
 
         NvidiaDriverStoreSnapshot? driverStore = null;
@@ -556,6 +572,27 @@ public sealed class OptiScalerManager : IDisposable
             if (request.UpgradeAgilitySdk)
             {
                 iniSettings.AddRange(OptiScalerIniPatcher.AgilitySdkSettings);
+            }
+
+            // Ustawienia wymuszone przez sama gre ida na koncu, zeby wygrywaly
+            // z opcjami wybranymi w oknie: to one decyduja o tym, czy gra
+            // w ogole wstanie.
+            if (requirement is not null)
+            {
+                foreach (OptiScalerIniSetting setting in
+                    requirement.RequiredSettings)
+                {
+                    iniSettings.RemoveAll(existing =>
+                        string.Equals(
+                            existing.Section,
+                            setting.Section,
+                            StringComparison.OrdinalIgnoreCase)
+                        && string.Equals(
+                            existing.Key,
+                            setting.Key,
+                            StringComparison.OrdinalIgnoreCase));
+                    iniSettings.Add(setting);
+                }
             }
 
             List<PayloadFile> additionalFiles = [];
