@@ -96,6 +96,8 @@ public sealed partial class MainWindow : Window, IDisposable
     private readonly ImageSource? _dashboardFallbackArtwork;
     private readonly ObservableCollection<ProfileListItem> _profiles = [];
     private readonly ObservableCollection<ProfileListItem> _libraryView = [];
+    private readonly ObservableCollection<LibraryShelf> _libraryShelves = [];
+    private ProfileListItem? _libraryHero;
     private readonly Queue<double> _dashboardFrameTimes = [];
     private readonly ObservableCollection<HistoryListItem> _history = [];
     private readonly ObservableCollection<SessionPlanActionListItem>
@@ -168,7 +170,8 @@ public sealed partial class MainWindow : Window, IDisposable
         _memoryOptimizer = new(_userSid);
         _systemOptimizer = new(_userSid);
         _memoryOptimizerGameStateExporter = new(_userSid);
-        ProfilesList.ItemsSource = _libraryView;
+        LibraryShelvesSource.Source = _libraryShelves;
+        ProfilesList.ItemsSource = LibraryShelvesSource.View;
         _profiles.CollectionChanged += (_, _) => ApplyLibraryFilter();
         ApplyLibraryFilter();
         DashboardGameRail.ItemsSource = _profiles;
@@ -1160,6 +1163,110 @@ public sealed partial class MainWindow : Window, IDisposable
         HandleGameProfileChanged();
     }
 
+    /// <summary>
+    /// Groups the filtered library into shelves. Profiles that are switched
+    /// off come first under one heading, so a game that will not launch is
+    /// not buried among the ones that will; everything else groups by store,
+    /// largest first.
+    /// </summary>
+    private void RebuildLibraryShelves()
+    {
+        _libraryShelves.Clear();
+
+        List<ProfileListItem> needsAttention = [.. _libraryView
+            .Where(item => !item.Profile.IsEnabled)
+            .OrderBy(item => item.DisplayName, StringComparer.CurrentCulture)];
+        if (needsAttention.Count > 0)
+        {
+            _libraryShelves.Add(new("Wymaga uwagi", needsAttention));
+        }
+
+        IEnumerable<IGrouping<string, ProfileListItem>> bySource = _libraryView
+            .Where(item => item.Profile.IsEnabled)
+            .GroupBy(item => item.SourceLabel, StringComparer.CurrentCulture);
+        foreach (IGrouping<string, ProfileListItem> group in bySource
+                     .OrderByDescending(group => group.Count())
+                     .ThenBy(group => group.Key, StringComparer.CurrentCulture))
+        {
+            _libraryShelves.Add(new(
+                group.Key,
+                group
+                    .OrderByDescending(item =>
+                        item.LastPlayedAtUtc ?? DateTimeOffset.MinValue)
+                    .ThenBy(
+                        item => item.DisplayName,
+                        StringComparer.CurrentCulture)));
+        }
+    }
+
+    /// <summary>
+    /// Puts the most recently played game at the top of the library, so the
+    /// page opens on the one action a player most likely came to take.
+    /// </summary>
+    private void UpdateLibraryHero()
+    {
+        _libraryHero = _libraryView
+            .Where(item => item.LastPlayedAtUtc is not null)
+            .OrderByDescending(item => item.LastPlayedAtUtc)
+            .FirstOrDefault()
+            ?? _libraryView.FirstOrDefault();
+
+        if (LibraryHeroPanel is null)
+        {
+            return;
+        }
+
+        if (_libraryHero is null)
+        {
+            LibraryHeroPanel.Visibility = Visibility.Collapsed;
+            return;
+        }
+
+        LibraryHeroPanel.Visibility = Visibility.Visible;
+        LibraryHeroTitleText.Text = _libraryHero.DisplayName;
+        LibraryHeroStateText.Text = _libraryHero.StateLabel;
+        LibraryHeroImage.Source = _libraryHero.HeroArtworkSource
+            ?? _libraryHero.PosterArtworkSource;
+        LibraryHeroMetaText.Text = string.Join(
+            "   •   ",
+            new[]
+            {
+                _libraryHero.SourceLabel,
+                _libraryHero.LastPlayedLabel,
+                _libraryHero.PlaytimeLabel,
+                $"Preset: {_libraryHero.PresetLabel}",
+            }.Where(part => !string.IsNullOrWhiteSpace(part)));
+    }
+
+    private async void OnLibraryHeroLaunchClicked(
+        object sender,
+        RoutedEventArgs args)
+    {
+        if (_isBusy || _libraryHero is not { } hero)
+        {
+            return;
+        }
+
+        await LaunchProfileThroughGameShiftAsync(
+            hero,
+            keepWindowHidden: false,
+            _lifetime.Token);
+    }
+
+    private void OnLibraryHeroPlanClicked(object sender, RoutedEventArgs args)
+    {
+        if (_libraryHero is not { } hero)
+        {
+            return;
+        }
+
+        // Plan gry czyta zaznaczenie z biblioteki, wiec musi ono wskazywac
+        // gre z sekcji hero, zanim przejdziemy na tamta zakladke.
+        RevealProfileInLibrary(hero);
+        ProfilesList.SelectedItem = hero;
+        NavigateToPage("plan");
+    }
+
     private void OnLibrarySearchTextChanged(
         object sender,
         TextChangedEventArgs args) => ApplyLibraryFilter();
@@ -1185,6 +1292,9 @@ public sealed partial class MainWindow : Window, IDisposable
                 _libraryView.Add(item);
             }
         }
+
+        RebuildLibraryShelves();
+        UpdateLibraryHero();
 
         if (selected is not null && _libraryView.Contains(selected))
         {
