@@ -46,9 +46,10 @@ public sealed class NeuralRenderingModelImporterTests
     [TestMethod]
     public void FileUnderAnotherNameIsRejected()
     {
-        // OptiScaler szuka modelu wylacznie pod nazwa nvngx_dlssnr.dll,
-        // wiec kopia pod inna nazwa po cichu nic by nie dala.
-        string path = Path.Combine(_directory, "nvngx_dlss.dll");
+        // OptiScaler szuka tych bibliotek wylacznie pod ich wlasnymi nazwami,
+        // wiec kopia pod inna nazwa po cichu nic by nie dala. nvngx_dlssg.dll
+        // to generator klatek — inny plik, nie nasza sprawa.
+        string path = Path.Combine(_directory, "nvngx_dlssg.dll");
         File.WriteAllBytes(path, [0x4D, 0x5A]);
 
         NeuralRenderingModelImportResult result =
@@ -58,6 +59,28 @@ public sealed class NeuralRenderingModelImporterTests
         Assert.AreEqual(
             NeuralRenderingModelRejection.WrongFileName,
             result.Rejection);
+        Assert.IsNull(result.FileName);
+    }
+
+    [TestMethod]
+    public void TheDlssRuntimeGoesThroughTheSameGate()
+    {
+        // Neural Rendering jezdzi na nvngx_dlss.dll, a sterownik 616.x nie
+        // niesie ani jego, ani modelu. Oba wiec przychodza od uzytkownika
+        // i oba musza przejsc te sama kontrole podpisu.
+        string path = Path.Combine(_directory, "nvngx_dlss.dll");
+        File.WriteAllBytes(path, [0x4D, 0x5A, .. new byte[512]]);
+
+        NeuralRenderingModelImportResult result =
+            new NeuralRenderingModelImporter().Inspect(path);
+
+        Assert.AreEqual("nvngx_dlss.dll", result.FileName);
+        Assert.AreEqual(
+            NeuralRenderingModelRejection.SignatureInvalid,
+            result.Rejection);
+        Assert.IsTrue(
+            result.IsOverridable,
+            "Zla sygnatura ma byc do przejscia swiadoma zgoda.");
     }
 
     [TestMethod]
@@ -75,5 +98,6 @@ public sealed class NeuralRenderingModelImporterTests
         Assert.AreEqual(
             NeuralRenderingModelRejection.SignatureInvalid,
             result.Rejection);
+        Assert.AreEqual("nvngx_dlssnr.dll", result.FileName);
     }
 }

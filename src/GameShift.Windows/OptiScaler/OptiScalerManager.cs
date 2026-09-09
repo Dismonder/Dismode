@@ -18,9 +18,17 @@ public sealed record OptiScalerInstallRequest(
     bool ExperimentalUseConfirmed = false,
     bool EnableNeuralRendering = false,
     bool UpgradeAgilitySdk = false,
-    string? NeuralRenderingModelPath = null,
+    IReadOnlyList<string>? NeuralRenderingModelPaths = null,
     bool UnverifiedNeuralModelAccepted = false,
-    bool InstallRequiredCompanion = false);
+    bool InstallRequiredCompanion = false)
+{
+    /// <summary>
+    /// NGX libraries the user picked by hand, for the names the installed
+    /// driver does not carry itself.
+    /// </summary>
+    public IReadOnlyList<string> SuppliedModelPaths =>
+        NeuralRenderingModelPaths ?? [];
+}
 
 public sealed record OptiScalerOperationResult(
     bool Succeeded,
@@ -531,7 +539,9 @@ public sealed class OptiScalerManager : IDisposable
             {
                 // GameShift potrafi dostarczyc REFramework — otwarty projekt
                 // na licencji MIT, przypiety i weryfikowany suma kontrolna.
-                // Bez zgody uzytkownika nadal nic nie pobieramy.
+                // Bez zgody uzytkownika nadal nic nie pobieramy. Gdy plik o tej
+                // nazwie juz lezy w katalogu, nie ruszamy go: nie polozyl go
+                // tam GameShift i nie do nas nalezy jego podmiana.
                 if (requirement.CompanionAutoInstallable
                     && request.InstallRequiredCompanion)
                 {
@@ -568,7 +578,7 @@ public sealed class OptiScalerManager : IDisposable
         }
 
         NvidiaDriverStoreSnapshot? driverStore = null;
-        string? suppliedModelPath = null;
+        List<PayloadFile> suppliedModels = [];
         if (request.EnableNeuralRendering)
         {
             progress?.Report(new(
@@ -577,15 +587,23 @@ public sealed class OptiScalerManager : IDisposable
             driverStore = _driverStoreProbe();
             NvidiaGpuCapability capability = driverStore.Capability;
 
-            // Sterownik nie musi zawierac modelu Neural Rendering — zmierzone
-            // na RTX 5070 ze sterownikiem 616.64 nie zawiera go wcale. Wtedy
-            // uzytkownik wskazuje plik sam, a my sprawdzamy, czy Windows uznaje
-            // go za kod podpisany przez NVIDIE.
-            if (!capability.NeuralRenderingModelAvailable
-                && !string.IsNullOrWhiteSpace(request.NeuralRenderingModelPath))
+            // Sterownik nie musi zawierac modeli NGX — zmierzone na RTX 5070
+            // ze sterownikiem 616.64 nie zawiera ani nvngx_dlssnr.dll, ani
+            // nvngx_dlss.dll. Wtedy uzytkownik wskazuje je sam, a my
+            // sprawdzamy, czy Windows uznaje je za kod podpisany przez NVIDIE.
+            foreach (string candidate in request.SuppliedModelPaths.Where(
+                path => !string.IsNullOrWhiteSpace(path)))
             {
+                // To, co lezy w magazynie sterownikow, wygrywa: tam pisze
+                // tylko TrustedInstaller, wiec ta kopia jest pewniejsza niz
+                // cokolwiek wskazane z dysku uzytkownika.
+                if (driverStore.Find(Path.GetFileName(candidate)) is not null)
+                {
+                    continue;
+                }
+
                 NeuralRenderingModelImportResult import =
-                    _modelImporter.Inspect(request.NeuralRenderingModelPath);
+                    _modelImporter.Inspect(candidate);
                 bool overridden = !import.Accepted
                     && import.IsOverridable
                     && request.UnverifiedNeuralModelAccepted;
@@ -593,18 +611,24 @@ public sealed class OptiScalerManager : IDisposable
                 {
                     return new(
                         false,
-                        "Wskazany nvngx_dlssnr.dll nie przeszedl weryfikacji: "
+                        $"Wskazany {Path.GetFileName(candidate)} nie przeszedl "
+                            + "weryfikacji: "
                             + import.Message,
                         targetExecutable,
                         OptiScalerSafetyBlockReason.NeuralRenderingModelMissing,
-                        [import.SourcePath ?? request.NeuralRenderingModelPath]);
+                        [import.SourcePath ?? candidate]);
                 }
 
-                suppliedModelPath = import.SourcePath;
-                capability = capability with
+                suppliedModels.Add(new(import.SourcePath!, import.FileName!));
+                if (import.FileName!.Equals(
+                    NvidiaDriverStoreProbe.NeuralRenderingModelFileName,
+                    StringComparison.OrdinalIgnoreCase))
                 {
-                    NeuralRenderingModelAvailable = true,
-                };
+                    capability = capability with
+                    {
+                        NeuralRenderingModelAvailable = true,
+                    };
+                }
             }
 
             OptiScalerSafetyDecision neural = NeuralRenderingPolicy.Evaluate(
@@ -761,7 +785,6 @@ public sealed class OptiScalerManager : IDisposable
                 CompanionDownloadResult companion = await _companionSource
                     .DownloadAsync(
                         CreateTemporaryDirectory("companion"),
-                        companionToInstall.ArchiveEntryName!,
                         companionToInstall.CompanionFileName!,
                         cancellationToken)
                     .ConfigureAwait(false);
@@ -779,12 +802,7 @@ public sealed class OptiScalerManager : IDisposable
                     companionToInstall.CompanionFileName!));
             }
 
-            if (suppliedModelPath is not null)
-            {
-                additionalFiles.Add(new(
-                    suppliedModelPath,
-                    NvidiaDriverStoreProbe.NeuralRenderingModelFileName));
-            }
+            additionalFiles.AddRange(suppliedModels);
 
             List<PayloadFile> payload = BuildPayload(
                 extractionDirectory,
@@ -903,6 +921,29 @@ public sealed class OptiScalerManager : IDisposable
             affected,
             transactionDirectory,
             cancellationToken);
+        // Wczesniejsze wydania GameShift odsuwaly dinput8.dll na bok, bo
+        // instalowaly REFramework pod nazwa ReShade64.dll. Teraz REFramework
+        // laduje pod wlasna nazwa, wiec odsuniety plik nie ma juz powodu lezec
+        // w kopii — wraca na miejsce, zanim polozymy na nim payload. Dzieki
+        // temu obejmuje go zwykla kopia zapasowa i deinstalacja odda
+        // uzytkownikowi jego oryginal, zamiast zgubic go razem z manifestem.
+        foreach (OptiScalerDisplacedFile stale in (previous?.Displaced ?? [])
+                     .Where(file => !filesToDisplace.Any(path => string.Equals(
+                         path,
+                         file.RelativePath,
+                         StringComparison.OrdinalIgnoreCase))))
+        {
+            string backup = GetContainedPath(
+                _stateDirectory,
+                stale.BackupRelativePath);
+            if (File.Exists(backup))
+            {
+                AtomicCopy(
+                    backup,
+                    GetContainedPath(targetDirectory, stale.RelativePath));
+            }
+        }
+
         List<OptiScalerDisplacedFile> displaced = [];
         foreach (string relativePath in filesToDisplace)
         {

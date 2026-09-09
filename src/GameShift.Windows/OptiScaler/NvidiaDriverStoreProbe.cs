@@ -27,13 +27,20 @@ public sealed class NvidiaDriverStoreProbe
 {
     public const string NeuralRenderingModelFileName = "nvngx_dlssnr.dll";
 
+    /// <summary>
+    /// The DLSS upscaler runtime itself. Neural Rendering rides on top of it:
+    /// switching OptiScaler to the dlss upscaler is pointless if the game
+    /// directory has nothing to load under this name.
+    /// </summary>
+    public const string UpscalerModelFileName = "nvngx_dlss.dll";
+
     private const string DisplayAdapterClassKey =
         @"SYSTEM\CurrentControlSet\Control\Class\"
         + "{4d36e968-e325-11ce-bfc1-08002be10318}";
 
     private static readonly string[] ModelFileNames =
     [
-        "nvngx_dlss.dll",
+        UpscalerModelFileName,
         "nvngx_dlssd.dll",
         "nvngx_dlssg.dll",
         NeuralRenderingModelFileName,
