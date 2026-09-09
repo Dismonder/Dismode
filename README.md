@@ -54,6 +54,14 @@ Windows App Runtime installation. Building GameShift from source requires:
 
 ## Build and test
 
+Enable the repository hooks once per clone. GitHub cannot protect `main` on a
+private repository under the Free plan, so the guard against pushing straight
+to `main` lives client-side and only applies where this is set:
+
+```powershell
+git config core.hooksPath .githooks
+```
+
 ```powershell
 dotnet restore GameShift.sln
 dotnet build GameShift.sln --configuration Debug
