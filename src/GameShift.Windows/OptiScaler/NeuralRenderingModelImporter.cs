@@ -15,7 +15,8 @@ public sealed record NeuralRenderingModelImportResult(
     bool Accepted,
     NeuralRenderingModelRejection Rejection,
     string? SourcePath,
-    string Message)
+    string Message,
+    string? FileName = null)
 {
     /// <summary>
     /// True when the file is the right file in the right place and only its
@@ -31,14 +32,14 @@ public sealed record NeuralRenderingModelImportResult(
 }
 
 /// <summary>
-/// Accepts an nvngx_dlssnr.dll the user supplies by hand, and only if Windows
-/// agrees it is genuinely NVIDIA's.
+/// Accepts the NGX libraries the user supplies by hand, and only if Windows
+/// agrees they are genuinely NVIDIA's.
 /// <para>
-/// GameShift will not fetch this file itself. It is not in any driver package
-/// we could find — measured on an RTX 5070 with driver 616.64, the package
-/// installs nvngx.dll, nvngx_dlssg.dll and nvngx_update.exe and nothing else —
-/// and it is not in the OptiScaler fork's archive either. The copies that
-/// circulate on GitHub do not survive verification: one carries NVIDIA's
+/// GameShift will not fetch these files itself. Neither is in any driver
+/// package we could find — measured on an RTX 5070 with driver 616.64, the
+/// package installs nvngx.dll, nvngx_dlssg.dll and nvngx_update.exe and
+/// nothing else — and neither is in the OptiScaler fork's archive. The copies
+/// that circulate on GitHub do not survive verification: one carries NVIDIA's
 /// version strings with no signature at all, and another carries a real NVIDIA
 /// signature whose hash no longer matches the file, meaning the binary was
 /// changed after NVIDIA signed it. Downloading either one and loading it into
@@ -46,8 +47,8 @@ public sealed record NeuralRenderingModelImportResult(
 /// machine.
 /// </para>
 /// <para>
-/// So the file has to come from the user, and this class is the gate it passes
-/// through. Both of those GitHub copies fail it.
+/// So the files have to come from the user, and this class is the gate they
+/// pass through. Both of those GitHub copies fail it.
 /// </para>
 /// </summary>
 public sealed class NeuralRenderingModelImporter
@@ -58,6 +59,18 @@ public sealed class NeuralRenderingModelImporter
     /// Chain validity is WinVerifyTrust's job; this only settles who signed it.
     /// </summary>
     private const string NvidiaOrganisation = "NVIDIA Corporation";
+
+    /// <summary>
+    /// The two names OptiScaler loads: the Neural Rendering model and the DLSS
+    /// runtime it rides on. Enabling the dlss upscaler without the second one
+    /// leaves the game with a setting and nothing behind it, so a driver that
+    /// ships neither — 616.x ships neither — means both come from the user.
+    /// </summary>
+    public static IReadOnlyList<string> AcceptedFileNames =>
+    [
+        NvidiaDriverStoreProbe.NeuralRenderingModelFileName,
+        NvidiaDriverStoreProbe.UpscalerModelFileName,
+    ];
 
     private readonly AuthenticodeSignatureVerifier _verifier;
     private readonly Func<string, string?> _signerSubjectReader;
@@ -84,18 +97,21 @@ public sealed class NeuralRenderingModelImporter
                 "Nie ma takiego pliku.");
         }
 
-        string expected = NvidiaDriverStoreProbe.NeuralRenderingModelFileName;
-        if (!string.Equals(
+        string? fileName = AcceptedFileNames.FirstOrDefault(
+            candidate => string.Equals(
                 Path.GetFileName(fullPath),
-                expected,
-                StringComparison.OrdinalIgnoreCase))
+                candidate,
+                StringComparison.OrdinalIgnoreCase));
+        if (fileName is null)
         {
             return new(
                 false,
                 NeuralRenderingModelRejection.WrongFileName,
                 fullPath,
-                $"Plik musi nazywać się {expected}. OptiScaler szuka go pod "
-                    + "tą nazwą i nie znajdzie go pod żadną inną.");
+                "Plik musi nazywać się "
+                    + string.Join(" albo ", AcceptedFileNames)
+                    + ". OptiScaler szuka ich pod tymi nazwami i nie znajdzie "
+                    + "ich pod żadną inną.");
         }
 
         AuthenticodeVerificationResult signature = _verifier.Verify(fullPath);
@@ -109,7 +125,8 @@ public sealed class NeuralRenderingModelImporter
                     + "stwierdzić, że to naprawdę kod NVIDII. Tak wygląda "
                     + "zarówno plik bez podpisu, jak i taki, który zmieniono "
                     + "po podpisaniu. Nie wstrzykniemy go do gry. "
-                    + signature.Details);
+                    + signature.Details,
+                fileName);
         }
 
         string? subject = signature.SignerSubject ?? _signerSubjectReader(fullPath);
@@ -123,13 +140,15 @@ public sealed class NeuralRenderingModelImporter
                 NeuralRenderingModelRejection.SignerNotNvidia,
                 fullPath,
                 "Podpis jest poprawny, ale nie należy do NVIDIA Corporation"
-                    + (subject is null ? "." : $" (podpisał: {subject})."));
+                    + (subject is null ? "." : $" (podpisał: {subject})."),
+                fileName);
         }
 
         return new(
             true,
             NeuralRenderingModelRejection.None,
             fullPath,
-            "Podpis NVIDIA Corporation potwierdzony przez Windows.");
+            "Podpis NVIDIA Corporation potwierdzony przez Windows.",
+            fileName);
     }
 }

@@ -55,36 +55,19 @@ public sealed class REFrameworkCompanionSource
 
     /// <summary>
     /// Downloads the pinned archive and writes its dinput8.dll into
-    /// <paramref name="destinationDirectory"/>. The caller is expected to hand
+    /// <paramref name="destinationDirectory"/> under
+    /// <paramref name="companionFileName"/>. The caller is expected to hand
     /// that file to the normal install payload, so the same backup, manifest
     /// and uninstall bookkeeping covers it as everything else.
     /// </summary>
     public async ValueTask<CompanionDownloadResult> DownloadAsync(
         string destinationDirectory,
         string companionFileName,
-        CancellationToken cancellationToken) =>
-        await DownloadAsync(
-                destinationDirectory,
-                companionFileName,
-                companionFileName,
-                cancellationToken)
-            .ConfigureAwait(false);
-
-    /// <summary>
-    /// REFramework ships its loader as dinput8.dll, but the RE Engine layout
-    /// that actually works installs it as ReShade64.dll so OptiScaler
-    /// chainloads it instead of Windows loading both in parallel. So the name
-    /// inside the archive and the name on disk are two different things.
-    /// </summary>
-    public async ValueTask<CompanionDownloadResult> DownloadAsync(
-        string destinationDirectory,
-        string archiveEntryName,
-        string companionFileName,
         CancellationToken cancellationToken)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(destinationDirectory);
-        ArgumentException.ThrowIfNullOrWhiteSpace(archiveEntryName);
         ArgumentException.ThrowIfNullOrWhiteSpace(companionFileName);
+        const string archiveEntryName = "dinput8.dll";
 
         string archivePath = Path.Combine(
             destinationDirectory,

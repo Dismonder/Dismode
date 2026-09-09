@@ -763,15 +763,14 @@ public sealed class OptiScalerManagerTests
             OptiScalerSafetyBlockReason.RequiredCompanionMissing,
             blocked.BlockReason);
         StringAssert.Contains(blocked.Message, "REFramework");
-        StringAssert.Contains(blocked.Message, "ReShade64.dll");
+        StringAssert.Contains(blocked.Message, "dinput8.dll");
         Assert.IsFalse(File.Exists(
             Path.Combine(context.GameDirectory, "dxgi.dll")));
 
-        // Po dostarczeniu skladnika instalacja przechodzi. Uklad, ktory
-        // dziala w silniku RE, to REFramework pod nazwa ReShade64.dll —
-        // OptiScaler laduje go sam, zamiast pozwolic Windows uruchomic oba
-        // loadery rownolegle przez dinput8.dll.
-        context.CreateGameFile("ReShade64.dll", "reframework");
+        // Po dostarczeniu skladnika instalacja przechodzi. REFramework laduje
+        // pod wlasna nazwa — dinput8.dll obok gry — bo tak robi to jego
+        // instrukcja i tak dziala w praktyce.
+        context.CreateGameFile("dinput8.dll", "reframework");
 
         OptiScalerOperationResult allowed = await manager.InstallAsync(
             new OptiScalerInstallRequest(
@@ -791,25 +790,25 @@ public sealed class OptiScalerManagerTests
             Path.Combine(context.GameDirectory, "OptiScaler.ini"));
         StringAssert.Contains(installedIni, "Dxgi=false");
         StringAssert.Contains(installedIni, "ShortcutKey=0x24");
-        StringAssert.Contains(installedIni, "LoadReshade=true");
+        // OptiScaler nie chainloaduje REFramework: Windows laduje go sam
+        // przez dinput8.dll, wiec ten przelacznik zostaje nietkniety.
+        StringAssert.Contains(installedIni, "LoadReshade=auto");
     }
 
     [TestMethod]
-    public async Task SecondModLoaderBlocksUntilTheUserAcceptsMovingItAside()
+    public async Task AnExistingLoaderIsLeftWhereTheUserPutIt()
     {
-        // dinput8.dll obok gry oznacza, ze Windows zaladuje REFramework
-        // rownolegle z OptiScalerem — to jest ten crash na starcie. Bez zgody
-        // nie ruszamy cudzego pliku; ze zgoda odkladamy go i przywracamy przy
-        // deinstalacji.
+        // REFramework laduje jako dinput8.dll, wiec plik o tej nazwie obok gry
+        // spelnia wymaganie. GameShift ani go nie pobiera drugi raz, ani nie
+        // podmienia: nie polozyl go tam i nie wie, co uzytkownik ma w modach.
         using OptiScalerTestContext context = new();
         string game = context.CreateGameFile("re9.exe", "game");
-        context.CreateGameFile("dinput8.dll", "stary-loader");
-        context.CreateGameFile("ReShade64.dll", "reframework");
+        context.CreateGameFile("dinput8.dll", "reframework-uzytkownika");
         context.CreatePayloadFile("OptiScaler.dll", "proxy");
         context.CreatePayloadIni(withBom: false, complete: true);
         OptiScalerManager manager = context.CreateManager();
 
-        OptiScalerOperationResult blocked = await manager.InstallAsync(
+        OptiScalerOperationResult allowed = await manager.InstallAsync(
             new OptiScalerInstallRequest(
                 "profile-re9",
                 game,
@@ -818,27 +817,12 @@ public sealed class OptiScalerManagerTests
                 OfflineUseConfirmed: true),
             CancellationToken.None);
 
-        Assert.IsFalse(blocked.Succeeded);
-        Assert.AreEqual(
-            OptiScalerSafetyBlockReason.ConflictingModPresent,
-            blocked.BlockReason);
-        Assert.IsTrue(File.Exists(
-            Path.Combine(context.GameDirectory, "dinput8.dll")));
-
-        OptiScalerOperationResult allowed = await manager.InstallAsync(
-            new OptiScalerInstallRequest(
-                "profile-re9",
-                game,
-                context.GameDirectory,
-                OptiScalerProxy.Dxgi,
-                OfflineUseConfirmed: true,
-                InstallRequiredCompanion: true),
-            CancellationToken.None);
-
         Assert.IsTrue(allowed.Succeeded, allowed.Message);
-        Assert.IsFalse(
-            File.Exists(Path.Combine(context.GameDirectory, "dinput8.dll")),
-            "Drugi loader mial zostac odsuniety z katalogu gry.");
+        Assert.AreEqual(
+            "reframework-uzytkownika",
+            File.ReadAllText(
+                Path.Combine(context.GameDirectory, "dinput8.dll")).Trim(),
+            "Cudzy loader mial zostac nietkniety.");
 
         OptiScalerOperationResult removed = await manager.RemoveAsync(
             "profile-re9",
@@ -846,10 +830,10 @@ public sealed class OptiScalerManagerTests
 
         Assert.IsTrue(removed.Succeeded, removed.Message);
         Assert.AreEqual(
-            "stary-loader",
+            "reframework-uzytkownika",
             File.ReadAllText(
                 Path.Combine(context.GameDirectory, "dinput8.dll")).Trim(),
-            "Odsuniety plik mial wrocic na miejsce po deinstalacji.");
+            "Deinstalacja tez nie miala go ruszac.");
     }
 
     [TestMethod]
@@ -928,6 +912,97 @@ public sealed class OptiScalerManagerTests
         return result;
     }
 
+    [TestMethod]
+    public async Task BothSuppliedLibrariesLandNextToTheGame()
+    {
+        // Sterownik 616.x nie niesie ani modelu, ani runtime'u DLSS, wiec oba
+        // przychodza od uzytkownika. Zaden nie ma waznego podpisu — tak wyglada
+        // kazda krazaca kopia — wiec wchodza dopiero po swiadomej zgodzie.
+        using OptiScalerTestContext context = new();
+        string game = context.CreateGameFile("game.exe", "game");
+        context.CreatePayloadFile("OptiScaler.dll", "proxy");
+        context.CreatePayloadIni(withBom: false, complete: true);
+        string model = context.CreateOutsideFile(
+            NvidiaDriverStoreProbe.NeuralRenderingModelFileName,
+            "wskazany model");
+        string runtime = context.CreateOutsideFile(
+            NvidiaDriverStoreProbe.UpscalerModelFileName,
+            "wskazany runtime");
+        NvidiaDriverStoreSnapshot driverStore = context.CreateDriverStore();
+        OptiScalerManager manager = context.CreateManager(
+            driverStoreProbe: () => driverStore);
+
+        OptiScalerOperationResult refused = await manager.InstallAsync(
+            NeuralRequest(game, context) with
+            {
+                NeuralRenderingModelPaths = [model, runtime],
+            },
+            CancellationToken.None);
+
+        Assert.IsFalse(refused.Succeeded);
+        Assert.AreEqual(
+            OptiScalerSafetyBlockReason.NeuralRenderingModelMissing,
+            refused.BlockReason);
+
+        OptiScalerOperationResult result = await manager.InstallAsync(
+            NeuralRequest(game, context) with
+            {
+                NeuralRenderingModelPaths = [model, runtime],
+                UnverifiedNeuralModelAccepted = true,
+            },
+            CancellationToken.None);
+
+        Assert.IsTrue(result.Succeeded, result.Message);
+        Assert.AreEqual(
+            "wskazany model",
+            File.ReadAllText(Path.Combine(
+                context.GameDirectory,
+                NvidiaDriverStoreProbe.NeuralRenderingModelFileName)).Trim());
+        Assert.AreEqual(
+            "wskazany runtime",
+            File.ReadAllText(Path.Combine(
+                context.GameDirectory,
+                NvidiaDriverStoreProbe.UpscalerModelFileName)).Trim(),
+            "Bez nvngx_dlss.dll przelacznik upscalera nie ma czego zaladowac.");
+    }
+
+    [TestMethod]
+    public async Task TheDriverCopyBeatsAnythingThePlayerPicks()
+    {
+        // W magazynie sterownikow pisze tylko TrustedInstaller, wiec ta kopia
+        // jest pewniejsza niz plik wskazany z dysku — i to ona ma trafic do
+        // gry, nawet gdy uzytkownik wskaze wlasna.
+        using OptiScalerTestContext context = new();
+        string game = context.CreateGameFile("game.exe", "game");
+        context.CreatePayloadFile("OptiScaler.dll", "proxy");
+        context.CreatePayloadIni(withBom: false, complete: true);
+        string runtime = context.CreateOutsideFile(
+            NvidiaDriverStoreProbe.UpscalerModelFileName,
+            "wskazany runtime");
+        NvidiaDriverStoreSnapshot driverStore = context.CreateDriverStore(
+            modelFileNames:
+            [
+                NvidiaDriverStoreProbe.NeuralRenderingModelFileName,
+                NvidiaDriverStoreProbe.UpscalerModelFileName,
+            ]);
+        OptiScalerManager manager = context.CreateManager(
+            driverStoreProbe: () => driverStore);
+
+        OptiScalerOperationResult result = await manager.InstallAsync(
+            NeuralRequest(game, context) with
+            {
+                NeuralRenderingModelPaths = [runtime],
+            },
+            CancellationToken.None);
+
+        Assert.IsTrue(result.Succeeded, result.Message);
+        Assert.AreEqual(
+            "driver " + NvidiaDriverStoreProbe.UpscalerModelFileName,
+            File.ReadAllText(Path.Combine(
+                context.GameDirectory,
+                NvidiaDriverStoreProbe.UpscalerModelFileName)).Trim());
+    }
+
     private static OptiScalerInstallRequest NeuralRequest(
         string game,
         OptiScalerTestContext context) =>
@@ -967,6 +1042,13 @@ public sealed class OptiScalerManagerTests
 
         public string CreatePayloadFile(string relativePath, string content) =>
             CreateFile(PayloadDirectory, relativePath, content);
+
+        /// <summary>
+        /// A file the player picked by hand, so it has to sit outside both the
+        /// game directory and the package.
+        /// </summary>
+        public string CreateOutsideFile(string relativePath, string content) =>
+            CreateFile(OutsideDirectory, relativePath, content);
 
         public OptiScalerManager CreateManager(
             IOptiScalerPackageSource? packageSource = null,

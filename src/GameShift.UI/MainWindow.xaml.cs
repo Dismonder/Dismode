@@ -1750,6 +1750,16 @@ public sealed partial class MainWindow : Window, IDisposable
                 NeuralRenderingPolicy.Evaluate(
                     new(true, OptiScalerSafetyBlockReason.None),
                     driverStore.Capability);
+            // Brak modeli w sterowniku nie przesadza sprawy — uzytkownik moze
+            // je wskazac. Karta i wersja sterownika juz tak, wiec te dwie
+            // bramki pytamy osobno.
+            bool neuralHardwareSupported = NeuralRenderingPolicy.Evaluate(
+                    new(true, OptiScalerSafetyBlockReason.None),
+                    driverStore.Capability with
+                    {
+                        NeuralRenderingModelAvailable = true,
+                    })
+                .CanInstall;
             CheckBox neuralRendering = new()
             {
                 IsEnabled = !hardBlocked && neuralDecision.CanInstall,
@@ -1759,8 +1769,9 @@ public sealed partial class MainWindow : Window, IDisposable
                 {
                     MaxWidth = 500,
                     Text = "Włącz DLSS Neural Rendering. GameShift skopiuje "
-                        + "model ze sterownika NVIDIA i ustawi DLSS jako "
-                        + "upscaler.",
+                        + "biblioteki DLSS ze sterownika NVIDIA — a te, "
+                        + "których sterownik nie ma, weźmie z plików "
+                        + "wskazanych poniżej — i ustawi DLSS jako upscaler.",
                     TextWrapping = TextWrapping.Wrap,
                 },
             };
@@ -1812,32 +1823,30 @@ public sealed partial class MainWindow : Window, IDisposable
                     TextWrapping = TextWrapping.Wrap,
                 },
             };
-            string? suppliedModelPath = null;
-            TextBlock suppliedModelStatus = new()
+            // Neural Rendering potrzebuje dwoch bibliotek NGX: samego modelu
+            // i runtime'u DLSS, na ktorym on jezdzi. Sterownik 616.x nie
+            // niesie zadnej z nich, wiec kazda dostaje wlasny przycisk —
+            // pokazywany tylko wtedy, gdy w magazynie sterownikow jej nie ma.
+            NeuralModelPick[] modelPicks =
+            [
+                new(NvidiaDriverStoreProbe.NeuralRenderingModelFileName),
+                new(NvidiaDriverStoreProbe.UpscalerModelFileName),
+            ];
+            foreach (NeuralModelPick pick in modelPicks)
             {
-                Foreground = (Brush)Application.Current.Resources[
-                    "GameShiftMutedTextBrush"],
-                MaxWidth = 500,
-                Text = "Nie wybrano pliku.",
-                TextWrapping = TextWrapping.Wrap,
-                Visibility = Visibility.Collapsed,
-            };
-            Button pickModelButton = new()
-            {
-                Content = "Wskaż nvngx_dlssnr.dll…",
-                IsEnabled = !hardBlocked,
-                Visibility = Visibility.Collapsed,
-            };
+                pick.Button.IsEnabled = !hardBlocked;
+            }
+
             CheckBox unverifiedModelConfirmation = new()
             {
                 Visibility = Visibility.Collapsed,
                 Content = new TextBlock
                 {
                     MaxWidth = 500,
-                    Text = "Użyj tego pliku mimo nieudanej weryfikacji. "
-                        + "Rozumiem, że Windows nie potwierdził, iż to "
-                        + "niezmieniony kod NVIDII, i że zostanie on "
-                        + "załadowany do gry z pełnymi prawami procesu gry.",
+                    Text = "Użyj wskazanych plików mimo nieudanej "
+                        + "weryfikacji. Rozumiem, że Windows nie potwierdził, "
+                        + "iż to niezmieniony kod NVIDII, i że zostaną one "
+                        + "załadowane do gry z pełnymi prawami procesu gry.",
                     TextWrapping = TextWrapping.Wrap,
                 },
             };
@@ -1895,8 +1904,12 @@ public sealed partial class MainWindow : Window, IDisposable
             content.Children.Add(agilitySdkUpgrade);
             content.Children.Add(neuralRendering);
             content.Children.Add(neuralStatus);
-            content.Children.Add(pickModelButton);
-            content.Children.Add(suppliedModelStatus);
+            foreach (NeuralModelPick pick in modelPicks)
+            {
+                content.Children.Add(pick.Button);
+                content.Children.Add(pick.Status);
+            }
+
             content.Children.Add(unverifiedModelConfirmation);
 
             ContentDialog dialog = new()
@@ -1969,40 +1982,52 @@ public sealed partial class MainWindow : Window, IDisposable
                         : Visibility.Collapsed;
                 neuralRendering.Visibility = neuralVisibility;
                 neuralStatus.Visibility = neuralVisibility;
-
-                // Model bierzemy ze sterownika, jesli tam jest. Jesli nie ma —
-                // a na RTX 5070 ze sterownikiem 616.64 nie ma — uzytkownik
-                // wskazuje plik sam, a my sprawdzamy jego podpis.
-                Visibility pickerVisibility =
-                    neuralVisibility == Visibility.Visible
-                        && !driverStore.Capability.NeuralRenderingModelAvailable
-                            ? Visibility.Visible
-                            : Visibility.Collapsed;
-                pickModelButton.Visibility = pickerVisibility;
-                suppliedModelStatus.Visibility = pickerVisibility;
-                if (pickerVisibility == Visibility.Collapsed)
-                {
-                    unverifiedModelConfirmation.Visibility =
-                        Visibility.Collapsed;
-                }
+                RefreshNeuralModelState();
                 safetyNotice.Message = channelReleases.Length == 0
                     ? "Nie udało się pobrać listy wersji dla tego kanału."
                     : DescribeOptiScalerChannel(channel, preflight);
                 UpdatePrimaryButton();
             }
 
-            unverifiedModelConfirmation.Checked += (_, _) =>
+            void RefreshNeuralModelState()
             {
-                neuralRendering.IsEnabled = !hardBlocked;
-                neuralRendering.IsChecked = true;
-            };
-            unverifiedModelConfirmation.Unchecked += (_, _) =>
-            {
-                neuralRendering.IsEnabled = false;
-                neuralRendering.IsChecked = false;
-            };
+                bool neuralChannel =
+                    GetSelectedOptiScalerChannel(channelSelector)
+                        == OptiScalerReleaseChannel.DlssNeuralRendering;
+                bool consented = unverifiedModelConfirmation.IsChecked == true;
+                bool consentOffered = false;
+                bool everyModelReady = true;
+                foreach (NeuralModelPick pick in modelPicks)
+                {
+                    // Plik ze sterownika bierzemy zawsze, gdy tam jest: pisze
+                    // tam tylko TrustedInstaller. O reszte pytamy uzytkownika.
+                    bool fromDriver = driverStore.Find(pick.FileName) is not null;
+                    bool needed = neuralChannel && !fromDriver;
+                    pick.Button.Visibility = needed
+                        ? Visibility.Visible
+                        : Visibility.Collapsed;
+                    pick.Status.Visibility = pick.Button.Visibility;
+                    if (!needed)
+                    {
+                        continue;
+                    }
 
-            pickModelButton.Click += async (_, _) =>
+                    consentOffered |= pick.NeedsConsent;
+                    everyModelReady &=
+                        pick.Accepted || (pick.NeedsConsent && consented);
+                }
+
+                unverifiedModelConfirmation.Visibility =
+                    neuralChannel && consentOffered
+                        ? Visibility.Visible
+                        : Visibility.Collapsed;
+                neuralRendering.IsEnabled = !hardBlocked
+                    && neuralHardwareSupported
+                    && everyModelReady;
+                neuralRendering.IsChecked = neuralRendering.IsEnabled;
+            }
+
+            async Task PickNeuralModelAsync(NeuralModelPick pick)
             {
                 FileOpenPicker modelPicker = new();
                 modelPicker.FileTypeFilter.Add(".dll");
@@ -2024,25 +2049,49 @@ public sealed partial class MainWindow : Window, IDisposable
                     () => new NeuralRenderingModelImporter().Inspect(
                         modelFile.Path),
                     _lifetime.Token);
-                // Plik zostaje zapamietany takze wtedy, gdy nie przeszedl
-                // weryfikacji — ale wlaczyc go moze dopiero osobna, swiadoma
-                // zgoda ponizej. Kazda krazaca publicznie kopia modelu jest
-                // zmieniona, wiec bez tej furtki funkcja nie dziala wcale.
-                suppliedModelPath =
-                    import.Accepted || import.IsOverridable
+                if (!string.Equals(
+                    import.FileName,
+                    pick.FileName,
+                    StringComparison.OrdinalIgnoreCase))
+                {
+                    // Obie biblioteki przechodza przez ten sam importer, wiec
+                    // plik moze byc poprawny i trafic pod zly przycisk.
+                    pick.SourcePath = null;
+                    pick.Accepted = false;
+                    pick.NeedsConsent = false;
+                    pick.Status.Text = import.FileName is null
+                        ? $"{pick.FileName}: odrzucono. {import.Message}"
+                        : $"{pick.FileName}: odrzucono. Ten przycisk czeka na "
+                            + $"{pick.FileName}, a wskazany plik to "
+                            + $"{import.FileName}.";
+                }
+                else
+                {
+                    pick.SourcePath = import.Accepted || import.IsOverridable
                         ? import.SourcePath
                         : null;
-                suppliedModelStatus.Text = import.Accepted
-                    ? $"Przyjęto: {import.SourcePath}. {import.Message}"
-                    : $"Odrzucono. {import.Message}";
+                    pick.Accepted = import.Accepted;
+                    pick.NeedsConsent = !import.Accepted && import.IsOverridable;
+                    pick.Status.Text = import.Accepted
+                        ? $"{pick.FileName}: przyjęto {import.SourcePath}. "
+                            + import.Message
+                        : $"{pick.FileName}: odrzucono. {import.Message}";
+                }
+
                 unverifiedModelConfirmation.IsChecked = false;
-                unverifiedModelConfirmation.Visibility =
-                    !import.Accepted && import.IsOverridable
-                        ? Visibility.Visible
-                        : Visibility.Collapsed;
-                neuralRendering.IsEnabled = !hardBlocked && import.Accepted;
-                neuralRendering.IsChecked = import.Accepted;
-            };
+                RefreshNeuralModelState();
+            }
+
+            unverifiedModelConfirmation.Checked += (_, _) =>
+                RefreshNeuralModelState();
+            unverifiedModelConfirmation.Unchecked += (_, _) =>
+                RefreshNeuralModelState();
+
+            foreach (NeuralModelPick pick in modelPicks)
+            {
+                pick.Button.Click += async (_, _) =>
+                    await PickNeuralModelAsync(pick);
+            }
 
             channelSelector.SelectionChanged += (_, _) =>
                 UpdateSelectedChannel();
@@ -2112,7 +2161,12 @@ public sealed partial class MainWindow : Window, IDisposable
                                 agilitySdkUpgrade.IsChecked == true,
                             InstallRequiredCompanion =
                                 companionInstall.IsChecked == true,
-                            NeuralRenderingModelPath = suppliedModelPath,
+                            NeuralRenderingModelPaths =
+                            [
+                                .. modelPicks
+                                    .Select(pick => pick.SourcePath)
+                                    .OfType<string>(),
+                            ],
                             UnverifiedNeuralModelAccepted =
                                 unverifiedModelConfirmation.IsChecked == true,
                         });
@@ -2429,15 +2483,68 @@ public sealed partial class MainWindow : Window, IDisposable
                 + "kolidującego pliku i pozwoli przywrócić stan.",
         };
 
+    /// <summary>
+    /// One "wskaż plik" row in the OptiScaler dialog: the button, the line
+    /// underneath it, and what the last inspection decided about the file the
+    /// user picked. Neural Rendering needs two NGX libraries and a 616.x
+    /// driver carries neither, so each gets its own row.
+    /// </summary>
+    private sealed class NeuralModelPick
+    {
+        public NeuralModelPick(string fileName)
+        {
+            FileName = fileName;
+            Button = new()
+            {
+                Content = $"Wskaż {fileName}…",
+                Visibility = Visibility.Collapsed,
+            };
+            Status = new()
+            {
+                Foreground = (Brush)Application.Current.Resources[
+                    "GameShiftMutedTextBrush"],
+                MaxWidth = 500,
+                Text = $"{fileName}: nie wybrano pliku.",
+                TextWrapping = TextWrapping.Wrap,
+                Visibility = Visibility.Collapsed,
+            };
+        }
+
+        public string FileName { get; }
+
+        public Button Button { get; }
+
+        public TextBlock Status { get; }
+
+        /// <summary>
+        /// Set even for a file that failed verification: enabling it takes the
+        /// separate, deliberate consent below. Every copy of these libraries in
+        /// public circulation is modified, so without that door the feature
+        /// does not work at all.
+        /// </summary>
+        public string? SourcePath { get; set; }
+
+        public bool Accepted { get; set; }
+
+        public bool NeedsConsent { get; set; }
+    }
+
     private static string DescribeNeuralRenderingCapability(
         NvidiaDriverStoreSnapshot driverStore,
         OptiScalerSafetyDecision decision)
     {
+        string[] missing = [.. NeuralRenderingModelImporter.AcceptedFileNames
+            .Where(name => driverStore.Find(name) is null)];
+        string header = $"Wykryto {driverStore.Capability.Generation}, "
+            + $"sterownik {driverStore.Capability.DriverVersion}. ";
         if (decision.CanInstall)
         {
-            return $"Wykryto {driverStore.Capability.Generation}, sterownik "
-                + $"{driverStore.Capability.DriverVersion}. Model "
-                + "nvngx_dlssnr.dll jest dostępny w magazynie sterowników.";
+            return missing.Length == 0
+                ? header + "Obie biblioteki DLSS są w magazynie sterowników."
+                : header
+                    + "Model nvngx_dlssnr.dll jest w magazynie sterowników, "
+                    + $"ale {string.Join(" i ", missing)} już nie — wskaż go "
+                    + "poniżej.";
         }
 
         return decision.BlockReason switch
@@ -2450,14 +2557,17 @@ public sealed partial class MainWindow : Window, IDisposable
                     + $"{NeuralRenderingPolicy.MinimumDriverVersion} lub "
                     + $"nowszy. {decision.Evidence}",
             OptiScalerSafetyBlockReason.NeuralRenderingModelMissing =>
-                "Na tym komputerze nie ma pliku nvngx_dlssnr.dll — to sam "
-                    + "model Neural Rendering. Nie każdy pakiet sterownika go "
-                    + "zawiera i nowsza wersja nie musi tego zmienić "
-                    + "(sprawdzone na RTX 5070 ze sterownikiem 616.64: pakiet "
-                    + "instaluje wyłącznie nvngx_dlssg.dll). Plik nie jest też "
-                    + "częścią paczki OptiScalera i nie ma go skąd pobrać "
-                    + "legalnie w sposób zautomatyzowany, więc musisz "
-                    + "dostarczyć go sam — jedna kopia na grę.",
+                $"Na tym komputerze brakuje: {string.Join(", ", missing)}. "
+                    + "nvngx_dlssnr.dll to sam model Neural Rendering, "
+                    + "a nvngx_dlss.dll to runtime DLSS, na którym on "
+                    + "jeździ — bez niego przełącznik upscalera nie ma czego "
+                    + "załadować. Nie każdy pakiet sterownika je zawiera "
+                    + "i nowsza wersja nie musi tego zmienić (sprawdzone na "
+                    + "RTX 5070 ze sterownikiem 616.64: pakiet instaluje "
+                    + "wyłącznie nvngx_dlssg.dll). Nie ma ich też w paczce "
+                    + "OptiScalera ani skąd pobrać legalnie w sposób "
+                    + "zautomatyzowany, więc musisz dostarczyć je sam — "
+                    + "po jednej kopii na grę.",
             _ => "Neural Rendering jest niedostępny na tym komputerze.",
         };
     }

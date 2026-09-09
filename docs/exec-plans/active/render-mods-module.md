@@ -52,8 +52,9 @@ Moduł pozyskuje jedno i drugie dopiero w chwili instalacji:
 | Plik | Źródło | Weryfikacja |
 |---|---|---|
 | paczka OptiScaler DLSSNR | GitHub Releases, przypięty tag | SHA-256 przypięty w kodzie |
-| `nvngx_dlssnr.dll` (~158 MB) | DriverStore użytkownika | podpis NVIDIA |
-| `nvngx_dlss.dll`, `nvngx_dlssd.dll`, `nvngx_dlssg.dll` | DriverStore użytkownika | podpis NVIDIA |
+| `nvngx_dlssnr.dll` (~158 MB) | DriverStore, a gdy go tam nie ma — plik wskazany przez użytkownika | podpis NVIDIA; kopia bez podpisu tylko za osobną zgodą |
+| `nvngx_dlss.dll` | DriverStore, a gdy go tam nie ma — plik wskazany przez użytkownika | jak wyżej |
+| `nvngx_dlssd.dll`, `nvngx_dlssg.dll` | DriverStore użytkownika | podpis NVIDIA |
 
 Konsekwencja: nie da się wymusić nowszego DLSS niż ma zainstalowany sterownik.
 To akceptowalne — podmiana na wersje spoza sterownika bywa łamana przez
