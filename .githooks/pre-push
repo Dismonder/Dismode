@@ -1,0 +1,51 @@
+#!/bin/sh
+# Ochrona gałęzi main po stronie klienta.
+#
+# GitHub nie pozwala włączyć ochrony gałęzi ani rulesetów na prywatnym
+# repozytorium w planie Free — API odpowiada 403 "Upgrade to GitHub Pro".
+# Ten hook jest zamiennikiem: nie da się go wymusić na serwerze, więc chroni
+# przed pomyłką, a nie przed kimś zdeterminowanym. W repozytorium jednego
+# autora to dokładnie to ryzyko, które jest realne.
+#
+# Zablokowane na main: bezpośredni push, push z przepisaniem historii
+# (non-fast-forward) oraz usunięcie gałęzi.
+#
+# Świadome obejście — na przykład prawdziwy merge PR-a z linii poleceń:
+#   GAMESHIFT_ALLOW_MAIN_PUSH=1 git push origin main
+
+protected_branch="main"
+zero="0000000000000000000000000000000000000000"
+status=0
+
+if [ "${GAMESHIFT_ALLOW_MAIN_PUSH}" = "1" ]; then
+    exit 0
+fi
+
+# stdin: <local ref> <local sha> <remote ref> <remote sha>
+while read -r local_ref local_sha remote_ref remote_sha; do
+    case "${remote_ref}" in
+        "refs/heads/${protected_branch}") ;;
+        *) continue ;;
+    esac
+
+    if [ "${local_sha}" = "${zero}" ]; then
+        echo "pre-push: odmowa usunięcia gałęzi ${protected_branch}." >&2
+        status=1
+        continue
+    fi
+
+    if [ "${remote_sha}" != "${zero}" ] \
+        && ! git merge-base --is-ancestor "${remote_sha}" "${local_sha}"; then
+        echo "pre-push: odmowa przepisania historii ${protected_branch}." >&2
+        echo "  Zdalny commit ${remote_sha} zniknąłby z historii." >&2
+        status=1
+        continue
+    fi
+
+    echo "pre-push: odmowa bezpośredniego pushu do ${protected_branch}." >&2
+    echo "  Zmiany na main wchodzą przez pull requesta." >&2
+    echo "  Świadome obejście: GAMESHIFT_ALLOW_MAIN_PUSH=1 git push …" >&2
+    status=1
+done
+
+exit ${status}
