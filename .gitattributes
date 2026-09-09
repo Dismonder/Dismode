@@ -1,0 +1,3 @@
+# Hooki musza miec koncowki LF, inaczej shebang nie zadziala po klonie
+# na Windows z core.autocrlf=true.
+.githooks/** text eol=lf
