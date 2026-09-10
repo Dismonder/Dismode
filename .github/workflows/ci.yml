@@ -12,11 +12,12 @@
 
 name: CI
 
+# Push tylko dla main, reszta przez pull_request. Galaz z otwartym PR-em
+# odpalalaby oba wyzwalacze naraz i placilibysmy podwojnie za ten sam commit.
 on:
   push:
-    branches: ["**"]
+    branches: [main]
   pull_request:
-    branches: ["**"]
   workflow_dispatch:
 
 concurrency:
