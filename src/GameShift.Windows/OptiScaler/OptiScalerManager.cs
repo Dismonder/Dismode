@@ -910,8 +910,24 @@ public sealed class OptiScalerManager : IDisposable
             : null;
         string backupRoot = GetBackupDirectory(request.ProfileId);
         HashSet<string> newlyCreatedBackups = new(StringComparer.OrdinalIgnoreCase);
+        // Wczesniejsze wydania GameShift odsuwaly dinput8.dll na bok, bo
+        // instalowaly REFramework pod nazwa ReShade64.dll. Teraz REFramework
+        // laduje pod wlasna nazwa, wiec odsuniety plik nie ma juz powodu lezec
+        // w kopii — wraca na miejsce, zanim polozymy na nim payload. Dzieki
+        // temu obejmuje go zwykla kopia zapasowa i deinstalacja odda
+        // uzytkownikowi jego oryginal, zamiast zgubic go razem z manifestem.
+        OptiScalerDisplacedFile[] staleDisplaced = (previous?.Displaced ?? [])
+            .Where(file => !filesToDisplace.Any(path => string.Equals(
+                path,
+                file.RelativePath,
+                StringComparison.OrdinalIgnoreCase)))
+            .ToArray();
+        // Sciezki przywracanych plikow musza wejsc do migawki, inaczej rollback
+        // ich nie obejmie. Dzis kazda z nich i tak jest w payloadzie, wiec
+        // brakowaloby ich tylko przypadkiem — a przypadek nie jest gwarancja.
         IEnumerable<string> affected = payload.Select(file => file.RelativePath)
             .Concat(previous?.Files.Select(file => file.RelativePath) ?? [])
+            .Concat(staleDisplaced.Select(file => file.RelativePath))
             .Distinct(StringComparer.OrdinalIgnoreCase);
         progress?.Report(new(
             OptiScalerInstallStage.BackingUp,
@@ -921,60 +937,53 @@ public sealed class OptiScalerManager : IDisposable
             affected,
             transactionDirectory,
             cancellationToken);
-        // Wczesniejsze wydania GameShift odsuwaly dinput8.dll na bok, bo
-        // instalowaly REFramework pod nazwa ReShade64.dll. Teraz REFramework
-        // laduje pod wlasna nazwa, wiec odsuniety plik nie ma juz powodu lezec
-        // w kopii — wraca na miejsce, zanim polozymy na nim payload. Dzieki
-        // temu obejmuje go zwykla kopia zapasowa i deinstalacja odda
-        // uzytkownikowi jego oryginal, zamiast zgubic go razem z manifestem.
-        foreach (OptiScalerDisplacedFile stale in (previous?.Displaced ?? [])
-                     .Where(file => !filesToDisplace.Any(path => string.Equals(
-                         path,
-                         file.RelativePath,
-                         StringComparison.OrdinalIgnoreCase))))
-        {
-            string backup = GetContainedPath(
-                _stateDirectory,
-                stale.BackupRelativePath);
-            if (File.Exists(backup))
-            {
-                AtomicCopy(
-                    backup,
-                    GetContainedPath(targetDirectory, stale.RelativePath));
-            }
-        }
-
-        List<OptiScalerDisplacedFile> displaced = [];
-        foreach (string relativePath in filesToDisplace)
-        {
-            cancellationToken.ThrowIfCancellationRequested();
-            string source = GetContainedPath(targetDirectory, relativePath);
-            if (!File.Exists(source))
-            {
-                continue;
-            }
-
-            // Kopia zapasowa idzie do tego samego drzewa co reszta, ale pod
-            // wlasny prefiks, zeby nie zderzyla sie z kopia pliku o tej samej
-            // nazwie, ktory instalujemy.
-            string backup = GetContainedPath(
-                backupRoot,
-                Path.Combine("displaced", relativePath));
-            Directory.CreateDirectory(Path.GetDirectoryName(backup)!);
-            File.Copy(source, backup, overwrite: true);
-            newlyCreatedBackups.Add(backup);
-            File.Delete(source);
-            displaced.Add(new(
-                relativePath,
-                Path.GetRelativePath(_stateDirectory, backup)));
-        }
-
-        progress?.Report(new(
-            OptiScalerInstallStage.CopyingFiles,
-            $"Instalowanie {payload.Count} plików w katalogu gry…"));
-
+        // Przywracanie i odsuwanie plikow biegnie wewnatrz transakcji. Blad
+        // w polowie ktorejkolwiek z tych petli zostawialby katalog gry
+        // rozgrzebany, a manifest opisujacy stan sprzed zmiany — nienaruszony.
         try
         {
+            foreach (OptiScalerDisplacedFile stale in staleDisplaced)
+            {
+                string backup = GetContainedPath(
+                    _stateDirectory,
+                    stale.BackupRelativePath);
+                if (File.Exists(backup))
+                {
+                    AtomicCopy(
+                        backup,
+                        GetContainedPath(targetDirectory, stale.RelativePath));
+                }
+            }
+
+            List<OptiScalerDisplacedFile> displaced = [];
+            foreach (string relativePath in filesToDisplace)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                string source = GetContainedPath(targetDirectory, relativePath);
+                if (!File.Exists(source))
+                {
+                    continue;
+                }
+
+                // Kopia zapasowa idzie do tego samego drzewa co reszta, ale pod
+                // wlasny prefiks, zeby nie zderzyla sie z kopia pliku o tej samej
+                // nazwie, ktory instalujemy.
+                string backup = GetContainedPath(
+                    backupRoot,
+                    Path.Combine("displaced", relativePath));
+                Directory.CreateDirectory(Path.GetDirectoryName(backup)!);
+                File.Copy(source, backup, overwrite: true);
+                newlyCreatedBackups.Add(backup);
+                File.Delete(source);
+                displaced.Add(new(
+                    relativePath,
+                    Path.GetRelativePath(_stateDirectory, backup)));
+            }
+
+            progress?.Report(new(
+                OptiScalerInstallStage.CopyingFiles,
+                $"Instalowanie {payload.Count} plików w katalogu gry…"));
+
             Dictionary<string, OptiScalerInstalledFile> previousFiles =
                 previous?.Files.ToDictionary(
                     file => file.RelativePath,

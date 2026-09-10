@@ -1,4 +1,6 @@
+using System.Security.Cryptography;
 using System.Text;
+using System.Text.Json;
 using GameShift.Core.OptiScaler;
 using GameShift.Windows.OptiScaler;
 
@@ -1017,6 +1019,137 @@ public sealed class OptiScalerManagerTests
             ExperimentalUseConfirmed: true,
             EnableNeuralRendering: true);
 
+    /// <summary>
+    /// Writes the state a GameShift 0.5.0 install left behind: OptiScaler as
+    /// dxgi.dll, REFramework as ReShade64.dll, and the player's own
+    /// dinput8.dll copied aside because that layout could not leave it in
+    /// place. Written as raw JSON on purpose — the point is that the format
+    /// 0.5.0 actually wrote on disk still reads back.
+    /// </summary>
+    private static void WriteDisplacingLayoutState(
+        OptiScalerTestContext context,
+        string profileId,
+        string executablePath,
+        string originalCompanionContent)
+    {
+        string key = Convert.ToHexString(
+                SHA256.HashData(Encoding.UTF8.GetBytes(profileId)))
+            .ToLowerInvariant();
+        string backupRelative = Path.Combine(
+            "Backups",
+            key,
+            "displaced",
+            "dinput8.dll");
+        string backup = Path.Combine(context.StateDirectory, backupRelative);
+        Directory.CreateDirectory(Path.GetDirectoryName(backup)!);
+        File.WriteAllText(backup, originalCompanionContent);
+
+        string manifest = JsonSerializer.Serialize(
+            new
+            {
+                schemaVersion = 1,
+                profileId,
+                packageVersion = "0.2.0-dlssnr",
+                targetExecutablePath = executablePath,
+                targetDirectory = context.GameDirectory,
+                proxy = (int)OptiScalerProxy.Dxgi,
+                installedAtUtc = DateTimeOffset.UtcNow,
+                files = new[]
+                {
+                    new
+                    {
+                        relativePath = "dxgi.dll",
+                        installedSha256 = FileSha256(
+                            Path.Combine(context.GameDirectory, "dxgi.dll")),
+                        originalBackupRelativePath = (string?)null,
+                    },
+                    new
+                    {
+                        relativePath = "ReShade64.dll",
+                        installedSha256 = FileSha256(
+                            Path.Combine(
+                                context.GameDirectory,
+                                "ReShade64.dll")),
+                        originalBackupRelativePath = (string?)null,
+                    },
+                },
+                channel = (int)OptiScalerReleaseChannel.DlssNeuralRendering,
+                displacedFiles = new[]
+                {
+                    new
+                    {
+                        relativePath = "dinput8.dll",
+                        backupRelativePath = backupRelative,
+                    },
+                },
+            });
+
+        string manifestPath = Path.Combine(
+            context.StateDirectory,
+            "Installations",
+            key + ".json");
+        Directory.CreateDirectory(Path.GetDirectoryName(manifestPath)!);
+        File.WriteAllText(manifestPath, manifest);
+    }
+
+    private static string FileSha256(string path) =>
+        Convert.ToHexString(SHA256.HashData(File.ReadAllBytes(path)))
+            .ToLowerInvariant();
+
+    [TestMethod]
+    public async Task UpgradeOutOfTheDisplacingLayoutGivesTheOriginalFileBack()
+    {
+        // 0.5.0 odsuwala dinput8.dll gracza na bok, bo REFramework wchodzil
+        // jako ReShade64.dll. 0.5.1 wraca do ukladu z wiki i instaluje
+        // REFramework pod jego wlasna nazwa — czyli dokladnie tam, gdzie lezal
+        // plik gracza. Jesli aktualizacja nie odda mu oryginalu, straci go
+        // bezpowrotnie: wpis o odsunieciu znika razem ze starym manifestem.
+        using OptiScalerTestContext context = new();
+        string executable = context.CreateGameFile("Game.exe", "game");
+        context.CreateGameFile("dxgi.dll", "optiscaler 0.5.0");
+        context.CreateGameFile("ReShade64.dll", "reframework 0.5.0");
+        WriteDisplacingLayoutState(
+            context,
+            "profile-upgrade",
+            executable,
+            "dinput8 gracza");
+
+        context.CreatePayloadFile("OptiScaler.dll", "optiscaler 0.5.1");
+        context.CreatePayloadFile("OptiScaler.ini", "[OptiScaler]");
+        context.CreatePayloadFile("dinput8.dll", "reframework 0.5.1");
+        OptiScalerManager manager = context.CreateManager();
+
+        OptiScalerOperationResult upgraded = await manager.InstallAsync(
+            new OptiScalerInstallRequest(
+                "profile-upgrade",
+                executable,
+                context.GameDirectory,
+                OptiScalerProxy.Dxgi,
+                OfflineUseConfirmed: true),
+            CancellationToken.None);
+
+        Assert.IsTrue(upgraded.Succeeded, upgraded.Message);
+        string companion = Path.Combine(context.GameDirectory, "dinput8.dll");
+        Assert.AreEqual(
+            "reframework 0.5.1",
+            File.ReadAllText(companion),
+            "Po aktualizacji pod ta nazwa ma lezec nowy REFramework.");
+        Assert.IsFalse(
+            File.Exists(Path.Combine(context.GameDirectory, "ReShade64.dll")),
+            "Plik ze starego ukladu nie ma po co zostawac.");
+
+        OptiScalerOperationResult removed = await manager.RemoveAsync(
+            "profile-upgrade",
+            CancellationToken.None);
+
+        Assert.IsTrue(removed.Succeeded, removed.Message);
+        Assert.AreEqual(
+            "dinput8 gracza",
+            File.ReadAllText(companion),
+            "Deinstalacja ma oddac oryginal gracza, nie zostawic naszego pliku "
+                + "ani nie skasowac jego.");
+    }
+
     private sealed class OptiScalerTestContext : IDisposable
     {
         private readonly string _root = Path.Combine(
@@ -1030,6 +1163,8 @@ public sealed class OptiScalerManagerTests
         }
 
         public string GameDirectory => Path.Combine(_root, "Game");
+
+        public string StateDirectory => Path.Combine(_root, "State");
 
         public string PayloadDirectory => Path.Combine(_root, "Payload");
 
