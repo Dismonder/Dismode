@@ -155,7 +155,7 @@
           <TextBlock
               x:Name="TitleBarStatusText"
               Width="78"
-              Height="16"
+              MinHeight="16"
               FontSize="11"
               Foreground="{ThemeResource MemoryMutedBrush}"
               TextTrimming="CharacterEllipsis"
@@ -281,10 +281,17 @@
                     </StackPanel>
                   </Grid>
 
+                  <!--
+                    MinHeight, nie Height. Pasek deklarowal obie naraz, a Height
+                    wygrywa: po odjeciu wypelnienia zostawalo 40 pikseli na dwa
+                    wiersze, ktore potrzebuja 38,4 plus zejscia liter. Obcinalo
+                    to ogonki i zejscia, wiec "Reczna optymalizacja nadal jest
+                    dostepna" czytalo sie jako "Reczna optymalizacia nadal iest
+                    dostepna" — akurat polskie znaki wisza pod linia bazowa.
+                  -->
                   <Border
-                  x:Name="ServiceStatusStrip"
-                  Grid.Row="1"
-                      Height="64"
+                      x:Name="ServiceStatusStrip"
+                      Grid.Row="1"
                       MinHeight="64"
                       Padding="14,12"
                       Background="{ThemeResource MemoryAccentSoftBrush}"
@@ -306,14 +313,14 @@
                       <StackPanel Grid.Column="1" Spacing="1">
                         <TextBlock
                             x:Name="ServiceStatusTitle"
-                            Height="20"
+                            MinHeight="20"
                             FontWeight="SemiBold"
                             TextWrapping="NoWrap"
                             TextTrimming="CharacterEllipsis"
                             Text="Łączenie z usługą" />
                         <TextBlock
                             x:Name="ServiceStatusMessage"
-                            Height="20"
+                            MinHeight="20"
                             Style="{StaticResource MemoryMutedTextStyle}"
                             TextTrimming="CharacterEllipsis"
                             TextWrapping="NoWrap"
@@ -414,7 +421,7 @@
                               x:Name="RamUsageSummaryText"
                               Grid.Column="1"
                               Width="160"
-                              Height="24"
+                              MinHeight="24"
                               VerticalAlignment="Center"
                               TextAlignment="Right"
                               Foreground="{ThemeResource MemoryAccentBrush}"
@@ -441,7 +448,6 @@
                         </Border>
                         <TextBlock
                             x:Name="OptimizationBlockReasonText"
-                            Height="40"
                             MinHeight="40"
                             MaxLines="2"
                             Foreground="{ThemeResource MemoryMutedBrush}"
@@ -491,7 +497,7 @@
                         ToolTipService.ToolTip="Pamięć zadeklarowana przez Windows i aplikacje. Limit obejmuje RAM oraz plik stronicowania.">
                       <StackPanel Spacing="7">
                         <TextBlock Style="{StaticResource MemoryMetricLabelStyle}" Text="PAMIĘĆ ZADEKLAROWANA" />
-                        <TextBlock x:Name="CommitRamText" Height="34" Style="{StaticResource MemoryMetricValueStyle}" FontSize="22" TextWrapping="Wrap" TextTrimming="CharacterEllipsis" Text="—" />
+                        <TextBlock x:Name="CommitRamText" MinHeight="34" Style="{StaticResource MemoryMetricValueStyle}" FontSize="22" TextWrapping="Wrap" TextTrimming="CharacterEllipsis" Text="—" />
                         <TextBlock Style="{StaticResource MemoryMutedTextStyle}" Text="Użyto / limit (RAM + plik stronicowania)" />
                       </StackPanel>
                     </Border>
@@ -518,7 +524,6 @@
                             <TextBlock x:Name="AutomationSummaryTitle" FontWeight="SemiBold" Text="Oczekiwanie na ustawienia" />
                             <TextBlock
                                 x:Name="AutomationSummaryDetails"
-                                Height="36"
                                 MinHeight="36"
                                 MaxLines="2"
                                 Style="{StaticResource MemoryMutedTextStyle}"
@@ -538,7 +543,6 @@
                         <TextBlock Style="{StaticResource MemorySectionTitleStyle}" Text="Ostatni wynik" />
                         <TextBlock
                             x:Name="LastResultText"
-                            Height="40"
                             MinHeight="40"
                             MaxLines="2"
                             Style="{StaticResource MemoryMutedTextStyle}"
@@ -1084,7 +1088,6 @@
           <TextBlock
               x:Name="CompactFeedbackText"
               Grid.Row="3"
-              Height="32"
               MinHeight="32"
               FontSize="11"
               TextWrapping="Wrap"
