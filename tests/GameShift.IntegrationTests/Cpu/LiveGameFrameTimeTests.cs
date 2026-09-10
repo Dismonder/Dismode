@@ -209,7 +209,9 @@ public sealed class LiveGameFrameTimeTests
     [TestMethod]
     [TestCategory("Live")]
     [Timeout(900_000)]
-    public async Task HardAffinityBeatsPriorityUnderContention()
+    [DataRow(0, DisplayName = "pelne obciazenie: tyle petli, ile watkow")]
+    [DataRow(4, DisplayName = "umiarkowane obciazenie: cztery petle")]
+    public async Task HardAffinityBeatsPriorityUnderContention(int hogCount)
     {
         if (!TryFindGame(out Process? found, out string presentMonPath)
             || found is null)
@@ -223,13 +225,23 @@ public sealed class LiveGameFrameTimeTests
         TestContext.WriteLine($"Gra: {game.ProcessName} (PID {game.Id})");
         await RequireRenderingAsync(presentMonPath, game.Id);
 
-        int hogs = Math.Max(2, Environment.ProcessorCount);
+        // Pelne obciazenie pokazuje, czy mechanizm dziala. Umiarkowane —
+        // mniej wiecej tyle, ile robi przegladarka z rozmowa wideo albo
+        // kompilacja w tle — pokazuje, czy dziala tam, gdzie uzytkownik
+        // faktycznie bywa. Zmierzone na tej maszynie: w normalnym stanie
+        // obciazenie systemu wynosi 22%, wiec bramka SystemLoadPercent=70
+        // nie przepuscilaby nic.
+        int hogs = hogCount > 0
+            ? hogCount
+            : Math.Max(2, Environment.ProcessorCount);
         for (int index = 0; index < hogs; index++)
         {
             _load.Add(StartHog());
         }
 
         await Task.Delay(3000);
+        TestContext.WriteLine($"petli liczacych: {hogs}");
+        ReportWhetherThresholdsWouldFire();
 
         // Cwiartka maszyny dla calego tla. Reszta zostaje grze.
         int corner = Math.Max(2, Environment.ProcessorCount / 4);
@@ -298,6 +310,26 @@ public sealed class LiveGameFrameTimeTests
             free.Concat(lowPriority).Concat(pinned).All(value => value > 0),
             "Ktorys blok nie zlapal ani jednej klatki. To awaria pomiaru, "
                 + "nie wynik.");
+    }
+
+    /// <summary>
+    /// Says whether the module's own gates would have let it act, alongside
+    /// the frame times. A mechanism that works but never runs is worth exactly
+    /// as much as one that runs but does nothing, and only the two numbers
+    /// side by side tell them apart.
+    /// </summary>
+    private void ReportWhetherThresholdsWouldFire()
+    {
+        ProBalanceSettings settings = new();
+        double? load = new SystemCpuLoadSampler().Sample();
+        Thread.Sleep(1000);
+        load = new SystemCpuLoadSampler().Sample();
+        TestContext.WriteLine(
+            $"obciazenie systemu: {load?.ToString("F1", CultureInfo.InvariantCulture) ?? "?"}% "
+                + $"(prog {settings.SystemLoadPercent}%) — bramka "
+                + (load >= settings.SystemLoadPercent
+                    ? "przepuszcza"
+                    : "BLOKUJE"));
     }
 
     /// <summary>
