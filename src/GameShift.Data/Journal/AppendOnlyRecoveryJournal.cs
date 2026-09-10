@@ -23,7 +23,18 @@ public sealed class AppendOnlyRecoveryJournal : IRecoveryJournal, IDisposable
     };
 
     private readonly string _path;
+    /// <summary>Record separator in the journal file.</summary>
+    private const byte NewLine = (byte)'\n';
+
     private readonly SemaphoreSlim _gate = new(1, 1);
+
+    /// <summary>
+    /// Length of the file up to and including the last complete record. Set
+    /// while reading; used when the writer opens, to cut off a record torn by
+    /// a crash so the next append continues an unbroken chain instead of
+    /// gluing itself onto half a line.
+    /// </summary>
+    private long _completeLength;
     private FileStream? _writeStream;
     private long _lastSequence;
     private string _lastRecordHash = GenesisHash;
@@ -173,6 +184,12 @@ public sealed class AppendOnlyRecoveryJournal : IRecoveryJournal, IDisposable
         _lastSequence = previous?.Sequence ?? 0;
         _lastRecordHash = previous?.RecordHash ?? GenesisHash;
         _tailLoaded = true;
+        if (_writeStream.Length > _completeLength)
+        {
+            _writeStream.SetLength(_completeLength);
+            _writeStream.Flush(flushToDisk: true);
+        }
+
         _writeStream.Seek(0, SeekOrigin.End);
     }
 
@@ -212,11 +229,26 @@ public sealed class AppendOnlyRecoveryJournal : IRecoveryJournal, IDisposable
             return [];
         }
 
-        if (bytes[^1] != (byte)'\n')
+        // A record that never got its newline never finished being written,
+        // so it was never acknowledged to any caller. Losing power mid-append
+        // is the exact situation this journal exists for, and refusing to read
+        // the hundreds of complete records before the torn one would leave the
+        // machine with applied changes and a tool that will not look at its
+        // own notes. The hash chain still validates every complete record, so
+        // the unterminated tail is dropped rather than trusted.
+        int complete = bytes.Length;
+        if (bytes[^1] != NewLine)
         {
-            throw new InvalidDataException(
-                "The recovery journal ends with a partial record.");
+            complete = Array.LastIndexOf(bytes, NewLine) + 1;
+            if (complete <= 0)
+            {
+                _completeLength = 0;
+                return [];
+            }
         }
+
+        _completeLength = complete;
+        bytes = bytes[..complete];
 
         string content;
         try

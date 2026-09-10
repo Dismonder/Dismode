@@ -54,8 +54,26 @@ public sealed class AppendOnlyRecoveryJournalTests
             () => reopened.ReadAllAsync(CancellationToken.None).AsTask());
     }
 
+    /// <summary>
+    /// A record with no terminating newline never finished being written, so
+    /// it was never returned to any caller and no later record can reference
+    /// it. Dropping it loses nothing.
+    /// <para>
+    /// This used to throw, which sounds prudent and was not: losing power
+    /// mid-append is the exact event this journal exists for, and there is no
+    /// repair path anywhere in the product. Refusing to read left the machine
+    /// with applied changes, a journal nobody could open, and one way out —
+    /// deleting the file by hand, which discards the record of those changes
+    /// and makes them unrecoverable.
+    /// </para>
+    /// <para>
+    /// The distinction that matters is kept: a tampered <em>complete</em>
+    /// record still breaks the hash chain and is still rejected, as the test
+    /// above shows. Only an unterminated tail is dropped.
+    /// </para>
+    /// </summary>
     [TestMethod]
-    public async Task ReadRejectsPartialTrailingRecord()
+    public async Task PartialTrailingRecordIsDroppedAndTheChainContinues()
     {
         using RecoveryTestContext testContext = new();
 
@@ -66,11 +84,35 @@ public sealed class AppendOnlyRecoveryJournalTests
                 CancellationToken.None);
         }
 
-        await File.AppendAllTextAsync(testContext.JournalPath, "{");
+        // Zapis przerwany w polowie: rekord bez konczacego znaku nowej linii.
+        await File.AppendAllTextAsync(
+            testContext.JournalPath,
+            "{\"sequence\":2,\"eventKind\"");
 
         using AppendOnlyRecoveryJournal reopened = new(testContext.JournalPath);
-        await Assert.ThrowsExactlyAsync<InvalidDataException>(
-            () => reopened.ReadAllAsync(CancellationToken.None).AsTask());
+        IReadOnlyList<RecoveryJournalEntry> entries =
+            await reopened.ReadAllAsync(CancellationToken.None);
+
+        Assert.AreEqual(
+            1,
+            entries.Count,
+            "Kompletny rekord sprzed awarii musi byc nadal czytelny.");
+        Assert.AreEqual(1, entries[0].Sequence);
+
+        // Dopisanie po awarii ma kontynuowac lancuch, a nie doklejac sie do
+        // polowy wiersza.
+        RecoveryJournalEntry appended = await reopened.AppendDurableAsync(
+            CreateDraft(testContext, JournalEventKind.ActionApplied, "target-two"),
+            CancellationToken.None);
+        Assert.AreEqual(2, appended.Sequence);
+
+        IReadOnlyList<RecoveryJournalEntry> after =
+            await reopened.ReadAllAsync(CancellationToken.None);
+        Assert.AreEqual(2, after.Count);
+        Assert.AreEqual(
+            entries[0].RecordHash,
+            after[1].PreviousRecordHash,
+            "Nowy rekord ma wskazywac na ostatni kompletny, nie na urwany.");
     }
 
     [TestMethod]
