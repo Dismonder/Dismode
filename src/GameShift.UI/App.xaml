@@ -26,7 +26,7 @@
           <SolidColorBrush x:Key="GameShiftPrimaryTextBrush" Color="#D8DDE2E5" />
           <SolidColorBrush x:Key="GameShiftSecondaryTextBrush" Color="#C9D1D8DC" />
           <SolidColorBrush x:Key="GameShiftTertiaryTextBrush" Color="#BAC5CACD" />
-          <SolidColorBrush x:Key="GameShiftSubtleTextBrush" Color="#77889097" />
+          <SolidColorBrush x:Key="GameShiftSubtleTextBrush" Color="#EF889097" />
           <SolidColorBrush x:Key="GameShiftDividerBrush" Color="#26394349" />
           <SolidColorBrush x:Key="CardBackgroundFillColorDefaultBrush" Color="#F2151A1E" />
           <SolidColorBrush x:Key="CardBackgroundFillColorSecondaryBrush" Color="#EF1B1F23" />
@@ -73,7 +73,7 @@
           <SolidColorBrush x:Key="GameShiftPrimaryTextBrush" Color="#D8DDE2E5" />
           <SolidColorBrush x:Key="GameShiftSecondaryTextBrush" Color="#C9D1D8DC" />
           <SolidColorBrush x:Key="GameShiftTertiaryTextBrush" Color="#BAC5CACD" />
-          <SolidColorBrush x:Key="GameShiftSubtleTextBrush" Color="#77889097" />
+          <SolidColorBrush x:Key="GameShiftSubtleTextBrush" Color="#EF889097" />
           <SolidColorBrush x:Key="GameShiftDividerBrush" Color="#26394349" />
           <SolidColorBrush x:Key="CardBackgroundFillColorDefaultBrush" Color="#F2151A1E" />
           <SolidColorBrush x:Key="CardBackgroundFillColorSecondaryBrush" Color="#EF1B1F23" />
