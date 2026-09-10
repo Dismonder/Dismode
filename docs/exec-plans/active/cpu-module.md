@@ -396,3 +396,49 @@ Naprawione i pokryte:
 Wniosek na przyszłość: zmiana zachowania bez własnego testu jest nie tylko
 niepokryta — potrafi być aktywnie maskowana przez test napisany pod poprzednie
 założenie.
+
+## Pomiar na żywej rozgrywce — Valheim, 2026-09-10
+
+Najmocniejszy dotąd wynik i pierwszy zebrany **w trakcie normalnej gry**,
+przy graczu swobodnie poruszającym się po świecie — nie na postaci stojącej
+w miejscu. Inna gra niż poprzednio, więc i niezależne potwierdzenie.
+
+Linia odniesienia bez obciążenia: 118,4 FPS, p99 **12,53 ms**.
+
+### Pełne obciążenie — 16 pętli liczących
+
+| Runda | tło wolne | priorytet | maska |
+|---|---|---|---|
+| 1 | 36,50 | 46,48 | **14,04** |
+| 2 | 22,44 | 27,04 | **17,28** |
+| 3 | 22,45 | 20,52 | **14,34** |
+| 4 | 90,06 | 29,93 | **12,97** |
+| mediana | 36,50 | 29,93 | **14,34** |
+
+**−22,16 ms, 60,7%. Maska wygrała z priorytetem w 4 rundach na 4.** Z maską
+gra wraca praktycznie do stanu bez obciążenia (14,34 wobec 12,53 ms).
+
+### Umiarkowane obciążenie — 4 pętle
+
+Mediana: wolne 15,16 ms, priorytet 18,49 ms, maska **14,07 ms** — zysk 7,2%,
+maska lepsza w 3 rundach na 4.
+
+### Obniżanie priorytetu bywa szkodliwe
+
+Najważniejsze ustalenie tego przebiegu i takie, którego nie zakładałem.
+Kolumna priorytetu **przebija kolumnę tła wolnego** w kilku rundach: 46,48
+wobec 36,50 przy pełnym obciążeniu, 18,49 wobec 15,16 przy umiarkowanym.
+
+Stary mechanizm nie był więc tylko bezużyteczny — bywał gorszy niż nierobienie
+niczego. Wygląda to na inwersję priorytetów: zepchnięty proces trzymający
+blokadę oddaje ją później, a gra na nią czeka. To wzmacnia decyzję
+o przebudowie: maska nie zmienia kolejności dostępu do blokad, tylko odbiera
+rdzenie.
+
+### Bramka w prawdziwych warunkach
+
+Tło zajmowało 15,42 rdzenia przy pełnym obciążeniu i 8,95 przy umiarkowanym,
+przy progu 0,75 — bramka przepuszczała w obu przypadkach, zgodnie z zamiarem.
+Zmierzone osobno przy zwykłej pracy gracza: tło 1,11 rdzenia sumarycznie, ale
+najcięższy pojedynczy proces 0,18 — poniżej progu pojedynczego procesu, więc
+moduł słusznie milczy. Cisza, gdy nie ma czego naprawiać.

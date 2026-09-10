@@ -17,7 +17,7 @@ rzeczy i w tych dokumentach nigdy nie są mieszane.
 | Plan | Czego dotyczy | Stan | Co blokuje zamknięcie |
 |---|---|---|---|
 | [`render-mods-module.md`](active/render-mods-module.md) | moduł OptiScaler, dodatki per gra, DLSS Neural Rendering | kod kompletny, wydany w 0.5.2 | Neural Rendering nigdy nie widziany działający w grze; układ metody 1 dla RE9 niepotwierdzony |
-| [`cpu-module.md`](active/cpu-module.md) | powinowactwo CPU, ProBalance, zamiennik Process Lasso | **przebudowany i zmierzony — p99 lepsze o 26% (pełne obciążenie) i 10,6% (umiarkowane)** | ścieżki hybrydowa (P/E) i wielo-CCD nadal nigdy nie wykonały się na prawdziwym sprzęcie |
+| [`cpu-module.md`](active/cpu-module.md) | powinowactwo CPU, ProBalance, zamiennik Process Lasso | **przebudowany i potwierdzony na żywej rozgrywce — p99 lepsze o 60,7% (Valheim, pełne obciążenie)** | ścieżki hybrydowa (P/E) i wielo-CCD nadal nigdy nie wykonały się na prawdziwym sprzęcie |
 | [`update-platform-installer-hardening.md`](active/update-platform-installer-hardening.md) | kanał aktualizacji, dzielenie instalatora, podpisy | 0.5.2 zbudowana i podpisana **certyfikatem testowym** | produkcyjny certyfikat Authenticode; smoke update/uninstall na VM |
 | [`system-optimizer-0.4.0.md`](active/system-optimizer-0.4.0.md) | osobny optimizer A/B, usługa `GameShiftSystemAgent` | implementacja i lokalna regresja zakończone | macierz VM z recovery po restarcie; podpis produkcyjny |
 | [`gameshift-mvp.md`](active/gameshift-mvp.md) | bramy A–G całego MVP, transakcyjność, recovery | bramy A–G ukończone w kodzie | instalacja i restartowe recovery na kontrolowanej VM; checklista dostępności (DPI, kontrast, Narrator) |
