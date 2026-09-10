@@ -228,8 +228,30 @@ faktem, nie opinią.
 | N2 | Przejść runbook etapu 5, kroki 4–5 | To jedyna brama, która blokuje zamknięcie modułu | użytkownik na `ERYK` |
 | N3 | Sprawdzić, czy `nvngx_dlssnr.dll` z HashMismatch faktycznie działa, czy tylko się ładuje | Jeśli nie działa, cała ścieżka Neural Rendering jest martwa i lepiej to wiedzieć, niż utrzymywać | użytkownik na `ERYK` |
 | N4 | Zweryfikować próg `MinimumDriverVersion` w dokumentacji NVIDII | Stała wzięta z jednej sesji; zły próg to albo fałszywa odmowa, albo fałszywa zgoda | ja, bez sprzętu |
-| N5 | Test deinstalacji po aktualizacji 0.5.0 → 0.5.1 | Kod przywracający odsunięty `dinput8.dll` ma test jednostkowy, ale nie przeszedł prawdziwej ścieżki aktualizacji | ja, na syntetycznym katalogu |
+| ~~N5~~ | ~~Test deinstalacji po aktualizacji 0.5.0 → 0.5.1~~ | **Zrobione 2026-09-10.** Mój wcześniejszy wpis twierdził, że istnieje test jednostkowy — nie istniał żaden. Szczegóły niżej | — |
 | N6 | Rozszerzyć katalog wymagań o kolejne gry z listy zgodności | Dopiero po N1 — nie ma sensu mnożyć wpisów w formacie, którego nie potwierdziliśmy | ja |
+
+## Ścieżka aktualizacji 0.5.0 → 0.5.1 — domknięta 2026-09-10
+
+Sprawdzone niezależnie przez Codeksa, żeby wynik nie był tylko moim zdaniem.
+Zgodziliśmy się co do dwóch punktów, nie zgodziliśmy co do dwóch.
+
+| Pytanie | Werdykt |
+|---|---|
+| Czy kopia zapasowa obejmuje oryginał gracza, czy już podmieniony plik? | oryginał — przywrócenie biegnie **przed** utworzeniem kopii |
+| Czy wpis o odsunięciu zostaje w manifeście i deinstalacja przywróci go drugi raz? | nie zostaje, manifest budowany jest od nowa |
+| Czy migawka rollbacku obejmowała przywracany plik? | **nie obejmowała wprost** — wychodziło to tylko z tego, że ta sama nazwa była w payloadzie |
+| Czy awaria między przywróceniem a zapisem manifestu uruchamia rollback? | **nie uruchamiała** — obie pętle stały poza `try` |
+
+Dwa ostatnie nie prowadziły do utraty pliku, bo operacje są idempotentne,
+a stary manifest pozostawał ważny. Ale poprawność wychodziła z przypadku,
+nie z konstrukcji. Poprawione: ścieżki przywracanych plików wchodzą do migawki
+jawnie, a obie pętle biegną wewnątrz transakcji.
+
+Test: `UpgradeOutOfTheDisplacingLayoutGivesTheOriginalFileBack`. Zapisuje stan,
+który zostawiła 0.5.0 — surowy JSON manifestu plus kopia odsuniętego pliku —
+robi aktualizację, deinstaluje i sprawdza, że w katalogu gry leży oryginał
+gracza. Sprawdziłem, że test ma zęby: po wyłączeniu pętli przywracania pada.
 
 ## Ryzyka i decyzje otwarte
 
