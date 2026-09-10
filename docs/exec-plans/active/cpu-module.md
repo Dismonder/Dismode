@@ -288,3 +288,51 @@ Sprząta ją `EtwSessionCleanup`, wołany też z testu przed pomiarem.
 Wynik 36,6% pochodzi z jednego przebiegu na jednej maszynie i jednej grze,
 przy syntetycznym obciążeniu. Powtórka czeka na moment, gdy gra będzie na
 pierwszym planie.
+
+## Czy ten moduł w ogóle się odpala — 2026-09-10
+
+Mechanizm działa i daje 36%. Osobne pytanie brzmi, czy warunki, w których
+się uruchamia, kiedykolwiek zachodzą u użytkownika.
+
+Zmierzone przez 20 sekund na maszynie deweloperskiej, w normalnym stanie
+z uruchomioną grą:
+
+| Proces | Rdzenie |
+|---|---|
+| 7DaysToDie | 3,38 |
+| RadeonSoftware | 0,07 |
+| wszystko inne | poniżej progu pomiaru |
+
+Obciążenie systemu: **22,2%**. Próg `SystemLoadPercent` to 70. Jedyny proces
+powyżej `RestrainAboveCores` = 0,75 to sama gra, której moduł nie dotyka.
+
+**Wniosek: w codziennym użyciu ProBalance nigdy się nie uruchomi.** Blokują go
+obie bramki naraz. Zmierzony zysk jest prawdziwy, ale występuje wyłącznie przy
+obciążeniu, jakiego użytkownik zwykle nie ma.
+
+### Czego to nie znaczy
+
+Nie znaczy, że progi są za wysokie. Moduł jest reaktywny z założenia i ma
+milczeć, gdy nic się nie dzieje — kompilacja, aktualizacja czy skan antywirusa
+w trakcie grania to właśnie te rzadkie momenty, dla których powstał. Rzadkie
+odpalanie może być poprawnym zachowaniem, nie usterką.
+
+Nie znaczy też, że rozwiązaniem jest zakładanie maski od razu na starcie sesji.
+Procesy, które nic nie liczą, nie odbierają grze niczego — zamknięcie ich
+w ćwiartce nic by nie dało, a mogłoby zamulić pulpit.
+
+### Eksperyment, który to rozstrzygnie
+
+Pomiar przy **umiarkowanym** obciążeniu — cztery procesy liczące zamiast
+szesnastu, czyli mniej więcej tyle, ile robi przeglądarka z rozmową wideo albo
+kompilacja w tle. Trzy pytania naraz:
+
+1. Czy czasy klatek w ogóle się psują przy takim obciążeniu?
+2. Czy maska je ratuje, tak jak przy pełnym?
+3. Czy obecne progi by się przy tym odpaliły?
+
+Jeśli odpowiedzi wyjdą tak, tak, nie — to bramka obciążenia systemu jest
+ustawiona źle i mamy na to dowód. Jeśli pierwsza wyjdzie nie, moduł jest
+poprawny takim, jaki jest, i rzecz sprowadza się do rzadkich przypadków.
+
+Wymaga gry na pierwszym planie.
