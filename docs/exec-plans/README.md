@@ -3,7 +3,7 @@
 Spis wszystkich planów i uczciwy stan każdego z nich. Aktualizowany razem
 z wydaniem.
 
-Stan na: 2026-09-10, wydanie **0.5.1**
+Stan na: 2026-09-10, wydanie **0.5.2**
 
 ## Zasada
 
@@ -16,9 +16,9 @@ rzeczy i w tych dokumentach nigdy nie są mieszane.
 
 | Plan | Czego dotyczy | Stan | Co blokuje zamknięcie |
 |---|---|---|---|
-| [`render-mods-module.md`](active/render-mods-module.md) | moduł OptiScaler, dodatki per gra, DLSS Neural Rendering | kod kompletny, wydany w 0.5.1 | Neural Rendering nigdy nie widziany działający w grze; układ metody 1 dla RE9 niepotwierdzony |
+| [`render-mods-module.md`](active/render-mods-module.md) | moduł OptiScaler, dodatki per gra, DLSS Neural Rendering | kod kompletny, wydany w 0.5.2 | Neural Rendering nigdy nie widziany działający w grze; układ metody 1 dla RE9 niepotwierdzony |
 | [`cpu-module.md`](active/cpu-module.md) | powinowactwo CPU, ProBalance, zamiennik Process Lasso | podstawa zbudowana i zmierzona | ścieżki hybrydowa (P/E) i wielo-CCD nigdy nie wykonały się na prawdziwym sprzęcie; brak dowodu zysku na grze ograniczonej procesorem |
-| [`update-platform-installer-hardening.md`](active/update-platform-installer-hardening.md) | kanał aktualizacji, dzielenie instalatora, podpisy | 0.5.1 zbudowana i podpisana **certyfikatem testowym** | produkcyjny certyfikat Authenticode; smoke update/uninstall na VM |
+| [`update-platform-installer-hardening.md`](active/update-platform-installer-hardening.md) | kanał aktualizacji, dzielenie instalatora, podpisy | 0.5.2 zbudowana i podpisana **certyfikatem testowym** | produkcyjny certyfikat Authenticode; smoke update/uninstall na VM |
 | [`system-optimizer-0.4.0.md`](active/system-optimizer-0.4.0.md) | osobny optimizer A/B, usługa `GameShiftSystemAgent` | implementacja i lokalna regresja zakończone | macierz VM z recovery po restarcie; podpis produkcyjny |
 | [`gameshift-mvp.md`](active/gameshift-mvp.md) | bramy A–G całego MVP, transakcyjność, recovery | bramy A–G ukończone w kodzie | instalacja i restartowe recovery na kontrolowanej VM; checklista dostępności (DPI, kontrast, Narrator) |
 
