@@ -209,7 +209,20 @@ public sealed class UpdateClientService : IDisposable
         }
     }
 
-    public async ValueTask VerifyInstallerAsync(
+    /// <summary>
+    /// Verifies the downloaded installer and returns the handle it was
+    /// verified through. The caller must keep that handle open until the
+    /// installer has been started.
+    /// <para>
+    /// Checking the hash and then closing the file leaves a window in which
+    /// anything running as the user can replace it — and the launch that
+    /// follows asks for elevation. The user approves that prompt believing it
+    /// is GameShift's update, so the swap turns into a privilege escalation.
+    /// The handle denies writes and deletes for as long as it is held, which
+    /// closes the window rather than narrowing it.
+    /// </para>
+    /// </summary>
+    public async ValueTask<FileStream> VerifyInstallerAsync(
         SignedUpdateManifest manifest,
         string installerPath,
         CancellationToken cancellationToken)
@@ -237,18 +250,37 @@ public sealed class UpdateClientService : IDisposable
                 "Instalator nie pochodzi z chronionego katalogu stagingu.");
         }
 
-        if (!await FileMatchesAsync(
-                expectedPath,
-                verified.Installer.SizeBytes,
-                verified.Installer.Sha256,
-                cancellationToken)
-            || !await HasPortableExecutableHeaderAsync(
-                expectedPath,
-                cancellationToken))
+        // Uchwyt otwarty raz i trzymany: wszystkie sprawdzenia biegna przez
+        // niego, wiec dotycza tych samych bajtow, ktore potem sie uruchomia.
+        FileStream guard = new(
+            expectedPath,
+            FileMode.Open,
+            FileAccess.Read,
+            FileShare.Read,
+            bufferSize: 1024 * 1024,
+            FileOptions.Asynchronous | FileOptions.SequentialScan);
+        try
         {
-            throw new CryptographicException(
-                "Instalator nie jest zgodny z podpisanym manifestem.");
+            if (guard.Length != verified.Installer.SizeBytes
+                || !await StreamMatchesHashAsync(
+                    guard,
+                    verified.Installer.Sha256,
+                    cancellationToken)
+                || !await HasPortableExecutableHeaderAsync(
+                    guard,
+                    cancellationToken))
+            {
+                throw new CryptographicException(
+                    "Instalator nie jest zgodny z podpisanym manifestem.");
+            }
         }
+        catch
+        {
+            await guard.DisposeAsync().ConfigureAwait(false);
+            throw;
+        }
+
+        return guard;
     }
 
     private async ValueTask<SignedUpdateManifest> DownloadManifestAsync(
@@ -548,6 +580,25 @@ public sealed class UpdateClientService : IDisposable
             StringComparison.OrdinalIgnoreCase);
     }
 
+    private static async ValueTask<bool> StreamMatchesHashAsync(
+        FileStream stream,
+        string expectedHash,
+        CancellationToken cancellationToken)
+    {
+        stream.Position = 0;
+        string actualHash = Convert.ToHexString(
+            await SHA256.HashDataAsync(stream, cancellationToken));
+        return string.Equals(
+            actualHash,
+            expectedHash,
+            StringComparison.OrdinalIgnoreCase);
+    }
+
+    /// <summary>
+    /// Wersja dla sciezek, ktore nie koncza sie uruchomieniem pliku —
+    /// sprawdzenia w trakcie skladania paczki. Tam podmiana miedzy odczytem
+    /// a uzyciem nie daje nikomu nic, bo nic sie jeszcze nie wykonuje.
+    /// </summary>
     private static async ValueTask<bool> HasPortableExecutableHeaderAsync(
         string path,
         CancellationToken cancellationToken)
@@ -559,6 +610,16 @@ public sealed class UpdateClientService : IDisposable
             FileShare.Read,
             bufferSize: 2,
             FileOptions.Asynchronous | FileOptions.SequentialScan);
+        return await HasPortableExecutableHeaderAsync(
+            stream,
+            cancellationToken);
+    }
+
+    private static async ValueTask<bool> HasPortableExecutableHeaderAsync(
+        FileStream stream,
+        CancellationToken cancellationToken)
+    {
+        stream.Position = 0;
         byte[] header = new byte[2];
         int read = await stream.ReadAsync(header, cancellationToken);
         return read == 2 && header[0] == 0x4D && header[1] == 0x5A;
