@@ -107,7 +107,7 @@ public sealed class LiveCpuModuleTests
             // Prog obciazenia podniesiony ponad maksimum, wiec silnik nigdy
             // nie uzna maszyny za obciazona i niczego nie ograniczy. Chodzi
             // o sprawdzenie pomiaru, nie o dzialanie na cudzych procesach.
-            settings: new ProBalanceSettings { SystemLoadPercent = 200 });
+            settings: new ProBalanceSettings { BackgroundLoadCores = 1000 });
 
         for (int index = 0; index < 3; index++)
         {

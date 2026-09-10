@@ -336,3 +336,33 @@ ustawiona źle i mamy na to dowód. Jeśli pierwsza wyjdzie nie, moduł jest
 poprawny takim, jaki jest, i rzecz sprowadza się do rzadkich przypadków.
 
 Wymaga gry na pierwszym planie.
+
+## Bramka przebudowana na obciążenie tła — 2026-09-10
+
+Mechanizm dawał 26%, ale test z **domyślnymi** ustawieniami pokazał zero
+decyzji: bramki nie przepuszczały go nawet przy czterech procesach liczących
+bez przerwy. Cały zysk był nieosiągalny dla użytkownika.
+
+Bramka mierzyła obciążenie **całej maszyny** w procentach i było to złe
+pytanie na dwa sposoby. Wliczała pracę samej gry jako dowód kontencji — a to
+właśnie pracę gry chronimy, nie zakłócenie. Przez to zachowanie modułu zależało
+od tego, jak ciężka jest gra: lekka gra plus cztery zajęte procesy tła dawały
+31% i były ignorowane, te same cztery procesy obok ciężkiej gry dawały 41,7%
+i były ograniczane, choć kradły dokładnie tyle samo rdzeni. Do tego procent
+maszyny znaczy co innego na każdej maszynie — błąd, którego ten moduł unika
+wszędzie indziej.
+
+Teraz liczy się **wyłącznie tło, w rdzeniach**, sumowane z obserwacji, które
+nadzorca i tak zbiera — bez osobnego próbkowania. Próg równy progowi
+pojedynczego procesu (0,75). Pierwsza wartość, 1,5, wyglądała rozsądnie i była
+niespójna: samotny proces powyżej progu pojedynczego nigdy by nie przeszedł,
+bo suma tła jest co najmniej równa jego własnemu zużyciu.
+
+Podstawa liczb: cicha maszyna z grą — najbardziej zajęty proces tła 0,07
+rdzenia; cztery procesy liczące — 4,04 rdzenia i zmierzony zysk 10,6%.
+Dziesięciokrotny odstęp między tymi przypadkami.
+
+Potwierdzenie: `ShippedThresholdsActUnderModerateContention` — jedyny test,
+który nie podmienia żadnego progu. Przed zmianą zero decyzji, po zmianie trzy.
+Zniknął też martwy parametr `systemLoad` nadzorcy, który po przebudowie nic
+już nie robił, a testy nadal go podawały, jakby sterował zachowaniem.

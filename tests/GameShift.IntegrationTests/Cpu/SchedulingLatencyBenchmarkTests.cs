@@ -79,7 +79,7 @@ public sealed class SchedulingLatencyBenchmarkTests
             static () => new HashSet<int> { Environment.ProcessId },
             settings: new ProBalanceSettings
             {
-                SystemLoadPercent = 0,
+                BackgroundLoadCores = 0,
                 MinimumRestraint = TimeSpan.FromSeconds(1),
                 Cooldown = TimeSpan.FromSeconds(1),
                 MaximumRestrained = hogs,

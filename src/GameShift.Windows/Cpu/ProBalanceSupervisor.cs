@@ -35,7 +35,6 @@ public sealed class ProBalanceSupervisor : IAsyncDisposable
     private readonly ProBalanceEngine _engine;
     private readonly IProBalanceActuator _actuator;
     private readonly ICpuProcessSource _processes;
-    private readonly Func<double?> _systemLoad;
     private readonly Dictionary<ProcessRuntimeKey, CpuReading> _previous = [];
     private readonly Func<IReadOnlySet<int>> _gameProcessIds;
     private readonly TimeProvider _timeProvider;
@@ -50,7 +49,6 @@ public sealed class ProBalanceSupervisor : IAsyncDisposable
         IProBalanceActuator actuator,
         Func<IReadOnlySet<int>> gameProcessIds,
         ProBalanceSettings? settings = null,
-        Func<double?>? systemLoad = null,
         TimeProvider? timeProvider = null,
         TimeSpan? interval = null)
     {
@@ -61,7 +59,6 @@ public sealed class ProBalanceSupervisor : IAsyncDisposable
         _actuator = actuator;
         _gameProcessIds = gameProcessIds;
         _engine = new(settings);
-        _systemLoad = systemLoad ?? new SystemCpuLoadSampler().Sample;
         _timeProvider = timeProvider ?? TimeProvider.System;
         _interval = interval ?? TimeSpan.FromSeconds(2);
     }
@@ -128,13 +125,6 @@ public sealed class ProBalanceSupervisor : IAsyncDisposable
     private async ValueTask<IReadOnlyList<ProBalanceDecision>> TickCoreAsync(
         CancellationToken cancellationToken)
     {
-        double? systemCpu = _systemLoad();
-        if (systemCpu is not double load)
-        {
-            // Pierwsza probka nie ma sie do czego odniesc.
-            return [];
-        }
-
         IReadOnlySet<int> gameIds = _gameProcessIds();
         DateTimeOffset now = _timeProvider.GetUtcNow();
         List<ProBalanceObservation> observations = [];
@@ -167,9 +157,18 @@ public sealed class ProBalanceSupervisor : IAsyncDisposable
             }
         }
 
+        // Obciazenie tla liczymy z tego, co juz zebralismy: suma rdzeni
+        // procesow, ktore nie naleza do gry i nie sa chronione. Osobne
+        // probkowanie calej maszyny bylo i zbedne, i mylace — wliczalo prace
+        // samej gry do dowodu, ze cos grze przeszkadza.
+        double backgroundCores = observations
+            .Where(observation =>
+                !observation.BelongsToGame && !observation.IsProtected)
+            .Sum(observation => observation.CpuCores);
+
         IReadOnlyList<ProBalanceDecision> decisions = _engine.Evaluate(
             observations,
-            load,
+            backgroundCores,
             now);
         foreach (ProBalanceDecision decision in decisions)
         {
