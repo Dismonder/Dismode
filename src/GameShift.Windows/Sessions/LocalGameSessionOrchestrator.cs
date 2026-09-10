@@ -1225,7 +1225,8 @@ public sealed class LocalGameSessionOrchestrator : IAsyncDisposable
                     runtime.SessionId,
                     _identityProvider,
                     _timeProvider,
-                    ResolveBackgroundCpuSetIds());
+                    ResolveBackgroundCpuSetIds(),
+                    ResolveBackgroundAffinityMask());
             ProBalanceSupervisor supervisor = new(
                 _cpuProcessSourceFactory(),
                 actuator,
@@ -1914,6 +1915,20 @@ public sealed class LocalGameSessionOrchestrator : IAsyncDisposable
     /// hardware gives no such split, in which case restraint stays a matter of
     /// priority alone.
     /// </summary>
+    /// <summary>
+    /// Mask a restrained background process is confined to, or zero when this
+    /// machine does not qualify. Same policy as the CPU set list above, but
+    /// used as a hard rule rather than a preference — which is the difference
+    /// between the loop moving frame times and not.
+    /// </summary>
+    private static ulong ResolveBackgroundAffinityMask()
+    {
+        CpuAffinityDecision decision = CpuAffinityPolicy.Decide(
+            SystemCpuTopologyProvider.Read(),
+            CpuAffinityRole.Background);
+        return decision.ShouldApply ? decision.Mask : 0;
+    }
+
     private static IReadOnlyList<uint> ResolveBackgroundCpuSetIds()
     {
         CpuTopology? topology = SystemCpuTopologyProvider.Read();

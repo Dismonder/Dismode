@@ -13,12 +13,17 @@ namespace GameShift.Windows.Processes;
 /// </para>
 /// <para>
 /// Measured on the development machine: a session named
-/// <c>gameshift-frametime</c>, created by a GameShift old enough to predate
-/// per-user session names, had been running long enough that frame measurement
-/// was silently broken for every application on that computer. Stopping it
-/// brought capture back on the first try — 606 frames where the previous
-/// attempt got zero. <c>--stop_existing_session</c> never helped, because it
-/// only stops a session with the name the current build happens to use.
+/// <c>gameshift-frametime</c>, left behind by GameShift's own frame-time
+/// measurement, had been running long enough that frame capture was silently
+/// broken for every application on that computer. Stopping it brought capture
+/// back on the first try — 606 frames where the previous attempt got zero.
+/// <para>
+/// The first diagnosis blamed an older GameShift release. That was wrong, and
+/// worth recording: the session is created by the measurement running today,
+/// and it survives both a killed run and a normal one. Passing PresentMon
+/// <c>--stop_existing_session</c> does not clear it either — verified, the
+/// session stays and capture stays empty. Somebody has to stop it explicitly,
+/// which is what this class is for.
 /// </para>
 /// </summary>
 internal static class EtwSessionCleanup
