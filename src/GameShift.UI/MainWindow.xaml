@@ -369,6 +369,7 @@
                   </Grid.RowDefinitions>
                   <ListView
                       x:Name="DashboardGameRail"
+                      AutomationProperties.Name="Biblioteka gier"
                       HorizontalContentAlignment="Stretch"
                       SelectionChanged="OnDashboardGameRailSelectionChanged"
                       SelectionMode="Single"
@@ -466,6 +467,7 @@
                       CornerRadius="8"
                       Tag="profiles"
                       Click="OnTopNavigationClicked"
+                      AutomationProperties.Name="Otwórz bibliotekę gier"
                       ToolTipService.ToolTip="Otwórz bibliotekę gier">
                     <FontIcon
                         FontSize="15"
@@ -624,6 +626,7 @@
                             BorderBrush="#8B9AA4AA"
                             BorderThickness="1"
                             CornerRadius="9"
+                            AutomationProperties.Name="Więcej opcji gry"
                             ToolTipService.ToolTip="Więcej opcji gry">
                           <Button.Flyout>
                             <MenuFlyout>
@@ -1674,6 +1677,7 @@
                               Padding="0"
                               Style="{StaticResource GameShiftLibraryCompactButtonStyle}"
                               Click="OnOpenGameModeClicked"
+                              AutomationProperties.Name="Dostosuj plan optymalizacji dla tej gry"
                               ToolTipService.ToolTip="Dostosuj plan optymalizacji dla tej gry">
                             <FontIcon FontSize="12" Glyph="&#xE70F;" />
                           </Button>
@@ -2068,7 +2072,7 @@
                                   Background="{ThemeResource GameShiftCardBrush}"
                                   BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
                                   BorderThickness="1"
-                                  CornerRadius="10">
+                                  CornerRadius="14">
                                 <Grid ColumnSpacing="12">
                                   <Grid.ColumnDefinitions>
                                     <ColumnDefinition Width="Auto" />
@@ -2224,7 +2228,9 @@
                   <!-- Hidden elements required for C# bindings -->
                   <StackPanel Visibility="Collapsed">
                     <TextBlock x:Name="ServiceClassificationSummaryText" />
-                    <ListView x:Name="ServiceClassificationsList" />
+                    <ListView
+                        x:Name="ServiceClassificationsList"
+                        AutomationProperties.Name="Klasyfikacja usług systemowych" />
                   </StackPanel>
                 </StackPanel>
               </Grid>
@@ -2404,7 +2410,7 @@
                             Background="#1F1ED5DB"
                             BorderBrush="{ThemeResource GameShiftCardBorderBrush}"
                             BorderThickness="1"
-                            CornerRadius="10">
+                            CornerRadius="14">
                           <FontIcon
                               HorizontalAlignment="Center"
                               VerticalAlignment="Center"
@@ -3033,6 +3039,7 @@
                         </StackPanel>
                         <ToggleSwitch
                             x:Name="SfxToggleSwitch"
+                            AutomationProperties.Name="Dźwięki interfejsu"
                             Grid.Column="1"
                             IsOn="True"
                             OffContent="WYŁ."
@@ -3051,6 +3058,7 @@
                         </StackPanel>
                         <ToggleSwitch
                             x:Name="VfxToggleSwitch"
+                            AutomationProperties.Name="Efekty wizualne"
                             Grid.Column="1"
                             IsOn="True"
                             OffContent="WYŁ."
