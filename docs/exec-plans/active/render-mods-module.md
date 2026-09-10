@@ -107,9 +107,17 @@ Ten drugi przechodzi wyłącznie przez świadomą zgodę. To nie jest formalnoś
 plik dostaje pełne prawa procesu gry, a Windows nie potwierdza, że to
 niezmieniony kod NVIDII.
 
-Próg 616.56 pochodzi z ustaleń sesji „DLL5 dla RTX5070" i **nie został
-niezależnie zweryfikowany w dokumentacji NVIDII**. Jeśli okaże się
-nieprecyzyjny, poprawka to jedna stała `MinimumDriverVersion`.
+Próg 616.56 pochodzi z ustaleń sesji „DLL5 dla RTX5070". Próbowałem go
+potwierdzić w materiałach NVIDII — **nie da się**: strony produktowe mówią
+„zainstaluj najnowszy sterownik" i nie podają numeru wersji dla tej funkcji.
+
+Ale to pytanie w dużej mierze przestało mieć znaczenie. Skoro sterownik i tak
+nie niesie żadnej z dwóch bibliotek NGX, a moduł wymaga teraz obecności obu
+i sprawdza ich podpis, prawdziwą bramką jest obecność plików, nie numer
+sterownika. Próg został, bo tani i nie szkodzi, ale gdyby okazał się zły
+w którąkolwiek stronę, skutek jest ograniczony: przy zbyt wysokim moduł
+odmawia na sprzęcie, który by dał radę, przy zbyt niskim i tak zatrzyma go
+brak bibliotek. Poprawka to jedna stała `MinimumDriverVersion`.
 
 Runbook do wykonania na `ERYK`:
 
@@ -227,7 +235,7 @@ faktem, nie opinią.
 | N1 | Uruchomić RE9 z 0.5.1 i sprawdzić, czy OptiScaler w ogóle wstaje | Metoda 1 jest wzięta z wiki, nie z własnego testu. Dopóki tego nie widzieliśmy, cały etap 6 jest niepotwierdzony | użytkownik na `ERYK` |
 | N2 | Przejść runbook etapu 5, kroki 4–5 | To jedyna brama, która blokuje zamknięcie modułu | użytkownik na `ERYK` |
 | N3 | Sprawdzić, czy `nvngx_dlssnr.dll` z HashMismatch faktycznie działa, czy tylko się ładuje | Jeśli nie działa, cała ścieżka Neural Rendering jest martwa i lepiej to wiedzieć, niż utrzymywać | użytkownik na `ERYK` |
-| N4 | Zweryfikować próg `MinimumDriverVersion` w dokumentacji NVIDII | Stała wzięta z jednej sesji; zły próg to albo fałszywa odmowa, albo fałszywa zgoda | ja, bez sprzętu |
+| ~~N4~~ | ~~Zweryfikować próg `MinimumDriverVersion`~~ | **Sprawdzone 2026-09-10, bez rozstrzygnięcia.** Materiały NVIDII nie podają numeru wersji dla tej funkcji. Wniosek niżej | — |
 | ~~N5~~ | ~~Test deinstalacji po aktualizacji 0.5.0 → 0.5.1~~ | **Zrobione 2026-09-10.** Mój wcześniejszy wpis twierdził, że istnieje test jednostkowy — nie istniał żaden. Szczegóły niżej | — |
 | N6 | Rozszerzyć katalog wymagań o kolejne gry z listy zgodności | Dopiero po N1 — nie ma sensu mnożyć wpisów w formacie, którego nie potwierdziliśmy | ja |
 
