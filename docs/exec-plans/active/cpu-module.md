@@ -182,3 +182,56 @@ sukces przypisania, które nie ma prawa zadziałać.
   model, nie brak;
 - **Instance Balancer**, **Group Extender** — istotne przy wielu gniazdach
   i powyżej 64 procesorów logicznych, czyli poza sprzętem, o który tu chodzi.
+
+## Pomiar na grze ograniczonej procesorem — 2026-09-10
+
+Pierwsza odpowiedź na najważniejsze pytanie tego modułu. **Jest przecząca.**
+
+Gra: 7 Days To Die, postać stojąca AFK w jednym miejscu, bez interfejsu.
+Obciążenie: tyle pętli PowerShella, ile maszyna ma rdzeni. Pomiar parowany
+z przeplotem, cztery rundy, bloki po osiem sekund, p99 jako miara przycięć.
+
+| Przebieg | p99 bez ograniczania | p99 z ograniczaniem | Różnica | Rund z poprawą |
+|---|---|---|---|---|
+| 1 | 17,55 ms | 17,57 ms | +0,02 ms | 1 z 4 |
+| 2 | 17,81 ms | 17,62 ms | −0,19 ms | 3 z 4 |
+
+**Przebiegi przeczą sobie co do kierunku.** To jest tu najmocniejszy dowód:
+gdyby efekt istniał, oba pokazałyby to samo. Różnice rzędu 0,2 ms na 17,7 ms
+to jeden procent, a rozrzut między rundami wewnątrz jednego wariantu bywa
+większy. Pokazanie samego drugiego przebiegu jako „3 z 4 rund lepsze" byłoby
+prawdą i byłoby wprowadzeniem w błąd.
+
+### Wynik zerowy, nie pomiar pustki
+
+„Brak poprawy" i „nic nie zostało ograniczone" wyglądają w liczbach
+identycznie. Dlatego test raportuje teraz decyzje: **30 i 32 decyzje
+ograniczenia, wszystkie na `powershell`**, ani jedna na proces gry. Moduł
+trafił dokładnie w cel. Osobno potwierdzone, że priorytet naprawdę się zmienia
+i wraca — `LiveProBalanceTests` na prawdziwym procesie liczącym.
+
+### Co obciążenie faktycznie robi
+
+Bez obciążenia ta sama gra: **9,88 ms na klatkę (101 FPS)**. Pod obciążeniem
+p99 stoi na 17,5 ms w każdym pomiarze, w obu wariantach. Obciążenie kosztuje
+ponad siedem milisekund i moduł **nie odzyskuje z tego nic**.
+
+Prawdopodobne wyjaśnienie: obniżenie priorytetu nie wystarcza, gdy procesów
+liczących jest tyle, ile rdzeni — nadal dostają czas. Procesor tej maszyny jest
+jednorodny, więc odsuwanie tła na inne rdzenie nie miało dokąd.
+
+### Czego ten pomiar nie rozstrzyga
+
+- Obciążenie jest syntetyczne. Prawdziwe tło — przeglądarka, Discord,
+  kompilacja — ma inny profil: budzi się falami, nie liczy bez przerwy.
+- Maszyna jest jednorodna. Ścieżka hybrydowa P/E i wielo-CCD nadal nigdy się
+  nie wykonała.
+- Nie testowano drabiny eskalacji, bo jej nie ma — dziś moduł umie tylko
+  obniżyć priorytet i odsunąć od rdzeni gry.
+
+### Konsekwencja dla planu
+
+Teza „ten moduł zastąpi Process Lasso" **nie ma na razie żadnego poparcia
+w pomiarze**. Zanim dołoży się do niego cokolwiek, trzeba odpowiedzieć, czy
+scenariusz, w którym miałby pomagać, w ogóle istnieje na tej maszynie —
+a jeśli tak, to dlaczego samo obniżenie priorytetu go nie łapie.

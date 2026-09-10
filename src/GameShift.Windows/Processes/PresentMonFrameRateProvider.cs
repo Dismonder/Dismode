@@ -209,6 +209,18 @@ public sealed class PresentMonFrameRateProvider : IFrameRateProvider
                         selectedTarget.Value);
                 }
 
+                // Restart nie pomogl, a PresentMon nadal chodzi i nie oddaje
+                // ani jednej klatki. Wczesniej wracalo stad "czekam na gre" —
+                // w kolko, bez konca i bez powodu. Gracz widzial myslniki
+                // i mial prawo uznac, ze pomiar jest zepsuty, bo byl.
+                if (!_captureProducedFrame
+                    && _captureStartedAtUtc is DateTimeOffset stalledSince
+                    && _timeProvider.GetUtcNow() - stalledSince
+                        >= FirstFrameTimeout)
+                {
+                    return FrameRateSample.Failed(DescribeSilentCapture());
+                }
+
                 return sample;
             }
 
@@ -317,8 +329,113 @@ public sealed class PresentMonFrameRateProvider : IFrameRateProvider
         GC.SuppressFinalize(this);
     }
 
+    /// <summary>
+    /// Names of tools that capture frames through the same ETW providers as
+    /// PresentMon. Only one of them gets the events; the rest see the session
+    /// start, deliver nothing, and report lost events. AMD ships one inside
+    /// Adrenalin and Intel ships one as a service, so a machine can easily
+    /// have two running before GameShift adds a third.
+    /// </summary>
+    private static readonly (string ProcessName, string Owner)[]
+        CompetingCaptureTools =
+        [
+            ("PresentMon-x64", "AMD Adrenalin (metryki wydajności)"),
+            ("PresentMon", "PresentMon firmy Intel"),
+            ("PresentMonService", "usługa PresentMon firmy Intel"),
+            ("RTSS", "RivaTuner Statistics Server"),
+            ("CapFrameX", "CapFrameX"),
+            ("FrameView", "NVIDIA FrameView"),
+        ];
+
+    /// <summary>
+    /// Explains a capture that runs but never produces a frame. Guessing is
+    /// worse than useless here, so the message names what is actually running
+    /// on this machine and repeats PresentMon's own last words verbatim.
+    /// </summary>
+    private string DescribeSilentCapture()
+    {
+        string diagnostic;
+        lock (_observationSync)
+        {
+            diagnostic = _lastDiagnostic ?? string.Empty;
+        }
+
+        string[] found = CompetingCaptureTools
+            .Where(tool => Process
+                .GetProcessesByName(tool.ProcessName)
+                .Any(process =>
+                {
+                    process.Dispose();
+                    return true;
+                }))
+            .Select(tool => tool.Owner)
+            .Distinct(StringComparer.Ordinal)
+            .ToArray();
+
+        StringBuilder message = new(
+            "PresentMon działa, ale nie dostaje ani jednej klatki.");
+        if (found.Length > 0)
+        {
+            message.Append(
+                " Na tym komputerze mierzy już co innego: ");
+            message.Append(string.Join(", ", found));
+            message.Append(
+                ". Zdarzenia klatek trafiają tylko do jednego odbiorcy, więc "
+                + "wyłącz tamten pomiar i spróbuj ponownie.");
+        }
+        else
+        {
+            message.Append(
+                " Najczęstsza przyczyna to porzucona sesja pomiaru, która "
+                + "została po wcześniejszym uruchomieniu i nadal przechwytuje "
+                + "zdarzenia klatek. Sprawdź poleceniem "
+                + "\"logman query -ets\", czy działa sesja o nazwie "
+                + "zaczynającej się od GameShift, i zatrzymaj ją poleceniem "
+                + "\"logman stop NAZWA -ets\".");
+        }
+
+        if (!string.IsNullOrWhiteSpace(diagnostic))
+        {
+            message.Append(" PresentMon zgłasza: ");
+            message.Append(diagnostic);
+        }
+
+        return message.ToString();
+    }
+
+    private bool _staleSessionsChecked;
+
+    /// <summary>
+    /// Clears sessions an earlier GameShift left running before starting a new
+    /// capture. Once per provider: the orphan can only predate us, and probing
+    /// on every restart would be noise.
+    /// </summary>
+    private void StopStaleSessionsOnce()
+    {
+        if (_staleSessionsChecked)
+        {
+            return;
+        }
+
+        _staleSessionsChecked = true;
+        IReadOnlyList<string> stopped = EtwSessionCleanup.StopStaleSessions(
+            EtwSessionCleanup.LegacySessionNames);
+        if (stopped.Count > 0)
+        {
+            lock (_observationSync)
+            {
+                _lastDiagnostic =
+                    "Zatrzymano porzuconą sesję pomiaru z wcześniejszego "
+                    + "uruchomienia: "
+                    + string.Join(", ", stopped)
+                    + ". Blokowała odczyt klatek.";
+            }
+        }
+    }
+
     private void StartCapture(int[] targets)
     {
+        StopStaleSessionsOnce();
         if (targets.Length != 1)
         {
             throw new ArgumentException(

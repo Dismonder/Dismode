@@ -106,6 +106,10 @@ public sealed class LiveGameFrameTimeTests
 
         List<double> withoutRestraint = [];
         List<double> withRestraint = [];
+        // Bez tego wynik jest nie do odczytania: "brak poprawy" i "nic nie
+        // zostalo ograniczone" wygladaja w liczbach identycznie, a znacza cos
+        // zupelnie innego.
+        List<ProBalanceDecision> decisions = [];
 
         try
         {
@@ -124,7 +128,12 @@ public sealed class LiveGameFrameTimeTests
 
                 for (int tick = 0; tick < 5; tick++)
                 {
-                    await supervisor.TickAsync(CancellationToken.None);
+                    foreach (ProBalanceDecision decision in
+                        await supervisor.TickAsync(CancellationToken.None))
+                    {
+                        decisions.Add(decision);
+                    }
+
                     await Task.Delay(400);
                 }
 
@@ -158,6 +167,14 @@ public sealed class LiveGameFrameTimeTests
             $"mediana p99 z ograniczaniem:  {medianWith:F2} ms");
         TestContext.WriteLine(
             $"rund z poprawa: {better} z {Rounds}");
+        TestContext.WriteLine(
+            $"decyzji ograniczenia: {decisions.Count}");
+        foreach (IGrouping<string, ProBalanceDecision> group in decisions
+            .GroupBy(decision => decision.ProcessName))
+        {
+            TestContext.WriteLine(
+                $"  {group.Key}: {group.Count()}");
+        }
 
         Assert.IsGreaterThan(0, withoutRestraint.Count);
 
