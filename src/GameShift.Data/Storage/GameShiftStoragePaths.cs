@@ -21,6 +21,14 @@ public static class GameShiftStoragePaths
     public static string UserUpdatesDirectory =>
         Path.Combine(UserDataDirectory, "Updates");
 
+    /// <summary>
+    /// Where OptiScaler installation manifests live. Each file records what
+    /// was written into one game directory and what has to be put back, so
+    /// their presence means files of ours are sitting inside somebody's game.
+    /// </summary>
+    public static string OptiScalerInstallationsDirectory =>
+        Path.Combine(UserDataDirectory, "OptiScaler", "Installations");
+
     public static string MachineRecoveryJournalPath =>
         Path.Combine(MachineDataDirectory, "machine-recovery.jsonl");
 
