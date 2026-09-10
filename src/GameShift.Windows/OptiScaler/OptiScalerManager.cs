@@ -1187,7 +1187,10 @@ public sealed class OptiScalerManager : IDisposable
             settings);
         if (result.NotFound.Count == 0)
         {
-            File.WriteAllBytes(
+            // Niepodzielnie, tak jak manifest obok. To plik konfiguracyjny
+            // lezacy w katalogu gry uzytkownika: awaria w polowie zapisu
+            // zostawilaby go ucietym, a moda czytajacego polowe ustawien.
+            WriteBytesAtomic(
                 iniPath,
                 [
                     .. hasBom ? new byte[] { 0xEF, 0xBB, 0xBF } : [],
