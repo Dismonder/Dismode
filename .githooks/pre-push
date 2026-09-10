@@ -73,21 +73,27 @@ if ! command -v dotnet >/dev/null 2>&1; then
 fi
 
 root=$(git rev-parse --show-toplevel)
-echo "pre-push: build Release…" >&2
-if ! dotnet build "${root}/GameShift.sln" -c Release -v quiet --nologo >/dev/null; then
-    echo "pre-push: build się nie powiódł. Push wstrzymany." >&2
-    echo "  Szczegóły: dotnet build GameShift.sln -c Release" >&2
-    exit 1
-fi
+log="${TMPDIR:-/tmp}/gameshift-pre-push.log"
 
-echo "pre-push: testy (bez kategorii Live)…" >&2
-if ! dotnet test "${root}/GameShift.sln" -c Release --no-build \
-    --filter "TestCategory!=Live" -v quiet --nologo >/dev/null; then
-    echo "pre-push: testy nie przeszły. Push wstrzymany." >&2
-    echo "  Szczegóły: dotnet test GameShift.sln -c Release --no-build \\" >&2
-    echo "               --filter \"TestCategory!=Live\"" >&2
-    exit 1
-fi
+# Wyjscie idzie do pliku, a nie do /dev/null. Przy bledzie pokazujemy ogon,
+# a przy zawisie mozna do niego zajrzec z drugiego okna — inaczej hook milczy
+# i nie wiadomo, czy pracuje, czy stoi. Zawis raz sie zdarzyl: rownolegle
+# uruchomiony dotnet format trzymal zasoby i test wisial jedenascie minut.
+run() {
+    label="$1"
+    shift
+    echo "pre-push: ${label}…" >&2
+    if ! "$@" >"${log}" 2>&1; then
+        echo "pre-push: ${label} — nie przeszlo. Push wstrzymany." >&2
+        tail -n 25 "${log}" >&2
+        echo "pre-push: pelne wyjscie w ${log}" >&2
+        return 1
+    fi
+}
+
+echo "pre-push: postep na biezaco: tail -f ${log}" >&2
+run "build Release"     dotnet build "${root}/GameShift.sln" -c Release -v quiet --nologo || exit 1
+run "testy (bez kategorii Live)"     dotnet test "${root}/GameShift.sln" -c Release --no-build         --filter "TestCategory!=Live" --nologo || exit 1
 
 echo "pre-push: zielono." >&2
 exit 0
