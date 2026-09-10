@@ -99,7 +99,7 @@ public sealed class LiveGameFrameTimeTests
             () => new HashSet<int> { game.Id },
             settings: new ProBalanceSettings
             {
-                SystemLoadPercent = 0,
+                BackgroundLoadCores = 0,
                 MinimumRestraint = TimeSpan.FromSeconds(1),
                 Cooldown = TimeSpan.FromSeconds(1),
                 MaximumRestrained = hogs,
@@ -229,7 +229,7 @@ public sealed class LiveGameFrameTimeTests
         // mniej wiecej tyle, ile robi przegladarka z rozmowa wideo albo
         // kompilacja w tle — pokazuje, czy dziala tam, gdzie uzytkownik
         // faktycznie bywa. Zmierzone na tej maszynie: w normalnym stanie
-        // obciazenie systemu wynosi 22%, wiec bramka SystemLoadPercent=70
+        // tlo zajmuje ponizej jednego rdzenia, wiec bramka BackgroundLoadCores
         // nie przepuscilaby nic.
         int hogs = hogCount > 0
             ? hogCount
@@ -313,6 +313,66 @@ public sealed class LiveGameFrameTimeTests
     }
 
     /// <summary>
+    /// The one test that leaves every threshold alone. Everything else here
+    /// overrides <c>BackgroundLoadCores</c> to zero to get at the mechanism,
+    /// which quietly meant the shipped gates were never exercised — and the
+    /// shipped gates are what decides whether any of this reaches a player.
+    /// </summary>
+    [TestMethod]
+    [TestCategory("Live")]
+    [Timeout(300_000)]
+    public async Task ShippedThresholdsActUnderModerateContention()
+    {
+        for (int index = 0; index < 4; index++)
+        {
+            _load.Add(StartHog());
+        }
+
+        await Task.Delay(3000);
+
+        List<ProBalanceDecision> decisions = [];
+        HashSet<int> noGame = [];
+        // Domyslne ustawienia. Zadnych podmianek.
+        ProBalanceSupervisor supervisor = new(
+            new CpuProcessSampler(),
+            new PriorityProBalanceActuator(),
+            () => noGame,
+            settings: new ProBalanceSettings());
+
+        try
+        {
+            for (int tick = 0; tick < 8; tick++)
+            {
+                foreach (ProBalanceDecision decision in
+                    await supervisor.TickAsync(CancellationToken.None))
+                {
+                    decisions.Add(decision);
+                }
+
+                await Task.Delay(600);
+            }
+        }
+        finally
+        {
+            await supervisor.DisposeAsync();
+        }
+
+        foreach (IGrouping<string, ProBalanceDecision> group in decisions
+            .GroupBy(decision => decision.ProcessName))
+        {
+            TestContext.WriteLine($"{group.Key}: {group.Count()}");
+        }
+
+        Assert.IsGreaterThan(
+            0,
+            decisions.Count,
+            "Przy czterech procesach liczacych bez przerwy modul nie podjal "
+                + "zadnej decyzji. Zmierzone obciazenie w tym scenariuszu to "
+                + "41,7%, a zysk z maski 10,6% — jesli bramki tego nie "
+                + "przepuszczaja, mechanizm nigdy nie trafi do gracza.");
+    }
+
+    /// <summary>
     /// Says whether the module's own gates would have let it act, alongside
     /// the frame times. A mechanism that works but never runs is worth exactly
     /// as much as one that runs but does nothing, and only the two numbers
@@ -321,13 +381,40 @@ public sealed class LiveGameFrameTimeTests
     private void ReportWhetherThresholdsWouldFire()
     {
         ProBalanceSettings settings = new();
-        double? load = new SystemCpuLoadSampler().Sample();
-        Thread.Sleep(1000);
-        load = new SystemCpuLoadSampler().Sample();
+        // Liczymy dokladnie to, co liczy nadzorca: rdzenie zajete przez tlo,
+        // z pominieciem gry i procesow chronionych. Wczesniej bylo tu
+        // obciazenie calej maszyny w procentach i to bylo zle pytanie —
+        // praca samej gry nie jest dowodem, ze cos grze przeszkadza.
+        CpuProcessSampler sampler = new();
+        Dictionary<int, TimeSpan> before = sampler.Capture()
+            .ToDictionary(
+                sample => sample.ProcessId,
+                sample => sample.TotalProcessorTime);
+        DateTimeOffset start = DateTimeOffset.UtcNow;
+        Thread.Sleep(2000);
+        double elapsed = (DateTimeOffset.UtcNow - start).TotalSeconds;
+
+        double backgroundCores = 0;
+        foreach (CpuProcessSample sample in sampler.Capture())
+        {
+            if (!before.TryGetValue(sample.ProcessId, out TimeSpan previous)
+                || BackgroundApplicationGuard.IsProtectedProcessName(
+                    sample.Name)
+                || sample.Name.Contains(
+                    "7DaysToDie",
+                    StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
+            backgroundCores +=
+                (sample.TotalProcessorTime - previous).TotalSeconds / elapsed;
+        }
+
         TestContext.WriteLine(
-            $"obciazenie systemu: {load?.ToString("F1", CultureInfo.InvariantCulture) ?? "?"}% "
-                + $"(prog {settings.SystemLoadPercent}%) — bramka "
-                + (load >= settings.SystemLoadPercent
+            $"tlo zajmuje {backgroundCores:F2} rdzenia "
+                + $"(prog {settings.BackgroundLoadCores}) — bramka "
+                + (backgroundCores >= settings.BackgroundLoadCores
                     ? "przepuszcza"
                     : "BLOKUJE"));
     }

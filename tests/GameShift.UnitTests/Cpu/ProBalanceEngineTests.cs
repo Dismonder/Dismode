@@ -27,7 +27,7 @@ public sealed class ProBalanceEngineTests
         ProBalanceEngine engine,
         int samples,
         double processCores,
-        double systemCpu,
+        double backgroundCores,
         ref DateTimeOffset clock,
         TimeSpan? step = null)
     {
@@ -37,7 +37,7 @@ public sealed class ProBalanceEngineTests
         {
             all.AddRange(engine.Evaluate(
                 [Busy(processCores)],
-                systemCpu,
+                backgroundCores,
                 clock));
             clock += interval;
         }
@@ -54,7 +54,7 @@ public sealed class ProBalanceEngineTests
         DateTimeOffset clock = Start;
 
         List<ProBalanceDecision> decisions =
-            Feed(engine, 2, 1.5, 90, ref clock);
+            Feed(engine, 2, 1.5, 4.0, ref clock);
 
         Assert.AreEqual(0, decisions.Count);
         Assert.AreEqual(0, engine.Restrained.Count);
@@ -67,7 +67,7 @@ public sealed class ProBalanceEngineTests
         DateTimeOffset clock = Start;
 
         List<ProBalanceDecision> decisions =
-            Feed(engine, 3, 1.5, 90, ref clock);
+            Feed(engine, 3, 1.5, 4.0, ref clock);
 
         Assert.AreEqual(1, decisions.Count);
         Assert.AreEqual(ProBalanceAction.Restrain, decisions[0].Action);
@@ -78,13 +78,15 @@ public sealed class ProBalanceEngineTests
     [TestMethod]
     public void IdleMachineIsLeftAlone()
     {
-        // Proces moze zjadac 40% i nikomu nie przeszkadzac, jesli maszyna
-        // stoi. Ograniczanie go wtedy to czysta strata.
+        // Bramka patrzy na to, ile zjada cale tlo, a nie cala maszyna —
+        // praca samej gry nie jest dowodem, ze cos grze przeszkadza. Przy
+        // cichym tle nie ma czego ograniczac: zmierzone na spoczywajacej
+        // maszynie z gra, najbardziej zajety proces tla brał 0,07 rdzenia.
         ProBalanceEngine engine = new();
         DateTimeOffset clock = Start;
 
         List<ProBalanceDecision> decisions =
-            Feed(engine, 10, 1.5, 20, ref clock);
+            Feed(engine, 10, 0.2, 0.2, ref clock);
 
         Assert.AreEqual(0, decisions.Count);
     }
@@ -119,10 +121,10 @@ public sealed class ProBalanceEngineTests
         // za dwie probki.
         ProBalanceEngine engine = new();
         DateTimeOffset clock = Start;
-        Feed(engine, 3, 1.5, 90, ref clock);
+        Feed(engine, 3, 1.5, 4.0, ref clock);
 
         List<ProBalanceDecision> decisions =
-            Feed(engine, 1, 0.05, 90, ref clock);
+            Feed(engine, 1, 0.05, 4.0, ref clock);
 
         Assert.AreEqual(0, decisions.Count);
         CollectionAssert.Contains(engine.Restrained.ToList(), Hog);
@@ -133,12 +135,12 @@ public sealed class ProBalanceEngineTests
     {
         ProBalanceEngine engine = new();
         DateTimeOffset clock = Start;
-        Feed(engine, 3, 1.5, 90, ref clock);
+        Feed(engine, 3, 1.5, 4.0, ref clock);
 
         // Minimalne przytrzymanie to 5 s, wiec przy krokach 2 s pierwsze
         // spokojne probki jeszcze nie licza sie do zwolnienia.
         List<ProBalanceDecision> decisions =
-            Feed(engine, 8, 0.05, 90, ref clock);
+            Feed(engine, 8, 0.05, 4.0, ref clock);
 
         Assert.AreEqual(1, decisions.Count);
         Assert.AreEqual(ProBalanceAction.Release, decisions[0].Action);
@@ -152,12 +154,12 @@ public sealed class ProBalanceEngineTests
         // wraca do 40% zaraz po zwolnieniu i zaczyna migotac miedzy stanami.
         ProBalanceEngine engine = new();
         DateTimeOffset clock = Start;
-        Feed(engine, 3, 1.5, 90, ref clock);
-        Feed(engine, 8, 0.05, 90, ref clock);
+        Feed(engine, 3, 1.5, 4.0, ref clock);
+        Feed(engine, 8, 0.05, 4.0, ref clock);
         Assert.AreEqual(0, engine.Restrained.Count);
 
         List<ProBalanceDecision> decisions =
-            Feed(engine, 10, 1.5, 90, ref clock);
+            Feed(engine, 10, 1.5, 4.0, ref clock);
 
         Assert.AreEqual(
             0,
@@ -171,7 +173,7 @@ public sealed class ProBalanceEngineTests
         // Proces trzymany od dwoch minut nie jest juz chwilowym zrywem.
         ProBalanceEngine engine = new();
         DateTimeOffset clock = Start;
-        Feed(engine, 3, 1.5, 90, ref clock);
+        Feed(engine, 3, 1.5, 4.0, ref clock);
 
         List<ProBalanceDecision> decisions = Feed(
             engine,
@@ -205,7 +207,7 @@ public sealed class ProBalanceEngineTests
     {
         ProBalanceEngine engine = new();
         DateTimeOffset clock = Start;
-        Feed(engine, 3, 1.5, 90, ref clock);
+        Feed(engine, 3, 1.5, 4.0, ref clock);
         Assert.AreEqual(1, engine.Restrained.Count);
 
         IReadOnlyList<ProBalanceDecision> released = engine.ReleaseAll();
@@ -223,7 +225,7 @@ public sealed class ProBalanceEngineTests
         // zostawiloby go na obnizonym priorytecie do konca sesji.
         ProBalanceEngine engine = new();
         DateTimeOffset clock = Start;
-        Feed(engine, 3, 1.5, 90, ref clock);
+        Feed(engine, 3, 1.5, 4.0, ref clock);
         Assert.AreEqual(1, engine.Restrained.Count);
 
         IReadOnlyList<ProBalanceDecision> decisions = engine.Evaluate(
@@ -242,7 +244,7 @@ public sealed class ProBalanceEngineTests
     {
         ProBalanceEngine engine = new();
         DateTimeOffset clock = Start;
-        Feed(engine, 3, 1.5, 90, ref clock);
+        Feed(engine, 3, 1.5, 4.0, ref clock);
 
         IReadOnlyList<ProBalanceDecision> decisions = engine.Evaluate(
             [new(Hog, "indexer", 1.5, true, false)],
@@ -263,7 +265,7 @@ public sealed class ProBalanceEngineTests
         // ktory nadal zyje, zostalby przy obnizonym priorytecie na zawsze.
         ProBalanceEngine engine = new();
         DateTimeOffset clock = Start;
-        Feed(engine, 3, 1.5, 90, ref clock);
+        Feed(engine, 3, 1.5, 4.0, ref clock);
         Assert.AreEqual(1, engine.Restrained.Count);
 
         IReadOnlyList<ProBalanceDecision> decisions =
@@ -282,7 +284,7 @@ public sealed class ProBalanceEngineTests
         // w nieskonczonosc to wyciek w petli chodzacej cala sesje.
         ProBalanceEngine engine = new();
         DateTimeOffset clock = Start;
-        Feed(engine, 3, 1.5, 90, ref clock);
+        Feed(engine, 3, 1.5, 4.0, ref clock);
         Assert.AreEqual(1, engine.Restrained.Count);
 
         engine.Evaluate([], 90, clock);

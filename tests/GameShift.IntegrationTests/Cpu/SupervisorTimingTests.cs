@@ -83,7 +83,7 @@ public sealed class SupervisorTimingTests
             new CpuProcessSampler(),
             new CountingActuator(),
             static () => new HashSet<int>(),
-            settings: new ProBalanceSettings { SystemLoadPercent = 200 });
+            settings: new ProBalanceSettings { BackgroundLoadCores = 1000 });
 
         // Pierwsze przejscie tylko ustala punkt odniesienia dla obciazenia
         // systemu, a bez odstepu drugi odczyt trafia w ten sam takt zegara,

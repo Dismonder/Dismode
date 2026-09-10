@@ -65,7 +65,7 @@ public sealed class LiveProBalanceTests
             {
                 // Maszyna testowa nie musi byc obciazona, a zachowanie silnika
                 // przy obciazeniu jest sprawdzane osobno.
-                SystemLoadPercent = 0,
+                BackgroundLoadCores = 0,
                 MinimumRestraint = TimeSpan.FromSeconds(1),
                 Cooldown = TimeSpan.FromSeconds(1),
             });

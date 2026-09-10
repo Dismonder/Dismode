@@ -13,10 +13,37 @@ namespace GameShift.Core.Cpu;
 public sealed record ProBalanceSettings
 {
     /// <summary>
-    /// Below this the machine is not actually contended, so restraining
-    /// anything would cost responsiveness elsewhere and buy nothing.
+    /// How much processor the background has to be eating, in cores, before
+    /// the loop will restrain anything.
+    /// <para>
+    /// This used to be machine-wide load as a percentage, and that was the
+    /// wrong quantity twice over. It counted the game's own work as evidence
+    /// that the machine was contended — the game's work is the thing being
+    /// protected, not the interference — so the loop's behaviour depended on
+    /// how heavy the game happened to be. A light game plus four busy
+    /// background processes read 31% and was ignored; the same four
+    /// background processes next to a heavy game read 41,7% and were acted on,
+    /// though they were stealing exactly the same cores. And a percentage of
+    /// the machine means something different on every machine, which is the
+    /// mistake this file already avoids everywhere else.
+    /// </para>
+    /// <para>
+    /// Counting only the background, in cores, removes both problems.
+    /// Measured on the development machine: idle with a game running, the
+    /// busiest background process used 0,07 of a core; four compute-bound
+    /// background processes used 4,04 cores, and confining them moved the
+    /// game's p99 frame time from 7,78 ms to 6,95 ms.
+    /// </para>
+    /// <para>
+    /// Deliberately equal to <see cref="RestrainAboveCores"/>. Setting it
+    /// higher looked reasonable and was incoherent: a lone process over the
+    /// per-process threshold could never be acted on, because the background
+    /// total is at least that process's own usage. Equal means the two rules
+    /// agree — any process worth catching passes the gate on its own — and the
+    /// gate still separates that from a quiet machine by a factor of ten.
+    /// </para>
     /// </summary>
-    public double SystemLoadPercent { get; init; } = 70;
+    public double BackgroundLoadCores { get; init; } = 0.75;
 
     /// <summary>
     /// How much CPU a process must be using to become a candidate, counted in

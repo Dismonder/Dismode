@@ -72,7 +72,7 @@ public sealed class ProBalanceEngine
 
     public IReadOnlyList<ProBalanceDecision> Evaluate(
         IReadOnlyList<ProBalanceObservation> observations,
-        double systemCpuPercent,
+        double backgroundCores,
         DateTimeOffset nowUtc)
     {
         ArgumentNullException.ThrowIfNull(observations);
@@ -127,7 +127,7 @@ public sealed class ProBalanceEngine
             ProBalanceDecision? decision = Advance(
                 state,
                 observation,
-                systemCpuPercent,
+                backgroundCores,
                 nowUtc);
             if (decision is not null)
             {
@@ -194,7 +194,7 @@ public sealed class ProBalanceEngine
     private ProBalanceDecision? Advance(
         TrackedProcess state,
         ProBalanceObservation observation,
-        double systemCpuPercent,
+        double backgroundCores,
         DateTimeOffset nowUtc)
     {
         state.ProcessName = observation.ProcessName;
@@ -219,9 +219,10 @@ public sealed class ProBalanceEngine
             state.CooldownUntilUtc = null;
         }
 
-        if (systemCpuPercent < _settings.SystemLoadPercent)
+        if (backgroundCores < _settings.BackgroundLoadCores)
         {
-            // Maszyna nie jest obciazona, wiec nikt nikomu nie przeszkadza.
+            // Tlo nic nie zjada, wiec nikt grze nie przeszkadza. Liczy sie
+            // wylacznie tlo — praca samej gry nie jest dowodem kontencji.
             state.HotSamples = 0;
             return null;
         }
@@ -253,8 +254,8 @@ public sealed class ProBalanceEngine
             observation.ProcessName,
             ProBalanceAction.Restrain,
             $"{observation.CpuCores:F1} rdzenia przez "
-                + $"{_settings.SustainedSamples} próbki przy obciążeniu "
-                + $"{systemCpuPercent:F0}%.");
+                + $"{_settings.SustainedSamples} próbki, przy tle zajmującym "
+                + $"{backgroundCores:F1} rdzenia.");
     }
 
     private int CountRestrained() => _tracked.Count(

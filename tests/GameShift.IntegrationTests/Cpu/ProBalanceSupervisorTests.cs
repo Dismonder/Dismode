@@ -22,7 +22,6 @@ public sealed class ProBalanceSupervisorTests
             inventory,
             actuator,
             static () => new HashSet<int> { 1001 },
-            systemLoad: static () => 90,
             timeProvider: time);
 
         // Pierwszy tick tylko ustala punkt odniesienia: bez poprzedniego
@@ -71,7 +70,6 @@ public sealed class ProBalanceSupervisorTests
             inventory,
             actuator,
             static () => new HashSet<int> { 1001 },
-            systemLoad: static () => 95,
             timeProvider: time);
 
         inventory.Set(cpuMilliseconds: 0);
@@ -99,7 +97,6 @@ public sealed class ProBalanceSupervisorTests
             inventory,
             actuator,
             static () => new HashSet<int>(),
-            systemLoad: static () => 90,
             timeProvider: time);
 
         inventory.Set(cpuMilliseconds: 0);
@@ -133,7 +130,6 @@ public sealed class ProBalanceSupervisorTests
             inventory,
             actuator,
             static () => new HashSet<int>(),
-            systemLoad: static () => 90,
             timeProvider: time);
 
         inventory.Set(cpuMilliseconds: 0);

@@ -3,7 +3,7 @@
 Spis wszystkich planów i uczciwy stan każdego z nich. Aktualizowany razem
 z wydaniem.
 
-Stan na: 2026-09-10, wydanie **0.5.2**
+Stan na: 2026-09-10, wydanie **0.6.2**
 
 ## Zasada
 
@@ -17,7 +17,7 @@ rzeczy i w tych dokumentach nigdy nie są mieszane.
 | Plan | Czego dotyczy | Stan | Co blokuje zamknięcie |
 |---|---|---|---|
 | [`render-mods-module.md`](active/render-mods-module.md) | moduł OptiScaler, dodatki per gra, DLSS Neural Rendering | kod kompletny, wydany w 0.5.2 | Neural Rendering nigdy nie widziany działający w grze; układ metody 1 dla RE9 niepotwierdzony |
-| [`cpu-module.md`](active/cpu-module.md) | powinowactwo CPU, ProBalance, zamiennik Process Lasso | **zmierzony na prawdziwej grze — bez efektu** | pomiar z 2026-09-10 nie wykazał poprawy czasów klatek; ścieżki hybrydowa (P/E) i wielo-CCD nadal nigdy nie wykonały się na prawdziwym sprzęcie |
+| [`cpu-module.md`](active/cpu-module.md) | powinowactwo CPU, ProBalance, zamiennik Process Lasso | **przebudowany i zmierzony — p99 lepsze o 26% (pełne obciążenie) i 10,6% (umiarkowane)** | ścieżki hybrydowa (P/E) i wielo-CCD nadal nigdy nie wykonały się na prawdziwym sprzęcie |
 | [`update-platform-installer-hardening.md`](active/update-platform-installer-hardening.md) | kanał aktualizacji, dzielenie instalatora, podpisy | 0.5.2 zbudowana i podpisana **certyfikatem testowym** | produkcyjny certyfikat Authenticode; smoke update/uninstall na VM |
 | [`system-optimizer-0.4.0.md`](active/system-optimizer-0.4.0.md) | osobny optimizer A/B, usługa `GameShiftSystemAgent` | implementacja i lokalna regresja zakończone | macierz VM z recovery po restarcie; podpis produkcyjny |
 | [`gameshift-mvp.md`](active/gameshift-mvp.md) | bramy A–G całego MVP, transakcyjność, recovery | bramy A–G ukończone w kodzie | instalacja i restartowe recovery na kontrolowanej VM; checklista dostępności (DPI, kontrast, Narrator) |
@@ -55,8 +55,9 @@ na docelowym sprzęcie. To jest największy dług projektu — nie brak funkcji.
    GameShifta, czy nie migocze przy alt-tabie, czy wykres mieści się w ramce.
    Przebudowana w 0.5.0 i od tego czasu nieoglądana.
 3. ~~**Moduł CPU na grze ograniczonej procesorem**~~ — **zrobione 2026-09-10
-   na 7 Days To Die. Wynik przeczący**: dwa przebiegi, przeciwne kierunki,
-   różnica w granicach szumu. Szczegóły w planie modułu.
+   na 7 Days To Die.** Pierwszy pomiar wyszedł przeczący i doprowadził do
+   przebudowy: priorytet nie daje nic, twarda maska powinowactwa daje 26%
+   przy pełnym obciążeniu i 10,6% przy umiarkowanym. Szczegóły w planie.
 
 ### Potem: sprzęt, którego tu nie ma
 
@@ -99,8 +100,11 @@ Zapisane tu, żeby nie udawać, że ich nie ma.
   zamknięciu sesji pętla stoi. Deterministycznie, bez wyścigu z pętlą i bez
   prawdziwego obciążenia: dwa przypadki w sekundę. Sama logika pętli ma własne
   testy sterujące `TickAsync` bezpośrednio, więc podział jest czysty.
-- **Progi ProBalance** (`RestrainAboveCores`, `SustainedSamples` i reszta) są
-  wymyślone, nie wystrojone pomiarem czasów klatek.
+- **Progi ProBalance** są częściowo wystrojone pomiarem: bramka obciążenia
+  została przebudowana z „procent całej maszyny" na „rdzenie zajęte przez tło"
+  i ustawiona na podstawie zmierzonych 0,07 rdzenia przy cichej maszynie wobec
+  4,04 przy obciążeniu, w którym zysk wystąpił. `SustainedSamples`,
+  `MinimumRestraint` i `Cooldown` nadal pochodzą z założeń, nie z pomiaru.
 - **Cztery testy integracyjne są pomijane** — wymagają uprawnień
   administratora albo realnego obciążenia procesora.
 - W magazynie certyfikatów użytkownika leży około czterdziestu porzuconych
