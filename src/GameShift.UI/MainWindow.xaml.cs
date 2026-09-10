@@ -3611,10 +3611,12 @@ public sealed partial class MainWindow : Window, IDisposable
         SetUpdatePipelineStep(3);
         StagedUpdateText.Text = "Weryfikacja kryptograficzna i sprawdzanie SHA-256…";
 
-        await _updates.VerifyInstallerAsync(
+        await using (await _updates.VerifyInstallerAsync(
             manifest,
             _stagedInstallerPath,
-            cancellationToken);
+            cancellationToken))
+        {
+        }
 
         SetUpdatePipelineStep(4);
         UpdateActivitySpinner.IsActive = false;
@@ -3678,7 +3680,10 @@ public sealed partial class MainWindow : Window, IDisposable
             return;
         }
 
-        await _updates.VerifyInstallerAsync(
+        // Uchwyt zyje az do uruchomienia procesu. Miedzy sprawdzeniem sumy
+        // a startem nikt nie podmieni ani nie skasuje pliku, ktory zaraz
+        // dostanie prawa administratora.
+        await using FileStream verified = await _updates.VerifyInstallerAsync(
             manifest,
             installerPath,
             cancellationToken);
