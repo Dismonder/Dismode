@@ -1,0 +1,46 @@
+#!/bin/sh
+# Zatrzymuje dwie pomyłki, których w gicie nie da się cofnąć bez przepisania
+# historii — a przepisanie historii repozytorium, z którego już się instaluje,
+# jest gorsze niż sama pomyłka.
+#
+# 1. Commit prosto na main. Praca idzie na gałęzi roboczej i wchodzi przez PR.
+# 2. Duży plik binarny. To już się zdarzyło: w historii leży 77 MB kawałków
+#    instalatora 0.1.1 i nie da się ich stamtąd wyjąć inaczej niż force-pushem.
+#
+# Świadome obejście: GAMESHIFT_ALLOW_BIG_COMMIT=1 git commit …
+
+protected_branch="main"
+max_bytes=5242880   # 5 MiB
+status=0
+
+if [ "${GAMESHIFT_ALLOW_BIG_COMMIT}" = "1" ]; then
+    exit 0
+fi
+
+branch=$(git rev-parse --abbrev-ref HEAD 2>/dev/null)
+if [ "${branch}" = "${protected_branch}" ]; then
+    echo "pre-commit: odmowa commita prosto na ${protected_branch}." >&2
+    echo "  Załóż gałąź roboczą: git switch -c feature/…" >&2
+    status=1
+fi
+
+# --diff-filter=d pomija usunięcia; interesują nas pliki, które wchodzą.
+# Rozmiar czytamy z indeksu, nie z dysku — commitowana jest ta wersja.
+oversized=$(
+    git diff --cached --name-only --diff-filter=d | while IFS= read -r path; do
+        size=$(git cat-file -s ":${path}" 2>/dev/null) || continue
+        if [ "${size}" -gt "${max_bytes}" ]; then
+            awk "BEGIN{printf \"  %.1f MiB  ${path}\n\", ${size}/1048576}"
+        fi
+    done
+)
+
+if [ -n "${oversized}" ]; then
+    echo "pre-commit: pliki za duze na repozytorium kodu:" >&2
+    echo "${oversized}" >&2
+    echo "  Artefakty budowania trzymamy w artifacts/, nie w gicie." >&2
+    echo "  Swiadome obejscie: GAMESHIFT_ALLOW_BIG_COMMIT=1 git commit …" >&2
+    status=1
+fi
+
+exit ${status}
