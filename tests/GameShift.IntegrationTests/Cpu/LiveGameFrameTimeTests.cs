@@ -28,6 +28,7 @@ public sealed class LiveGameFrameTimeTests
     private static readonly string[] KnownGameProcessNames =
     [
         "7DaysToDie",
+        "valheim",
         "pcsx2-qt",
         "rpcs3",
         "re9",
