@@ -2009,7 +2009,7 @@
                   <!-- Background Applications List Card -->
                   <Border
                       MinHeight="300"
-                      Padding="18"
+                      Padding="20"
                       Background="{ThemeResource GameShiftCardBrush}"
                       BorderBrush="{ThemeResource GameShiftCardBorderBrush}"
                       BorderThickness="1"

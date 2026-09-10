@@ -111,11 +111,18 @@ Zapisane tu, żeby nie udawać, że ich nie ma.
 - **Cztery testy integracyjne są pomijane** — wymagają uprawnień
   administratora albo realnego obciążenia procesora.
 - **Kompozycja zakładek nie została oceniona wzrokowo.** Sprawdzone i naprawione
-  zostało to, co da się policzyć z kodu: kontrast (WCAG, z komponowaniem
-  przezroczystości), nazwy dla czytnika ekranu, ryzyko ucinania tekstu,
-  promienie i rytm odstępów. Układ, hierarchia i proporcje wymagają
-  zobaczenia okna — a trzy próby wnioskowania o wyglądzie z samego kodu dały
-  tego dnia trzy fałszywe alarmy z rzędu.
+  zostało to, co da się policzyć z zadeklarowanej geometrii: kontrast (WCAG,
+  z komponowaniem przezroczystości), nazwy dla czytnika ekranu, ryzyko ucinania
+  tekstu, promienie, rytm odstępów oraz wypełnienia kart według poziomu
+  zagnieżdżenia. Ostatnie z nich pokazało, że Plan ma celową hierarchię
+  20 → 16 → 12, w której jedna karta kroku odstawała wartością 18 — wyrównana.
+  Otwarta pozostaje różnica między zakładkami: karty treści mają 22
+  w Diagnostyce i Aktualizacjach, a 20 w Planie. Nie ma dowodu, że któraś
+  wartość jest zła, więc nie ruszono jej.
+- **Czego nie da się policzyć:** proporcje, ciężar wizualny, to czy hierarchia
+  jest czytelna dla oka. Trzy próby wnioskowania o wyglądzie z samych wzorców
+  tekstowych dały tego dnia trzy fałszywe alarmy z rzędu, więc przebudowa
+  układu bez zobaczenia okna jest odłożona, a nie odfajkowana.
 - W magazynie certyfikatów użytkownika leży około czterdziestu porzuconych
   certyfikatów deweloperskich `CN=GameShift Development` z kolejnych buildów.
   Do posprzątania; żaden nie jest w Zaufanych głównych ani Zaufanych wydawcach.
