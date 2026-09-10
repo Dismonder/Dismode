@@ -3195,6 +3195,26 @@ public sealed partial class MainWindow : Window, IDisposable
         }
     }
 
+    /// <summary>
+    /// True when the profile still has OptiScaler deployed, and also when we
+    /// cannot tell. An unreadable installation manifest means files were very
+    /// likely written into the game folder, so refusing is the answer that
+    /// cannot strand them.
+    /// </summary>
+    private bool IsOptiScalerInstalledForProfile(ProfileListItem profile)
+    {
+        try
+        {
+            return _optiScaler
+                .GetStatus(profile.Profile.ProfileId.Value.ToString("D"))
+                .IsInstalled;
+        }
+        catch (Exception exception) when (IsExpectedUiFailure(exception))
+        {
+            return true;
+        }
+    }
+
     private async void OnDeleteProfileClicked(
         object sender,
         RoutedEventArgs args)
@@ -3223,6 +3243,23 @@ public sealed partial class MainWindow : Window, IDisposable
                 "Profil jest używany",
                 "Najpierw zakończ monitorowanie aktywnej sesji. "
                 + "GameShift nie zamknie przy tym gry.");
+            return;
+        }
+
+        // Usuniecie profilu kasuje tylko wpis w bazie. Gdy dla tego profilu
+        // zainstalowany jest OptiScaler, jego pliki zostaja w katalogu gry,
+        // a wraz z profilem znika jedyna droga, ktora program potrafi je
+        // usunac — okno OptiScalera otwiera sie z profilu. Gracz zostawalby
+        // z modem wstrzyknietym do gry na stale.
+        if (IsOptiScalerInstalledForProfile(selected))
+        {
+            ShowInfo(
+                ProfilesInfoBar,
+                InfoBarSeverity.Warning,
+                "Najpierw usuń OptiScaler",
+                "Ten profil ma zainstalowany OptiScaler. Usunięcie profilu "
+                + "zostawiłoby jego pliki w katalogu gry bez możliwości "
+                + "cofnięcia tego przez GameShift.");
             return;
         }
 
