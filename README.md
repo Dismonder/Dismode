@@ -63,12 +63,19 @@ git config core.hooksPath .githooks
 ```
 
 `pre-commit` refuses commits made straight on `main` and files over 5 MiB.
-`pre-push` refuses pushing to `main`, rewriting its history, and deleting it.
-Each has a deliberate override — `GAMESHIFT_ALLOW_BIG_COMMIT=1` and
-`GAMESHIFT_ALLOW_MAIN_PUSH=1`.
+`pre-push` refuses pushing to `main`, rewriting its history, and deleting it,
+then builds the solution and runs the suite before anything leaves the machine.
 
-Correctness is checked by CI (`.github/workflows/ci.yml`), which builds the
-solution and runs the suite on every push and pull request.
+There is no CI service. GitHub Actions bills a Windows runner at double rate
+against the Free plan quota, and eight of thirteen projects need Windows to
+build at all, so the same check runs locally and costs only time. Each guard
+has a deliberate override:
+
+| Variable | Skips |
+|---|---|
+| `GAMESHIFT_ALLOW_BIG_COMMIT=1` | the `main` and file-size commit guards |
+| `GAMESHIFT_ALLOW_MAIN_PUSH=1` | every push guard, verification included |
+| `GAMESHIFT_SKIP_VERIFY=1` | the build and tests only |
 
 ```powershell
 dotnet restore GameShift.sln

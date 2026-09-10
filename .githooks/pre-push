@@ -16,6 +16,7 @@
 protected_branch="main"
 zero="0000000000000000000000000000000000000000"
 status=0
+pushing=0
 
 if [ "${GAMESHIFT_ALLOW_MAIN_PUSH}" = "1" ]; then
     exit 0
@@ -23,6 +24,8 @@ fi
 
 # stdin: <local ref> <local sha> <remote ref> <remote sha>
 while read -r local_ref local_sha remote_ref remote_sha; do
+    [ "${local_sha}" = "${zero}" ] || pushing=1
+
     case "${remote_ref}" in
         "refs/heads/${protected_branch}") ;;
         *) continue ;;
@@ -48,4 +51,43 @@ while read -r local_ref local_sha remote_ref remote_sha; do
     status=1
 done
 
-exit ${status}
+[ ${status} -eq 0 ] || exit ${status}
+[ ${pushing} -eq 1 ] || exit 0
+
+# Weryfikacja poprawności biegnie tutaj, bo GitHub Actions na prywatnym
+# repozytorium zjada limit planu Free, a runner Windows liczy się podwójnie.
+# Ten sam build i te same testy kosztują lokalnie tylko czas — a bez nich
+# "chroniony main" nie znaczy nic, bo przy jednym autorze PR nie ma recenzenta.
+#
+# Pominięcie, gdy push jest pilny albo maszyna zajęta:
+#   GAMESHIFT_SKIP_VERIFY=1 git push …
+
+if [ "${GAMESHIFT_SKIP_VERIFY}" = "1" ]; then
+    echo "pre-push: weryfikacja pominięta na żądanie." >&2
+    exit 0
+fi
+
+if ! command -v dotnet >/dev/null 2>&1; then
+    echo "pre-push: brak dotnet w PATH, pomijam weryfikację." >&2
+    exit 0
+fi
+
+root=$(git rev-parse --show-toplevel)
+echo "pre-push: build Release…" >&2
+if ! dotnet build "${root}/GameShift.sln" -c Release -v quiet --nologo >/dev/null; then
+    echo "pre-push: build się nie powiódł. Push wstrzymany." >&2
+    echo "  Szczegóły: dotnet build GameShift.sln -c Release" >&2
+    exit 1
+fi
+
+echo "pre-push: testy (bez kategorii Live)…" >&2
+if ! dotnet test "${root}/GameShift.sln" -c Release --no-build \
+    --filter "TestCategory!=Live" -v quiet --nologo >/dev/null; then
+    echo "pre-push: testy nie przeszły. Push wstrzymany." >&2
+    echo "  Szczegóły: dotnet test GameShift.sln -c Release --no-build \\" >&2
+    echo "               --filter \"TestCategory!=Live\"" >&2
+    exit 1
+fi
+
+echo "pre-push: zielono." >&2
+exit 0
