@@ -108,10 +108,34 @@ dopiero z pomiaru albo z przeglądu.
 | dostępność | siedem kontrolek niewidzialnych dla czytnika ekranu | parser drzewa XAML |
 | kontrast | skala wykresu czasu klatki przy 2,18 wobec wymaganych 4,5 | obliczenie WCAG |
 
+| aktualizacja | `OptiScaler.ini` w katalogu gry zapisywany podzielnie | szukanie wzorca trwałości |
+| usuwanie profilu | zostawiało OptiScalera w grze bez drogi usunięcia | szukanie wzorca „brak powrotu" |
+| deinstalacja | porzucała OptiScalera we **wszystkich** grach naraz | jw. |
+
 Sprawdzone i **odrzucone** jako nieistniejące: wycieki subskrypcji zdarzeń,
 nieopakowane pary `SetBusy`, ucinanie tekstu przy długich nazwach gier,
-brak przewijania zakładek, odmowa czytania uszkodzonego manifestu OptiScalera.
-Wynik ujemny też jest wynikiem i lepiej go zapisać, niż produkować poprawkę.
+brak przewijania zakładek, odmowa czytania uszkodzonego manifestu OptiScalera,
+zapis stanu dla Memory Optimizera (jest niepodzielny), usuwanie usługi Memory
+Optimizera przy deinstalacji (jest). Wynik ujemny też jest wynikiem i lepiej go
+zapisać, niż produkować poprawkę.
+
+### Wzorzec, który dał najwięcej trafień
+
+Trzy defekty należą do jednej rodziny: **akcja zmienia stan poza programem
+i nie zostawia drogi powrotu**. Kod był ostrożny tam, gdzie patrzył, i ślepy
+na to, co zostawia za sobą.
+
+Wyliczenie zamknięte — każde działanie zmieniające stan zewnętrzny ma teraz
+ścieżkę odwrotną albo jawne ostrzeżenie:
+
+| Co zmienia stan poza programem | Droga powrotu |
+|---|---|
+| priorytety i maski procesora | dziennik + odzyskiwanie |
+| usługa System Agent | krok deinstalacji z raportem błędu |
+| integracja z menu Eksploratora | jw. |
+| usługa Memory Optimizer | własny skrypt w `[UninstallRun]` |
+| OptiScaler w katalogach gier | brama przy usuwaniu profilu i przy deinstalacji |
+| sam dziennik odzyskiwania | przeżywa urwany zapis, przycina i kontynuuje |
 
 ## Znane luki w testach
 
