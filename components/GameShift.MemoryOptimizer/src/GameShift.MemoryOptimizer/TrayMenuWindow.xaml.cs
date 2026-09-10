@@ -68,10 +68,7 @@ internal sealed partial class TrayMenuWindow : Window
 
         Activated += OnActivated;
         Closed += OnClosed;
-        SetWindowAttribute(20, 1); // DWMWA_USE_IMMERSIVE_DARK_MODE
-        SetWindowAttribute(33, 2); // DWMWA_WINDOW_CORNER_PREFERENCE: ROUND
-        SetWindowAttribute(34, new Windows.UI.ViewManagement.AccessibilitySettings().HighContrast
-            ? uint.MaxValue : 0xFFFFFFFE); // Default border in High Contrast; otherwise no DWM border.
+        ApplyWindowChrome();
         UpdateState(status, canOptimize, canPause);
     }
 
@@ -119,6 +116,34 @@ internal sealed partial class TrayMenuWindow : Window
         OptimizeProgress.Opacity = state.IsBusy ? 1 : 0;
     }
 
+    /// <summary>
+    /// Applies the dark, borderless, rounded frame.
+    /// <para>
+    /// Has to run again after the window is shown. Set only in the constructor
+    /// these attributes are applied to a window that does not exist on screen
+    /// yet, and the first show puts the default frame back — which is how this
+    /// dark panel ended up wearing a white outline.
+    /// </para>
+    /// </summary>
+    private void ApplyWindowChrome()
+    {
+        const uint ImmersiveDarkMode = 20;
+        const uint CornerPreference = 33;
+        const uint BorderColour = 34;
+        const uint RoundedCorners = 2;
+        const uint NoBorder = 0xFFFFFFFE;
+        const uint DefaultBorder = uint.MaxValue;
+
+        SetWindowAttribute(ImmersiveDarkMode, 1);
+        SetWindowAttribute(CornerPreference, RoundedCorners);
+        // W wysokim kontrascie ramka jest informacja, nie ozdoba — zostaje.
+        SetWindowAttribute(
+            BorderColour,
+            new Windows.UI.ViewManagement.AccessibilitySettings().HighContrast
+                ? DefaultBorder
+                : NoBorder);
+    }
+
     private void SetWindowAttribute(uint attribute, uint value)
     {
         int result = DwmSetWindowAttribute(_windowHandle, attribute, ref value, sizeof(uint));
@@ -139,6 +164,9 @@ internal sealed partial class TrayMenuWindow : Window
         _isShown = true;
         PositionAtCursor();
         Activate();
+        // Ponownie po pokazaniu: dopiero teraz okno istnieje na ekranie
+        // i dopiero teraz ustawienie ramki jest trwale.
+        ApplyWindowChrome();
         _ = DispatcherQueue.TryEnqueue(() =>
         {
             if (_isClosed)
@@ -212,8 +240,16 @@ internal sealed partial class TrayMenuWindow : Window
 
     private void OnActivated(object sender, WindowActivatedEventArgs args)
     {
-        if (_isShown && !_disableInProgress &&
-            args.WindowActivationState == WindowActivationState.Deactivated)
+        if (args.WindowActivationState != WindowActivationState.Deactivated)
+        {
+            // Taniej niz zakladac, kiedy dokladnie system przywraca domyslna
+            // ramke. Nadanie jej przy kazdej aktywacji kosztuje trzy wywolania
+            // DWM i nie zalezy od tego, czy zgadlem moment resetu.
+            ApplyWindowChrome();
+            return;
+        }
+
+        if (_isShown && !_disableInProgress)
         {
             CloseMenu();
         }

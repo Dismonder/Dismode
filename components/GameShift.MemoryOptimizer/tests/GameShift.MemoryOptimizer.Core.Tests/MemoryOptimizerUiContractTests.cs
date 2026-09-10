@@ -86,8 +86,14 @@ public sealed class MemoryOptimizerUiContractTests
                  })
         {
             XElement text = Named(name);
-            Assert.IsNotNull(text.Attribute("MinHeight"));
-            Assert.IsNotNull(text.Attribute("Height"));
+            Assert.IsNotNull(
+                text.Attribute("MinHeight"),
+                $"{name} ma rezerwowac miejsce, zeby przeglad nie skakal.");
+            Assert.IsNull(
+                text.Attribute("Height"),
+                $"{name} nie moze miec sztywnej wysokosci: obcina zejscia "
+                    + "liter i polskie ogonki. Rezerwacje daje MinHeight, "
+                    + "a rozrost ogranicza MaxLines razem z wielokropkiem.");
             Assert.AreEqual("2", (string?)text.Attribute("MaxLines"));
             Assert.AreEqual(
                 "CharacterEllipsis",
@@ -173,11 +179,30 @@ public sealed class MemoryOptimizerUiContractTests
         StringAssert.Contains(source, "RectInt32 target = new(x, y, width, height);");
     }
 
+    /// <summary>
+    /// Miejsce ma byc zarezerwowane, zeby przeglad nie skakal przy zmianie
+    /// tekstu — ale rezerwacja to minimum, nie sufit.
+    /// <para>
+    /// Pasek deklarowal Height="64" obok MinHeight="64". Height wygrywa, wiec
+    /// po odjeciu wypelnienia zostawalo 40 pikseli na dwa wiersze potrzebujace
+    /// 38,4 plus zejscia liter — i obcinane bylo dokladnie to, co wisi pod
+    /// linia bazowa, czyli polskie ogonki. "Ręczna optymalizacja nadal jest
+    /// dostępna" wyswietlalo sie jako "Reczna optymalizacia nadal iest
+    /// dostepna". Cel testu zostaje ten sam, sprawdzany jest teraz przez
+    /// wlasciwosc, ktora go realizuje bez ciecia tekstu.
+    /// </para>
+    /// </summary>
     [TestMethod]
-    public void ServiceStatusStripHasFixedHeightAndSingleLineFeedback()
+    public void ServiceStatusStripReservesSpaceWithoutClippingText()
     {
         XElement strip = Named("ServiceStatusStrip");
-        Assert.AreEqual("64", (string?)strip.Attribute("Height"));
+        Assert.AreEqual(
+            "64",
+            (string?)strip.Attribute("MinHeight"),
+            "Pasek ma rezerwowac 64 piksele, zeby uklad nie skakal.");
+        Assert.IsNull(
+            (string?)strip.Attribute("Height"),
+            "Sztywna wysokosc obcina zejscia liter i polskie ogonki.");
 
         XElement title = Named("ServiceStatusTitle");
         Assert.AreEqual("NoWrap", (string?)title.Attribute("TextWrapping"));
