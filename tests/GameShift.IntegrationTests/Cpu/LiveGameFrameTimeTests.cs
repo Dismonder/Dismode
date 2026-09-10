@@ -82,6 +82,7 @@ public sealed class LiveGameFrameTimeTests
 
         using Process game = found;
         TestContext.WriteLine($"Gra: {game.ProcessName} (PID {game.Id})");
+        await RequireRenderingAsync(presentMonPath, game.Id);
 
         int hogs = Math.Max(2, Environment.ProcessorCount);
         for (int index = 0; index < hogs; index++)
@@ -177,6 +178,11 @@ public sealed class LiveGameFrameTimeTests
         }
 
         Assert.IsGreaterThan(0, withoutRestraint.Count);
+        Assert.IsTrue(
+            withoutRestraint.Concat(withRestraint).All(value => value > 0),
+            "Ktorys blok nie zlapal ani jednej klatki. To awaria pomiaru, "
+                + "nie wynik — sprawdz, czy nie wisi porzucona sesja ETW "
+                + "(logman query -ets) i czy gra sie renderuje.");
 
         // Mediana z par odporna jest na pojedyncze wahniecie maszyny, ktore
         // w pomiarze blokowym przewracalo caly wynik. Prog jest szeroki
@@ -185,6 +191,171 @@ public sealed class LiveGameFrameTimeTests
             medianWithout * 1.5,
             medianWith,
             "Ograniczanie pogorszylo mediane ogona czasow klatek.");
+    }
+
+    /// <summary>
+    /// Priority lowering did nothing for frame times, so this asks whether the
+    /// mechanism is wrong rather than the idea. Three conditions, interleaved:
+    /// background left alone, background at low priority — what the module
+    /// does today — and background pinned by a hard affinity mask to a corner
+    /// of the machine.
+    /// <para>
+    /// The distinction is not cosmetic. CPU sets and priority are both hints
+    /// the scheduler weighs; an affinity mask is a rule it cannot break. Under
+    /// as many compute-bound threads as there are cores, a hint is exactly the
+    /// thing that gets outvoted.
+    /// </para>
+    /// </summary>
+    [TestMethod]
+    [TestCategory("Live")]
+    [Timeout(900_000)]
+    public async Task HardAffinityBeatsPriorityUnderContention()
+    {
+        if (!TryFindGame(out Process? found, out string presentMonPath)
+            || found is null)
+        {
+            Assert.Inconclusive(
+                "Zadna znana gra nie dziala albo brakuje PresentMon.");
+            return;
+        }
+
+        using Process game = found;
+        TestContext.WriteLine($"Gra: {game.ProcessName} (PID {game.Id})");
+        await RequireRenderingAsync(presentMonPath, game.Id);
+
+        int hogs = Math.Max(2, Environment.ProcessorCount);
+        for (int index = 0; index < hogs; index++)
+        {
+            _load.Add(StartHog());
+        }
+
+        await Task.Delay(3000);
+
+        // Cwiartka maszyny dla calego tla. Reszta zostaje grze.
+        int corner = Math.Max(2, Environment.ProcessorCount / 4);
+        nint cornerMask = (nint)((1L << corner) - 1);
+        nint fullMask = (nint)((1L << Environment.ProcessorCount) - 1);
+        TestContext.WriteLine(
+            $"maska tla: {corner} z {Environment.ProcessorCount} watkow");
+
+        List<double> free = [];
+        List<double> lowPriority = [];
+        List<double> pinned = [];
+
+        try
+        {
+            for (int round = 0; round < Rounds; round++)
+            {
+                ApplyToHogs(ProcessPriorityClass.Normal, fullMask);
+                await Task.Delay(1200);
+                free.Add(
+                    (await MeasureAsync(presentMonPath, game.Id, BlockSeconds))
+                    .Percentile99);
+
+                ApplyToHogs(ProcessPriorityClass.BelowNormal, fullMask);
+                await Task.Delay(1200);
+                lowPriority.Add(
+                    (await MeasureAsync(presentMonPath, game.Id, BlockSeconds))
+                    .Percentile99);
+
+                ApplyToHogs(ProcessPriorityClass.Normal, cornerMask);
+                await Task.Delay(1200);
+                pinned.Add(
+                    (await MeasureAsync(presentMonPath, game.Id, BlockSeconds))
+                    .Percentile99);
+            }
+        }
+        finally
+        {
+            ApplyToHogs(ProcessPriorityClass.Normal, fullMask);
+        }
+
+        for (int round = 0; round < Rounds; round++)
+        {
+            TestContext.WriteLine(
+                $"runda {round + 1}: wolne {free[round]:F2} ms, "
+                + $"priorytet {lowPriority[round]:F2} ms, "
+                + $"maska {pinned[round]:F2} ms");
+        }
+
+        double medianFree = Median(free);
+        double medianPriority = Median(lowPriority);
+        double medianPinned = Median(pinned);
+        TestContext.WriteLine($"mediana p99 wolne:     {medianFree:F2} ms");
+        TestContext.WriteLine($"mediana p99 priorytet: {medianPriority:F2} ms");
+        TestContext.WriteLine($"mediana p99 maska:     {medianPinned:F2} ms");
+        TestContext.WriteLine(
+            $"zysk maski wzgledem wolnych: "
+            + $"{medianFree - medianPinned:F2} ms "
+            + $"({100 * (medianFree - medianPinned) / medianFree:F1}%)");
+        TestContext.WriteLine(
+            $"rund, w ktorych maska bila priorytet: "
+            + $"{lowPriority.Zip(pinned, static (p, m) => m < p).Count(x => x)}"
+            + $" z {Rounds}");
+
+        Assert.IsGreaterThan(0, free.Count);
+        Assert.IsTrue(
+            free.Concat(lowPriority).Concat(pinned).All(value => value > 0),
+            "Ktorys blok nie zlapal ani jednej klatki. To awaria pomiaru, "
+                + "nie wynik.");
+    }
+
+    /// <summary>
+    /// Sets priority and affinity on every load generator, ignoring the ones
+    /// that have already gone away.
+    /// </summary>
+    private void ApplyToHogs(ProcessPriorityClass priority, nint affinity)
+    {
+        foreach (Process hog in _load)
+        {
+            try
+            {
+                if (hog.HasExited)
+                {
+                    continue;
+                }
+
+                hog.PriorityClass = priority;
+                hog.ProcessorAffinity = affinity;
+            }
+            catch (Exception exception) when (
+                exception is InvalidOperationException
+                    or System.ComponentModel.Win32Exception)
+            {
+            }
+        }
+    }
+
+    /// <summary>
+    /// Refuses to measure a game that is not putting frames on screen.
+    /// <para>
+    /// A game left running while the desktop is locked or another window has
+    /// focus keeps simulating — measured at three cores busy — but stops
+    /// presenting, so PresentMon has nothing to see. Without this check the
+    /// whole run comes back as zeros, and zeros are indistinguishable from
+    /// "restraint made no difference". That mistake cost a full round of wrong
+    /// conclusions, so the precondition is now part of the test.
+    /// </para>
+    /// </summary>
+    private async Task RequireRenderingAsync(
+        string presentMonPath,
+        int processId)
+    {
+        // Sesja zostaje po kazdym przebiegu, takze zakonczonym normalnie,
+        // i blokuje nastepny. --stop_existing_session tego nie zalatwia.
+        EtwSessionCleanup.StopStaleSessions(
+            EtwSessionCleanup.LegacySessionNames);
+        FrameProfile probe = await MeasureAsync(presentMonPath, processId, 4);
+        if (probe.Percentile99 <= 0)
+        {
+            Assert.Inconclusive(
+                "Gra nie wystawia klatek. Musi być na pierwszym planie, "
+                    + "z odblokowanym ekranem — inaczej dalej liczy świat, "
+                    + "ale nie rysuje, a pomiar zwraca same zera.");
+        }
+
+        TestContext.WriteLine(
+            $"kontrola wstepna: p99 {probe.Percentile99:F2} ms — gra rysuje");
     }
 
     private const int Rounds = 4;
@@ -229,7 +400,8 @@ public sealed class LiveGameFrameTimeTests
         {
             "--process_id", processId.ToString(CultureInfo.InvariantCulture),
             "--output_stdout", "--no_console_stats", "--v2_metrics",
-            "--no_track_input", "--stop_existing_session",
+            "--no_track_input", "--no_track_display", "--no_track_gpu",
+            "--stop_existing_session",
             "--session_name", "gameshift-frametime",
         })
         {

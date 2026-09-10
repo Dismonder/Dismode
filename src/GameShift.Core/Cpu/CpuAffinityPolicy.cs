@@ -64,6 +64,13 @@ public static class CpuAffinityPolicy
     /// A game pinned to fewer cores than this loses more to contention than it
     /// gains from cache locality, so below it we leave the scheduler alone.
     /// </summary>
+    /// <summary>
+    /// Below this a quarter of the machine is too coarse a cut: the
+    /// background work has nowhere to live and the shell starts to
+    /// stutter, trading one kind of jank for another.
+    /// </summary>
+    public const int MinimumLogicalProcessorsForCorner = 8;
+
     public const int MinimumPerformancePhysicalCores = 4;
 
     /// <summary>

@@ -235,3 +235,56 @@ Teza „ten moduł zastąpi Process Lasso" **nie ma na razie żadnego poparcia
 w pomiarze**. Zanim dołoży się do niego cokolwiek, trzeba odpowiedzieć, czy
 scenariusz, w którym miałby pomagać, w ogóle istnieje na tej maszynie —
 a jeśli tak, to dlaczego samo obniżenie priorytetu go nie łapie.
+
+## Przebudowa na twarde maski — 2026-09-10
+
+Wynik zerowy z pomiaru wyżej postawił pytanie: czy zły jest pomysł, czy
+mechanizm. Test trzech warunków na przemian odpowiedział jednoznacznie.
+
+| Warunek | p99 |
+|---|---|
+| tło wolne | 16,80 ms |
+| tło z obniżonym priorytetem — **to robił moduł** | 16,36 ms |
+| tło przypięte na twardo do 4 z 16 wątków | **10,65 ms** |
+
+**−6,15 ms, 36,6%. Maska wygrała z priorytetem w 4 rundach na 4.** Bez
+obciążenia ta sama gra chodziła 9,88 ms — maska odzyskuje niemal całą stratę,
+priorytet nie odzyskiwał nic.
+
+Wyjaśnienie: priorytet i CPU Sets to dla planisty Windows **wskazówki**, które
+przy tylu wątkach liczących, ile ma maszyna, zostają przegłosowane. Maska
+powinowactwa to reguła, której planista złamać nie może.
+
+### Co zmieniono
+
+- `CpuAffinityPolicy` odmawiał na maszynach jednorodnych z uzasadnieniem
+  „wszystkie rdzenie tej samej klasy, przypinanie nic nie zmieni". Dla **gry**
+  to prawda — lokalność cache'u jest wtedy bez znaczenia. Dla **tła** fałsz,
+  bo sedno nie jest w lokalności, tylko w odebraniu rdzeni. Rola `Background`
+  dostaje teraz ćwiartkę maszyny, o ile ma co najmniej osiem wątków
+  logicznych.
+- `JournaledProBalanceActuator` nakłada tę maskę przez `ProcessAffinityAction`
+  — z zapisem do dziennika, bo maska przeżywa śmierć GameShifta i musi
+  zostać co odwrócić. Miękkie CPU Sets zostają obok jako dodatek.
+
+### Pułapka pomiarowa, którą trzeba było zamknąć
+
+Trzy przebiegi wróciły z samymi zerami i **przeszły jako wynik**. Przyczyna:
+gra zostawiona bez fokusu dalej liczy świat — zmierzone trzy rdzenie zajęte —
+ale przestaje wystawiać klatki, więc PresentMon nie ma czego mierzyć. Zero
+klatek i „ograniczanie nic nie dało" wyglądają w liczbach identycznie.
+
+Oba testy mają teraz kontrolę wstępną: krótkie próbne przechwycenie i
+`Inconclusive` z konkretnym powodem, gdy gra nie rysuje. Do tego twarde
+sprawdzenie, że żaden blok nie zwrócił zera.
+
+Drugi problem: pomiar zostawia po sobie sesję ETW `gameshift-frametime` —
+także po przebiegu zakończonym normalnie — a `--stop_existing_session` jej nie
+sprząta. Sesja blokuje potem przechwytywanie **wszystkim** na maszynie.
+Sprząta ją `EtwSessionCleanup`, wołany też z testu przed pomiarem.
+
+### Czego nadal nie wiemy
+
+Wynik 36,6% pochodzi z jednego przebiegu na jednej maszynie i jednej grze,
+przy syntetycznym obciążeniu. Powtórka czeka na moment, gdy gra będzie na
+pierwszym planie.
