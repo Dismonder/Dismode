@@ -821,11 +821,22 @@ public sealed partial class MainWindow : Window, IDisposable
         int physical = CpuTopology.CountPhysicalCores(topology.Processors);
         if (!topology.IsHybrid)
         {
+            // Przypinanie gry rzeczywiscie nic tu nie daje. Przypinanie tla
+            // daje duzo i dlugo mialem to zle — wiec opis musi rozrozniac te
+            // dwie rzeczy, zamiast konczyc sie na "GameShift tego nie robi".
+            CpuAffinityDecision background = CpuAffinityPolicy.Decide(
+                topology,
+                CpuAffinityRole.Background);
             CpuTopologyText.Text =
                 $"{physical} rdzeni, {topology.Processors.Count} wątków, "
                 + "wszystkie tej samej klasy wydajności. Przypinanie gry do "
-                + "rdzeni nic by tu nie zmieniło, więc GameShift tego nie "
-                + "robi.";
+                + "rdzeni nic by tu nie zmieniło. "
+                + (background.ShouldApply
+                    ? "Za to procesy w tle, które zaczną zjadać procesor, "
+                        + "GameShift zamknie w "
+                        + $"{System.Numerics.BitOperations.PopCount(background.Mask)}"
+                        + " wątkach i zostawi grze resztę."
+                    : background.Explanation);
             return;
         }
 

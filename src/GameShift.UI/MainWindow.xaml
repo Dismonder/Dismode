@@ -3156,7 +3156,7 @@
                               x:Name="ProBalanceDescriptionText"
                               Foreground="{ThemeResource GameShiftMutedTextBrush}"
                               FontSize="11"
-                              Text="GameShift obniża priorytet procesom, które zaczynają zjadać procesor już w trakcie gry, i oddaje go po sesji. Powłoki, anti-cheat i samej gry nie dotyka."
+                              Text="Proces w tle, który zaczyna zjadać procesor w trakcie gry, dostaje niższy priorytet i zostaje zamknięty w ćwiartce procesora — resztę GameShift zostawia grze. Zmierzone na 7 Days To Die pod pełnym obciążeniem: p99 czasu klatki 16,80 ms bez tego, 10,65 ms z tym. Wszystko wraca po sesji. Powłoki, anti-cheatu i samej gry GameShift nie dotyka."
                               TextWrapping="Wrap" />
                         </StackPanel>
                         <ToggleSwitch
