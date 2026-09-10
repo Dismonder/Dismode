@@ -55,12 +55,20 @@ Windows App Runtime installation. Building GameShift from source requires:
 ## Build and test
 
 Enable the repository hooks once per clone. GitHub cannot protect `main` on a
-private repository under the Free plan, so the guard against pushing straight
-to `main` lives client-side and only applies where this is set:
+private repository under the Free plan, so these guards live client-side and
+only apply where this is set:
 
 ```powershell
 git config core.hooksPath .githooks
 ```
+
+`pre-commit` refuses commits made straight on `main` and files over 5 MiB.
+`pre-push` refuses pushing to `main`, rewriting its history, and deleting it.
+Each has a deliberate override — `GAMESHIFT_ALLOW_BIG_COMMIT=1` and
+`GAMESHIFT_ALLOW_MAIN_PUSH=1`.
+
+Correctness is checked by CI (`.github/workflows/ci.yml`), which builds the
+solution and runs the suite on every push and pull request.
 
 ```powershell
 dotnet restore GameShift.sln
