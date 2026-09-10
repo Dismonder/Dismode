@@ -100,22 +100,68 @@ public sealed class CpuAffinityPolicyTests
     }
 
     [TestMethod]
-    public void UniformCpuIsLeftAlone()
+    public void UniformCpuLeavesTheGameAlone()
     {
-        // Na jednorodnym procesorze przypinanie niczego nie przenosi, a odbiera
-        // harmonogramowi swobode. Polityka ma odmowic, nie udawac zysku.
-        foreach (CpuAffinityRole role in Enum.GetValues<CpuAffinityRole>())
-        {
-            CpuAffinityDecision decision = CpuAffinityPolicy.Decide(
-                RocketLake(),
-                role);
+        // Gry przypinac nie ma po co: rdzenie sa identyczne i dziela cache,
+        // wiec przeniesienie jej gdziekolwiek niczego nie zmienia, a odbiera
+        // harmonogramowi swobode.
+        CpuAffinityDecision decision = CpuAffinityPolicy.Decide(
+            RocketLake(),
+            CpuAffinityRole.Foreground);
 
-            Assert.IsFalse(decision.ShouldApply, role.ToString());
-            Assert.AreEqual(
-                CpuAffinityDecline.UniformTopology,
-                decision.Decline);
-            Assert.AreEqual(0UL, decision.Mask);
+        Assert.IsFalse(decision.ShouldApply);
+        Assert.AreEqual(
+            CpuAffinityDecline.UniformTopology,
+            decision.Decline);
+        Assert.AreEqual(0UL, decision.Mask);
+    }
+
+    [TestMethod]
+    public void UniformCpuStillConfinesBackground()
+    {
+        // Dla tla ta sama topologia znaczy cos innego i dlugo mialem to zle.
+        // Nie chodzi o lokalnosc cache'u, tylko o odebranie rdzeni: proces
+        // liczacy bez przerwy oddaje je grze dopiero wtedy, gdy nie wolno mu
+        // ich dotknac. Zmierzone na takiej wlasnie maszynie: p99 czasu klatki
+        // 16,80 ms przy wolnym tle, 10,65 ms po zamknieciu tla w cwiartce.
+        CpuAffinityDecision decision = CpuAffinityPolicy.Decide(
+            RocketLake(),
+            CpuAffinityRole.Background);
+
+        Assert.IsTrue(decision.ShouldApply, decision.Explanation);
+        Assert.AreEqual(CpuAffinityDecline.None, decision.Decline);
+        Assert.AreEqual(
+            4,
+            System.Numerics.BitOperations.PopCount(decision.Mask),
+            "Cwiartka z szesnastu watkow to cztery.");
+        Assert.AreEqual(
+            0b1111UL,
+            decision.Mask,
+            "Maska ma obejmowac najnizsze procesory logiczne.");
+    }
+
+    [TestMethod]
+    public void SmallUniformCpuIsLeftAloneEvenForBackground()
+    {
+        // Na czterech watkach cwiartka to jeden watek, a odebranie calego tla
+        // do jednego watku zamula powloke — wymiana jednego rodzaju przyciec
+        // na inny.
+        List<CpuLogicalProcessor> processors = [];
+        byte index = 0;
+        for (uint core = 0; core < 4; core += 2)
+        {
+            processors.Add(new(index, 0, index, core, 0, false, true));
+            index++;
+            processors.Add(new(index, 0, index, core, 0, false, true));
+            index++;
         }
+
+        CpuAffinityDecision decision = CpuAffinityPolicy.Decide(
+            new CpuTopology(processors),
+            CpuAffinityRole.Background);
+
+        Assert.IsFalse(decision.ShouldApply);
+        Assert.AreEqual(0UL, decision.Mask);
     }
 
     /// <summary>

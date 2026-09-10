@@ -19,6 +19,43 @@ namespace GameShift.IntegrationTests.Cpu;
 public sealed class LiveCpuModuleTests
 {
     [TestMethod]
+    [TestCategory("Live")]
+    public void RealTopologyProducesABackgroundMask()
+    {
+        // Ta sciezka nigdy nie wykonala sie na prawdziwym sprzecie, a wlasnie
+        // od niej zalezy, czy zmierzony zysk w ogole trafi do gracza: gdy
+        // maska wraca pusta, aktuator nie ma czego nalozyc i cala funkcja jest
+        // martwa. Raz juz tak bylo — poprawka polityki przepadla miedzy
+        // sesjami, a testy na syntetycznych fikstrurach tego nie zlapaly.
+        CpuTopology? topology = SystemCpuTopologyProvider.Read();
+        Assert.IsNotNull(topology, "Nie udalo sie odczytac topologii.");
+
+        int logical = topology.Processors.Count(
+            processor => processor.LogicalProcessorIndex < 64);
+        if (logical < CpuAffinityPolicy.MinimumLogicalProcessorsForCorner)
+        {
+            Assert.Inconclusive(
+                $"Ta maszyna ma {logical} procesorow logicznych — ponizej "
+                    + "progu, wiec odmowa jest tu poprawna.");
+            return;
+        }
+
+        CpuAffinityDecision decision = CpuAffinityPolicy.Decide(
+            topology,
+            CpuAffinityRole.Background);
+        TestContext.WriteLine(
+            $"{logical} watkow, maska tla 0x{decision.Mask:X} — "
+                + decision.Explanation);
+
+        Assert.IsTrue(decision.ShouldApply, decision.Explanation);
+        Assert.AreNotEqual(0UL, decision.Mask);
+        Assert.IsLessThan(
+            logical,
+            System.Numerics.BitOperations.PopCount(decision.Mask),
+            "Maska tla nie moze obejmowac calej maszyny.");
+    }
+
+    [TestMethod]
     public void TopologyMatchesWhatTheRuntimeReports()
     {
         CpuTopology? topology = SystemCpuTopologyProvider.Read();

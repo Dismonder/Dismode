@@ -366,3 +366,33 @@ Potwierdzenie: `ShippedThresholdsActUnderModerateContention` — jedyny test,
 który nie podmienia żadnego progu. Przed zmianą zero decyzji, po zmianie trzy.
 Zniknął też martwy parametr `systemLoad` nadzorcy, który po przebudowie nic
 już nie robił, a testy nadal go podawały, jakby sterował zachowaniem.
+
+## Funkcja była martwa i testy tego nie łapały — 2026-09-10
+
+Instalatory 0.6.0, 0.6.1 i 0.6.2 zawierały twardą maskę, która **nigdy by się
+nie nałożyła** na jednorodnym procesorze. Poprawka `CpuAffinityPolicy`,
+otwierająca ścieżkę dla roli `Background`, przepadła między sesjami: commit
+`f44a8e6` przeniósł sam stały próg, a metodę `DecideBackgroundCorner` zgubił.
+Gałąź jednorodna nadal odmawiała obu rolom, więc `ResolveBackgroundAffinityMask`
+zwracał zero i aktuator nie miał czego nakładać.
+
+Dlaczego nikt tego nie zauważył: istniejący test `UniformCpuIsLeftAlone`
+wymagał odmowy dla **obu** ról i przechodził — czyli zielony zestaw testów
+aktywnie potwierdzał zepsuty stan. Zmieniłem zachowanie polityki i nie
+dopisałem wtedy ani jednego testu jednostkowego, więc jedyne, co o niej
+mówiło, było napisane pod stare założenie.
+
+Naprawione i pokryte:
+
+- `UniformCpuLeavesTheGameAlone` — gry nadal nie przypinamy, bo przy
+  identycznych rdzeniach i wspólnym cache'u to nic nie zmienia;
+- `UniformCpuStillConfinesBackground` — tło dostaje ćwiartkę, maska obejmuje
+  najniższe procesory logiczne;
+- `SmallUniformCpuIsLeftAloneEvenForBackground` — poniżej ośmiu wątków ćwiartka
+  jest za grubym cięciem i polityka odmawia;
+- `RealTopologyProducesABackgroundMask` — **na prawdziwym sprzęcie**, nie na
+  fikstruze. Na maszynie deweloperskiej: 16 wątków, maska `0xF`.
+
+Wniosek na przyszłość: zmiana zachowania bez własnego testu jest nie tylko
+niepokryta — potrafi być aktywnie maskowana przez test napisany pod poprzednie
+założenie.
