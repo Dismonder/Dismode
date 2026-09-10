@@ -169,15 +169,18 @@ Zapisane tu, żeby nie udawać, że ich nie ma.
   `PrintWindow` z `PW_RENDERFULLCONTENT`. Pulpit wygląda dobrze i spójnie —
   filmowy hero, szyna okładek, czytelna typografia, ciemny motyw bez
   przypadkowych barw.
-- **Jedno do potwierdzenia okiem, dwie sekundy.** Na wszystkich czterech
-  zrzutach — 812, 1445, 2385 i 2545 pikseli szerokości — prawa kolumna pulpitu
-  jest ucięta i karta „FPS na żywo" nie mieści się w oknie. Nadmiar wynosi
-  konsekwentnie około 1,5×, czyli dokładnie tyle, ile wynosi skalowanie
-  ekranu tej maszyny. To pasuje zarówno do prawdziwego defektu układu, jak i do
-  znanego błędu przekształcenia DPI w samym `PrintWindow`, a geometria płótna
-  jest poprawna: żadna karta nie wychodzi poza 1444 piksele. Rozstrzyga jedno
-  spojrzenie na własny ekran — czy karta FPS jest widoczna przy zmaksymalizowanym
-  oknie.
+- **Przycinanie po prawej okazało się wadą pomiaru, nie programu.** Na czterech
+  zrzutach prawa kolumna była ucięta, a nadmiar wynosił stale około 1,5× —
+  dokładnie tyle, ile skalowanie ekranu tej maszyny. Rozstrzygnęła próba
+  kontrolna: ten sam zrzut wykonany na Memory Optimizerze, osobnej aplikacji
+  WinUI ze zwykłym `NavigationView`, dał **identyczne** przycięcie. Standardowy
+  układ nawigacyjny nie może być zepsuty w ten sposób, więc wina leży
+  w `PrintWindow`: przy 150% rysuje treść w rozmiarze logicznym do mapy
+  o rozmiarze fizycznym. Nakładanie się paska powiadomienia na bibliotekę
+  pochodzi z tej samej niezgodności. Pulpit jest poprawny.
+- **Wniosek metodyczny:** obserwacja z niesprawdzonego przyrządu nie jest
+  wynikiem. Kosztowała jedną próbę kontrolną i oszczędziła „naprawy" układu,
+  który działa.
 - **Czego nadal nie da się policzyć:** ciężar wizualny i to, czy hierarchia jest
   czytelna dla oka. Trzy próby wnioskowania o wyglądzie z samych wzorców
   tekstowych dały tego dnia trzy fałszywe alarmy z rzędu, więc przebudowa
