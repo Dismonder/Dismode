@@ -1,3 +1,4 @@
+using GameShift.Core.History;
 using GameShift.Windows.Processes;
 using GameShift.Windows.Sessions;
 
@@ -56,5 +57,37 @@ public sealed class SessionFrameRateStatisticsAccumulatorTests
             16.67d,
             statistics.MaximumFrameTimeMilliseconds,
             0.001d);
+    }
+
+    [TestMethod]
+    public void SteadyFrameTimesDoNotBreakTheInvariant()
+    {
+        // Znalezione przypadkiem, przy zupelnie innym tescie: sesja o bardzo
+        // stabilnych klatkach wywracala zamykanie wyjatkiem "Maximum frame
+        // time cannot be lower than average frame time". Suma trzydziestu
+        // jednakowych wartosci podzielona przez trzydziesci wychodzi o jeden
+        // bit powyzej tej wartosci, wiec maksimum bylo od sredniej mniejsze —
+        // matematycznie niemozliwe, w arytmetyce double jak najbardziej.
+        SessionFrameRateStatisticsAccumulator accumulator = new();
+        for (int index = 0; index < 30; index++)
+        {
+            accumulator.Add(
+                new(
+                    FrameRateStatus.Measuring,
+                    FramesPerSecond: 60d,
+                    FrameTimeMilliseconds: 1000d / 60,
+                    ProcessId: 42,
+                    Message: "steady"));
+        }
+
+        SessionFrameRateStatistics? statistics = accumulator.Snapshot();
+
+        Assert.IsNotNull(statistics);
+        Assert.IsGreaterThanOrEqualTo(
+            statistics.AverageFrameTimeMilliseconds,
+            statistics.MaximumFrameTimeMilliseconds);
+        Assert.IsLessThanOrEqualTo(
+            statistics.AverageFramesPerSecond,
+            statistics.MinimumFramesPerSecond);
     }
 }

@@ -52,14 +52,28 @@ internal sealed class SessionFrameRateStatisticsAccumulator
     {
         lock (_sync)
         {
-            return _sampleCount == 0
-                ? null
-                : new(
-                    _sampleCount,
-                    _framesPerSecondTotal / _sampleCount,
-                    _frameTimeTotal / _sampleCount,
-                    _minimumFramesPerSecond,
-                    _maximumFrameTimeMilliseconds);
+            if (_sampleCount == 0)
+            {
+                return null;
+            }
+
+            double averageFrameTime = _frameTimeTotal / _sampleCount;
+            double averageFramesPerSecond =
+                _framesPerSecondTotal / _sampleCount;
+
+            // Maksimum nie moze byc mniejsze od sredniej, a minimum wieksze —
+            // matematycznie. W arytmetyce zmiennoprzecinkowej moze: suma n
+            // jednakowych wartosci podzielona przez n bywa o jeden bit obok
+            // tej wartosci, i przy stabilnych klatkach dokladnie tak wychodzi.
+            // Konstruktor slusznie odrzuca odwrocone dane, wiec to producent
+            // ma oddac liczby spojne, zamiast wywracac zamykanie sesji na
+            // bledzie reprezentacji.
+            return new(
+                _sampleCount,
+                averageFramesPerSecond,
+                averageFrameTime,
+                Math.Min(_minimumFramesPerSecond, averageFramesPerSecond),
+                Math.Max(_maximumFrameTimeMilliseconds, averageFrameTime));
         }
     }
 
