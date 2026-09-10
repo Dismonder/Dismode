@@ -1407,7 +1407,7 @@
                     HorizontalAlignment="Left"
                     VerticalAlignment="Bottom"
                     Spacing="10">
-                  <StackPanel Orientation="Horizontal" Spacing="9">
+                  <StackPanel Orientation="Horizontal" Spacing="8">
                     <Border
                         Height="23"
                         Padding="9,0"
@@ -1454,7 +1454,7 @@
                         Style="{StaticResource GameShiftPrimaryButtonStyle}"
                         AutomationProperties.Name="Uruchom ostatnio graną grę przez GameShift"
                         Click="OnLibraryHeroLaunchClicked">
-                      <StackPanel Orientation="Horizontal" Spacing="9">
+                      <StackPanel Orientation="Horizontal" Spacing="8">
                         <FontIcon FontSize="14" Glyph="&#xE768;" />
                         <TextBlock Text="Uruchom z GameShift" />
                       </StackPanel>
@@ -1463,7 +1463,7 @@
                         Style="{StaticResource GameShiftSecondaryButtonStyle}"
                         AutomationProperties.Name="Otwórz plan optymalizacji dla ostatnio granej gry"
                         Click="OnLibraryHeroPlanClicked">
-                      <StackPanel Orientation="Horizontal" Spacing="9">
+                      <StackPanel Orientation="Horizontal" Spacing="8">
                         <FontIcon FontSize="14" Glyph="&#xE9D9;" />
                         <TextBlock Text="Dostosuj plan" />
                       </StackPanel>

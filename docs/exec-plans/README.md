@@ -75,7 +75,10 @@ na docelowym sprzęcie. To jest największy dług projektu — nie brak funkcji.
    `-AllowTestCodeSigningCertificate`. Bez prawdziwego certyfikatu żadna
    wersja nie może wyjść poza te dwa komputery.
 7. **Checklista dostępności** — 1080p/4K, DPI 100–200%, wysoki kontrast,
-   Narrator. Ręczna, nigdy nieprzeprowadzona.
+   Narrator. Część automatyczna zrobiona 2026-09-10: kontrast całej palety
+   liczony przy każdym budowaniu, i każda kontrolka interaktywna ma nazwę dla
+   czytnika ekranu (było siedem bez). Rozdzielczości i skalowanie DPI nadal
+   wymagają obejrzenia okna.
 
 ### Na końcu: rozbudowa
 
@@ -107,6 +110,12 @@ Zapisane tu, żeby nie udawać, że ich nie ma.
   `MinimumRestraint` i `Cooldown` nadal pochodzą z założeń, nie z pomiaru.
 - **Cztery testy integracyjne są pomijane** — wymagają uprawnień
   administratora albo realnego obciążenia procesora.
+- **Kompozycja zakładek nie została oceniona wzrokowo.** Sprawdzone i naprawione
+  zostało to, co da się policzyć z kodu: kontrast (WCAG, z komponowaniem
+  przezroczystości), nazwy dla czytnika ekranu, ryzyko ucinania tekstu,
+  promienie i rytm odstępów. Układ, hierarchia i proporcje wymagają
+  zobaczenia okna — a trzy próby wnioskowania o wyglądzie z samego kodu dały
+  tego dnia trzy fałszywe alarmy z rzędu.
 - W magazynie certyfikatów użytkownika leży około czterdziestu porzuconych
   certyfikatów deweloperskich `CN=GameShift Development` z kolejnych buildów.
   Do posprzątania; żaden nie jest w Zaufanych głównych ani Zaufanych wydawcach.
