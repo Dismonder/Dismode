@@ -855,6 +855,180 @@ public sealed class GameSessionOrchestratorTests
     }
 
     [TestMethod]
+    [TestCategory("Live")]
+    [Timeout(180_000)]
+    public async Task RunningSessionActuallyConfinesABusyBackgroundProcess()
+    {
+        // Kazde ogniwo bylo zmierzone osobno: polityka daje maske, aktuator ja
+        // naklada i zdejmuje, przelacznik powoluje petle, a maska poprawia p99
+        // czasu klatki o 26%. Brakowalo dowodu, ze dzialaja razem — a wlasnie
+        // tam raz juz przepadla cala funkcja, bo poprawka polityki zgubila sie
+        // miedzy sesjami i nikt tego nie zauwazyl.
+        //
+        // Rola gry przypada harnessowi, wiec test nie potrzebuje ani gry,
+        // ani PresentMon. Sprawdza jedno: czy w prawdziwej sesji, przy
+        // domyslnych progach, proces liczacy bez przerwy dostaje maske i czy
+        // ja oddaje po zakonczeniu.
+        CpuAffinityDecision expected = CpuAffinityPolicy.Decide(
+            SystemCpuTopologyProvider.Read(),
+            CpuAffinityRole.Background);
+        if (!expected.ShouldApply)
+        {
+            Assert.Inconclusive(
+                "Ta maszyna nie kwalifikuje sie do maski tla: "
+                    + expected.Explanation);
+            return;
+        }
+
+        string directory = CreateTestDirectory();
+        string readyFile = Path.Combine(directory, "game.ready");
+        int? gameProcessId = null;
+        List<Process> hogs = [];
+        SqliteUserDataStore store = new(Path.Combine(directory, "user.db"));
+        AppendOnlyRecoveryJournal journal =
+            new(Path.Combine(directory, "recovery.jsonl"));
+        LocalGameSessionOrchestrator orchestrator = new(
+            store,
+            store,
+            journal,
+            monitorInterval: TimeSpan.FromMilliseconds(100),
+            frameRateProvider: new ConstantFrameRateProvider(),
+            enableProBalance: true);
+
+        try
+        {
+            ManualGameProfile profile =
+                await CreateHarnessProfileAsync(readyFile);
+            await store.UpsertAsync(profile, CancellationToken.None);
+            await orchestrator.InitializeAsync(CancellationToken.None);
+            SessionPlanPreview plan = await orchestrator.PrepareAsync(
+                profile.ProfileId,
+                CancellationToken.None);
+            await orchestrator.StartAsync(
+                plan.PlanId,
+                plan.SessionId,
+                CancellationToken.None);
+            await WaitForFileAsync(readyFile);
+            gameProcessId = ReadProcessId(readyFile);
+
+            // Dwa procesy liczace bez przerwy: powyzej progu pojedynczego
+            // procesu i powyzej progu tla.
+            for (int index = 0; index < 2; index++)
+            {
+                hogs.Add(StartCpuHog());
+            }
+
+            nint before = hogs[0].ProcessorAffinity;
+            Assert.AreNotEqual(
+                (nint)(long)expected.Mask,
+                before,
+                "Proces juz ma maske tla; test nic by nie pokazal.");
+
+            bool confined = await WaitUntilAsync(
+                () => hogs.Any(hog =>
+                {
+                    hog.Refresh();
+                    return !hog.HasExited
+                        && (ulong)hog.ProcessorAffinity.ToInt64()
+                            == expected.Mask;
+                }),
+                TimeSpan.FromSeconds(60));
+
+            Assert.IsTrue(
+                confined,
+                "Zaden proces liczacy nie dostal maski tla w ciagu minuty. "
+                    + "Sesja dziala, wiec albo bramka nie przepuscila, albo "
+                    + "aktuator nie nalozyl maski — w obu przypadkach zysk "
+                    + "zmierzony na czasach klatek nie trafi do gracza.");
+
+            await orchestrator.RestoreAsync(
+                plan.SessionId,
+                CancellationToken.None);
+
+            bool restored = await WaitUntilAsync(
+                () => hogs.All(hog =>
+                {
+                    hog.Refresh();
+                    return hog.HasExited
+                        || (ulong)hog.ProcessorAffinity.ToInt64()
+                            != expected.Mask;
+                }),
+                TimeSpan.FromSeconds(30));
+            Assert.IsTrue(
+                restored,
+                "Maska nie wrocila po zakonczeniu sesji. Proces zostalby "
+                    + "zamkniety w cwiartce maszyny na stale.");
+        }
+        finally
+        {
+            foreach (Process hog in hogs)
+            {
+                try
+                {
+                    if (!hog.HasExited)
+                    {
+                        hog.Kill(entireProcessTree: true);
+                    }
+                }
+                catch (Exception exception) when (
+                    exception is InvalidOperationException
+                        or System.ComponentModel.Win32Exception)
+                {
+                }
+
+                hog.Dispose();
+            }
+
+            if (gameProcessId is not null)
+            {
+                await CloseProcessAsync(gameProcessId.Value);
+            }
+
+            await orchestrator.DisposeAsync();
+            journal.Dispose();
+            store.Dispose();
+            DeleteDirectory(directory);
+        }
+    }
+
+    private static Process StartCpuHog()
+    {
+        ProcessStartInfo startInfo = new()
+        {
+            FileName = "powershell.exe",
+            UseShellExecute = false,
+            CreateNoWindow = true,
+        };
+        startInfo.ArgumentList.Add("-NoProfile");
+        startInfo.ArgumentList.Add("-NonInteractive");
+        startInfo.ArgumentList.Add("-Command");
+        startInfo.ArgumentList.Add(
+            "$end = (Get-Date).AddMinutes(3); "
+                + "while ((Get-Date) -lt $end) { $null = 1 }");
+        return Process.Start(startInfo)
+            ?? throw new InvalidOperationException(
+                "Nie udalo sie uruchomic procesu obciazajacego.");
+    }
+
+    private static async Task<bool> WaitUntilAsync(
+        Func<bool> condition,
+        TimeSpan timeout)
+    {
+        DateTimeOffset deadline = DateTimeOffset.UtcNow + timeout;
+        while (DateTimeOffset.UtcNow < deadline)
+        {
+            if (condition())
+            {
+                return true;
+            }
+
+            await Task.Delay(500);
+        }
+
+        return condition();
+    }
+
+    [TestMethod]
     [DataRow(true, DisplayName = "przelacznik wlaczony")]
     [DataRow(false, DisplayName = "przelacznik wylaczony")]
     public async Task ProBalanceToggleReachesTheCpuModule(bool enabled)
