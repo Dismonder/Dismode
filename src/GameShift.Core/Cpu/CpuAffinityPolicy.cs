@@ -80,6 +80,48 @@ public static class CpuAffinityPolicy
     /// </summary>
     public const int MinimumEfficiencyPhysicalCores = 2;
 
+    /// <summary>
+    /// Corner of a uniform machine that background work is confined to: the
+    /// lowest quarter of the logical processors, never fewer than two.
+    /// <para>
+    /// The share is the one that was measured, not a guess — four of sixteen
+    /// threads. Below <see cref="MinimumLogicalProcessorsForCorner"/> a quarter
+    /// is too coarse a cut: the background has nowhere to live and the shell
+    /// starts to stutter, which trades one kind of jank for another.
+    /// </para>
+    /// </summary>
+    private static CpuAffinityDecision DecideBackgroundCorner(
+        CpuTopology topology)
+    {
+        List<CpuLogicalProcessor> usable = [.. topology.Processors
+            .Where(processor => processor.LogicalProcessorIndex < 64)
+            .OrderBy(processor => processor.LogicalProcessorIndex)];
+        if (usable.Count < MinimumLogicalProcessorsForCorner)
+        {
+            return new(
+                false,
+                0,
+                CpuAffinityDecline.UniformTopology,
+                $"Ta maszyna ma {usable.Count} procesorów logicznych. "
+                    + "Odebranie ćwiartki z tak małej puli częściej szkodzi, "
+                    + "niż pomaga.");
+        }
+
+        int corner = Math.Max(2, usable.Count / 4);
+        ulong mask = 0;
+        foreach (CpuLogicalProcessor processor in usable.Take(corner))
+        {
+            mask |= 1UL << processor.LogicalProcessorIndex;
+        }
+
+        return new(
+            true,
+            mask,
+            CpuAffinityDecline.None,
+            $"Procesy w tle dostają {corner} z {usable.Count} procesorów "
+                + "logicznych. Resztę maszyny zostawiamy grze.");
+    }
+
     public static CpuAffinityDecision Decide(
         CpuTopology? topology,
         CpuAffinityRole role)
@@ -111,14 +153,32 @@ public static class CpuAffinityPolicy
             // rozrzucone po obu stronach tej granicy rozmawiaja przez pamiec
             // zamiast przez wspolny cache, a klasa wydajnosci nic o tym nie
             // mowi.
-            return topology.HasSeparateCacheGroups
-                ? DecideByCacheGroup(topology, role)
+            if (topology.HasSeparateCacheGroups)
+            {
+                return DecideByCacheGroup(topology, role);
+            }
+
+            // Dla gry to koniec: gdy rdzenie sa identyczne i dziela cache,
+            // przypiecie jej gdziekolwiek niczego nie zmienia. Dla tla jest
+            // odwrotnie i dlugo mialem to zle. Chodzi nie o lokalnosc cache'u,
+            // tylko o odebranie rdzeni: proces liczacy bez przerwy oddaje je
+            // grze dopiero wtedy, gdy nie wolno mu ich dotknac.
+            //
+            // Zmierzone 2026-09-10 na i7-11700F (8 rdzeni, 16 watkow,
+            // jednorodny) w 7 Days To Die, p99 czasu klatki przy tylu petlach
+            // liczacych, ile watkow ma maszyna: 16,80 ms gdy tlo bylo wolne,
+            // 16,36 ms po samym obnizeniu priorytetu — czyli nic — i 10,65 ms
+            // po zamknieciu tla w cwiartce maszyny. Maska wygrala z priorytetem
+            // w kazdej z czterech rund, i powtorzylo sie to przy innych
+            // ustawieniach graficznych: 12,31 / 12,23 / 9,06 ms.
+            return role == CpuAffinityRole.Background
+                ? DecideBackgroundCorner(topology)
                 : new(
                     false,
                     0,
                     CpuAffinityDecline.UniformTopology,
                     "Wszystkie rdzenie są tej samej klasy wydajności i dzielą "
-                        + "wspólny cache, więc przypinanie niczego by nie "
+                        + "wspólny cache, więc przypinanie gry niczego by nie "
                         + "zmieniło.");
         }
 

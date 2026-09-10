@@ -3,7 +3,7 @@
 Spis wszystkich planów i uczciwy stan każdego z nich. Aktualizowany razem
 z wydaniem.
 
-Stan na: 2026-09-10, wydanie **0.6.2**
+Stan na: 2026-09-10, wydanie **0.6.3**
 
 ## Zasada
 
