@@ -21,6 +21,18 @@ internal static class SessionHostUpdatePreparation
     {
         try
         {
+            // Instalacje OptiScalera nie sa w journalu — maja wlasne manifesty,
+            // bo dotycza katalogow gier, a nie ustawien systemu. Odinstalowanie
+            // GameShifta zostawiloby te pliki w kazdej grze i zabralo jedyne
+            // narzedzie, ktore potrafi je stamtad usunac.
+            if (restoreSystemOptimizer
+                && OptiScalerInstallationSurvey.Describe()
+                    is string outstanding)
+            {
+                Console.Error.WriteLine(outstanding);
+                return 8;
+            }
+
             RecoveryJournalInspection before =
                 await RecoveryJournalInspector.InspectAsync(
                     GameShiftStoragePaths.UserRecoveryJournalPath,

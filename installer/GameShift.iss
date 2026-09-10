@@ -581,6 +581,12 @@ begin
     ErrorMessage :=
       'Nie można odinstalować System Optimizer, ponieważ restore nie został ' +
       'potwierdzony. Usługa i dane recovery pozostają zachowane.'
+  else if ResultCode = 8 then
+    ErrorMessage :=
+      'OptiScaler jest nadal zainstalowany w katalogach gier. Usunięcie ' +
+      'GameShift zostawi tam jego pliki i zabierze jedyne narzędzie, które ' +
+      'potrafi je stamtąd usunąć. Otwórz GameShift, usuń OptiScaler dla ' +
+      'każdej gry, która go ma, i dopiero wtedy odinstaluj program.'
   else
     ErrorMessage :=
       'Nie udało się zamknąć wyłącznie składników GameShift z katalogu ' +
