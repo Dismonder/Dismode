@@ -164,10 +164,24 @@ Zapisane tu, żeby nie udawać, że ich nie ma.
   Otwarta pozostaje różnica między zakładkami: karty treści mają 22
   w Diagnostyce i Aktualizacjach, a 20 w Planie. Nie ma dowodu, że któraś
   wartość jest zła, więc nie ruszono jej.
-- **Czego nie da się policzyć:** proporcje, ciężar wizualny, to czy hierarchia
-  jest czytelna dla oka. Trzy próby wnioskowania o wyglądzie z samych wzorców
+- **Zakładki zostały zobaczone 2026-09-10**, bez przejmowania ekranu: interfejs
+  uruchomiony z `--background`, okno pokazane bez aktywacji i zrzucone przez
+  `PrintWindow` z `PW_RENDERFULLCONTENT`. Pulpit wygląda dobrze i spójnie —
+  filmowy hero, szyna okładek, czytelna typografia, ciemny motyw bez
+  przypadkowych barw.
+- **Jedno do potwierdzenia okiem, dwie sekundy.** Na wszystkich czterech
+  zrzutach — 812, 1445, 2385 i 2545 pikseli szerokości — prawa kolumna pulpitu
+  jest ucięta i karta „FPS na żywo" nie mieści się w oknie. Nadmiar wynosi
+  konsekwentnie około 1,5×, czyli dokładnie tyle, ile wynosi skalowanie
+  ekranu tej maszyny. To pasuje zarówno do prawdziwego defektu układu, jak i do
+  znanego błędu przekształcenia DPI w samym `PrintWindow`, a geometria płótna
+  jest poprawna: żadna karta nie wychodzi poza 1444 piksele. Rozstrzyga jedno
+  spojrzenie na własny ekran — czy karta FPS jest widoczna przy zmaksymalizowanym
+  oknie.
+- **Czego nadal nie da się policzyć:** ciężar wizualny i to, czy hierarchia jest
+  czytelna dla oka. Trzy próby wnioskowania o wyglądzie z samych wzorców
   tekstowych dały tego dnia trzy fałszywe alarmy z rzędu, więc przebudowa
-  układu bez zobaczenia okna jest odłożona, a nie odfajkowana.
+  układu bez potwierdzenia pozostaje odłożona, a nie odfajkowana.
 - W magazynie certyfikatów użytkownika leży około czterdziestu porzuconych
   certyfikatów deweloperskich `CN=GameShift Development` z kolejnych buildów.
   Do posprzątania; żaden nie jest w Zaufanych głównych ani Zaufanych wydawcach.
