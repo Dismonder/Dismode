@@ -2123,7 +2123,12 @@ public sealed partial class MainWindow : Window, IDisposable
                 return;
             }
 
-            _isBusy = true;
+            // SetBusy, nie samo _isBusy: instalacja ma wlasne okno postepu,
+            // ale deinstalacja nie ma zadnego, a sprawdza sumy kontrolne
+            // wszystkich zainstalowanych plikow i przywraca kopie zapasowe.
+            // Przy samej fladze przyciski wygladaja na aktywne i po cichu
+            // ignoruja klikniecia, co czyta sie jako zawieszony program.
+            SetBusy(true);
             OptiScalerOperationResult operation;
             try
             {
@@ -2185,8 +2190,7 @@ public sealed partial class MainWindow : Window, IDisposable
             }
             finally
             {
-                _isBusy = false;
-                UpdateSessionControls();
+                SetBusy(false);
             }
 
             await ShowOptiScalerResultAsync(
