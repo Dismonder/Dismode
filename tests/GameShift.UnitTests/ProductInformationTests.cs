@@ -13,14 +13,15 @@ public sealed class ProductInformationTests
             .GetName()
             .Version!;
 
+        // Chodzi o to, ze wersja plynie z metadanych zespolu, a nie o to, jaka
+        // akurat jest. Przypiecie dosownej wartosci zamienialo kazdy bump
+        // wersji w recznaa poprawke tego testu — i wlasnie tak przeoczylismy
+        // 0.5.1.
         Assert.AreEqual(
             expected: assemblyVersion.ToString(3),
             actual: ProductInformation.CurrentVersion);
         Assert.AreEqual(
-            expected: "0.5.0",
-            actual: assemblyVersion.ToString(3));
-        Assert.AreEqual(
-            expected: "GameShift 0.5.0 Gaming Edition",
+            expected: $"GameShift {assemblyVersion.ToString(3)} Gaming Edition",
             actual: ProductInformation.FullDisplayName);
         Assert.IsNotNull(
             typeof(ProductInformation).GetProperty(

@@ -21,7 +21,13 @@ public sealed class ReleaseVersionAndUpdateUiContractTests
         XElement informationalVersion = group.Element(
             "InformationalVersion")!;
 
-        Assert.AreEqual("0.5.0", version.Value);
+        // Kontraktem jest "jeden literal, reszta z niego wynika", a nie sama
+        // liczba. Przypiecie wartosci wymagalo recznej poprawki testu przy
+        // kazdym wydaniu i dlatego przepuscilismy 0.5.1.
+        StringAssert.Matches(
+            version.Value,
+            new Regex(@"^\d+\.\d+\.\d+$"),
+            "Version musi byc trzyczlonowym SemVer.");
         Assert.AreEqual("$(Version).0", assemblyVersion.Value);
         Assert.AreEqual("$(Version).0", fileVersion.Value);
         Assert.AreEqual(
