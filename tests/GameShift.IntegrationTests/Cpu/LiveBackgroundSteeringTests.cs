@@ -133,8 +133,9 @@ public sealed class LiveBackgroundSteeringTests
     [Timeout(120_000)]
     public async Task SteeringNeverNarrowsTheProcessAffinityMask()
     {
-        // Sterowanie ma pozostac podpowiedzia. Gdyby zwezalo maske, moglibysmy
-        // zatrzymac cudzy proces, ktorego nikt nie prosil nas ruszac.
+        // Sterowanie zbiorami ma pozostac podpowiedzia — zwezanie maski jest
+        // osobna, jawnie podana decyzja, ktora sprawdza test nizej. Tutaj
+        // aktuator nie dostaje maski, wiec nie ma prawa niczego zwezic.
         CpuTopology topology = SystemCpuTopologyProvider.Read()!;
         if (topology.Processors.Count < 4)
         {
@@ -162,6 +163,65 @@ public sealed class LiveBackgroundSteeringTests
             maskBefore,
             (ulong)_target.ProcessorAffinity.ToInt64(),
             "Sterowanie zwezilo maske affinity procesu.");
+    }
+
+    [TestMethod]
+    [Timeout(120_000)]
+    public async Task HardMaskConfinesTheProcessAndIsPutBackOnRelease()
+    {
+        // To jest mechanizm, ktory realnie rusza czasy klatek. Zmierzone na
+        // 7 Days To Die pod pelnym obciazeniem: samo obnizenie priorytetu
+        // przesunelo p99 z 16,80 ms na 16,36 ms, czyli w granicach szumu,
+        // a zamkniecie tla w cwiartce maszyny na 10,65 ms. Roznica bierze sie
+        // stad, ze priorytet planista wazy, a maski zlamac nie moze — wiec
+        // maska musi realnie zwezic proces, i musi wrocic.
+        CpuTopology topology = SystemCpuTopologyProvider.Read()!;
+        if (topology.Processors.Count < 4)
+        {
+            Assert.Inconclusive(
+                "Potrzebne co najmniej cztery procesory logiczne.");
+            return;
+        }
+
+        _target = StartSpinner();
+        _target.Refresh();
+        ulong maskBefore = (ulong)_target.ProcessorAffinity.ToInt64();
+        ulong corner = 0b11;
+        Assert.AreNotEqual(
+            maskBefore,
+            corner,
+            "Proces juz siedzi w rogu maszyny; test nic by nie pokazal.");
+
+        AppendOnlyRecoveryJournal journal =
+            new(Path.Combine(_directory, "recovery-mask.jsonl"));
+        ProcessRuntimeKey key =
+            new(_target.Id, _target.StartTime.ToUniversalTime());
+        JournaledProBalanceActuator actuator = new(
+            journal,
+            new SessionId(Guid.NewGuid()),
+            backgroundAffinityMask: corner);
+
+        Assert.IsTrue(
+            await actuator.RestrainAsync(key, CancellationToken.None),
+            "Ograniczenie nie doszlo do skutku.");
+
+        _target.Refresh();
+        Assert.AreEqual(
+            corner,
+            (ulong)_target.ProcessorAffinity.ToInt64(),
+            "Maska nie zostala nalozona, wiec planista dalej moze dac temu "
+                + "procesowi kazdy rdzen.");
+
+        Assert.IsTrue(
+            await actuator.ReleaseAsync(key, CancellationToken.None),
+            "Zwolnienie nie doszlo do skutku.");
+
+        _target.Refresh();
+        Assert.AreEqual(
+            maskBefore,
+            (ulong)_target.ProcessorAffinity.ToInt64(),
+            "Maska nie wrocila. Proces zostalby zamkniety w rogu maszyny "
+                + "po zakonczeniu sesji.");
     }
 
     private static Process StartSpinner()
