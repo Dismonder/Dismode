@@ -3963,24 +3963,56 @@ public sealed partial class MainWindow : Window, IDisposable
             DashboardSystemAgentStatusGlyph);
     }
 
+    /// <summary>
+    /// Reads the Memory Optimizer's state. It is a separate process talking
+    /// over IPC, so "not running" is a normal answer and must not be able to
+    /// take the window down with it — this runs on the startup path, inside an
+    /// async void handler, where an escaping exception ends the process before
+    /// the user sees anything at all.
+    /// </summary>
     private async Task RefreshMemoryOptimizerStatusAsync(
         CancellationToken cancellationToken)
     {
-        MemoryOptimizerComponentSnapshot snapshot =
-            await _memoryOptimizer.GetStatusAsync(cancellationToken);
-        MemoryOptimizerStatusText.Text = snapshot.DisplayState;
-        MemoryOptimizerDetailsText.Text = snapshot.Details;
-        OpenMemoryOptimizerButton.IsEnabled = snapshot.CanOpen;
+        try
+        {
+            MemoryOptimizerComponentSnapshot snapshot =
+                await _memoryOptimizer.GetStatusAsync(cancellationToken);
+            MemoryOptimizerStatusText.Text = snapshot.DisplayState;
+            MemoryOptimizerDetailsText.Text = snapshot.Details;
+            OpenMemoryOptimizerButton.IsEnabled = snapshot.CanOpen;
+        }
+        catch (Exception exception) when (IsExpectedUiFailure(exception))
+        {
+            MemoryOptimizerStatusText.Text = "Niedostępny";
+            MemoryOptimizerDetailsText.Text =
+                "Nie udało się odczytać stanu: " + exception.Message;
+            OpenMemoryOptimizerButton.IsEnabled = false;
+        }
     }
 
+    /// <summary>
+    /// Same story as the Memory Optimizer above: a Windows service that may
+    /// simply not be installed. Its absence is information to show, not a
+    /// reason to fail to start.
+    /// </summary>
     private async Task RefreshSystemOptimizerStatusAsync(
         CancellationToken cancellationToken)
     {
-        SystemOptimizerComponentSnapshot snapshot =
-            await _systemOptimizer.GetStatusAsync(cancellationToken);
-        SystemOptimizerStatusText.Text = snapshot.DisplayState;
-        SystemOptimizerProfileText.Text = snapshot.Details;
-        OpenSystemOptimizerButton.IsEnabled = snapshot.CanOpen;
+        try
+        {
+            SystemOptimizerComponentSnapshot snapshot =
+                await _systemOptimizer.GetStatusAsync(cancellationToken);
+            SystemOptimizerStatusText.Text = snapshot.DisplayState;
+            SystemOptimizerProfileText.Text = snapshot.Details;
+            OpenSystemOptimizerButton.IsEnabled = snapshot.CanOpen;
+        }
+        catch (Exception exception) when (IsExpectedUiFailure(exception))
+        {
+            SystemOptimizerStatusText.Text = "Niedostępny";
+            SystemOptimizerProfileText.Text =
+                "Nie udało się odczytać stanu: " + exception.Message;
+            OpenSystemOptimizerButton.IsEnabled = false;
+        }
     }
 
     private async Task RefreshDashboardRecoveryStatusAsync(
@@ -4847,12 +4879,38 @@ public sealed partial class MainWindow : Window, IDisposable
         Guid? selectedProfileId =
             (ProfilesList.SelectedItem as ProfileListItem)?
                 .Profile.ProfileId.Value;
-        IReadOnlyList<ManualGameProfile> profiles =
-            await _userDataStore.ListAsync(cancellationToken);
-        IReadOnlyList<GameMetadata> metadata =
-            await _userDataStore.ListMetadataAsync(cancellationToken);
+        IReadOnlyList<ManualGameProfile> profiles;
+        IReadOnlyList<GameMetadata> metadata;
+        try
+        {
+            profiles = await _userDataStore.ListAsync(cancellationToken);
+            metadata =
+                await _userDataStore.ListMetadataAsync(cancellationToken);
+        }
+        catch (Exception exception) when (IsExpectedUiFailure(exception))
+        {
+            // Baza profili moze byc zajeta albo uszkodzona. Wolimy okno
+            // z pusta biblioteka i wyjasnieniem niz proces, ktory znika przed
+            // pokazaniem czegokolwiek — ta metoda biegnie na sciezce startowej
+            // wewnatrz async void.
+            ShowInfo(
+                DashboardInfoBar,
+                InfoBarSeverity.Error,
+                "Nie udało się wczytać biblioteki gier",
+                exception.Message);
+            return;
+        }
+        // Nie ToDictionary: dwa wpisy metadanych dla jednego profilu rzucaja
+        // ArgumentException, a stad jest tylko do async void na sciezce
+        // startowej. Uszkodzony wiersz w bazie zamykalby wtedy droge do
+        // uruchomienia programu na stale, bez zadnego komunikatu. Wygrywa
+        // ostatni wpis; gorsze niz wybor jest brak okna.
         Dictionary<Core.Domain.Identifiers.GameProfileId, GameMetadata>
-            metadataByProfile = metadata.ToDictionary(item => item.ProfileId);
+            metadataByProfile = [];
+        foreach (GameMetadata entry in metadata)
+        {
+            metadataByProfile[entry.ProfileId] = entry;
+        }
         _profiles.Clear();
         List<ProfileListItem> profileItems = new(profiles.Count);
         foreach (ManualGameProfile profile in profiles)
