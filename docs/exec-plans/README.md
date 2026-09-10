@@ -92,6 +92,27 @@ modułu, o którym nie wiemy, czy działa, tylko powiększa dług.
 - zapisywane per gra ustawienia CPU;
 - wsparcie powyżej 64 procesorów logicznych.
 
+## Sesja 2026-09-10 — co naprawiono
+
+Zapis dla pamięci, bo część z tych rzeczy nie miała żadnego zgłoszenia i wyszła
+dopiero z pomiaru albo z przeglądu.
+
+| Obszar | Defekt | Jak znaleziony |
+|---|---|---|
+| moduł CPU | priorytet nie dawał nic, a bywał szkodliwy; twarda maska daje **60,7%** lepsze p99 | pomiar parowany na żywej rozgrywce |
+| pomiar FPS | nie działał **nikomu na maszynie** — porzucona sesja ETW | eliminacja hipotez, ostatnia obalona pomiarem |
+| aktualizacja | okno na podmianę instalatora między weryfikacją a uruchomieniem z podniesieniem uprawnień | przegląd ścieżki zaufania |
+| dziennik odzyskiwania | zanik zasilania w trakcie zapisu unieruchamiał go na stałe, bez ścieżki naprawy | przegląd trwałości |
+| uruchamianie | trzy ścieżki mogły uniemożliwić otwarcie okna, w tym duplikat identyfikatora blokujący start na zawsze | audyt `async void` |
+| OptiScaler | deinstalacja wyglądała jak zawieszony program | audyt flagi zajętości |
+| dostępność | siedem kontrolek niewidzialnych dla czytnika ekranu | parser drzewa XAML |
+| kontrast | skala wykresu czasu klatki przy 2,18 wobec wymaganych 4,5 | obliczenie WCAG |
+
+Sprawdzone i **odrzucone** jako nieistniejące: wycieki subskrypcji zdarzeń,
+nieopakowane pary `SetBusy`, ucinanie tekstu przy długich nazwach gier,
+brak przewijania zakładek, odmowa czytania uszkodzonego manifestu OptiScalera.
+Wynik ujemny też jest wynikiem i lepiej go zapisać, niż produkować poprawkę.
+
 ## Znane luki w testach
 
 Zapisane tu, żeby nie udawać, że ich nie ma.
