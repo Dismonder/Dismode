@@ -52,6 +52,9 @@ public sealed class LocalGameSessionOrchestrator : IAsyncDisposable
     private readonly TimeSpan _monitorInterval;
     private readonly bool _proBalanceEnabled;
     private readonly ProBalanceSettings? _proBalanceSettings;
+    private readonly Func<ICpuProcessSource> _cpuProcessSourceFactory;
+    private readonly Func<SessionId, IProBalanceActuator>?
+        _proBalanceActuatorFactory;
     private readonly SemaphoreSlim _gate = new(1, 1);
     private readonly CancellationTokenSource _lifetime = new();
     private PendingPlan? _pendingPlan;
@@ -78,7 +81,9 @@ public sealed class LocalGameSessionOrchestrator : IAsyncDisposable
         GameMetadataRefreshService? metadataRefreshService = null,
         ISystemGameProfileCoordinator? systemProfileCoordinator = null,
         bool enableProBalance = false,
-        ProBalanceSettings? proBalanceSettings = null)
+        ProBalanceSettings? proBalanceSettings = null,
+        Func<ICpuProcessSource>? cpuProcessSourceFactory = null,
+        Func<SessionId, IProBalanceActuator>? proBalanceActuatorFactory = null)
     {
         _profiles = profiles;
         _history = history;
@@ -116,6 +121,14 @@ public sealed class LocalGameSessionOrchestrator : IAsyncDisposable
         // Progi sa wystawione, bo maja byc dostrajane pomiarem czasow klatek,
         // a nie przyjete raz na zawsze.
         _proBalanceSettings = proBalanceSettings;
+
+        // Szew do testow. Domyslnie te same obiekty co zawsze — chodzi o to,
+        // zeby dalo sie sprawdzic, czy przelacznik w interfejsie faktycznie
+        // konczy sie ograniczeniem procesu, bez czekania na prawdziwe
+        // obciazenie procesora.
+        _cpuProcessSourceFactory =
+            cpuProcessSourceFactory ?? (static () => new CpuProcessSampler());
+        _proBalanceActuatorFactory = proBalanceActuatorFactory;
 
         if (_monitorInterval <= TimeSpan.Zero
             || _monitorInterval > TimeSpan.FromMinutes(1))
@@ -1205,14 +1218,17 @@ public sealed class LocalGameSessionOrchestrator : IAsyncDisposable
 
         try
         {
-            ProBalanceSupervisor supervisor = new(
-                new CpuProcessSampler(),
-                new JournaledProBalanceActuator(
+            IProBalanceActuator actuator =
+                _proBalanceActuatorFactory?.Invoke(runtime.SessionId)
+                ?? new JournaledProBalanceActuator(
                     _journal,
                     runtime.SessionId,
                     _identityProvider,
                     _timeProvider,
-                    ResolveBackgroundCpuSetIds()),
+                    ResolveBackgroundCpuSetIds());
+            ProBalanceSupervisor supervisor = new(
+                _cpuProcessSourceFactory(),
+                actuator,
                 () => runtime.ProcessTree
                     .GetKnownProcesses()
                     .Select(identity => identity.RuntimeKey.ProcessId)

@@ -35,15 +35,23 @@ rzeczy i w tych dokumentach nigdy nie są mieszane.
 Nie po ważności, tylko po tym, co odblokowuje co. Każda pozycja kończy się
 faktem, który można pokazać.
 
+### Zakres: decyzja z 2026-09-10
+
+Funkcje dodatkowe OptiScalera — DLSS Neural Rendering i katalog wymagań per gra
+— zostają **zaparkowane** na życzenie użytkownika. Kod jest kompletny i wydany
+w 0.5.2, runbook potwierdzenia leży w planie modułu i czeka na maszynę `ERYK`.
+Nic z tego nie jest już motorem rozwoju.
+
+Rozwój idzie w wydajność i realne działanie: żeby to, co GameShift deklaruje,
+dało się zmierzyć i zobaczyć.
+
 ### Teraz: potwierdzić to, co już napisane
 
 Cztery moduły są „gotowe w kodzie" i żaden nie został zobaczony w działaniu
 na docelowym sprzęcie. To jest największy dług projektu — nie brak funkcji.
 
-1. **OptiScaler w RE9 na `ERYK`** — czy mod w ogóle wstaje po zmianie na
-   metodę 1, i czy Neural Rendering się odblokowuje. Szczegóły: N1–N3
-   w planie modułu.
-2. **Nakładka FPS na 0.5.1** — czy pokazuje liczby przy grze odpalonej spoza
+1. ~~**OptiScaler w RE9 na `ERYK`**~~ — zaparkowane, patrz wyżej.
+2. **Nakładka FPS na 0.5.2** — czy pokazuje liczby przy grze odpalonej spoza
    GameShifta, czy nie migocze przy alt-tabie, czy wykres mieści się w ramce.
    Przebudowana w 0.5.0 i od tego czasu nieoglądana.
 3. **Moduł CPU na grze ograniczonej procesorem** — Roblox jest ograniczony
@@ -83,10 +91,13 @@ modułu, o którym nie wiemy, czy działa, tylko powiększa dług.
 
 Zapisane tu, żeby nie udawać, że ich nie ma.
 
-- **Wpięcie orkiestratora sesji** nie ma testu automatycznego. Poprzedni był
-  niestabilny — potrafił wisieć ponad 10 minut na osieroconych procesach
-  harnessu — więc go usunąłem, zamiast utrzymywać test, któremu nie można
-  ufać. Zastępczy musi obejść się bez GUI i bez prawdziwego obciążenia.
+- ~~**Wpięcie orkiestratora sesji** nie ma testu automatycznego.~~
+  **Zamknięte 2026-09-10.** `ProBalanceToggleReachesTheCpuModule` sprawdza, że
+  przełącznik faktycznie powołuje pętlę ograniczania z prawdziwymi
+  współpracownikami, a przy wyłączonym nie sięga po żadne procesy — i że po
+  zamknięciu sesji pętla stoi. Deterministycznie, bez wyścigu z pętlą i bez
+  prawdziwego obciążenia: dwa przypadki w sekundę. Sama logika pętli ma własne
+  testy sterujące `TickAsync` bezpośrednio, więc podział jest czysty.
 - **Progi ProBalance** (`RestrainAboveCores`, `SustainedSamples` i reszta) są
   wymyślone, nie wystrojone pomiarem czasów klatek.
 - **Cztery testy integracyjne są pomijane** — wymagają uprawnień

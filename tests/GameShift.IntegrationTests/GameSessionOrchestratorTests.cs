@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using System.Globalization;
 using System.Text.Json;
+using GameShift.Core.Cpu;
 using GameShift.Core.Domain.Identifiers;
 using GameShift.Core.Domain.Processes;
 using GameShift.Core.History;
@@ -9,6 +10,7 @@ using GameShift.Core.Profiles;
 using GameShift.Core.Sessions;
 using GameShift.Data.Journal;
 using GameShift.Data.UserData;
+using GameShift.Windows.Cpu;
 using GameShift.Windows.Processes;
 using GameShift.Windows.Profiles;
 using GameShift.Windows.Sessions;
@@ -850,6 +852,125 @@ public sealed class GameSessionOrchestratorTests
             store.Dispose();
             DeleteDirectory(directory);
         }
+    }
+
+    [TestMethod]
+    [DataRow(true, DisplayName = "przelacznik wlaczony")]
+    [DataRow(false, DisplayName = "przelacznik wylaczony")]
+    public async Task ProBalanceToggleReachesTheCpuModule(bool enabled)
+    {
+        // Przelacznik w interfejsie nie znaczy nic, dopoki nie konczy sie
+        // powolaniem petli ograniczania z prawdziwymi wspolpracownikami.
+        // Sama logika petli ma wlasne testy sterujace TickAsync bezposrednio —
+        // tutaj chodzi wylacznie o to, czy sesja ja w ogole uruchamia, i czy
+        // przy wylaczonym przelaczniku nie siega po procesy, ktorych nikt nie
+        // wskazal.
+        string directory = CreateTestDirectory();
+        string readyFile = Path.Combine(directory, "game.ready");
+        int? processId = null;
+        SqliteUserDataStore store = new(Path.Combine(directory, "user.db"));
+        AppendOnlyRecoveryJournal journal =
+            new(Path.Combine(directory, "recovery.jsonl"));
+        RecordingCpuProcessSource processes = new();
+        RecordingProBalanceActuator actuator = new();
+        int sourceFactoryCalls = 0;
+        int actuatorFactoryCalls = 0;
+        LocalGameSessionOrchestrator orchestrator = new(
+            store,
+            store,
+            journal,
+            monitorInterval: TimeSpan.FromMilliseconds(50),
+            frameRateProvider: new ConstantFrameRateProvider(),
+            enableProBalance: enabled,
+            cpuProcessSourceFactory: () =>
+            {
+                Interlocked.Increment(ref sourceFactoryCalls);
+                return processes;
+            },
+            proBalanceActuatorFactory: _ =>
+            {
+                Interlocked.Increment(ref actuatorFactoryCalls);
+                return actuator;
+            });
+
+        try
+        {
+            ManualGameProfile profile = await CreateHarnessProfileAsync(
+                readyFile);
+            await store.UpsertAsync(profile, CancellationToken.None);
+            await orchestrator.InitializeAsync(CancellationToken.None);
+            SessionPlanPreview plan = await orchestrator.PrepareAsync(
+                profile.ProfileId,
+                CancellationToken.None);
+
+            await orchestrator.StartAsync(
+                plan.PlanId,
+                plan.SessionId,
+                CancellationToken.None);
+            await WaitForFileAsync(readyFile);
+            processId = ReadProcessId(readyFile);
+
+            int expected = enabled ? 1 : 0;
+            Assert.AreEqual(
+                expected,
+                sourceFactoryCalls,
+                "Zrodlo probek procesow ma powstac dokladnie wtedy, gdy "
+                    + "przelacznik jest wlaczony.");
+            Assert.AreEqual(
+                expected,
+                actuatorFactoryCalls,
+                "To samo dotyczy tego, co faktycznie zmienia priorytety.");
+
+            await orchestrator.RestoreAsync(
+                plan.SessionId,
+                CancellationToken.None);
+
+            // Po zamknieciu sesji petla nie ma prawa dalej chodzic. Gdyby
+            // chodzila, zostawialaby obce procesy ograniczone bez zadnej sesji,
+            // ktora by je zwolnila.
+            int after = processes.CaptureCount;
+            await Task.Delay(TimeSpan.FromMilliseconds(400));
+            Assert.AreEqual(
+                after,
+                processes.CaptureCount,
+                "Po zakonczeniu sesji petla ograniczania ma stac.");
+        }
+        finally
+        {
+            if (processId is not null)
+            {
+                await CloseProcessAsync(processId.Value);
+            }
+
+            await orchestrator.DisposeAsync();
+            journal.Dispose();
+            store.Dispose();
+            DeleteDirectory(directory);
+        }
+    }
+
+    private sealed class RecordingCpuProcessSource : ICpuProcessSource
+    {
+        private int _captures;
+
+        public int CaptureCount => Volatile.Read(ref _captures);
+
+        public IReadOnlyList<CpuProcessSample> Capture()
+        {
+            Interlocked.Increment(ref _captures);
+            return [];
+        }
+    }
+
+    private sealed class RecordingProBalanceActuator : IProBalanceActuator
+    {
+        public ValueTask<bool> RestrainAsync(
+            ProcessRuntimeKey runtimeKey,
+            CancellationToken cancellationToken) => ValueTask.FromResult(true);
+
+        public ValueTask<bool> ReleaseAsync(
+            ProcessRuntimeKey runtimeKey,
+            CancellationToken cancellationToken) => ValueTask.FromResult(true);
     }
 
     private static async ValueTask<ManualGameProfile>
