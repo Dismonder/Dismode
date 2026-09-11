@@ -418,8 +418,14 @@ public sealed class PresentMonFrameRateProvider : IFrameRateProvider
         }
 
         _staleSessionsChecked = true;
+        // Wlasna nazwa sesji MUSI byc na tej liscie. Sprzatanie obejmowalo
+        // tylko nazwy z dawnych wydan, a biezaca jest budowana z odcisku
+        // uzytkownika — wiec osierocona sesja o AKTUALNEJ nazwie nie byla
+        // zatrzymywana przez nikogo i przezywala kazdy restart. Zmierzone
+        // dzis: cztery kolejne pomiary zwrocily zero klatek, dopoki nie
+        // zatrzymalem sesji recznie przez logman.
         IReadOnlyList<string> stopped = EtwSessionCleanup.StopStaleSessions(
-            EtwSessionCleanup.LegacySessionNames);
+            [.. EtwSessionCleanup.LegacySessionNames, _sessionName]);
         if (stopped.Count > 0)
         {
             lock (_observationSync)
@@ -844,6 +850,13 @@ public sealed class PresentMonFrameRateProvider : IFrameRateProvider
                     gracefulStopFailure);
             }
         }
+
+        // Bezwarunkowo, takze gdy proces zniknal sam. Zatrzymanie sesji
+        // siedzialo wylacznie w galezi "proces jeszcze zyje", wiec PresentMon
+        // padniety albo ubity z zewnatrz zostawial sesje dzialajaca. Od tego
+        // momentu kazdy pomiar klatek na tej maszynie — nasz i kazdego innego
+        // narzedzia — widzial pustke. Sesja nie ma prawa przezyc pomiaru.
+        _ = EtwSessionCleanup.StopStaleSessions([_sessionName]);
 
         captureCancellation?.Cancel();
         Exception? readerFailure = await ObserveReaderCompletionAsync(
