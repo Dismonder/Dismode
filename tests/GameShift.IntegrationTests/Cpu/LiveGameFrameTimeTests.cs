@@ -478,6 +478,13 @@ public sealed class LiveGameFrameTimeTests
             $"kontrola wstepna: p99 {probe.Percentile99:F2} ms — gra rysuje");
     }
 
+    /// <summary>
+    /// Nazwa sesji zdarzen tego harnessu. Trzymana w jednym miejscu, bo musi
+    /// sie zgadzac miedzy uruchomieniem PresentMona a jej zatrzymaniem —
+    /// rozjazd tych dwoch napisow oznacza sesje, ktorej nikt nie sprzata.
+    /// </summary>
+    private const string CaptureSessionName = "gameshift-frametime";
+
     private const int Rounds = 4;
 
     /// <summary>
@@ -554,7 +561,7 @@ public sealed class LiveGameFrameTimeTests
             // GPUWait, VideoBusy, DisplayLatency, DisplayedTime i PresentMode.
             "--no_track_input", "--track_gpu_video",
             "--stop_existing_session",
-            "--session_name", "gameshift-frametime",
+            "--session_name", CaptureSessionName,
         })
         {
             startInfo.ArgumentList.Add(argument);
@@ -618,6 +625,16 @@ public sealed class LiveGameFrameTimeTests
                     or System.ComponentModel.Win32Exception)
             {
             }
+
+            // Sesja zdarzen zyje niezaleznie od procesu, ktory ja zalozyl,
+            // a my wlasnie zabilismy PresentMon bez zamkniecia. Bez tego
+            // zostaje dzialajaca i od tego momentu KAZDY pomiar klatek na
+            // maszynie — nasz i kazdego innego narzedzia — widzi pustke.
+            // Zdarzylo sie to dzis dwa razy: przebiegi zwracaly zero klatek,
+            // a PresentMon zglaszal okolo 24 000 utraconych zdarzen.
+            // Sprzatanie przed pomiarem nie wystarcza, bo psuje wszystkich
+            // az do nastepnego uruchomienia.
+            _ = EtwSessionCleanup.StopStaleSessions([CaptureSessionName]);
         }
 
         if (frameTimes.Count == 0)
