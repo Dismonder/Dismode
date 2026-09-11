@@ -60,8 +60,23 @@ public sealed class ProBalanceSupervisor : IAsyncDisposable
         _gameProcessIds = gameProcessIds;
         _engine = new(settings);
         _timeProvider = timeProvider ?? TimeProvider.System;
-        _interval = interval ?? TimeSpan.FromSeconds(2);
+        _interval = interval ?? DefaultInterval;
     }
+
+    /// <summary>
+    /// How often the loop samples when nobody says otherwise.
+    /// <para>
+    /// Was two seconds while a pass cost a handle per process. With the
+    /// single-call sampler a pass measures 4,3 ms on the development machine,
+    /// so one second costs 0,43% of a core and a sustained hog is caught after
+    /// about three seconds instead of six. The thresholds are untouched — the
+    /// same number of samples over the same line — only the wait between
+    /// them shrank. Whether three seconds rather than six shows up in frame
+    /// times is a measurement still owed; the loop's own cost is measured and
+    /// within what the plan calls acceptable.
+    /// </para>
+    /// </summary>
+    public static readonly TimeSpan DefaultInterval = TimeSpan.FromSeconds(1);
 
     public void Start()
     {

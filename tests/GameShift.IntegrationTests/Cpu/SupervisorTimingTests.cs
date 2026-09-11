@@ -77,6 +77,152 @@ public sealed class SupervisorTimingTests
 
     [TestMethod]
     [Timeout(120_000)]
+    public void SystemInformationPathAgreesWithTheProcessApi()
+    {
+        // Szybka sciezka ma zastapic te przez uchwyty bez zmiany tego, co
+        // widzi petla: te same procesy, te same nazwy i — co najwazniejsze —
+        // dokladnie te same czasy startu, bo aktuator dopasowuje probki do
+        // tozsamosci procesow przez rownosc tej wartosci.
+        CpuProcessSampler sampler = new();
+        IReadOnlyList<CpuProcessSample>? fast =
+            sampler.TryCaptureViaSystemInformation();
+        Stopwatch gap = Stopwatch.StartNew();
+        IReadOnlyList<CpuProcessSample> reference =
+            CpuProcessSampler.CaptureViaProcessApi();
+        gap.Stop();
+
+        Assert.IsNotNull(fast, "NtQuerySystemInformation odmowil.");
+        Dictionary<int, CpuProcessSample> byId = fast.ToDictionary(
+            sample => sample.ProcessId);
+
+        CpuProcessSample self = byId[Environment.ProcessId];
+        using Process current = Process.GetCurrentProcess();
+        Assert.AreEqual(current.ProcessName, self.Name);
+        Assert.AreEqual(
+            new DateTimeOffset(
+                current.StartTime.ToUniversalTime(),
+                TimeSpan.Zero),
+            self.StartedAtUtc,
+            "Czas startu wlasnego procesu rozni sie od Process.StartTime.");
+
+        int compared = 0;
+        int mismatchedStart = 0;
+        List<string> nameMismatches = [];
+        // Miedzy dwoma odczytami kazdy proces mogl zuzyc najwyzej tyle czasu
+        // procesora, ile uplynelo, razy liczba watkow, ktore mogl zajac.
+        TimeSpan tolerance = gap.Elapsed * Environment.ProcessorCount
+            + TimeSpan.FromMilliseconds(50);
+        foreach (CpuProcessSample expected in reference)
+        {
+            if (!byId.TryGetValue(expected.ProcessId, out CpuProcessSample? actual)
+                || actual.StartedAtUtc != expected.StartedAtUtc)
+            {
+                // Proces mogl sie zakonczyc miedzy odczytami, a jego numer
+                // trafic do nastepcy; taki wpis nie jest porownywalny.
+                if (actual is not null)
+                {
+                    mismatchedStart++;
+                }
+
+                continue;
+            }
+
+            compared++;
+            if (!string.Equals(
+                    actual.Name,
+                    expected.Name,
+                    StringComparison.OrdinalIgnoreCase))
+            {
+                nameMismatches.Add($"{expected.ProcessId}: {actual.Name} / {expected.Name}");
+            }
+
+            TimeSpan drift = expected.TotalProcessorTime - actual.TotalProcessorTime;
+            Assert.IsTrue(
+                drift >= TimeSpan.Zero && drift <= tolerance,
+                $"Czas procesora {expected.Name} ({expected.ProcessId}): szybka "
+                    + $"sciezka {actual.TotalProcessorTime}, uchwyty "
+                    + $"{expected.TotalProcessorTime}, tolerancja {tolerance}.");
+        }
+
+        TestContext.WriteLine(
+            $"Szybka sciezka: {fast.Count} procesow, uchwyty: "
+                + $"{reference.Count}, porownano {compared}, "
+                + $"niezgodny start: {mismatchedStart}");
+        Assert.IsGreaterThanOrEqualTo(reference.Count * 9 / 10, compared);
+        Assert.IsEmpty(
+            nameMismatches,
+            "Nazwy rozne od Process.ProcessName: "
+                + string.Join("; ", nameMismatches));
+        Assert.IsLessThanOrEqualTo(
+            2,
+            mismatchedStart,
+            "Zbyt wiele procesow z innym czasem startu niz Process.StartTime.");
+    }
+
+    [TestMethod]
+    [Timeout(120_000)]
+    public void SystemInformationPathIsCheaperThanTheProcessApi()
+    {
+        // Mediana z wielu przejsc, nie jeden pomiar: pojedyncze przejscie
+        // trafia w cudzy przydzial czasu albo w zerowanie stron i klamie
+        // w obie strony. Porownanie jest w dodatku nierowne na korzysc
+        // uchwytow — nieuprzywilejowany proces testu otwiera tylko czesc
+        // procesow, a wywolanie systemowe widzi wszystkie.
+        const int rounds = 15;
+        CpuProcessSampler sampler = new();
+        _ = sampler.TryCaptureViaSystemInformation();
+        _ = CpuProcessSampler.CaptureViaProcessApi();
+
+        List<double> fastTimes = [];
+        List<double> slowTimes = [];
+        int fastCount = 0;
+        int slowCount = 0;
+        for (int round = 0; round < rounds; round++)
+        {
+            Stopwatch fastClock = Stopwatch.StartNew();
+            IReadOnlyList<CpuProcessSample>? fast =
+                sampler.TryCaptureViaSystemInformation();
+            fastClock.Stop();
+            Assert.IsNotNull(fast);
+            fastCount = fast.Count;
+            fastTimes.Add(fastClock.Elapsed.TotalMilliseconds);
+
+            Stopwatch slowClock = Stopwatch.StartNew();
+            IReadOnlyList<CpuProcessSample> slow =
+                CpuProcessSampler.CaptureViaProcessApi();
+            slowClock.Stop();
+            slowCount = slow.Count;
+            slowTimes.Add(slowClock.Elapsed.TotalMilliseconds);
+        }
+
+        double fastMedian = Median(fastTimes);
+        double slowMedian = Median(slowTimes);
+        TestContext.WriteLine(
+            $"NtQuerySystemInformation: {fastCount} procesow, mediana "
+                + $"{fastMedian:F2} ms ({fastMedian / fastCount * 1000:F1} us "
+                + "na proces)");
+        TestContext.WriteLine(
+            $"Process API:              {slowCount} procesow, mediana "
+                + $"{slowMedian:F2} ms ({slowMedian / slowCount * 1000:F1} us "
+                + "na proces)");
+        Assert.IsLessThan(
+            slowMedian,
+            fastMedian,
+            "Jedno wywolanie systemowe nie jest tansze od uchwytu na proces.");
+    }
+
+    private static double Median(List<double> values)
+    {
+        List<double> sorted = [.. values];
+        sorted.Sort();
+        int middle = sorted.Count / 2;
+        return sorted.Count % 2 == 1
+            ? sorted[middle]
+            : (sorted[middle - 1] + sorted[middle]) / 2;
+    }
+
+    [TestMethod]
+    [Timeout(120_000)]
     public async Task OneSupervisorPassFitsInsideItsInterval()
     {
         await using ProBalanceSupervisor supervisor = new(
@@ -108,14 +254,20 @@ public sealed class SupervisorTimingTests
                 + "zrobilo — pomiar bylby pusty.");
         TestContext.WriteLine(
             $"Jedno przejscie nadzorcy: {perPass:F1} ms");
+        double intervalMilliseconds =
+            ProBalanceSupervisor.DefaultInterval.TotalMilliseconds;
         TestContext.WriteLine(
-            "Udzial w jednym rdzeniu przy interwale 2 s: "
-            + $"{100.0 * perPass / 2000.0:F2}%");
+            "Udzial w jednym rdzeniu przy interwale "
+            + $"{intervalMilliseconds / 1000:F0} s: "
+            + $"{100.0 * perPass / intervalMilliseconds:F2}%");
 
+        // Przejscie ma sie miescic w ulamku interwalu, nie w calym: petla,
+        // ktora zjada dziesiata czesc rdzenia, sama psuje to, czego pilnuje.
         Assert.IsLessThan(
-            2000,
-            stopwatch.ElapsedMilliseconds,
-            $"Jedno przejscie zajelo {stopwatch.ElapsedMilliseconds} ms.");
+            intervalMilliseconds / 10,
+            perPass,
+            $"Jedno przejscie zajelo {perPass:F1} ms przy interwale "
+                + $"{intervalMilliseconds:F0} ms.");
     }
 
     public TestContext TestContext { get; set; } = null!;
