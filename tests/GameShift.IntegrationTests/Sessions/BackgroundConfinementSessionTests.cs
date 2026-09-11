@@ -475,6 +475,10 @@ public sealed class BackgroundConfinementSessionTests
         string journalPath = Path.Combine(directory, "recovery.jsonl");
         string gameReadyFile = Path.Combine(directory, "game.ready");
         int? gameProcessId = null;
+        // Zbiory CPU tez ida do ksiegi (po nalozeniu, nie z planu) i tez
+        // maja zniknac po restarcie — nie sa dziennikowane, wiec bez ksiegi
+        // zostalyby na procesie do jego konca.
+        IReadOnlyList<uint> cornerCpuSetIds = CornerCpuSetIds(corner.Mask);
         Process hog = StartCpuHog();
         SqliteUserDataStore? firstStore = new(databasePath);
         AppendOnlyRecoveryJournal? firstJournal = new(journalPath);
@@ -500,6 +504,7 @@ public sealed class BackgroundConfinementSessionTests
                 new JournaledProBalanceActuator(
                     journalForActuator,
                     sessionId,
+                    backgroundCpuSetIds: cornerCpuSetIds,
                     backgroundAffinityMask: corner.Mask)),
             // Nadzorca widzi wylacznie nasz proces liczacy. Na maszynie,
             // na ktorej rownolegle ktos mierzy z wlasnymi hogami, prawdziwy
@@ -544,6 +549,10 @@ public sealed class BackgroundConfinementSessionTests
                 restrained,
                 "Petla ograniczania nie nalozyla maski na proces liczacy "
                     + "w ciagu 45 s.");
+            Assert.IsNotEmpty(
+                ProcessCpuSets.TryRead(hog.Id) ?? [],
+                "Warunek testu: petla miala nadac procesowi domyslne zbiory "
+                    + "CPU, inaczej nie ma czego czyscic po restarcie.");
 
             // Ksiega musiala zapisac punkt kontrolny z tym ograniczeniem,
             // zanim host padnie — inaczej nastepny start nie ma czego czytac.
@@ -557,9 +566,12 @@ public sealed class BackgroundConfinementSessionTests
             {
                 IReadOnlyList<RecoveryJournalEntry> beforeCrash =
                     await firstJournal.ReadAllAsync(CancellationToken.None);
-                reported = beforeCrash.Any(record =>
+                // Dwa meldunki: pierwszy z planem, przed mutacja; drugi po
+                // nalozeniu pakietu, z tym, co realnie sie nalozylo — i to
+                // dopiero w nim ksiega wie o zbiorach CPU.
+                reported = beforeCrash.Count(record =>
                     record.SessionCheckpoint
-                        == SessionCheckpoint.BackgroundRestraintChanged);
+                        == SessionCheckpoint.BackgroundRestraintChanged) >= 2;
                 if (!reported)
                 {
                     await Task.Delay(200);
@@ -609,6 +621,11 @@ public sealed class BackgroundConfinementSessionTests
                     + "zamykac.");
             Assert.AreEqual(originalPriority, hog.PriorityClass);
             Assert.AreEqual(originalIoPriority, ReadIoPriority(hog));
+            Assert.IsEmpty(
+                ProcessCpuSets.TryRead(hog.Id) ?? [],
+                "Po restarcie hosta domyslne zbiory CPU zostaly na procesie. "
+                    + "To preferencja, nie ograniczenie, ale zostalaby do "
+                    + "konca zycia procesu.");
 
             IReadOnlyList<RecoveryJournalEntry> records =
                 await restartedJournal.ReadAllAsync(CancellationToken.None);
@@ -659,6 +676,206 @@ public sealed class BackgroundConfinementSessionTests
             restartedStore?.Dispose();
             await DeleteDirectorySafelyAsync(directory);
         }
+    }
+
+    [TestMethod]
+    [Timeout(120_000)]
+    public async Task ApplicationThatChoseLowIoPriorityKeepsItsChildrenUntouched()
+    {
+        // Aplikacja tla sama czyta z priorytetem VeryLow, zanim GameShift ja
+        // dotknie. Akcja I/O zostaje odrzucona przez walidacje (nie ma czego
+        // obnizac), ale ma identyfikator — i po samym identyfikatorze
+        // odtwarzanie uznawalo kiedys, ze dziecko odziedziczylo VeryLow od
+        // NAS, i podnosilo je do Normal. Dziecko odziedziczylo je od rodzica,
+        // ktory tak wybral, i ma z tym zostac. Maska i priorytet pamieci sa
+        // nasze i maja wrocic — u rodzica i u dziecka.
+        CpuAffinityDecision corner = CpuAffinityPolicy.Decide(
+            SystemCpuTopologyProvider.Read(),
+            CpuAffinityRole.Background);
+        if (!corner.ShouldApply)
+        {
+            Assert.Inconclusive(
+                "Ta maszyna nie kwalifikuje sie do maski tla: "
+                    + corner.Explanation);
+            return;
+        }
+
+        string directory = CreateTestDirectory();
+        string gameReadyFile = Path.Combine(directory, "game.ready");
+        string childReadyFile = Path.Combine(directory, "background-child.ready");
+        string childTriggerFile = Path.Combine(directory, "background-child.go");
+        int? gameProcessId = null;
+        int? childProcessId = null;
+        RenamedHarnessFixture background =
+            await RenamedHarnessFixture.StartAsync(
+                directory,
+                [
+                    "--spawn-child-ready-file", childReadyFile,
+                    "--spawn-child-when-file", childTriggerFile,
+                ]);
+        SqliteUserDataStore store =
+            new(Path.Combine(directory, "user.db"));
+        AppendOnlyRecoveryJournal journal =
+            new(Path.Combine(directory, "recovery.jsonl"));
+        LocalGameSessionOrchestrator orchestrator = new(
+            store,
+            store,
+            journal,
+            monitorInterval: TimeSpan.FromMilliseconds(50),
+            frameRateProvider: new SilentFrameRateProvider());
+
+        try
+        {
+            background.Process.PriorityClass = ProcessPriorityClass.Normal;
+            SetIoPriority(
+                background.Process,
+                IoPriorityNativeMethods.IoPriorityVeryLow);
+            Assert.AreEqual(
+                IoPriorityNativeMethods.IoPriorityVeryLow,
+                ReadIoPriority(background.Process),
+                "Warunek testu: aplikacja sama wybrala VeryLow przed sesja.");
+            nint originalAffinity = background.Process.ProcessorAffinity;
+
+            ManualGameProfile profile = await CreateGameProfileAsync(
+                gameReadyFile);
+            await store.UpsertAsync(profile, CancellationToken.None);
+            await orchestrator.InitializeAsync(CancellationToken.None);
+            SessionPlanPreview plan = await orchestrator.PrepareAsync(
+                profile.ProfileId,
+                [Select(background.Process)],
+                CancellationToken.None);
+            GameSessionSnapshot started = await orchestrator.StartAsync(
+                plan.PlanId,
+                plan.SessionId,
+                CancellationToken.None,
+                enableFrameRateTracking: false);
+            await WaitForFileAsync(gameReadyFile);
+            gameProcessId = ReadProcessId(gameReadyFile);
+
+            background.Process.Refresh();
+            Assert.AreEqual(
+                corner.Mask,
+                (ulong)background.Process.ProcessorAffinity.ToInt64(),
+                "Warunek testu: maska (nasza) miala zostac nalozona.");
+            Assert.AreEqual(
+                ProcessNativeMethods.MemoryPriorityVeryLow,
+                ProcessMemoryPriorityAction.Read(background.Process)
+                    .MemoryPriority,
+                "Warunek testu: priorytet pamieci (nasz) mial zostac obnizony.");
+            Assert.AreEqual(
+                IoPriorityNativeMethods.IoPriorityVeryLow,
+                ReadIoPriority(background.Process),
+                "Warunek testu: akcja I/O miala zostac odrzucona, bo nie ma "
+                    + "czego obnizac.");
+            TestContext.WriteLine(
+                $"nalozonych akcji: {started.AppliedActionCount}");
+
+            await File.WriteAllTextAsync(childTriggerFile, "go");
+            await WaitForFileAsync(childReadyFile, TimeSpan.FromSeconds(25));
+            childProcessId = ReadProcessId(childReadyFile);
+            using Process child = Process.GetProcessById(childProcessId.Value);
+            Assert.AreEqual(
+                corner.Mask,
+                (ulong)child.ProcessorAffinity.ToInt64(),
+                "Warunek testu: potomek mial odziedziczyc maske.");
+            Assert.AreEqual(
+                IoPriorityNativeMethods.IoPriorityVeryLow,
+                ReadIoPriority(child),
+                "Warunek testu: potomek mial odziedziczyc VeryLow rodzica.");
+
+            GameSessionSnapshot completed = await orchestrator.RestoreAsync(
+                plan.SessionId,
+                CancellationToken.None);
+
+            child.Refresh();
+            Assert.AreEqual(
+                originalAffinity,
+                child.ProcessorAffinity,
+                "Potomek zostal w cwiartce — ta byla nasza i miala wrocic.");
+            Assert.AreEqual(
+                ProcessNativeMethods.MemoryPriorityNormal,
+                ProcessMemoryPriorityAction.Read(child).MemoryPriority,
+                "Priorytet pamieci potomka byl nasz i mial wrocic.");
+            Assert.AreEqual(
+                IoPriorityNativeMethods.IoPriorityVeryLow,
+                ReadIoPriority(child),
+                "Potomek odziedziczyl VeryLow od rodzica, ktory tak wybral. "
+                    + "Odtwarzanie podnioslo mu priorytet, jakby to bylo "
+                    + "nasze ograniczenie — po samym identyfikatorze akcji, "
+                    + "ktora nigdy nie dotknela rodzica.");
+            background.Process.Refresh();
+            Assert.AreEqual(
+                IoPriorityNativeMethods.IoPriorityVeryLow,
+                ReadIoPriority(background.Process),
+                "Wlasny wybor rodzica nie moze zostac „przywrocony”.");
+            Assert.AreEqual(originalAffinity, background.Process.ProcessorAffinity);
+            Assert.AreEqual(
+                ProcessNativeMethods.MemoryPriorityNormal,
+                ProcessMemoryPriorityAction.Read(background.Process)
+                    .MemoryPriority);
+            Assert.AreEqual(
+                OptimizationSessionState.Completed,
+                completed.State,
+                completed.Message);
+            Assert.AreEqual(0, completed.ErrorCount);
+        }
+        finally
+        {
+            if (gameProcessId is null && File.Exists(gameReadyFile))
+            {
+                gameProcessId = ReadProcessId(gameReadyFile);
+            }
+
+            if (gameProcessId is not null)
+            {
+                await CloseProcessAsync(gameProcessId.Value);
+            }
+
+            if (childProcessId is null && File.Exists(childReadyFile))
+            {
+                childProcessId = ReadProcessId(childReadyFile);
+            }
+
+            if (childProcessId is not null)
+            {
+                await CloseProcessAsync(childProcessId.Value);
+            }
+
+            await orchestrator.DisposeAsync();
+            journal.Dispose();
+            store.Dispose();
+            await background.DisposeAsync();
+            await DeleteDirectorySafelyAsync(directory);
+        }
+    }
+
+    private static void SetIoPriority(Process process, uint priority)
+    {
+        int status = IoPriorityNativeMethods.NtSetInformationProcess(
+            process.Handle,
+            IoPriorityNativeMethods.ProcessIoPriority,
+            in priority,
+            sizeof(uint));
+        Assert.AreEqual(
+            IoPriorityNativeMethods.StatusSuccess,
+            status,
+            $"Ustawienie priorytetu I/O zwrocilo NTSTATUS 0x{status:X8}.");
+    }
+
+    /// <summary>
+    /// CPU set ids of the corner's logical processors, the way the
+    /// orchestrator resolves them for the actuator.
+    /// </summary>
+    private static IReadOnlyList<uint> CornerCpuSetIds(ulong mask)
+    {
+        CpuTopology topology = SystemCpuTopologyProvider.Read()
+            ?? throw new AssertInconclusiveException(
+                "Nie udalo sie odczytac topologii procesora.");
+        return [.. topology.Processors
+            .Where(processor =>
+                processor.LogicalProcessorIndex < 64
+                && (mask & (1UL << processor.LogicalProcessorIndex)) != 0)
+            .Select(processor => processor.Id)];
     }
 
     /// <summary>
