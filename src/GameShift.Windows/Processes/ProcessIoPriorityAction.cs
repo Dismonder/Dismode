@@ -53,7 +53,7 @@ public sealed class ProcessIoPriorityAction :
             actionId,
             SystemTargetKind.Process,
             expectedIdentity.RuntimeKey.ToString(),
-            OptimizationActionKind.RestrictProcessAffinity);
+            OptimizationActionKind.LowerProcessIoPriority);
     }
 
     public ActionDescriptor Descriptor { get; }
