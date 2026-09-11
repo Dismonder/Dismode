@@ -1226,7 +1226,9 @@ public sealed class LocalGameSessionOrchestrator : IAsyncDisposable
                     _identityProvider,
                     _timeProvider,
                     ResolveBackgroundCpuSetIds(),
-                    ResolveBackgroundAffinityMask());
+                    ResolveBackgroundAffinityMask(),
+                    _proBalanceSettings?.LowerBackgroundIoPriority
+                        ?? new ProBalanceSettings().LowerBackgroundIoPriority);
             ProBalanceSupervisor supervisor = new(
                 _cpuProcessSourceFactory(),
                 actuator,
