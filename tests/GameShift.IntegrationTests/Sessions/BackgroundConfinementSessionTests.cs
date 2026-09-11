@@ -33,6 +33,8 @@ namespace GameShift.IntegrationTests.Sessions;
 [TestClass]
 public sealed class BackgroundConfinementSessionTests
 {
+    public TestContext TestContext { get; set; } = null!;
+
     [TestMethod]
     [Timeout(120_000)]
     public async Task ApprovedBackgroundApplicationIsConfinedFromSessionStartAndReleased()
@@ -155,6 +157,12 @@ public sealed class BackgroundConfinementSessionTests
                 "Warunek testu: potomek urodzony po nalozeniu maski mial ja "
                     + "odziedziczyc. Jesli nie odziedziczyl, sesja ruszyla "
                     + "rodzica pozniej niz on spawnowal dziecko.");
+            TestContext.WriteLine(
+                $"potomek: priorytet {child.PriorityClass}, I/O "
+                    + $"{ReadIoPriority(child)}, pamiec "
+                    + $"{ProcessMemoryPriorityAction.Read(child).MemoryPriority}, "
+                    + $"EcoQoS {ProcessPowerThrottlingController.Read(child)
+                        .ExecutionSpeedThrottled}");
 
             GameSessionSnapshot completed = await orchestrator.RestoreAsync(
                 plan.SessionId,
@@ -167,6 +175,15 @@ public sealed class BackgroundConfinementSessionTests
                 "Potomek zostal w cwiartce po zakonczeniu sesji. Dziennik "
                     + "cofa tylko to, co zrobiono rodzicowi; dzieci urodzone "
                     + "z odziedziczona maska trzeba przejrzec osobno.");
+            Assert.AreEqual(
+                IoPriorityNativeMethods.IoPriorityNormal,
+                ReadIoPriority(child),
+                "Potomek zostal z odziedziczonym priorytetem wejscia-wyjscia "
+                    + "VeryLow. Tego nie pokazuje zadne standardowe narzedzie.");
+            Assert.AreEqual(
+                ProcessNativeMethods.MemoryPriorityNormal,
+                ProcessMemoryPriorityAction.Read(child).MemoryPriority,
+                "Potomek zostal z obnizonym priorytetem pamieci.");
 
             Assert.AreEqual(
                 OptimizationSessionState.Completed,
@@ -444,7 +461,8 @@ public sealed class BackgroundConfinementSessionTests
             // na ktorej rownolegle ktos mierzy z wlasnymi hogami, prawdziwy
             // aktuator zlapalby najciezsze z NICH — i zostawil je ograniczone,
             // bo ten test celowo nie zwalnia niczego przed „awaria".
-            cpuProcessSourceFactory: () => new SingleProcessSource(hog.Id));
+            cpuProcessSourceFactory: () =>
+                new Cpu.FilteredCpuProcessSource(() => [hog.Id]));
         SqliteUserDataStore? restartedStore = null;
         AppendOnlyRecoveryJournal? restartedJournal = null;
         LocalGameSessionOrchestrator? restartedHost = null;
@@ -597,19 +615,6 @@ public sealed class BackgroundConfinementSessionTests
             restartedStore?.Dispose();
             await DeleteDirectorySafelyAsync(directory);
         }
-    }
-
-    /// <summary>
-    /// Reports only one process to the restraint loop, so this test can never
-    /// restrain anything it does not own — including another session's
-    /// measurement hogs running on the same machine.
-    /// </summary>
-    private sealed class SingleProcessSource(int processId) : ICpuProcessSource
-    {
-        private readonly CpuProcessSampler _sampler = new();
-
-        public IReadOnlyList<CpuProcessSample> Capture() =>
-            [.. _sampler.Capture().Where(sample => sample.ProcessId == processId)];
     }
 
     /// <summary>

@@ -675,3 +675,38 @@ rdzenia, a hog jest łapany po około 3 s zamiast 6. Progi (`SustainedSamples`,
 reakcji, nie warunek. Czy 3 s zamiast 6 przekłada się na czas klatki, wymaga
 pomiaru z hogiem startującym w trakcie sesji; koszt własny pętli jest
 zmierzony i mieści się w tym, co plan uznaje za akceptowalne.
+
+### Przegląd adwersaryjny Codexa i utwardzenie odtwarzania — 2026-09-11
+
+Na życzenie Damiana drugą parę oczu dał Codex CLI (`gpt-6-astra`,
+`model_reasoning_effort=xhigh`, sandbox tylko do odczytu) nad zakresem
+`725ef8e^..6cde271`. Dwanaście ustaleń; wszystkie sprawdzone w kodzie,
+żadne nie okazało się fałszywe. Co z nich zrobiono:
+
+| ustalenie | stan |
+|---|---|
+| meldunek do księgi dopiero po zmianach procesu — okno na awarię | **naprawione**: aktuator melduje przed pierwszą mutacją, z identyfikatorami wszystkich planowanych akcji; odtwarzanie akcji nigdy nienałożonej jest nieszkodliwe; przy odmowie priorytetu meldunek jest cofany |
+| wykreślenie z księgi zależne tylko od priorytetu CPU | **naprawione**: każda kompensacja zwraca wynik, rekord znika dopiero po rozliczeniu całego pakietu, także potomków; co nie wróciło, ponawia orkiestrator przy zamknięciu sesji |
+| wznowienie żywej sesji gubiło nieudane ograniczenia reaktywne | **naprawione**: przy błędzie zostają w `ActiveRuntime` i w punktach kontrolnych do skutku |
+| wyścig migawek metadanych między monitorem a księgą | **naprawione**: migawka i zapis pod jedną bramką `_checkpointGate`, osobną od bramki orkiestratora |
+| równoległe zatrzymania pętli (`DisposeAsync` i zamknięcie sesji) | **naprawione**: jedno wspólne zadanie zatrzymania, każdy wołający na nie czeka |
+| potomkom przywracano tylko maskę | **naprawione i zmierzone**: potomek dziedziczy klasę priorytetu, priorytet I/O **i** priorytet pamięci (EcoQoS nie); przegląd przywraca maskę, I/O i pamięć |
+| migawka potomków przed przywróceniem rodzica | **naprawione**: migawka po przywróceniu wszystkich rodziców, jedna na całe przywracanie |
+| wnuk za zakończonym procesem pośrednim | **częściowo**: reguła sierot — proces, którego rodzic już nie istnieje, urodzony po nałożeniu ograniczenia, z dokładnie wartością ograniczenia; pełne śledzenie pochodzenia w trakcie sesji zostaje na później |
+| błędy przywracania potomków niewidoczne | **naprawione**: liczą się jako błędy odtwarzania, sesja zostaje otwarta do ponownej próby |
+| odtworzenie maski zależne od ponownego odczytu topologii | **naprawione**: `ProcessAffinityAction.ForRecovery` cofa do stanu z dziennika bez maski; maska sesji zapisana w metadanych (`BackgroundAffinityMask`) |
+| poszerzanie dziecka, które samo wybrało maskę równą ćwiartce | **ograniczone**: filtr czasu startu — nic starszego niż ograniczenie nie mogło go odziedziczyć |
+| aktuator dawał dzieciom całą maszynę zamiast maski rodzica | **naprawione**: wspólny `InheritedRestraintSweeper` dla orkiestratora i aktuatora; dziecko dostaje maskę, którą rodzic ma po przywróceniu, całą maszynę tylko gdy rodzica już nie ma |
+
+Do tego gra nie może odziedziczyć ćwiartki po zatwierdzonym launcherze:
+monitor drzewa gry zdejmuje ją z nowo odkrytych procesów gry.
+
+**Zagrożenie w samych testach, znalezione przy okazji.** Testy sterujące
+prawdziwym aktuatorem z pełnym próbnikiem ograniczały najcięższe procesy
+maszyny deweloperskiej — edytor, serwer budowania, cudzy pomiar — a maska
+i priorytety dziedziczą się na wszystko, co te procesy potem uruchomią.
+W jednym przebiegu 99 procesów miało maskę 0xF, a host testów widział
+4 procesory. Każdy taki test widzi teraz przez nadzorcę wyłącznie własne
+procesy (`FilteredCpuProcessSource`). `LiveGameFrameTimeTests` celowo
+zostaje przy pełnym próbniku, bo mierzy zachowanie na całej maszynie —
+uruchamiać wyłącznie świadomie.
