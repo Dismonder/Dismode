@@ -91,7 +91,7 @@ public sealed record ProBalanceSettings
     /// game smooth — one or two genuine hogs are, and lowering everything else
     /// as well only spreads the disruption. Beyond that, each restraint is a
     /// journal write and a signature check, so an unbounded count turns a
-    /// two-second tick into a long one.
+    /// one-second tick into a long one.
     /// </para>
     /// </summary>
     public int MaximumRestrained { get; init; } = 3;

@@ -100,8 +100,14 @@ public sealed class ProBalanceSupervisor : IAsyncDisposable
                 {
                     await _worker.ConfigureAwait(false);
                 }
-                catch (OperationCanceledException)
+                catch (Exception exception) when (
+                    exception is not OutOfMemoryException)
                 {
+                    // Worker, ktory padl na czyms nieprzewidzianym, nie moze
+                    // zatrzymac zwalniania: to, co zdazyl ograniczyc, jest
+                    // w silniku i w aktuatorze, a jedyne, co by sie stalo po
+                    // rzuceniu stad dalej, to sesja zamknieta bez oddania
+                    // procesow. Anulowanie jest tu normalnym zakonczeniem.
                 }
             }
 
@@ -248,11 +254,13 @@ public sealed class ProBalanceSupervisor : IAsyncDisposable
                 return;
             }
             catch (Exception exception) when (
-                exception is InvalidOperationException
-                    or UnauthorizedAccessException
-                    or IOException)
+                exception is not OutOfMemoryException)
             {
                 // Jedna nieudana probka nie moze zabic petli na cala sesje.
+                // Lista wyjatkow byla tu kiedys zamknieta i Win32Exception
+                // z migawki procesow przez nia przechodzil: worker padal,
+                // silnik trzymal ograniczone procesy, a zatrzymanie sesji
+                // dostawalo wyjatek zamiast zwolnienia.
             }
             finally
             {

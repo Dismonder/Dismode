@@ -139,12 +139,19 @@ public sealed class SavedBackgroundRuleResolver
                     out int instanceCount)
                 && instanceCount == 1,
             SavedBackgroundActionMode.LowerPriority
-                or SavedBackgroundActionMode.LowerPriorityAndEcoQos =>
+                or SavedBackgroundActionMode.LowerPriorityAndEcoQos
+                or SavedBackgroundActionMode.RestrainBackground =>
                     process.PriorityClass is "Normal" or "BelowNormal",
             _ => false,
         };
     }
 
+    /// <summary>
+    /// Saved value to session action, one to one. A rule saved as
+    /// <c>LowerPriorityAndEcoQos</c> stays that: the full bundle has its own
+    /// saved value, so one-click launch never applies a mask, or lowers
+    /// memory and I/O priority, under a consent given for less.
+    /// </summary>
     private static BackgroundProcessActionMode MapAction(
         SavedBackgroundActionMode savedMode) =>
         savedMode switch
@@ -153,6 +160,8 @@ public sealed class SavedBackgroundRuleResolver
                 BackgroundProcessActionMode.CloseAndRestore,
             SavedBackgroundActionMode.LowerPriorityAndEcoQos =>
                 BackgroundProcessActionMode.LowerPriorityAndEcoQos,
+            SavedBackgroundActionMode.RestrainBackground =>
+                BackgroundProcessActionMode.RestrainBackground,
             _ => BackgroundProcessActionMode.LowerPriority,
         };
 

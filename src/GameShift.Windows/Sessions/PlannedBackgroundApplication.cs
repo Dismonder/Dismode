@@ -20,4 +20,12 @@ public sealed record PlannedBackgroundApplication(
     ActionId? MemoryPriorityActionId,
     IdempotencyKey? MemoryPriorityIdempotencyKey,
     ApplicationRestartDescriptor? RestartDescriptor,
-    long EstimatedWorkingSetBytes);
+    long EstimatedWorkingSetBytes,
+    // Kiedy pakiet zostal nalozony. Null dla aplikacji z planu — te dostaja
+    // pakiet na starcie sesji, wiec poczatek sesji jest wlasciwa granica.
+    // Ograniczenia reaktywne nosza wlasna chwile, bo przeglad potomkow
+    // liczy sie od niej, nie od startu sesji.
+    DateTimeOffset? AppliedAtUtc = null,
+    // Czy proces dostal domyslne zbiory procesorow, ktore trzeba wyczyscic
+    // przy odtwarzaniu. Tylko ograniczenia reaktywne.
+    bool SteeredCpuSets = false);

@@ -156,6 +156,11 @@ enum BackgroundProcessActionMode {
   BACKGROUND_PROCESS_ACTION_MODE_CLOSE_AND_RESTORE = 1;
   BACKGROUND_PROCESS_ACTION_MODE_LOWER_PRIORITY = 2;
   BACKGROUND_PROCESS_ACTION_MODE_LOWER_PRIORITY_AND_ECO_QOS = 3;
+  // Pelny pakiet: BelowNormal, EcoQoS, twarda maska cwiartki rdzeni,
+  // priorytet pamieci i wejscia-wyjscia. Osobna wartosc, bo zgoda
+  // na LOWER_PRIORITY_AND_ECO_QOS zapisana przed jego wprowadzeniem
+  // nie obejmowala maski ani priorytetow zasobow.
+  BACKGROUND_PROCESS_ACTION_MODE_RESTRAIN_BACKGROUND = 4;
 }
 
 enum GamePriorityMode {

@@ -15,9 +15,11 @@ public sealed class SavedBackgroundRuleResolverTests
         string gamePath = @"C:\Games\Example\game.exe";
         string chatPath = @"C:\Apps\Chat\chat.exe";
         string syncPath = @"C:\Apps\Sync\sync.exe";
+        string backupPath = @"C:\Apps\Backup\backup.exe";
         GameOptimizationPreferences preferences = CreatePreferences(
             new(chatPath, SavedBackgroundActionMode.CloseAndRestore),
             new(syncPath, SavedBackgroundActionMode.LowerPriorityAndEcoQos),
+            new(backupPath, SavedBackgroundActionMode.RestrainBackground),
             new(
                 @"C:\Apps\Ignored\ignored.exe",
                 SavedBackgroundActionMode.Ignore));
@@ -47,6 +49,11 @@ public sealed class SavedBackgroundRuleResolverTests
                     @"C:\Other\chat.exe",
                     currentSessionId,
                     hasMainWindow: true),
+                CreateProcess(
+                    processId: 105,
+                    name: "backup",
+                    backupPath,
+                    currentSessionId),
             ]));
 
         SavedBackgroundRuleResolution result = resolver.Resolve(
@@ -55,17 +62,25 @@ public sealed class SavedBackgroundRuleResolverTests
             currentSessionId,
             maximumProcessCount: 64);
 
-        Assert.AreEqual(2, result.ConfiguredRuleCount);
-        Assert.AreEqual(2, result.MatchedRuleCount);
-        Assert.HasCount(2, result.Selections);
+        Assert.AreEqual(3, result.ConfiguredRuleCount);
+        Assert.AreEqual(3, result.MatchedRuleCount);
+        Assert.HasCount(3, result.Selections);
         Assert.IsTrue(result.Selections.Any(selection =>
             selection.ProcessId == 101
             && selection.ActionMode
                 == BackgroundProcessActionMode.CloseAndRestore));
+        // Regula zapisana jako „BelowNormal + EcoQoS" zostaje tym, na co
+        // uzytkownik sie zgodzil. Pelny pakiet z maska ma wlasna wartosc
+        // i tylko ona go uruchamia — Szybki Play nie pokazuje planu, wiec
+        // nie ma gdzie poprosic o nowa zgode.
         Assert.IsTrue(result.Selections.Any(selection =>
             selection.ProcessId == 102
             && selection.ActionMode
                 == BackgroundProcessActionMode.LowerPriorityAndEcoQos));
+        Assert.IsTrue(result.Selections.Any(selection =>
+            selection.ProcessId == 105
+            && selection.ActionMode
+                == BackgroundProcessActionMode.RestrainBackground));
     }
 
     [TestMethod]

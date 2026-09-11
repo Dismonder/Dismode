@@ -57,6 +57,7 @@ public sealed class SchedulingLatencyBenchmarkTests
     }
 
     [TestMethod]
+    [TestCategory("Live")]
     [Timeout(300_000)]
     public async Task RestraintDoesNotWorsenWakeLatencyUnderContention()
     {
@@ -73,8 +74,12 @@ public sealed class SchedulingLatencyBenchmarkTests
         LatencyProfile withoutRestraint = await MeasureAsync();
 
         PriorityProBalanceActuator actuator = new();
+        // Nadzorca widzi wylacznie wlasne obciazacze. Z pelnym probnikiem
+        // obnizalby priorytet najciezszym procesom maszyny — edytorowi,
+        // serwerowi budowania, cudzemu pomiarowi.
         ProBalanceSupervisor supervisor = new(
-            new CpuProcessSampler(),
+            new FilteredCpuProcessSource(
+                () => _load.Select(process => process.Id)),
             actuator,
             static () => new HashSet<int> { Environment.ProcessId },
             settings: new ProBalanceSettings
