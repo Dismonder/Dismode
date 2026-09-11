@@ -2,7 +2,7 @@
 
 Status: podstawa zbudowana i zmierzona, rozbudowa w toku
 Utworzono: 2026-09-06
-Ostatnia aktualizacja: 2026-09-06
+Ostatnia aktualizacja: 2026-09-11
 
 ## Cel
 
@@ -156,7 +156,12 @@ sukces przypisania, które nie ma prawa zadziałać.
   nietknięte niezależnie od stopnia eskalacji.
 - Maskę wolno wyłącznie zwężać w granicach tego, co proces już ma przydzielone.
 - Każda zmiana przechodzi przez journal i wraca po sesji albo po awarii.
-- Ograniczanie nie włącza się bez zgody użytkownika.
+- Pętla reaktywna jest domyślnie włączona — przełącznik „Ograniczaj procesy
+  tła w trakcie gry" w ustawieniach, od 2026-09-11 na życzenie Damiana
+  (wcześniej domyślnie wyłączony, a jego stan nie jest zapisywany, więc
+  „wyłączony" znaczyło „wyłączony przy każdym starcie"). Zgoda na pakiet dla
+  zatwierdzonych aplikacji tła nadal zapada w planie, per aplikacja i per
+  tryb.
 - Zmiana progów nie może być uzasadniona wyłącznie pomiarem opóźnienia
   wybudzenia — wiążący jest czas klatki gry.
 - Nie kopiujemy algorytmu Process Lasso. Progi mają wynikać z pomiaru na
