@@ -164,34 +164,49 @@ public sealed class JournaledProBalanceActuator :
                 return false;
             }
 
-            // Odsuniecie od rdzeni gry. Idzie po ograniczeniu priorytetu,
-            // bo tamto jest wazniejsze i nie chcemy, zeby nieudane sterowanie
-            // zbiorami przeslonilo udane obnizenie priorytetu.
-            bool steered = TrySteerAway(runtimeKey);
-            PinnedAffinity? pinned = await TryPinAsync(
+            // Od tego miejsca proces JEST juz zmieniony: priorytet lezy na
+            // nim i tylko nasz rekord pamieta, ze to my. Anulowanie nie moze
+            // nas tu wyrzucic, bo wyjatek przeskoczylby zapis do _applied,
+            // ReleaseAll nie mialoby czego zwalniac i proces zostalby
+            // w cwiartce z obnizonym priorytetem na zawsze. Reszte robimy
+            // wiec bez tokenu, a rekord powstaje w finally z tym, co realnie
+            // zdazylo sie nalozyc.
+            bool steered = false;
+            PinnedAffinity? pinned = null;
+            LoweredIo? loweredIo = null;
+            try
+            {
+                // Odsuniecie od rdzeni gry. Idzie po ograniczeniu priorytetu,
+                // bo tamto jest wazniejsze i nie chcemy, zeby nieudane
+                // sterowanie zbiorami przeslonilo udane obnizenie priorytetu.
+                steered = TrySteerAway(runtimeKey);
+                pinned = await TryPinAsync(identity, CancellationToken.None)
+                    .ConfigureAwait(false);
+                // Na koncu, bo z trzech ograniczen to najmniej sprawdzone.
+                // Niepowodzenie nie moze przeslonic udanej maski.
+                loweredIo = await TryLowerIoAsync(
+                        identity,
+                        CancellationToken.None)
+                    .ConfigureAwait(false);
+            }
+            finally
+            {
+                _applied[runtimeKey] = new(
                     identity,
-                    cancellationToken)
-                .ConfigureAwait(false);
-            // Na koncu, bo z trzech ograniczen to najmniej sprawdzone.
-            // Niepowodzenie nie moze przeslonic udanej maski.
-            LoweredIo? loweredIo = await TryLowerIoAsync(
-                    identity,
-                    cancellationToken)
-                .ConfigureAwait(false);
-            _applied[runtimeKey] = new(
-                identity,
-                actionId,
-                idempotencyKey,
-                steered,
-                pinned,
-                loweredIo);
+                    actionId,
+                    idempotencyKey,
+                    steered,
+                    pinned,
+                    loweredIo);
+            }
+
             await ReportRestraintAsync(
                     identity,
                     actionId,
                     idempotencyKey,
                     pinned,
                     loweredIo,
-                    cancellationToken)
+                    CancellationToken.None)
                 .ConfigureAwait(false);
             return true;
         }
@@ -201,11 +216,25 @@ public sealed class JournaledProBalanceActuator :
         }
     }
 
+    /// <summary>
+    /// Zdejmuje ograniczenia z procesu.
+    /// <para>
+    /// Token jest przyjmowany dla zgodnosci z interfejsem, ale swiadomie
+    /// nieuzywany: kazdy krok tej metody to przywracanie stanu, a przerwanie
+    /// go w polowie zostawia proces ograniczony — czyli powoduje dokladnie
+    /// to, czemu ta metoda ma zapobiegac.
+    /// </para>
+    /// </summary>
     public async ValueTask<bool> ReleaseAsync(
         ProcessRuntimeKey runtimeKey,
         CancellationToken cancellationToken)
     {
-        if (!_applied.Remove(runtimeKey, out RestraintRecord? record))
+        _ = cancellationToken;
+
+        // Podgladamy, nie zdejmujemy. Usuniecie na wejsciu znaczyloby, ze
+        // nieudane przywrocenie gubi jedyny slad po ograniczeniu, ktore
+        // nadal obowiazuje. Rekord znika dopiero, gdy stan faktycznie wrocil.
+        if (!_applied.TryGetValue(runtimeKey, out RestraintRecord? record))
         {
             return false;
         }
@@ -216,9 +245,14 @@ public sealed class JournaledProBalanceActuator :
             _ = ProcessCpuSets.TryApply(runtimeKey.ProcessId, []);
         }
 
-        // Przed przywroceniem rodzica, bo po nim nie odroznimy juz dzieci
-        // po odziedziczonych wartosciach.
-        await ReleaseDescendantsAsync(runtimeKey, cancellationToken)
+        // Cala ta sciezka idzie bez tokenu i jest to ta sama zasada, co przy
+        // nakladaniu: zwalnianie przerwane w polowie zostawia proces
+        // ograniczony, czyli dokladnie to, przed czym ma chronic. Praca jest
+        // ograniczona co do rozmiaru, a wolajacy i tak czeka na worker.
+        //
+        // Potomkowie przed rodzicem, bo po przywroceniu rodzica nie odroznimy
+        // juz dzieci po odziedziczonych wartosciach.
+        await ReleaseDescendantsAsync(runtimeKey, CancellationToken.None)
             .ConfigureAwait(false);
 
         if (record.LoweredIo is { } loweredIo)
@@ -226,13 +260,16 @@ public sealed class JournaledProBalanceActuator :
             await RestoreIoAsync(
                     record.Identity,
                     loweredIo,
-                    cancellationToken)
+                    CancellationToken.None)
                 .ConfigureAwait(false);
         }
 
         if (record.Pinned is { } pinned)
         {
-            await RestorePinAsync(record.Identity, pinned, cancellationToken)
+            await RestorePinAsync(
+                    record.Identity,
+                    pinned,
+                    CancellationToken.None)
                 .ConfigureAwait(false);
         }
 
@@ -252,7 +289,7 @@ public sealed class JournaledProBalanceActuator :
             ActionRecoveryResult result =
                 await new ActionRecoveryCoordinator<
                         RuntimeProcessPriorityState>(_journal)
-                    .RecoverAsync(action, context, cancellationToken)
+                    .RecoverAsync(action, context, CancellationToken.None)
                     .ConfigureAwait(false);
             bool restored = result.Status
                 is ActionRecoveryStatus.Restored
@@ -260,10 +297,11 @@ public sealed class JournaledProBalanceActuator :
                 or ActionRecoveryStatus.NotRequired;
             if (restored)
             {
-                // Dopiero po faktycznym przywroceniu. Wykreslenie z ksiegi
-                // wczesniej odebraloby odtwarzaniu po awarii jedyny slad po
+                // Dopiero po faktycznym przywroceniu. Wykreslenie wczesniej
+                // odebraloby odtwarzaniu po awarii jedyny slad po
                 // ograniczeniu, ktore moze wlasnie nie zostalo zdjete.
-                await ForgetRestraintAsync(runtimeKey, cancellationToken)
+                _ = _applied.Remove(runtimeKey);
+                await ForgetRestraintAsync(runtimeKey, CancellationToken.None)
                     .ConfigureAwait(false);
             }
 
