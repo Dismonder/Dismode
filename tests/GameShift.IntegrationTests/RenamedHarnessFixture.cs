@@ -30,7 +30,8 @@ internal sealed class RenamedHarnessFixture : IAsyncDisposable
     internal string ExecutablePath { get; }
 
     internal static async ValueTask<RenamedHarnessFixture> StartAsync(
-        string testDirectory)
+        string testDirectory,
+        IReadOnlyList<string>? extraArguments = null)
     {
         string sourceExecutable =
             ProcessHarnessFixture.FindHarnessExecutable();
@@ -63,6 +64,11 @@ internal sealed class RenamedHarnessFixture : IAsyncDisposable
         };
         startInfo.ArgumentList.Add("--ready-file");
         startInfo.ArgumentList.Add(readyFile);
+        foreach (string argument in extraArguments ?? [])
+        {
+            startInfo.ArgumentList.Add(argument);
+        }
+
         Process process = Process.Start(startInfo)
             ?? throw new InvalidOperationException(
                 "The renamed background harness did not start.");

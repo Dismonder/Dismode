@@ -12,6 +12,15 @@ int? exitAfterSpawnMilliseconds = ReadIntegerOption(
     "--exit-after-spawn-ms",
     minimum: 10,
     maximum: 10_000);
+// Dziecko spawnowane z opoznieniem, a nie od razu po pokazaniu okna: test,
+// ktory sprawdza dziedziczenie ustawien procesu (maska powinowactwa
+// przechodzi na potomkow utworzonych po jej nalozeniu), potrzebuje dziecka
+// urodzonego juz PO tym, jak sesja zdazyla ruszyc rodzica.
+int? spawnChildAfterMilliseconds = ReadIntegerOption(
+    args,
+    "--spawn-child-after-ms",
+    minimum: 10,
+    maximum: 60_000);
 bool ignoreClose = args.Contains(
     "--ignore-close",
     StringComparer.OrdinalIgnoreCase);
@@ -32,6 +41,17 @@ using System.Windows.Forms.Timer? exitAfterSpawnTimer =
         ? new()
         {
             Interval = delay,
+        }
+        : null;
+// Zakotwiczony tutaj, nie w obsludze zdarzenia: timer WinForms, do ktorego
+// odwoluje sie tylko jego wlasna procedura Tick, jest cyklem bez korzenia
+// i GC potrafi go zebrac, zanim odmierzy czas. Dziecko wtedy nigdy nie
+// powstaje i test czeka na plik, ktorego nie bedzie.
+using System.Windows.Forms.Timer? spawnChildTimer =
+    spawnChildAfterMilliseconds is int spawnDelay
+        ? new()
+        {
+            Interval = spawnDelay,
         }
         : null;
 
@@ -59,17 +79,19 @@ window.Shown += (_, _) =>
 
     if (childReadyFile is not null && !isChild)
     {
-        ProcessStartInfo startInfo = new()
+        if (spawnChildTimer is not null)
         {
-            FileName = Environment.ProcessPath
-                ?? throw new InvalidOperationException(
-                    "The harness executable path is unavailable."),
-            UseShellExecute = false,
-        };
-        startInfo.ArgumentList.Add("--ready-file");
-        startInfo.ArgumentList.Add(childReadyFile);
-        startInfo.ArgumentList.Add("--child");
-        Process.Start(startInfo)?.Dispose();
+            spawnChildTimer.Tick += (_, _) =>
+            {
+                spawnChildTimer.Stop();
+                SpawnChild(childReadyFile);
+            };
+            spawnChildTimer.Start();
+        }
+        else
+        {
+            SpawnChild(childReadyFile);
+        }
     }
 
     if (exitAfterSpawnTimer is not null && !isChild)
@@ -85,6 +107,21 @@ window.Shown += (_, _) =>
 
 Application.Run(window);
 return;
+
+static void SpawnChild(string childReadyFile)
+{
+    ProcessStartInfo startInfo = new()
+    {
+        FileName = Environment.ProcessPath
+            ?? throw new InvalidOperationException(
+                "The harness executable path is unavailable."),
+        UseShellExecute = false,
+    };
+    startInfo.ArgumentList.Add("--ready-file");
+    startInfo.ArgumentList.Add(childReadyFile);
+    startInfo.ArgumentList.Add("--child");
+    Process.Start(startInfo)?.Dispose();
+}
 
 static string? ReadOption(string[] arguments, string option)
 {

@@ -507,3 +507,145 @@ Próg asercji w `LiveGameFrameTimeTests` nadal dopuszcza pogorszenie mediany
 o połowę, bo służy wykrywaniu regresji, a nie dowodzeniu poprawy. Do
 wykazania zysku mniejszego niż kilkadziesiąt procent to za mało i trzeba
 będzie osobnej asercji.
+
+## Pakiet dla zatwierdzonego tła od startu sesji i księga ograniczeń — 2026-09-11
+
+Sekcja dopisana przez sesję pracującą nad stroną orkiestratora.
+
+### Co się zmieniło
+
+Wnioski z pomiarów wyżej były jednoznaczne, a kod ich nie odzwierciedlał:
+jedyną dźwignią CPU, która ruszyła czas klatki, jest twarda maska, a trafiała
+do procesu wyłącznie reaktywnie — po `SustainedSamples` × interwał (około
+6 s) i tylko powyżej bramki obciążenia tła, której zwykłe użycie nie
+przekracza. Aplikacje, na których ograniczenie użytkownik zgodził się
+w planie, dostawały tylko BelowNormal + EcoQoS, czyli dokładnie to, co
+w pomiarze nie dało nic.
+
+Tryb „Ogranicz tło" (dawniej „Energooszczędne tło") nakłada teraz od
+pierwszej sekundy sesji pełny pakiet, po jednej dźwigni na zasób:
+
+| zasób | dźwignia | akcja | stan pomiaru |
+|---|---|---|---|
+| rdzenie | twarda maska ćwiartki | `ProcessAffinityAction` | −60,7% p99 (Valheim, pełne obciążenie) |
+| częstotliwość | EcoQoS | bez zmian | niezmierzone osobno |
+| pamięć | priorytet pamięci VeryLow | `ProcessMemoryPriorityAction` (nowa) | mechanizm potwierdzony na żywym procesie; wpływ na klatki niezmierzony |
+| dysk | priorytet wejścia-wyjścia VeryLow | `ProcessIoPriorityAction` (sesja obok) | jw.; pierwszy sparowany pomiar nierozstrzygnięty |
+| planista | BelowNormal | bez zmian | zero do ujemnego; do rozstrzygnięcia wariantem (a) |
+
+Każda dźwignia to osobna akcja z własnymi identyfikatorami w planie
+i w metadanych sesji — tak samo jak EcoQoS — więc wraca po sesji i po awarii
+hosta. Maska, pamięć i dysk są best-effort: proces, który sam sobie zawęził
+affinity albo już ma niski priorytet, zostaje z tym, co dostał, a sesja się
+nie wywraca. Proces, który sam się zakończył, jest przy odtwarzaniu pomijany,
+a nie liczony jako błąd — plan obiecuje użytkownikowi dokładnie to. Podgląd
+planu opisuje przypięcie i priorytety, żeby zgoda dotyczyła tego, co się
+naprawdę stanie.
+
+Tryb „Tylko obniż priorytet" pozostaje tym, co mówi jego nazwa.
+
+### Luka, która była: ograniczenia reaktywne nie wracały po awarii
+
+`JournaledProBalanceActuator` zapisywał każdą akcję w dzienniku, a komentarz
+obiecywał, że „odtwarzanie przy następnym starcie je znajdzie". Nie
+znajdowało: `RecoverUserSessionAsync` czyta wyłącznie metadane sesji —
+priorytet gry i zaplanowane aplikacje. Po awarii SessionHosta proces złapany
+przez ProBalance zostawał w ćwiartce maszyny, z BelowNormal i z niskim
+priorytetem wejścia-wyjścia, na stałe. Wiersz „priorytety i maski
+procesora → dziennik + odzyskiwanie" w spisie planów mówił w tym miejscu
+nieprawdę.
+
+Zamknięcie: aktuator melduje każde ograniczenie i zwolnienie do
+`IRestraintLedger`; orkiestrator trzyma je w `ActiveRuntime` obok
+zaplanowanych aplikacji, zapisuje w punkcie kontrolnym
+`BackgroundRestraintChanged` i odtwarza tą samą drogą. Przy wznowieniu żywej
+sesji po restarcie oddaje je od razu — nie mają już nadzorcy, który by je
+zdjął, gdy proces się uspokoi, a GameShift nie jest niczyim planistą na
+stałe. Pętla staje na początku przywracania, żeby jej zwolnienia były częścią
+sesji, a nie czymś po jej zamknięciu.
+
+Test: `RestartedHostReleasesReactivelyRestrainedProcess` — prawdziwy
+aktuator, prawdziwy proces liczący; symulowana jest tylko śmierć hosta przed
+zwolnieniem.
+
+### Dzieci dziedziczą maskę
+
+Maska powinowactwa przechodzi na każdy proces utworzony po jej nałożeniu.
+Przeglądarka, launcher i komunikator tworzą procesy przez cały czas gry;
+dziennik cofa to, co zrobiono rodzicowi, i nic nie wie o dzieciach
+urodzonych w ćwiartce. Po przywróceniu rodzica orkiestrator przegląda jego
+potomków (jedna migawka Toolhelp na całe przywracanie) i tym, których maska
+jest dokładnie równa ćwiartce, daje maskę rodzica — albo całą maszynę, gdy
+rodzica już nie ma. Sygnatura jest dokładna, a kierunek ewentualnej pomyłki
+bezpieczny: poszerzanie. Ten sam problem dotyczy dziedziczonego BelowNormal,
+ale tam sygnatura nie jest jednoznaczna (Chrome sam obniża rendererom
+priorytet), więc priorytetu dzieci nie ruszamy.
+
+Test: potomek harnessu spawnowany 8 s po starcie, czyli już z maską, po
+zakończeniu sesji ma maskę rodzica.
+
+### Czego nie zrobiono i dlaczego
+
+- **Zbiory CPU gry na dopełnieniu ćwiartki** — nie weszły. Gra ma dziś sześć
+  rdzeni na wyłączność plus możliwość sięgnięcia po dwa pozostałe;
+  preferencja by to odbierała bez pomiaru. Zostaje wariantem (b).
+- **Usunięcie BelowNormal z pakietu** — nie bez pomiaru maska wobec
+  maska + priorytet (wariant a). Pogorszenie po obniżeniu priorytetu nie
+  dowodzi inwersji, dopóki nie pokaże się łańcucha zależności.
+- **Priorytet pamięci w pętli reaktywnej** — aktuator zostawia te pola
+  puste; wejdzie, gdy pomiar pod presją pamięci (wariant d) pokaże zysk.
+
+### Pomiary do wykonania — wymagają gry na pierwszym planie
+
+(a) maska wobec maska + BelowNormal; (b) ćwiartka wobec ćwiartka + zbiory CPU
+gry na dopełnieniu; (c) hog dyskowy, priorytet wejścia-wyjścia Normal wobec
+VeryLow — protokół poprawiony przez sesję obok; (d) hog pamięciowy około
+10 GB, priorytet pamięci Normal wobec VeryLow; (e) ćwiartka wobec ćwiartka
++ EcoQoS — budżet mocy pakietu na i7-11700F jest wspólny, więc wolniejsze
+hogi to wyższy boost rdzeni gry.
+
+### Czego tym aparatem nie da się zmierzyć przy swobodnej grze
+
+Dwa sparowane testy z rzędu skończyły się werdyktem „nierozstrzygnięte",
+i przyczyna jest wspólna. Dane z testu maski na lekkim tle, cztery rundy
+naprzemiennie po 30 sekund:
+
+| wariant | r1 | r2 | r3 | r4 | rozrzut |
+|---|---|---|---|---|---|
+| tło wolne | 19,31 | 15,98 | 24,75 | 75,96 | 60 ms |
+| tło w ćwiartce | 18,28 | 17,25 | 15,90 | 18,74 | 2,8 ms |
+
+**Rozrzut wewnątrz jednego wariantu przewyższa szukany efekt.** Przy
+swobodnej grze scena zmienia się między blokami, więc porównujemy sceny,
+a nie warianty. Blok 75,96 ms mógł być zarówno dowodem, że maska
+stabilizuje ogon, jak i skutkiem wejścia postaci do nowego obszaru —
+czterema rundami tego nie rozdzielimy.
+
+Wniosek dla każdego kolejnego pomiaru małego efektu:
+
+1. **Powtarzalna scena**, nie swobodna gra. Postać stojąca w miejscu, ta
+   sama lokacja i ten sam kierunek patrzenia, albo wbudowany benchmark.
+2. **Więcej rund, nie dłuższe bloki.** Rozrzut jest między blokami, nie
+   wewnątrz nich — 2200 klatek w bloku to już dużo, a p99 i tak skacze.
+3. **Raportować rozrzut**, nie samą medianę różnic. „Mediana +4,94 ms"
+   ukrywa rundę, w której wyszło −1,27 ms.
+
+Osobna obserwacja, sugestywna i niepotwierdzona: wariant z maską trzymał
+się w przedziale 15,9–18,7 ms w każdej rundzie, podczas gdy bez maski
+skakał od 16 do 76 ms. Jeżeli to się potwierdzi na powtarzalnej scenie,
+zyskiem wartym nazwania będzie stabilność ogona, a nie obniżenie mediany —
+gracz czuje właśnie skoki.
+
+### Priorytet wejścia-wyjścia: stan wiedzy
+
+Mechanizm sprawdzony odczytem na żywym procesie: `NtSetInformationProcess`
+z `ProcessIoPriority` przyjmuje wartość i odczyt ją potwierdza, na procesie
+kończącym pracę zwraca `0xC000010A`. Zysk w czasie klatki **nie został
+wykazany** — sparowany test z hogiem dyskowym dał różnice +0,60, +1,08,
++3,45 i −2,42 ms, czyli kierunek niespójny. Diagnoza: pojedynczy
+sekwencyjny czytnik nie tworzy na NVMe rywalizacji, którą priorytet
+mógłby rozstrzygnąć.
+
+Zarówno maska, jak i priorytet wejścia-wyjścia **dziedziczą się na procesy
+potomne** — zmierzone. Dlatego zwolnienie przegląda potomków i przywraca
+tym, którzy mają dokładnie nasze wartości.

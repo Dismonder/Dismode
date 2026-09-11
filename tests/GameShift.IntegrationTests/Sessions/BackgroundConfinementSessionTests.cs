@@ -50,9 +50,20 @@ public sealed class BackgroundConfinementSessionTests
 
         string directory = CreateTestDirectory();
         string gameReadyFile = Path.Combine(directory, "game.ready");
+        string childReadyFile = Path.Combine(directory, "background-child.ready");
         int? gameProcessId = null;
+        int? childProcessId = null;
+        // Aplikacja tla urodzi potomka juz po tym, jak sesja zdazy nalozyc
+        // maske. Maska powinowactwa dziedziczy sie, a dziennik zna tylko
+        // rodzica — to jest przypadek, ktory bez osobnej obslugi zostawia
+        // dziecko w cwiartce maszyny do konca jego zycia.
         RenamedHarnessFixture background =
-            await RenamedHarnessFixture.StartAsync(directory);
+            await RenamedHarnessFixture.StartAsync(
+                directory,
+                [
+                    "--spawn-child-ready-file", childReadyFile,
+                    "--spawn-child-after-ms", "8000",
+                ]);
         SqliteUserDataStore store =
             new(Path.Combine(directory, "user.db"));
         AppendOnlyRecoveryJournal journal =
@@ -135,9 +146,27 @@ public sealed class BackgroundConfinementSessionTests
             Assert.IsGreaterThanOrEqualTo(5, started.AppliedActionCount);
             StringAssert.Contains(started.Message, "na rdzeniach tła: 1");
 
+            await WaitForFileAsync(childReadyFile, TimeSpan.FromSeconds(25));
+            childProcessId = ReadProcessId(childReadyFile);
+            using Process child = Process.GetProcessById(childProcessId.Value);
+            Assert.AreEqual(
+                corner.Mask,
+                (ulong)child.ProcessorAffinity.ToInt64(),
+                "Warunek testu: potomek urodzony po nalozeniu maski mial ja "
+                    + "odziedziczyc. Jesli nie odziedziczyl, sesja ruszyla "
+                    + "rodzica pozniej niz on spawnowal dziecko.");
+
             GameSessionSnapshot completed = await orchestrator.RestoreAsync(
                 plan.SessionId,
                 CancellationToken.None);
+
+            child.Refresh();
+            Assert.AreEqual(
+                originalAffinity,
+                child.ProcessorAffinity,
+                "Potomek zostal w cwiartce po zakonczeniu sesji. Dziennik "
+                    + "cofa tylko to, co zrobiono rodzicowi; dzieci urodzone "
+                    + "z odziedziczona maska trzeba przejrzec osobno.");
 
             Assert.AreEqual(
                 OptimizationSessionState.Completed,
@@ -174,6 +203,16 @@ public sealed class BackgroundConfinementSessionTests
             if (gameProcessId is not null)
             {
                 await CloseProcessAsync(gameProcessId.Value);
+            }
+
+            if (childProcessId is null && File.Exists(childReadyFile))
+            {
+                childProcessId = ReadProcessId(childReadyFile);
+            }
+
+            if (childProcessId is not null)
+            {
+                await CloseProcessAsync(childProcessId.Value);
             }
 
             await orchestrator.DisposeAsync();
@@ -400,7 +439,12 @@ public sealed class BackgroundConfinementSessionTests
                 new JournaledProBalanceActuator(
                     journalForActuator,
                     sessionId,
-                    backgroundAffinityMask: corner.Mask)));
+                    backgroundAffinityMask: corner.Mask)),
+            // Nadzorca widzi wylacznie nasz proces liczacy. Na maszynie,
+            // na ktorej rownolegle ktos mierzy z wlasnymi hogami, prawdziwy
+            // aktuator zlapalby najciezsze z NICH — i zostawil je ograniczone,
+            // bo ten test celowo nie zwalnia niczego przed „awaria".
+            cpuProcessSourceFactory: () => new SingleProcessSource(hog.Id));
         SqliteUserDataStore? restartedStore = null;
         AppendOnlyRecoveryJournal? restartedJournal = null;
         LocalGameSessionOrchestrator? restartedHost = null;
@@ -441,12 +485,27 @@ public sealed class BackgroundConfinementSessionTests
 
             // Ksiega musiala zapisac punkt kontrolny z tym ograniczeniem,
             // zanim host padnie — inaczej nastepny start nie ma czego czytac.
-            IReadOnlyList<RecoveryJournalEntry> beforeCrash =
-                await firstJournal.ReadAllAsync(CancellationToken.None);
-            Assert.IsTrue(
-                beforeCrash.Any(record =>
+            // Maska jest widoczna na procesie chwile wczesniej niz meldunek
+            // w dzienniku (aktuator najpierw naklada, potem melduje), wiec
+            // na wpis czekamy, zamiast czytac dziennik natychmiast.
+            bool reported = false;
+            DateTimeOffset reportDeadline =
+                DateTimeOffset.UtcNow + TimeSpan.FromSeconds(15);
+            while (!reported && DateTimeOffset.UtcNow < reportDeadline)
+            {
+                IReadOnlyList<RecoveryJournalEntry> beforeCrash =
+                    await firstJournal.ReadAllAsync(CancellationToken.None);
+                reported = beforeCrash.Any(record =>
                     record.SessionCheckpoint
-                        == SessionCheckpoint.BackgroundRestraintChanged),
+                        == SessionCheckpoint.BackgroundRestraintChanged);
+                if (!reported)
+                {
+                    await Task.Delay(200);
+                }
+            }
+
+            Assert.IsTrue(
+                reported,
                 "Brak punktu kontrolnego BackgroundRestraintChanged: "
                     + "aktuator nie zameldowal ograniczenia do ksiegi.");
 
@@ -538,6 +597,19 @@ public sealed class BackgroundConfinementSessionTests
             restartedStore?.Dispose();
             await DeleteDirectorySafelyAsync(directory);
         }
+    }
+
+    /// <summary>
+    /// Reports only one process to the restraint loop, so this test can never
+    /// restrain anything it does not own — including another session's
+    /// measurement hogs running on the same machine.
+    /// </summary>
+    private sealed class SingleProcessSource(int processId) : ICpuProcessSource
+    {
+        private readonly CpuProcessSampler _sampler = new();
+
+        public IReadOnlyList<CpuProcessSample> Capture() =>
+            [.. _sampler.Capture().Where(sample => sample.ProcessId == processId)];
     }
 
     /// <summary>
@@ -647,13 +719,15 @@ public sealed class BackgroundConfinementSessionTests
         return directory;
     }
 
-    private static async Task WaitForFileAsync(string path)
+    private static async Task WaitForFileAsync(
+        string path,
+        TimeSpan? timeout = null)
     {
-        using CancellationTokenSource timeout =
-            new(TimeSpan.FromSeconds(10));
+        using CancellationTokenSource deadline =
+            new(timeout ?? TimeSpan.FromSeconds(10));
         while (!File.Exists(path))
         {
-            await Task.Delay(TimeSpan.FromMilliseconds(50), timeout.Token);
+            await Task.Delay(TimeSpan.FromMilliseconds(50), deadline.Token);
         }
     }
 

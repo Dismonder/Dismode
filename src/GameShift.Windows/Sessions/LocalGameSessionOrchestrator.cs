@@ -2413,6 +2413,16 @@ public sealed class LocalGameSessionOrchestrator : IAsyncDisposable
         // czego cofac.
         ulong backgroundMask = ResolveBackgroundAffinityMask();
 
+        // Jedna migawka drzewa procesow na cale przywracanie, i tylko wtedy,
+        // gdy jest po co: potomkowie dziedzicza maske, wiec po zdjeciu jej
+        // z rodzica trzeba jeszcze przejrzec, kogo urodzil w miedzyczasie.
+        IReadOnlyDictionary<int, int>? parentMap =
+            backgroundMask != 0
+                && applications.Any(application =>
+                    application.AffinityActionId is not null)
+                ? TryCaptureParentMap()
+                : null;
+
         foreach (PlannedBackgroundApplication application
                      in applications.Reverse())
         {
@@ -2479,6 +2489,13 @@ public sealed class LocalGameSessionOrchestrator : IAsyncDisposable
                                 requestedAtUtc),
                             cancellationToken)
                         .ConfigureAwait(false));
+                if (parentMap is not null)
+                {
+                    ReleaseInheritedCorner(
+                        application.Identity.RuntimeKey.ProcessId,
+                        backgroundMask,
+                        parentMap);
+                }
             }
 
             if (application.ActionMode
@@ -2559,6 +2576,127 @@ public sealed class LocalGameSessionOrchestrator : IAsyncDisposable
             IsExpectedRecoveryFailure(exception))
         {
             return new(0, 0, 1);
+        }
+    }
+
+    private IReadOnlyDictionary<int, int>? TryCaptureParentMap()
+    {
+        try
+        {
+            return _processParentMapProvider.Capture();
+        }
+        catch (Exception exception) when (
+            exception is Win32Exception
+                or InvalidOperationException
+                or UnauthorizedAccessException)
+        {
+            return null;
+        }
+    }
+
+    /// <summary>
+    /// Gives back the machine to processes that inherited the background
+    /// corner from a restrained parent.
+    /// <para>
+    /// An affinity mask is inherited by every process created after it was
+    /// set, and browsers, launchers and chat clients create processes for
+    /// the whole length of a game. The journal reverses what was done to the
+    /// parent; it knows nothing about children that were born confined. Left
+    /// alone they would stay in a quarter of the machine until they exit —
+    /// for a browser's renderer that can be the rest of the day.
+    /// </para>
+    /// <para>
+    /// The signature is exact: only a descendant whose mask is precisely the
+    /// corner is touched, and it is widened only to what the parent has now,
+    /// which after restoration is what the parent had before. A descendant
+    /// that set a mask of its own is not the corner and is left alone;
+    /// protected processes are refused as everywhere else. Widening is the
+    /// safe direction of this mistake — the worst case is a process that
+    /// deliberately chose exactly the corner regaining the machine.
+    /// </para>
+    /// </summary>
+    private static void ReleaseInheritedCorner(
+        int rootProcessId,
+        ulong cornerMask,
+        IReadOnlyDictionary<int, int> parentMap)
+    {
+        ulong restoredMask = ReadAffinityOrMachineMask(rootProcessId);
+        if (restoredMask == 0 || restoredMask == cornerMask)
+        {
+            // Rodzic nadal siedzi w cwiartce, wiec albo przywracanie sie nie
+            // powiodlo, albo ktos tak chcial. W obu przypadkach dzieci
+            // zostaja, jak sa.
+            return;
+        }
+
+        Queue<int> pending = new();
+        HashSet<int> visited = [rootProcessId];
+        pending.Enqueue(rootProcessId);
+        while (pending.Count > 0)
+        {
+            int parent = pending.Dequeue();
+            foreach ((int child, int childParent) in parentMap)
+            {
+                if (childParent != parent || !visited.Add(child))
+                {
+                    continue;
+                }
+
+                pending.Enqueue(child);
+                TryWidenInheritedMask(child, cornerMask, restoredMask);
+            }
+        }
+    }
+
+    private static void TryWidenInheritedMask(
+        int processId,
+        ulong cornerMask,
+        ulong restoredMask)
+    {
+        try
+        {
+            using Process child = Process.GetProcessById(processId);
+            if (BackgroundApplicationGuard.IsProtectedProcessName(
+                    child.ProcessName)
+                || (ulong)child.ProcessorAffinity.ToInt64() != cornerMask)
+            {
+                return;
+            }
+
+            child.ProcessorAffinity = (nint)(long)restoredMask;
+        }
+        catch (Exception exception) when (
+            exception is ArgumentException
+                or InvalidOperationException
+                or Win32Exception)
+        {
+            // Proces zdazyl sie zakonczyc albo nalezy do kogos, komu nie
+            // wolno nam zmieniac ustawien. Jedno i drugie znaczy: nie nasz.
+        }
+    }
+
+    /// <summary>
+    /// The mask a restrained parent has now, or the whole machine when the
+    /// parent is already gone — its children can outlive it, and the only
+    /// honest default for a process nobody restricted is every processor.
+    /// </summary>
+    private static ulong ReadAffinityOrMachineMask(int processId)
+    {
+        try
+        {
+            using Process parent = Process.GetProcessById(processId);
+            return (ulong)parent.ProcessorAffinity.ToInt64();
+        }
+        catch (Exception exception) when (
+            exception is ArgumentException
+                or InvalidOperationException
+                or Win32Exception)
+        {
+            CpuTopology? topology = SystemCpuTopologyProvider.Read();
+            return topology is null
+                ? 0
+                : CpuAffinityPolicy.BuildMask(topology.Processors.Where(
+                    processor => processor.LogicalProcessorIndex < 64));
         }
     }
 
