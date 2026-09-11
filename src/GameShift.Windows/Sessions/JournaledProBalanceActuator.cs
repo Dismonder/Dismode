@@ -8,6 +8,7 @@ using GameShift.Core.Journal;
 using GameShift.Core.Recovery;
 using GameShift.Core.Transactions;
 using GameShift.Windows.Cpu;
+using GameShift.Windows.NativeInterop;
 using GameShift.Windows.Processes;
 
 namespace GameShift.Windows.Sessions;
@@ -44,6 +45,16 @@ public sealed class JournaledProBalanceActuator : IProBalanceActuator
     /// </para>
     /// </summary>
     private readonly ulong _backgroundAffinityMask;
+
+    /// <summary>
+    /// Czy procesom tla obnizac takze priorytet wejscia-wyjscia.
+    /// <para>
+    /// Maska odbiera rdzenie, ale nie odbiera dysku. Kopia zapasowa albo
+    /// indeksowanie moze siedziec na dwoch rdzeniach i nadal zapychac kolejke
+    /// odczytow, a gra czeka na swoje zasoby.
+    /// </para>
+    /// </summary>
+    private readonly bool _lowerBackgroundIoPriority;
     private readonly Dictionary<ProcessRuntimeKey, RestraintRecord> _applied =
         [];
 
@@ -53,7 +64,8 @@ public sealed class JournaledProBalanceActuator : IProBalanceActuator
         IProcessIdentityProvider? identityProvider = null,
         TimeProvider? timeProvider = null,
         IReadOnlyList<uint>? backgroundCpuSetIds = null,
-        ulong backgroundAffinityMask = 0)
+        ulong backgroundAffinityMask = 0,
+        bool lowerBackgroundIoPriority = true)
     {
         ArgumentNullException.ThrowIfNull(journal);
         _journal = journal;
@@ -62,6 +74,7 @@ public sealed class JournaledProBalanceActuator : IProBalanceActuator
         _timeProvider = timeProvider ?? TimeProvider.System;
         _backgroundCpuSetIds = backgroundCpuSetIds ?? [];
         _backgroundAffinityMask = backgroundAffinityMask;
+        _lowerBackgroundIoPriority = lowerBackgroundIoPriority;
     }
 
     public async ValueTask<bool> RestrainAsync(
@@ -119,12 +132,19 @@ public sealed class JournaledProBalanceActuator : IProBalanceActuator
                     identity,
                     cancellationToken)
                 .ConfigureAwait(false);
+            // Na koncu, bo z trzech ograniczen to najmniej sprawdzone.
+            // Niepowodzenie nie moze przeslonic udanej maski.
+            LoweredIo? loweredIo = await TryLowerIoAsync(
+                    identity,
+                    cancellationToken)
+                .ConfigureAwait(false);
             _applied[runtimeKey] = new(
                 identity,
                 actionId,
                 idempotencyKey,
                 steered,
-                pinned);
+                pinned,
+                loweredIo);
             return true;
         }
         catch (Exception exception) when (IsExpected(exception))
@@ -146,6 +166,15 @@ public sealed class JournaledProBalanceActuator : IProBalanceActuator
         {
             // Wyczyszczenie oddaje procesowi cala maszyne.
             _ = ProcessCpuSets.TryApply(runtimeKey.ProcessId, []);
+        }
+
+        if (record.LoweredIo is { } loweredIo)
+        {
+            await RestoreIoAsync(
+                    record.Identity,
+                    loweredIo,
+                    cancellationToken)
+                .ConfigureAwait(false);
         }
 
         if (record.Pinned is { } pinned)
@@ -312,6 +341,75 @@ public sealed class JournaledProBalanceActuator : IProBalanceActuator
         }
     }
 
+    private async ValueTask<LoweredIo?> TryLowerIoAsync(
+        ProcessIdentity identity,
+        CancellationToken cancellationToken)
+    {
+        if (!_lowerBackgroundIoPriority)
+        {
+            return null;
+        }
+
+        ActionId actionId = new(Guid.NewGuid());
+        IdempotencyKey idempotencyKey = IdempotencyKey.Create();
+        ProcessIoPriorityAction action = new(
+            actionId,
+            identity,
+            IoPriorityNativeMethods.IoPriorityVeryLow,
+            _identityProvider);
+        ActionExecutionContext context = new(
+            _sessionId,
+            actionId,
+            idempotencyKey,
+            _timeProvider.GetUtcNow());
+
+        try
+        {
+            ActionExecutionResult result =
+                await new TransactionCoordinator<ProcessIoPriorityState>(
+                        _journal)
+                    .ExecuteAsync(action, context, cancellationToken)
+                    .ConfigureAwait(false);
+            return result.Status is (
+                ActionExecutionStatus.AppliedAndVerified
+                or ActionExecutionStatus.AlreadyCompleted)
+                ? new(actionId, idempotencyKey)
+                : null;
+        }
+        catch (Exception exception) when (IsExpected(exception))
+        {
+            return null;
+        }
+    }
+
+    private async ValueTask RestoreIoAsync(
+        ProcessIdentity identity,
+        LoweredIo loweredIo,
+        CancellationToken cancellationToken)
+    {
+        ProcessIoPriorityAction action = new(
+            loweredIo.ActionId,
+            identity,
+            IoPriorityNativeMethods.IoPriorityVeryLow,
+            _identityProvider);
+        ActionExecutionContext context = new(
+            _sessionId,
+            loweredIo.ActionId,
+            loweredIo.IdempotencyKey,
+            _timeProvider.GetUtcNow());
+
+        try
+        {
+            _ = await new ActionRecoveryCoordinator<ProcessIoPriorityState>(
+                    _journal)
+                .RecoverAsync(action, context, cancellationToken)
+                .ConfigureAwait(false);
+        }
+        catch (Exception exception) when (IsExpected(exception))
+        {
+        }
+    }
+
     private async ValueTask RestorePinAsync(
         ProcessIdentity identity,
         PinnedAffinity pinned,
@@ -344,10 +442,15 @@ public sealed class JournaledProBalanceActuator : IProBalanceActuator
         ActionId ActionId,
         IdempotencyKey IdempotencyKey);
 
+    private sealed record LoweredIo(
+        ActionId ActionId,
+        IdempotencyKey IdempotencyKey);
+
     private sealed record RestraintRecord(
         ProcessIdentity Identity,
         ActionId ActionId,
         IdempotencyKey IdempotencyKey,
         bool Steered,
-        PinnedAffinity? Pinned);
+        PinnedAffinity? Pinned,
+        LoweredIo? LoweredIo);
 }
