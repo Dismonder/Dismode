@@ -837,6 +837,28 @@ z klasą BelowNormal wraca do Normal także wtedy, gdy samo ją wybrało
 zostawia odziedziczone BelowNormal na zawsze; test starego dziennika
 sprawdza czytelność formatu, nie fallback maski, i tak został pomyślany.
 
+**Trzecia runda: Codex (`gpt-reserve`, rozumowanie max) nad b4ae652,
+c234388 i a1a1e90.** 11 ustaleń, każde sprawdzone w kodzie. Naprawione:
+zbiory CPU trafiają do księgi dopiero po nałożeniu (drugi meldunek), bo
+odtwarzanie po awarii czyściłoby je procesowi, którego host nie zdążył
+ruszyć; przegląd potomków idzie po dźwigniach, które *realnie* dotarły do
+procesu — akcja odrzucona przez walidację (proces sam miał VeryLow albo
+własną maskę) nie jest już podstawą do ruszania jego dzieci, a gdy proces
+odszedł, o zastosowaniu rozstrzyga dziennik; maska historyczna czytana
+tylko z wpisów, po których zmiana mogła dojść do procesu (nie z
+`ActionPrepared`/`ActionBlocked`); zdejmowanie ćwiartki z gry wymaga
+nieprzerwanego łańcucha od procesu, który my zamknęliśmy (sam „inny proces
+gry" jako rodzic nie jest dowodem) i omija procesy chronione; brak odczytu
+topologii przy zniknięciu rodzica jest zgłaszany jako niepełne odtworzenie,
+nie jako sukces; kandydat, który w kolejnym przejściu dał się przywrócić,
+przestaje liczyć się jako błąd. Odrzucone: nieudane czyszczenie zbiorów CPU
+jako błąd odtwarzania (zbiory to preferencja, umiera z procesem); dziecko
+rodzica z własnym BelowNormal wraca do Normal (odziedziczyło legalnie —
+niezmiennik 4); skaner UI po ścieżce (nazwa procesu jest zawsze nazwą pliku,
+więc dopasowanie po ścieżce niczego nie dodaje); kolejność sprzątania
+w testach (wzorzec całego repo). Bez testu: `Blocked` w przeglądzie
+potomków i `MachineMask()==0` — zapisane jako luka.
+
 ### Co ustaliła sesja obok tego samego ranka (pomiary, Sons of the Forest)
 
 - Scena powtarzalna (postać stoi): rozrzut p99 między blokami 0,68 ms,

@@ -2489,10 +2489,17 @@ public sealed class LocalGameSessionOrchestrator : IAsyncDisposable
             // pamiec, maska, EcoQoS, priorytet. Kazde odtworzenie jest
             // niezalezne i idempotentne, wiec kolejnosc nie jest krytyczna,
             // ale trzyma dziennik czytelnym.
+            //
+            // Przeglad potomkow idzie po tym, co REALNIE nalozono, nie po
+            // samym identyfikatorze: akcja odrzucona przez walidacje (proces
+            // sam mial juz VeryLow albo wlasna maske) nie zmienila rodzica,
+            // wiec jego dzieci nosza wlasny stan rodzica, nie nasz.
+            bool ioApplied = false;
+            bool memoryApplied = false;
+            bool affinityApplied = false;
             if (application.IoPriorityActionId is { } ioPriorityActionId)
             {
-                totals = MergeRecoveryTotals(
-                    totals,
+                OptionalRestore ioRestore =
                     await RestoreOptionalActionAsync<ProcessIoPriorityState>(
                             application,
                             () => new ProcessIoPriorityAction(
@@ -2506,13 +2513,14 @@ public sealed class LocalGameSessionOrchestrator : IAsyncDisposable
                                 application.IoPriorityIdempotencyKey,
                                 requestedAtUtc),
                             cancellationToken)
-                        .ConfigureAwait(false));
+                        .ConfigureAwait(false);
+                totals = MergeRecoveryTotals(totals, ioRestore.Totals);
+                ioApplied = ioRestore.WasApplied;
             }
 
             if (application.MemoryPriorityActionId is { } memoryPriorityActionId)
             {
-                totals = MergeRecoveryTotals(
-                    totals,
+                OptionalRestore memoryRestore =
                     await RestoreOptionalActionAsync<
                             ProcessMemoryPriorityState>(
                             application,
@@ -2526,7 +2534,9 @@ public sealed class LocalGameSessionOrchestrator : IAsyncDisposable
                                 application.MemoryPriorityIdempotencyKey,
                                 requestedAtUtc),
                             cancellationToken)
-                        .ConfigureAwait(false));
+                        .ConfigureAwait(false);
+                totals = MergeRecoveryTotals(totals, memoryRestore.Totals);
+                memoryApplied = memoryRestore.WasApplied;
             }
 
             if (application.AffinityActionId is { } affinityActionId)
@@ -2534,8 +2544,7 @@ public sealed class LocalGameSessionOrchestrator : IAsyncDisposable
                 // Odtwarzanie nie potrzebuje maski: cofa do stanu z dziennika.
                 // Dlatego nie zalezy od tego, czy maszyna kwalifikuje sie do
                 // maski DZISIAJ — po awarii liczy sie to, co nalozono.
-                totals = MergeRecoveryTotals(
-                    totals,
+                OptionalRestore affinityRestore =
                     await RestoreOptionalActionAsync<ProcessAffinityState>(
                             application,
                             () => ProcessAffinityAction.ForRecovery(
@@ -2548,7 +2557,9 @@ public sealed class LocalGameSessionOrchestrator : IAsyncDisposable
                                 application.AffinityIdempotencyKey,
                                 requestedAtUtc),
                             cancellationToken)
-                        .ConfigureAwait(false));
+                        .ConfigureAwait(false);
+                totals = MergeRecoveryTotals(totals, affinityRestore.Totals);
+                affinityApplied = affinityRestore.WasApplied;
             }
 
             if (application.ActionMode
@@ -2570,9 +2581,9 @@ public sealed class LocalGameSessionOrchestrator : IAsyncDisposable
                     application.Identity.RuntimeKey.ProcessId,
                     application.Identity.RuntimeKey.StartedAtUtc,
                     application.AppliedAtUtc ?? requestedAtUtc,
-                    application.AffinityActionId is not null,
-                    application.IoPriorityActionId is not null,
-                    application.MemoryPriorityActionId is not null));
+                    affinityApplied,
+                    ioApplied,
+                    memoryApplied));
             }
 
             if (application.ActionMode is
@@ -2782,8 +2793,13 @@ public sealed class LocalGameSessionOrchestrator : IAsyncDisposable
             return;
         }
 
-        HashSet<int> gameProcessIds = [.. gameProcesses
-            .Select(identity => identity.RuntimeKey.ProcessId)];
+        // Dowod dziedziczenia to nieprzerwany lancuch od procesu, ktory MY
+        // zamknelismy w cwiartce: launcher -> gra -> pomocnik gry. Sam fakt,
+        // ze rodzicem jest inny proces gry, dowodem nie jest — gra moze
+        // wybrac sobie maske sama i przekazac ja dzieciom z wlasnej woli.
+        // Procesy ida w kolejnosci startu, wiec rodzic z lancucha jest juz
+        // w zbiorze, zanim dojdzie do dziecka.
+        HashSet<int> inheritedLineage = [];
         foreach (ProcessIdentity identity in gameProcesses
             .OrderBy(identity => identity.RuntimeKey.StartedAtUtc))
         {
@@ -2792,15 +2808,26 @@ public sealed class LocalGameSessionOrchestrator : IAsyncDisposable
                     identity.RuntimeKey.ProcessId,
                     out int parentProcessId)
                 || (!confinedParents.Contains(parentProcessId)
-                    && !gameProcessIds.Contains(parentProcessId)))
+                    && !inheritedLineage.Contains(parentProcessId)))
             {
                 continue;
             }
 
+            inheritedLineage.Add(identity.RuntimeKey.ProcessId);
             try
             {
                 using Process process = Process.GetProcessById(
                     identity.RuntimeKey.ProcessId);
+                // Anti-cheat i inne procesy chronione zostaja nietkniete
+                // takze tutaj, choc poszerzenie byloby dla nich korzystne:
+                // niezmiennik nie ma wyjatkow, a ich stan nie jest nasza
+                // sprawa.
+                if (BackgroundApplicationGuard.IsProtectedProcessName(
+                        process.ProcessName))
+                {
+                    continue;
+                }
+
                 if ((ulong)process.ProcessorAffinity.ToInt64() == corner)
                 {
                     process.ProcessorAffinity = (nint)(long)machine;
@@ -2839,10 +2866,14 @@ public sealed class LocalGameSessionOrchestrator : IAsyncDisposable
 
         foreach (RecoveryJournalEntry entry in entries)
         {
+            // Tylko wpisy, po ktorych zmiana mogla dojsc do procesu. Wpis
+            // przygotowania i odmowa walidacji tez nosza zadana maske — ale
+            // takiej maski nikt nie nalozyl.
             if (entry.SessionId != sessionId
                 || entry.ActionId is not Guid actionId
                 || !affinityActionIds.Contains(actionId)
-                || entry.DesiredStateJson is null)
+                || entry.DesiredStateJson is null
+                || !IsMutationEvent(entry.EventKind))
             {
                 continue;
             }
@@ -2897,7 +2928,7 @@ public sealed class LocalGameSessionOrchestrator : IAsyncDisposable
     /// the "recovery required" state. The plan promises the user exactly
     /// this: if the process ends by itself, do nothing.
     /// </summary>
-    private async ValueTask<BackgroundRecoveryTotals>
+    private async ValueTask<OptionalRestore>
         RestoreOptionalActionAsync<TState>(
             PlannedBackgroundApplication application,
             Func<IReversibleAction<TState>> actionFactory,
@@ -2913,7 +2944,12 @@ public sealed class LocalGameSessionOrchestrator : IAsyncDisposable
                         cancellationToken)
                     .ConfigureAwait(false))
             {
-                return new(0, 0, 0);
+                // Proces odszedl, ale jego dzieci mogly zostac — i tylko
+                // dziennik wie, czy w ogole dostal te dzwignie.
+                return new(
+                    new(0, 0, 0),
+                    await HasStartedMutationAsync(context, cancellationToken)
+                        .ConfigureAwait(false));
             }
 
             ActionRecoveryResult result =
@@ -2923,14 +2959,66 @@ public sealed class LocalGameSessionOrchestrator : IAsyncDisposable
                         context,
                         cancellationToken)
                     .ConfigureAwait(false);
-            return ToRecoveryTotals(result);
+            // NotRequired i MissingPreparation znacza „nigdy nie dotknieto".
+            // Kazdy inny wynik pochodzi z dziennika, w ktorym mutacja sie
+            // zaczela — i tylko wtedy dzieci mogly cos odziedziczyc.
+            return new(
+                ToRecoveryTotals(result),
+                result.Status is not (
+                    ActionRecoveryStatus.NotRequired
+                    or ActionRecoveryStatus.MissingPreparation));
         }
         catch (Exception exception) when (
             IsExpectedRecoveryFailure(exception))
         {
-            return new(0, 0, 1);
+            return new(new(0, 0, 1), WasApplied: true);
         }
     }
+
+    /// <summary>
+    /// Whether the journal shows this action's mutation as started. An
+    /// action that was only prepared, or refused by validation, never touched
+    /// the process — and its children cannot have inherited anything from it.
+    /// </summary>
+    private async ValueTask<bool> HasStartedMutationAsync(
+        ActionExecutionContext context,
+        CancellationToken cancellationToken)
+    {
+        IReadOnlyList<RecoveryJournalEntry> entries =
+            await _journal.ReadAllAsync(cancellationToken)
+                .ConfigureAwait(false);
+        return entries.Any(entry =>
+            entry.SessionId == context.SessionId.Value
+            && entry.ActionId == context.ActionId.Value
+            && entry.IdempotencyKey == context.IdempotencyKey.Value
+            && IsMutationEvent(entry.EventKind));
+    }
+
+    /// <summary>
+    /// Journal events written once a change may have reached the process.
+    /// Preparation and a validation refusal are not among them.
+    /// </summary>
+    private static bool IsMutationEvent(JournalEventKind eventKind) =>
+        eventKind is JournalEventKind.ActionApplying
+            or JournalEventKind.ActionApplied
+            or JournalEventKind.ActionApplyFailed
+            or JournalEventKind.ActionVerified
+            or JournalEventKind.ActionVerificationFailed
+            or JournalEventKind.RestoreStarted
+            or JournalEventKind.ActionCompensating
+            or JournalEventKind.ActionCompensated
+            or JournalEventKind.CompensationVerified
+            or JournalEventKind.CompensationVerificationFailed
+            or JournalEventKind.ExternalConflictDetected;
+
+    /// <summary>
+    /// Outcome of reversing one optional action: the recovery totals, and
+    /// whether the action had ever reached the process — which decides
+    /// whether its descendants are worth sweeping.
+    /// </summary>
+    private sealed record OptionalRestore(
+        BackgroundRecoveryTotals Totals,
+        bool WasApplied);
 
     private async ValueTask<BackgroundRecoveryTotals>
         RestoreEcoQosActionAsync(

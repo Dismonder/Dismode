@@ -107,6 +107,15 @@ public static class InheritedRestraintSweeper
             rootProcessId,
             rootStartedAtUtc,
             cornerMask);
+        if (targets.MaskUnknown)
+        {
+            // Maske trzeba by dac dzieciom z odczytu topologii, a ten sie nie
+            // powiodl. Pominiecie masek i zgloszenie sukcesu zostawiloby
+            // dzieci w cwiartce bez sladu; to jest niepelne odtworzenie,
+            // rekord ma zostac do kolejnej proby.
+            return new(0, 0, SnapshotFailed: true);
+        }
+
         if (targets.Mask == 0
             && !resetIoPriority
             && !resetMemoryPriority
@@ -143,6 +152,9 @@ public static class InheritedRestraintSweeper
                 {
                     case ReleaseOutcome.Released:
                         releasedThisPass++;
+                        // Kandydat, ktory w poprzednim przejsciu nie dal sie
+                        // zapisac, a teraz dal, nie jest juz bledem.
+                        failed.Remove(candidate);
                         break;
                     case ReleaseOutcome.Failed:
                         failed.Add(candidate);
@@ -227,7 +239,8 @@ public static class InheritedRestraintSweeper
         uint IoPriority,
         uint MemoryPriority,
         ProcessPriorityClass? PriorityClass,
-        bool RootTrusted);
+        bool RootTrusted,
+        bool MaskUnknown = false);
 
     private static RestoreTargets ReadRestoreTargets(
         int rootProcessId,
@@ -271,6 +284,11 @@ public static class InheritedRestraintSweeper
                 // Maska rodzica nie zawiera cwiartki, wiec przepisanie jej
                 // dziecku byloby zawezeniem, nie poszerzeniem. Cala maszyna
                 // jest jedyna wartoscia, ktorej nie da sie zarzucic zawezenia.
+                if (machine == 0)
+                {
+                    return new(0, 0, 0, null, RootTrusted: true, MaskUnknown: true);
+                }
+
                 mask = machine;
             }
             else
@@ -320,7 +338,10 @@ public static class InheritedRestraintSweeper
             IoPriorityNativeMethods.IoPriorityNormal,
             ProcessNativeMethods.MemoryPriorityNormal,
             PriorityClass: null,
-            rootTrusted);
+            rootTrusted,
+            // Bez rodzica jedynym zrodlem maski jest topologia; gdy i jej
+            // nie ma, maska jest nieznana, a nie „zero, wiec nic nie rob".
+            MaskUnknown: cornerMask != 0 && machine == 0);
 
     private static ReleaseOutcome TryRelease(
         int processId,
