@@ -49,8 +49,10 @@ internal sealed record TrayMenuState
                         (result.Before.AvailablePhysicalBytes / 1048576m))
                     .ToString("+0;-0;0", culture) + " MB" +
                     (result.State == OptimizationState.PartiallyCompleted ? " · częściowo" : ""),
-                OptimizationState.Blocked => "Ostatnia próba zablokowana: " + result.Message,
-                _ => "Ostatnia próba: " + result.Message,
+                OptimizationState.Blocked => "Ostatnia próba zablokowana: " +
+                    MemoryUiFormatting.DescribeBlockReason(result.Message),
+                _ => "Ostatnia próba: " +
+                    MemoryUiFormatting.DescribeBlockReason(result.Message),
             };
         }
 

@@ -394,7 +394,8 @@ public sealed partial class MainWindow : Window
                 $"cooldown {status.Settings.CooldownMinutes} min"
             : "Ręczna optymalizacja pozostaje dostępna.";
         OptimizationBlockReasonText.Text = status.LastResult?.State == OptimizationState.Blocked
-            ? "Ostatnia próba zablokowana: " + status.LastResult.Message
+            ? "Ostatnia próba zablokowana: " +
+                MemoryUiFormatting.DescribeBlockReason(status.LastResult.Message)
             : "Usługa sprawdza grę i zabezpieczenia przed każdą operacją. Używa zapisanego profilu.";
 
         AppendRamSample(memory);
@@ -713,10 +714,11 @@ public sealed partial class MainWindow : Window
         string details =
             $"{result.CompletedAtUtc.ToLocalTime():g} • {state} • " +
             $"dostępny RAM {availableDelta} • working sety " +
-            $"{FormatBytes(result.WorkingSetBytesReleased)}. {result.Message}";
+            $"{FormatBytes(result.WorkingSetBytesReleased)}. " +
+            MemoryUiFormatting.DescribeBlockReason(result.Message);
         LastResultText.Text = details;
         CompactFeedbackText.Text = result.State == OptimizationState.Blocked
-            ? "Zablokowano: " + result.Message
+            ? "Zablokowano: " + MemoryUiFormatting.DescribeBlockReason(result.Message)
             : $"{state} · dostępny RAM {availableDelta}";
         CompactFeedbackText.Foreground = ResourceBrush(
             result.State is OptimizationState.Blocked or OptimizationState.Failed

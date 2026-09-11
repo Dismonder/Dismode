@@ -89,8 +89,10 @@
         <Setter Property="FontWeight" Value="SemiBold" />
         <Setter Property="CornerRadius" Value="8" />
       </Style>
+      <!-- MinHeight 42 jak w stylu glownym: oba warianty stoja obok siebie
+           w jednej grupie akcji i przy 40 kontra 42 dolna krawedz sie rozjezdza. -->
       <Style x:Key="MemorySecondaryButtonStyle" TargetType="Button" BasedOn="{StaticResource DefaultButtonStyle}">
-        <Setter Property="MinHeight" Value="40" />
+        <Setter Property="MinHeight" Value="42" />
         <Setter Property="Padding" Value="16,8" />
         <Setter Property="Background" Value="{ThemeResource MemoryElevatedBrush}" />
         <Setter Property="BorderBrush" Value="{ThemeResource MemoryBorderBrush}" />
@@ -107,11 +109,13 @@
         <Setter Property="FontFamily" Value="Segoe UI Variable Display" />
         <Setter Property="FontSize" Value="30" />
         <Setter Property="FontWeight" Value="SemiBold" />
+        <Setter Property="TextWrapping" Value="Wrap" />
       </Style>
       <Style x:Key="MemorySectionTitleStyle" TargetType="TextBlock">
         <Setter Property="FontFamily" Value="Segoe UI Variable Display" />
         <Setter Property="FontSize" Value="19" />
         <Setter Property="FontWeight" Value="SemiBold" />
+        <Setter Property="TextWrapping" Value="Wrap" />
       </Style>
       <Style x:Key="MemoryMetricLabelStyle" TargetType="TextBlock">
         <Setter Property="Foreground" Value="{ThemeResource MemoryMutedBrush}" />

@@ -684,8 +684,10 @@
                       <TextBlock Style="{StaticResource MemoryMutedTextStyle}" Text="Wykluczone aplikacje nie są przycinane przez profil working setów użytkownika." />
                     </StackPanel>
                     <StackPanel x:Name="ProcessHeaderActions" Grid.Column="1" VerticalAlignment="Center" Orientation="Horizontal" Spacing="9">
-                      <TextBox x:Name="ProcessSearchBox" Width="210" PlaceholderText="Szukaj procesu" TextChanged="ProcessSearchBox_TextChanged" />
-                      <ComboBox x:Name="ProcessSortCombo" Width="165" SelectionChanged="ProcessSortCombo_SelectionChanged" SelectedIndex="0">
+                      <TextBox x:Name="ProcessSearchBox" Width="210" PlaceholderText="Szukaj procesu" TextChanged="ProcessSearchBox_TextChanged"
+                               AutomationProperties.Name="Szukaj procesu" />
+                      <ComboBox x:Name="ProcessSortCombo" Width="165" SelectionChanged="ProcessSortCombo_SelectionChanged" SelectedIndex="0"
+                                AutomationProperties.Name="Sortowanie procesów">
                         <ComboBoxItem Content="Najwięcej RAM" />
                         <ComboBoxItem Content="Nazwa A–Z" />
                         <ComboBoxItem Content="Nazwa Z–A" />
@@ -752,7 +754,8 @@
                             <ColumnDefinition Width="*" />
                             <ColumnDefinition Width="Auto" />
                           </Grid.ColumnDefinitions>
-                          <TextBox x:Name="NewExclusionTextBox" PlaceholderText="np. discord" />
+                          <TextBox x:Name="NewExclusionTextBox" PlaceholderText="np. discord"
+                                   AutomationProperties.Name="Nazwa procesu do wykluczenia" />
                           <Button x:Name="AddExclusionButton" Grid.Column="1" Click="AddExclusionButton_Click" Content="Dodaj" Style="{StaticResource MemoryPrimaryButtonStyle}" />
                         </Grid>
                         <TextBlock x:Name="ExclusionsDisabledNotice" Style="{StaticResource MemoryMutedTextStyle}" Text="Wykluczenia są nieaktywne przy globalnym zakresie working setów." Visibility="Collapsed" />
@@ -1009,7 +1012,7 @@
                 </Grid.ColumnDefinitions>
                 <StackPanel VerticalAlignment="Center" Spacing="2">
                   <TextBlock FontWeight="SemiBold" Text="Niezapisane zmiany" />
-                  <TextBlock x:Name="DirtyBarMessage" FontSize="11" Foreground="{ThemeResource MemoryMutedBrush}" Text="Zmiany pozostaną lokalne, dopóki ich nie zapiszesz." />
+                  <TextBlock x:Name="DirtyBarMessage" FontSize="11" TextWrapping="Wrap" Foreground="{ThemeResource MemoryMutedBrush}" Text="Zmiany pozostaną lokalne, dopóki ich nie zapiszesz." />
                 </StackPanel>
                 <StackPanel x:Name="DirtyActions" Grid.Column="1" Orientation="Horizontal" Spacing="9">
                   <Button x:Name="DiscardButton" Click="DiscardButton_Click" Content="Odrzuć" Style="{StaticResource MemorySecondaryButtonStyle}" />
