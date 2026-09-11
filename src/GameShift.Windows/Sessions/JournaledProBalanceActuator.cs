@@ -1,6 +1,5 @@
 using System.ComponentModel;
 using System.Diagnostics;
-using System.Runtime.InteropServices;
 using GameShift.Contracts.Protocol;
 using GameShift.Core.Actions;
 using GameShift.Core.Domain.Identifiers;
@@ -25,22 +24,16 @@ namespace GameShift.Windows.Sessions;
 /// recovery pass has something to work from.
 /// </para>
 /// <para>
-/// UWAGA, stan na teraz: te wpisy NIE sa jeszcze odczytywane.
-/// <c>LocalGameSessionOrchestrator.RecoverUserSessionAsync</c> bierze z
-/// dziennika wylacznie ostatni wpis metadanych sesji i odtwarza z niego
-/// proces gry, aplikacje tla oraz priorytet gry; po wpisach akcji z tego
-/// aktuatora nikt nie iteruje. Sprawdzone w kodzie. Poprzednia wersja tego
-/// komentarza twierdzila, ze odtwarzanie „znajduje je i przywraca", co bylo
-/// nieprawda.
-/// </para>
-/// <para>
-/// Skutek jest realny: po awarii hosta proces tla zostaje w cwiartce
-/// maszyny, z obnizonym priorytetem i z priorytetem wejscia-wyjscia
-/// VeryLow, i nic tego nie cofa. Priorytet wejscia-wyjscia jest przy tym
-/// gorszy w skutkach niz maska, bo maski nie widac tylko w polowie narzedzi,
-/// a priorytetu wejscia-wyjscia nie widac w zadnym standardowym — uzytkownik
-/// nie ma jak sam tego naprawic. Domkniecie tej luki idzie przez
-/// <c>IRestraintLedger</c> po stronie orkiestratora.
+/// A journal entry alone is not recoverable: after a host crash nobody knows
+/// which action ids belong to a restraint that was never released.
+/// <c>LocalGameSessionOrchestrator.RecoverUserSessionAsync</c> replays only
+/// what the session checkpoint lists. So every restraint is reported to the
+/// <see cref="IRestraintLedger"/> the orchestrator attaches — before the
+/// first change, with the ids of every action that may follow — and the
+/// orchestrator writes it into the checkpoint and reverses it after a crash
+/// through the same path as the planned applications. It matters more for
+/// the I/O priority than for the mask: a mask shows in Task Manager and can
+/// be undone by hand, an I/O priority shows in no standard tool at all.
 /// </para>
 /// </summary>
 public sealed class JournaledProBalanceActuator :
@@ -139,6 +132,29 @@ public sealed class JournaledProBalanceActuator :
         // samej sesji blokuje slownik powyzej, a po awarii sprawe przejmuje
         // odtwarzanie z journala.
         IdempotencyKey idempotencyKey = IdempotencyKey.Create();
+        PinnedAffinity? plannedPin = _backgroundAffinityMask == 0
+            ? null
+            : new(new(Guid.NewGuid()), IdempotencyKey.Create());
+        LoweredIo? plannedIo = _lowerBackgroundIoPriority
+            ? new(new(Guid.NewGuid()), IdempotencyKey.Create())
+            : null;
+        DateTimeOffset restrainedAtUtc = _timeProvider.GetUtcNow();
+
+        // Meldunek do ksiegi PRZED pierwsza zmiana. Identyfikatory sa juz
+        // znane, a odtwarzanie akcji, ktorej nigdy nie nalozono, jest
+        // nieszkodliwe — dziennik nie ma dla niej wpisu o mutacji. Odwrotna
+        // kolejnosc zostawiala okno: awaria hosta miedzy nalozeniem maski
+        // a meldunkiem, i po ograniczeniu nie bylo sladu poza dziennikiem,
+        // ktorego nikt nie potrafi dopasowac do procesu.
+        await ReportRestraintAsync(
+                identity,
+                actionId,
+                idempotencyKey,
+                plannedPin,
+                plannedIo,
+                CancellationToken.None)
+            .ConfigureAwait(false);
+
         RuntimeProcessPriorityAction action = new(
             actionId,
             identity,
@@ -161,6 +177,10 @@ public sealed class JournaledProBalanceActuator :
                 ActionExecutionStatus.AppliedAndVerified
                 or ActionExecutionStatus.AlreadyCompleted))
             {
+                // Nic nie nalozono, wiec meldunek sprzed chwili jest
+                // bezprzedmiotowy.
+                await ForgetRestraintAsync(runtimeKey, CancellationToken.None)
+                    .ConfigureAwait(false);
                 return false;
             }
 
@@ -180,13 +200,11 @@ public sealed class JournaledProBalanceActuator :
                 // bo tamto jest wazniejsze i nie chcemy, zeby nieudane
                 // sterowanie zbiorami przeslonilo udane obnizenie priorytetu.
                 steered = TrySteerAway(runtimeKey);
-                pinned = await TryPinAsync(identity, CancellationToken.None)
+                pinned = await TryPinAsync(identity, plannedPin)
                     .ConfigureAwait(false);
                 // Na koncu, bo z trzech ograniczen to najmniej sprawdzone.
                 // Niepowodzenie nie moze przeslonic udanej maski.
-                loweredIo = await TryLowerIoAsync(
-                        identity,
-                        CancellationToken.None)
+                loweredIo = await TryLowerIoAsync(identity, plannedIo)
                     .ConfigureAwait(false);
             }
             finally
@@ -197,21 +215,24 @@ public sealed class JournaledProBalanceActuator :
                     idempotencyKey,
                     steered,
                     pinned,
-                    loweredIo);
+                    loweredIo,
+                    restrainedAtUtc);
             }
 
-            await ReportRestraintAsync(
-                    identity,
-                    actionId,
-                    idempotencyKey,
-                    pinned,
-                    loweredIo,
-                    CancellationToken.None)
-                .ConfigureAwait(false);
             return true;
         }
         catch (Exception exception) when (IsExpected(exception))
         {
+            // Wyjatek z transakcji priorytetu znaczy, ze nic nie nalozono
+            // (kazdy pozniejszy krok lapie swoje wyjatki sam), a rekordu
+            // w _applied nie ma. Meldunek sprzed chwili jest wtedy
+            // bezprzedmiotowy.
+            if (!_applied.ContainsKey(runtimeKey))
+            {
+                await ForgetRestraintAsync(runtimeKey, CancellationToken.None)
+                    .ConfigureAwait(false);
+            }
+
             return false;
         }
     }
@@ -250,28 +271,15 @@ public sealed class JournaledProBalanceActuator :
         // ograniczony, czyli dokladnie to, przed czym ma chronic. Praca jest
         // ograniczona co do rozmiaru, a wolajacy i tak czeka na worker.
         //
-        // Potomkowie przed rodzicem, bo po przywroceniu rodzica nie odroznimy
-        // juz dzieci po odziedziczonych wartosciach.
-        await ReleaseDescendantsAsync(runtimeKey, CancellationToken.None)
-            .ConfigureAwait(false);
-
-        if (record.LoweredIo is { } loweredIo)
-        {
-            await RestoreIoAsync(
-                    record.Identity,
-                    loweredIo,
-                    CancellationToken.None)
+        // Kolejnosc odwrotna do nakladania: dysk, maska, priorytet. Potem
+        // potomkowie — rozpoznajemy ich po ICH wartosciach, nie po rodzicu,
+        // a maska, ktora maja dostac, to ta, ktora rodzic ma po przywroceniu.
+        bool ioRestored = record.LoweredIo is not { } loweredIo
+            || await RestoreIoAsync(record.Identity, loweredIo)
                 .ConfigureAwait(false);
-        }
-
-        if (record.Pinned is { } pinned)
-        {
-            await RestorePinAsync(
-                    record.Identity,
-                    pinned,
-                    CancellationToken.None)
+        bool pinRestored = record.Pinned is not { } pinned
+            || await RestorePinAsync(record.Identity, pinned)
                 .ConfigureAwait(false);
-        }
 
         RuntimeProcessPriorityAction action = new(
             record.ActionId,
@@ -284,6 +292,7 @@ public sealed class JournaledProBalanceActuator :
             record.IdempotencyKey,
             _timeProvider.GetUtcNow());
 
+        bool priorityRestored;
         try
         {
             ActionRecoveryResult result =
@@ -291,26 +300,68 @@ public sealed class JournaledProBalanceActuator :
                         RuntimeProcessPriorityState>(_journal)
                     .RecoverAsync(action, context, CancellationToken.None)
                     .ConfigureAwait(false);
-            bool restored = result.Status
-                is ActionRecoveryStatus.Restored
-                or ActionRecoveryStatus.AlreadyRestored
-                or ActionRecoveryStatus.NotRequired;
-            if (restored)
-            {
-                // Dopiero po faktycznym przywroceniu. Wykreslenie wczesniej
-                // odebraloby odtwarzaniu po awarii jedyny slad po
-                // ograniczeniu, ktore moze wlasnie nie zostalo zdjete.
-                _ = _applied.Remove(runtimeKey);
-                await ForgetRestraintAsync(runtimeKey, CancellationToken.None)
-                    .ConfigureAwait(false);
-            }
+            priorityRestored = IsRestored(result.Status);
+        }
+        catch (Exception exception) when (IsExpected(exception))
+        {
+            priorityRestored = false;
+        }
 
-            return restored;
+        bool descendantsRestored = ReleaseDescendants(record);
+
+        // Wykreslenie dopiero po rozliczeniu CALEGO pakietu. Rekord, ktory
+        // zostaje, to jedyny slad po ograniczeniu, ktore moze wlasnie nie
+        // zostalo zdjete — ksiega sesji ponowi probe przy jej zamknieciu.
+        bool restored = ioRestored
+            && pinRestored
+            && priorityRestored
+            && descendantsRestored;
+        if (restored)
+        {
+            _ = _applied.Remove(runtimeKey);
+            await ForgetRestraintAsync(runtimeKey, CancellationToken.None)
+                .ConfigureAwait(false);
+        }
+
+        return restored;
+    }
+
+    private static bool IsRestored(ActionRecoveryStatus status) =>
+        status is ActionRecoveryStatus.Restored
+            or ActionRecoveryStatus.AlreadyRestored
+            or ActionRecoveryStatus.NotRequired;
+
+    /// <summary>
+    /// Releases what the restrained process's children inherited from it —
+    /// the corner mask and the lowered I/O priority. Runs after the parent is
+    /// restored, so the children are widened to what the parent has now.
+    /// True when nothing that needed releasing was left behind.
+    /// </summary>
+    private bool ReleaseDescendants(RestraintRecord record)
+    {
+        if (record.Pinned is null && record.LoweredIo is null)
+        {
+            return true;
+        }
+
+        IReadOnlyDictionary<int, int> parents;
+        try
+        {
+            parents = _parentMapProvider.Capture();
         }
         catch (Exception exception) when (IsExpected(exception))
         {
             return false;
         }
+
+        InheritedRestraintSweep sweep = InheritedRestraintSweeper.Release(
+            record.Identity.RuntimeKey.ProcessId,
+            parents,
+            record.RestrainedAtUtc,
+            record.Pinned is null ? 0 : _backgroundAffinityMask,
+            resetIoPriority: record.LoweredIo is not null,
+            resetMemoryPriority: false);
+        return sweep.Failed == 0;
     }
 
     /// <summary>
@@ -404,36 +455,34 @@ public sealed class JournaledProBalanceActuator :
     /// </summary>
     private async ValueTask<PinnedAffinity?> TryPinAsync(
         ProcessIdentity identity,
-        CancellationToken cancellationToken)
+        PinnedAffinity? planned)
     {
-        if (_backgroundAffinityMask == 0)
+        if (planned is null)
         {
             return null;
         }
 
-        ActionId actionId = new(Guid.NewGuid());
-        IdempotencyKey idempotencyKey = IdempotencyKey.Create();
         ProcessAffinityAction action = new(
-            actionId,
+            planned.ActionId,
             identity,
             _backgroundAffinityMask,
             _identityProvider);
         ActionExecutionContext context = new(
             _sessionId,
-            actionId,
-            idempotencyKey,
+            planned.ActionId,
+            planned.IdempotencyKey,
             _timeProvider.GetUtcNow());
 
         try
         {
             ActionExecutionResult result =
                 await new TransactionCoordinator<ProcessAffinityState>(_journal)
-                    .ExecuteAsync(action, context, cancellationToken)
+                    .ExecuteAsync(action, context, CancellationToken.None)
                     .ConfigureAwait(false);
             return result.Status is (
                 ActionExecutionStatus.AppliedAndVerified
                 or ActionExecutionStatus.AlreadyCompleted)
-                ? new(actionId, idempotencyKey)
+                ? planned
                 : null;
         }
         catch (Exception exception) when (IsExpected(exception))
@@ -507,162 +556,24 @@ public sealed class JournaledProBalanceActuator :
         }
     }
 
-    /// <summary>
-    /// Zdejmuje ograniczenia z procesow potomnych, ktore odziedziczyly je po
-    /// ograniczonym rodzicu.
-    /// <para>
-    /// Zmierzone na tej maszynie: proces uruchomiony przez ograniczonego
-    /// rodzica dostaje JEGO maske powinowactwa i JEGO priorytet
-    /// wejscia-wyjscia. Rodzic po sesji wraca do normy, dziecko zostaje
-    /// z maska cwiartki i z priorytetem VeryLow — na zawsze. Przegladarka,
-    /// Steam i launchery rodza dzieci w trakcie gry, wiec to nie jest
-    /// przypadek brzegowy.
-    /// </para>
-    /// <para>
-    /// Priorytet wejscia-wyjscia jest tu wazniejszy od maski: maske widac
-    /// w Menedzerze zadan i da sie cofnac recznie, a priorytetu
-    /// wejscia-wyjscia nie pokazuje zadne standardowe narzedzie.
-    /// </para>
-    /// <para>
-    /// Rozpoznajemy po DOKLADNEJ zgodnosci z wartosciami, ktore sami
-    /// nakladamy. Proces, ktory ma taka maske z wlasnej woli, jest mozliwy,
-    /// ale musialby byc jednoczesnie potomkiem procesu, ktory wlasnie
-    /// ograniczalismy — a wtedy i tak najpewniej odziedziczyl ja po nim.
-    /// </para>
-    /// </summary>
-    private async ValueTask ReleaseDescendantsAsync(
-        ProcessRuntimeKey runtimeKey,
-        CancellationToken cancellationToken)
-    {
-        if (_backgroundAffinityMask == 0 && !_lowerBackgroundIoPriority)
-        {
-            return;
-        }
-
-        IReadOnlyDictionary<int, int> parents;
-        try
-        {
-            parents = _parentMapProvider.Capture();
-        }
-        catch (Exception exception) when (IsExpected(exception))
-        {
-            return;
-        }
-
-        foreach (int descendant in Descendants(parents, runtimeKey.ProcessId))
-        {
-            cancellationToken.ThrowIfCancellationRequested();
-            RestoreInheritedLimits(descendant);
-        }
-
-        await ValueTask.CompletedTask.ConfigureAwait(false);
-    }
-
-    private static IEnumerable<int> Descendants(
-        IReadOnlyDictionary<int, int> parents,
-        int root)
-    {
-        // Wszerz, z odwiedzonymi, bo mapa rodzicow po ponownym uzyciu
-        // identyfikatorow potrafi zawierac cykl.
-        HashSet<int> seen = [root];
-        Queue<int> queue = new();
-        queue.Enqueue(root);
-        while (queue.Count > 0)
-        {
-            int current = queue.Dequeue();
-            foreach (KeyValuePair<int, int> pair in parents)
-            {
-                if (pair.Value == current && seen.Add(pair.Key))
-                {
-                    queue.Enqueue(pair.Key);
-                    yield return pair.Key;
-                }
-            }
-        }
-    }
-
-    private void RestoreInheritedLimits(int processId)
-    {
-        try
-        {
-            using Process process = Process.GetProcessById(processId);
-            if (_backgroundAffinityMask != 0
-                && (ulong)process.ProcessorAffinity.ToInt64()
-                    == _backgroundAffinityMask
-                && TryReadSystemAffinity(process, out ulong systemMask))
-            {
-                process.ProcessorAffinity = (nint)(long)systemMask;
-            }
-
-            if (_lowerBackgroundIoPriority
-                && IoPriorityNativeMethods.NtQueryInformationProcess(
-                        process.Handle,
-                        IoPriorityNativeMethods.ProcessIoPriority,
-                        out uint priority,
-                        sizeof(uint),
-                        out _) == IoPriorityNativeMethods.StatusSuccess
-                && priority == IoPriorityNativeMethods.IoPriorityVeryLow)
-            {
-                uint normal = IoPriorityNativeMethods.IoPriorityNormal;
-                _ = IoPriorityNativeMethods.NtSetInformationProcess(
-                    process.Handle,
-                    IoPriorityNativeMethods.ProcessIoPriority,
-                    in normal,
-                    sizeof(uint));
-            }
-        }
-        catch (Exception exception) when (IsExpected(exception))
-        {
-        }
-    }
-
-    private static bool TryReadSystemAffinity(
-        Process process,
-        out ulong systemMask)
-    {
-        // Oddajemy dziecku to, na co pozwala maszyna, bo jego wlasnej maski
-        // sprzed dziedziczenia juz nie ma — ono nigdy innej nie mialo.
-        if (GetProcessAffinityMask(
-                process.Handle,
-                out nuint _,
-                out nuint system))
-        {
-            systemMask = (ulong)system;
-            return systemMask != 0;
-        }
-
-        systemMask = 0;
-        return false;
-    }
-
-    [DllImport("kernel32.dll", EntryPoint = "GetProcessAffinityMask",
-        SetLastError = true)]
-    [return: MarshalAs(UnmanagedType.Bool)]
-    private static extern bool GetProcessAffinityMask(
-        nint process,
-        out nuint processAffinityMask,
-        out nuint systemAffinityMask);
-
     private async ValueTask<LoweredIo?> TryLowerIoAsync(
         ProcessIdentity identity,
-        CancellationToken cancellationToken)
+        LoweredIo? planned)
     {
-        if (!_lowerBackgroundIoPriority)
+        if (planned is null)
         {
             return null;
         }
 
-        ActionId actionId = new(Guid.NewGuid());
-        IdempotencyKey idempotencyKey = IdempotencyKey.Create();
         ProcessIoPriorityAction action = new(
-            actionId,
+            planned.ActionId,
             identity,
             IoPriorityNativeMethods.IoPriorityVeryLow,
             _identityProvider);
         ActionExecutionContext context = new(
             _sessionId,
-            actionId,
-            idempotencyKey,
+            planned.ActionId,
+            planned.IdempotencyKey,
             _timeProvider.GetUtcNow());
 
         try
@@ -670,12 +581,12 @@ public sealed class JournaledProBalanceActuator :
             ActionExecutionResult result =
                 await new TransactionCoordinator<ProcessIoPriorityState>(
                         _journal)
-                    .ExecuteAsync(action, context, cancellationToken)
+                    .ExecuteAsync(action, context, CancellationToken.None)
                     .ConfigureAwait(false);
             return result.Status is (
                 ActionExecutionStatus.AppliedAndVerified
                 or ActionExecutionStatus.AlreadyCompleted)
-                ? new(actionId, idempotencyKey)
+                ? planned
                 : null;
         }
         catch (Exception exception) when (IsExpected(exception))
@@ -684,10 +595,9 @@ public sealed class JournaledProBalanceActuator :
         }
     }
 
-    private async ValueTask RestoreIoAsync(
+    private async ValueTask<bool> RestoreIoAsync(
         ProcessIdentity identity,
-        LoweredIo loweredIo,
-        CancellationToken cancellationToken)
+        LoweredIo loweredIo)
     {
         ProcessIoPriorityAction action = new(
             loweredIo.ActionId,
@@ -702,25 +612,27 @@ public sealed class JournaledProBalanceActuator :
 
         try
         {
-            _ = await new ActionRecoveryCoordinator<ProcessIoPriorityState>(
-                    _journal)
-                .RecoverAsync(action, context, cancellationToken)
-                .ConfigureAwait(false);
+            ActionRecoveryResult result =
+                await new ActionRecoveryCoordinator<ProcessIoPriorityState>(
+                        _journal)
+                    .RecoverAsync(action, context, CancellationToken.None)
+                    .ConfigureAwait(false);
+            return IsRestored(result.Status);
         }
         catch (Exception exception) when (IsExpected(exception))
         {
+            return false;
         }
     }
 
-    private async ValueTask RestorePinAsync(
+    private async ValueTask<bool> RestorePinAsync(
         ProcessIdentity identity,
-        PinnedAffinity pinned,
-        CancellationToken cancellationToken)
+        PinnedAffinity pinned)
     {
-        ProcessAffinityAction action = new(
+        // Odtwarzanie cofa do stanu z dziennika i nie potrzebuje maski.
+        ProcessAffinityAction action = ProcessAffinityAction.ForRecovery(
             pinned.ActionId,
             identity,
-            _backgroundAffinityMask,
             _identityProvider);
         ActionExecutionContext context = new(
             _sessionId,
@@ -730,13 +642,16 @@ public sealed class JournaledProBalanceActuator :
 
         try
         {
-            _ = await new ActionRecoveryCoordinator<ProcessAffinityState>(
-                    _journal)
-                .RecoverAsync(action, context, cancellationToken)
-                .ConfigureAwait(false);
+            ActionRecoveryResult result =
+                await new ActionRecoveryCoordinator<ProcessAffinityState>(
+                        _journal)
+                    .RecoverAsync(action, context, CancellationToken.None)
+                    .ConfigureAwait(false);
+            return IsRestored(result.Status);
         }
         catch (Exception exception) when (IsExpected(exception))
         {
+            return false;
         }
     }
 
@@ -754,5 +669,6 @@ public sealed class JournaledProBalanceActuator :
         IdempotencyKey IdempotencyKey,
         bool Steered,
         PinnedAffinity? Pinned,
-        LoweredIo? LoweredIo);
+        LoweredIo? LoweredIo,
+        DateTimeOffset RestrainedAtUtc);
 }

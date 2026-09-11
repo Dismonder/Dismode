@@ -57,8 +57,11 @@ public sealed class LiveProBalanceTests
             "Test zaklada, ze proces startuje z priorytetem Normal.");
 
         PriorityProBalanceActuator actuator = new();
+        int spinnerId = _spinner.Id;
         ProBalanceSupervisor supervisor = new(
-            new CpuProcessSampler(),
+            // Wylacznie nasz proces: z pelnym probnikiem ten test obnizalby
+            // priorytet najciezszym procesom maszyny deweloperskiej.
+            new FilteredCpuProcessSource(() => [spinnerId]),
             actuator,
             static () => new HashSet<int>(),
             settings: new ProBalanceSettings

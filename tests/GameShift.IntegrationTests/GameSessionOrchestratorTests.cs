@@ -893,7 +893,15 @@ public sealed class GameSessionOrchestratorTests
             journal,
             monitorInterval: TimeSpan.FromMilliseconds(100),
             frameRateProvider: new ConstantFrameRateProvider(),
-            enableProBalance: true);
+            enableProBalance: true,
+            // Prawdziwy aktuator widzi przez nadzorce wylacznie nasze hogi.
+            // Z pelnym probnikiem ograniczylby najciezsze procesy maszyny
+            // deweloperskiej — edytor, serwer budowania, cudzy pomiar — a
+            // maska i priorytet wejscia-wyjscia dziedzicza sie na wszystko,
+            // co te procesy potem uruchomia.
+            cpuProcessSourceFactory: () =>
+                new Cpu.FilteredCpuProcessSource(
+                    () => hogs.Select(hog => hog.Id)));
 
         try
         {

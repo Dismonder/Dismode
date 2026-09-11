@@ -30,6 +30,7 @@ public sealed class ProcessAffinityAction :
         ProcessIdentity expectedIdentity,
         ulong desiredMask,
         IProcessIdentityProvider? identityProvider = null)
+        : this(actionId, expectedIdentity, identityProvider)
     {
         if (desiredMask == 0)
         {
@@ -39,8 +40,15 @@ public sealed class ProcessAffinityAction :
                 "Pusta maska odebralaby procesowi wszystkie rdzenie.");
         }
 
-        _expectedIdentity = expectedIdentity;
         _desiredMask = desiredMask;
+    }
+
+    private ProcessAffinityAction(
+        ActionId actionId,
+        ProcessIdentity expectedIdentity,
+        IProcessIdentityProvider? identityProvider)
+    {
+        _expectedIdentity = expectedIdentity;
         _identityProvider = identityProvider ?? new ProcessIdentityProvider();
         Descriptor = new(
             actionId,
@@ -49,12 +57,33 @@ public sealed class ProcessAffinityAction :
             OptimizationActionKind.RestrictProcessAffinity);
     }
 
+    /// <summary>
+    /// An instance that can only reverse: recovery reads the original mask
+    /// from the journal and never asks what the desired one was, so the
+    /// caller does not have to know — or recompute — the mask that was
+    /// applied. That matters after a crash: whether this machine would
+    /// qualify for a mask today has nothing to do with whether one was put
+    /// on a process yesterday.
+    /// </summary>
+    public static ProcessAffinityAction ForRecovery(
+        ActionId actionId,
+        ProcessIdentity expectedIdentity,
+        IProcessIdentityProvider? identityProvider = null) =>
+        new(actionId, expectedIdentity, identityProvider);
+
     public ActionDescriptor Descriptor { get; }
 
     public async ValueTask<PreparedAction<ProcessAffinityState>> PrepareAsync(
         ActionExecutionContext context,
         CancellationToken cancellationToken)
     {
+        if (_desiredMask == 0)
+        {
+            throw new InvalidOperationException(
+                "Ta instancja sluzy wylacznie do odtwarzania; nie ma maski "
+                    + "do nalozenia.");
+        }
+
         ProcessAffinityState originalState =
             await ReadCurrentStateAsync(context, cancellationToken)
                 .ConfigureAwait(false);

@@ -211,6 +211,17 @@ public sealed class ProcessMemoryPriorityAction :
                 _identityProvider,
                 cancellationToken)
             .ConfigureAwait(false);
+        Write(process, memoryPriority);
+    }
+
+    /// <summary>
+    /// Writes a memory priority to an already-opened process. The action
+    /// itself always goes through the identity-validated path above; this is
+    /// for the descendant sweep, which acts on processes nobody journaled.
+    /// </summary>
+    internal static void Write(Process process, uint memoryPriority)
+    {
+        ArgumentNullException.ThrowIfNull(process);
         MemoryPriorityInformation information = new()
         {
             MemoryPriority = memoryPriority,
