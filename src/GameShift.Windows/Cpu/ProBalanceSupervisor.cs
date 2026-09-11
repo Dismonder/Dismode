@@ -172,8 +172,7 @@ public sealed class ProBalanceSupervisor : IAsyncDisposable
             now);
         foreach (ProBalanceDecision decision in decisions)
         {
-            await CarryOutAsync(decision, cancellationToken)
-                .ConfigureAwait(false);
+            await CarryOutAsync(decision).ConfigureAwait(false);
         }
 
         return decisions;
@@ -257,19 +256,31 @@ public sealed class ProBalanceSupervisor : IAsyncDisposable
         }
     }
 
-    private async ValueTask CarryOutAsync(
-        ProBalanceDecision decision,
-        CancellationToken cancellationToken)
+    /// <summary>
+    /// Carries one decision out to the end, whatever happens to the loop
+    /// meanwhile.
+    /// <para>
+    /// The loop's cancellation token deliberately stops here. A restraint is
+    /// several journaled changes followed by a record of what was done; a
+    /// stop request arriving in the middle used to cancel the tail — the mask
+    /// already on the process, the record of it never written — and the
+    /// release that follows every stop had nothing to release. The process
+    /// stayed in the background corner after the session. Stopping waits for
+    /// the loop anyway, and one decision is bounded work, so finishing it is
+    /// both safe and the only correct option.
+    /// </para>
+    /// </summary>
+    private async ValueTask CarryOutAsync(ProBalanceDecision decision)
     {
         try
         {
             _ = decision.Action switch
             {
                 ProBalanceAction.Restrain => await _actuator
-                    .RestrainAsync(decision.RuntimeKey, cancellationToken)
+                    .RestrainAsync(decision.RuntimeKey, CancellationToken.None)
                     .ConfigureAwait(false),
                 ProBalanceAction.Release => await _actuator
-                    .ReleaseAsync(decision.RuntimeKey, cancellationToken)
+                    .ReleaseAsync(decision.RuntimeKey, CancellationToken.None)
                     .ConfigureAwait(false),
                 _ => false,
             };
@@ -287,8 +298,7 @@ public sealed class ProBalanceSupervisor : IAsyncDisposable
     {
         foreach (ProBalanceDecision decision in _engine.ReleaseAll())
         {
-            await CarryOutAsync(decision, cancellationToken)
-                .ConfigureAwait(false);
+            await CarryOutAsync(decision).ConfigureAwait(false);
         }
     }
 }
