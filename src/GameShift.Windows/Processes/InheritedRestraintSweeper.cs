@@ -133,7 +133,7 @@ public static class InheritedRestraintSweeper
             {
                 switch (TryRelease(
                     candidate,
-                    isOrphan,
+                    isOrphan || !targets.RootTrusted,
                     notBeforeUtc,
                     cornerMask,
                     targets,
@@ -226,7 +226,8 @@ public static class InheritedRestraintSweeper
         ulong Mask,
         uint IoPriority,
         uint MemoryPriority,
-        ProcessPriorityClass? PriorityClass);
+        ProcessPriorityClass? PriorityClass,
+        bool RootTrusted);
 
     private static RestoreTargets ReadRestoreTargets(
         int rootProcessId,
@@ -245,8 +246,10 @@ public static class InheritedRestraintSweeper
                 if (Math.Abs((actualStart - expectedStart).TotalSeconds) > 1)
                 {
                     // Numer nalezy juz do kogos innego. Jego maska niczego
-                    // nie mowi o tym, co mialy odziedziczyc dzieci.
-                    return Defaults(machine, cornerMask);
+                    // nie mowi o tym, co mialy odziedziczyc dzieci — a jego
+                    // dzieci w mapie nie sa naszymi potomkami, wiec kazdy
+                    // kandydat musi niesc pelny odcisk, jak sierota.
+                    return Defaults(machine, cornerMask, rootTrusted: false);
                 }
             }
 
@@ -289,27 +292,35 @@ public static class InheritedRestraintSweeper
                 is ProcessPriorityClass.BelowNormal or ProcessPriorityClass.Idle
                     ? null
                     : ProcessPriorityClass.Normal;
-            return new(mask, io, memory, priorityClass);
+            return new(mask, io, memory, priorityClass, RootTrusted: true);
         }
         catch (Exception exception) when (
             exception is ArgumentException
                 or InvalidOperationException
                 or Win32Exception)
         {
-            return Defaults(machine, cornerMask);
+            return Defaults(machine, cornerMask, rootTrusted: false);
         }
     }
 
     /// <summary>
-    /// Targets for a child whose parent is gone: every processor, normal
-    /// priorities. The only honest defaults for a process nobody restricted.
+    /// Targets for a child whose parent is gone or cannot be trusted: every
+    /// processor, normal I/O and memory priority — the only honest defaults
+    /// for a process nobody restricted. The priority class stays untouched:
+    /// a BelowNormal child of a parent that was itself BelowNormal before we
+    /// ever saw it inherited that legitimately, and with the parent gone the
+    /// two cases cannot be told apart.
     /// </summary>
-    private static RestoreTargets Defaults(ulong machine, ulong cornerMask) =>
+    private static RestoreTargets Defaults(
+        ulong machine,
+        ulong cornerMask,
+        bool rootTrusted) =>
         new(
             cornerMask == 0 ? 0 : machine,
             IoPriorityNativeMethods.IoPriorityNormal,
             ProcessNativeMethods.MemoryPriorityNormal,
-            ProcessPriorityClass.Normal);
+            PriorityClass: null,
+            rootTrusted);
 
     private static ReleaseOutcome TryRelease(
         int processId,
@@ -324,34 +335,54 @@ public static class InheritedRestraintSweeper
         Process? process = null;
         try
         {
-            process = Process.GetProcessById(processId);
-            if (BackgroundApplicationGuard.IsProtectedProcessName(
-                    process.ProcessName))
+            // Faza odczytu. Proces, ktorego nie da sie obejrzec — cudzy,
+            // chroniony systemowo, wlasnie znikajacy — nie jest bledem
+            // odtwarzania: nie ma dowodu, ze cokolwiek po nas nosi, wiec
+            // zostaje nietkniety. Liczenie go jako bledu trzymaloby sesje
+            // w stanie „wymaga odtwarzania" z powodu procesu, ktorego nigdy
+            // nie ruszylismy.
+            bool maskMatches;
+            bool ioMatches;
+            bool memoryMatches;
+            bool classMatches;
+            try
+            {
+                process = Process.GetProcessById(processId);
+                if (BackgroundApplicationGuard.IsProtectedProcessName(
+                        process.ProcessName))
+                {
+                    return ReleaseOutcome.Untouched;
+                }
+
+                // Proces starszy niz ograniczenie nie mogl go odziedziczyc;
+                // cokolwiek ma, ma z wlasnej woli.
+                DateTimeOffset startedAtUtc = new(
+                    process.StartTime.ToUniversalTime(),
+                    TimeSpan.Zero);
+                if (startedAtUtc < notBeforeUtc)
+                {
+                    return ReleaseOutcome.Untouched;
+                }
+
+                maskMatches = cornerMask != 0
+                    && (ulong)process.ProcessorAffinity.ToInt64() == cornerMask;
+                ioMatches = resetIoPriority
+                    && ReadIoPriority(process)
+                        == IoPriorityNativeMethods.IoPriorityVeryLow;
+                memoryMatches = resetMemoryPriority
+                    && ProcessMemoryPriorityAction.Read(process).MemoryPriority
+                        == ProcessNativeMethods.MemoryPriorityVeryLow;
+                classMatches = resetPriorityClass
+                    && targets.PriorityClass is not null
+                    && process.PriorityClass == ProcessPriorityClass.BelowNormal;
+            }
+            catch (Exception exception) when (
+                exception is ArgumentException
+                    or InvalidOperationException
+                    or Win32Exception)
             {
                 return ReleaseOutcome.Untouched;
             }
-
-            // Proces starszy niz ograniczenie nie mogl go odziedziczyc;
-            // cokolwiek ma, ma z wlasnej woli.
-            DateTimeOffset startedAtUtc = new(
-                process.StartTime.ToUniversalTime(),
-                TimeSpan.Zero);
-            if (startedAtUtc < notBeforeUtc)
-            {
-                return ReleaseOutcome.Untouched;
-            }
-
-            bool maskMatches = cornerMask != 0
-                && (ulong)process.ProcessorAffinity.ToInt64() == cornerMask;
-            bool ioMatches = resetIoPriority
-                && ReadIoPriority(process)
-                    == IoPriorityNativeMethods.IoPriorityVeryLow;
-            bool memoryMatches = resetMemoryPriority
-                && ProcessMemoryPriorityAction.Read(process).MemoryPriority
-                    == ProcessNativeMethods.MemoryPriorityVeryLow;
-            bool classMatches = resetPriorityClass
-                && targets.PriorityClass is not null
-                && process.PriorityClass == ProcessPriorityClass.BelowNormal;
 
             if (isOrphan)
             {
@@ -372,50 +403,52 @@ public static class InheritedRestraintSweeper
                 classMatches = false;
             }
 
-            bool touched = false;
-            if (maskMatches && targets.Mask != 0)
+            // Faza zapisu. Tu niepowodzenie na zywym procesie jest bledem:
+            // proces nosi nasze ograniczenie i nie dal go sobie zdjac.
+            try
             {
-                process.ProcessorAffinity = (nint)(long)targets.Mask;
-                touched = true;
-            }
+                bool touched = false;
+                if (maskMatches && targets.Mask != 0)
+                {
+                    process!.ProcessorAffinity = (nint)(long)targets.Mask;
+                    touched = true;
+                }
 
-            if (ioMatches)
+                if (ioMatches)
+                {
+                    WriteIoPriority(process!, targets.IoPriority);
+                    touched = true;
+                }
+
+                if (memoryMatches)
+                {
+                    ProcessMemoryPriorityAction.Write(
+                        process!,
+                        targets.MemoryPriority);
+                    touched = true;
+                }
+
+                if (classMatches && targets.PriorityClass is { } priorityClass)
+                {
+                    process!.PriorityClass = priorityClass;
+                    touched = true;
+                }
+
+                return touched
+                    ? ReleaseOutcome.Released
+                    : ReleaseOutcome.Untouched;
+            }
+            catch (Exception exception) when (
+                exception is InvalidOperationException or Win32Exception)
             {
-                WriteIoPriority(process, targets.IoPriority);
-                touched = true;
+                // Proces, ktory wyszedl miedzy odczytem a zapisem, nie jest
+                // bledem odtwarzania: nie ma juz na nim niczego naszego.
+                // Zywy proces, ktory nie dal sie zmienic, jest — zostaje
+                // z odziedziczonym ograniczeniem.
+                return HasExited(process)
+                    ? ReleaseOutcome.Untouched
+                    : ReleaseOutcome.Failed;
             }
-
-            if (memoryMatches)
-            {
-                ProcessMemoryPriorityAction.Write(
-                    process,
-                    targets.MemoryPriority);
-                touched = true;
-            }
-
-            if (classMatches && targets.PriorityClass is { } priorityClass)
-            {
-                process.PriorityClass = priorityClass;
-                touched = true;
-            }
-
-            return touched ? ReleaseOutcome.Released : ReleaseOutcome.Untouched;
-        }
-        catch (ArgumentException)
-        {
-            // Zakonczyl sie, zanim do niego doszlismy. Nie ma czego oddawac.
-            return ReleaseOutcome.Untouched;
-        }
-        catch (Exception exception) when (
-            exception is InvalidOperationException or Win32Exception)
-        {
-            // Proces, ktory wyszedl miedzy otwarciem a zapisem, nie jest
-            // bledem odtwarzania: nie ma juz na nim niczego naszego. Zywy
-            // proces, ktory nie dal sie zmienic, jest — zostaje
-            // z odziedziczonym ograniczeniem.
-            return HasExited(process)
-                ? ReleaseOutcome.Untouched
-                : ReleaseOutcome.Failed;
         }
         finally
         {

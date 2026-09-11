@@ -158,6 +158,10 @@ public sealed class JournaledProBalanceActuator :
                 restrainedAtUtc)
             .ConfigureAwait(false))
         {
+            // Ksiega po swojej stronie cofa nieudany wpis; to wywolanie jest
+            // pasem bezpieczenstwa, gdyby implementacja ksiegi tego nie
+            // robila — wpis w pamieci bez sladu na dysku bylby widmem.
+            await ForgetRestraintAsync(runtimeKey).ConfigureAwait(false);
             return false;
         }
 
@@ -263,6 +267,20 @@ public sealed class JournaledProBalanceActuator :
                 restrainedAtUtc);
         }
 
+        // Drugi meldunek, z tym, co realnie sie nalozylo. Pierwszy szedl
+        // z planem, bo musial wyprzedzic mutacje; ten prostuje ksiege, zeby
+        // odtwarzanie po awarii nie przegladalo potomkow po dzwigniach,
+        // ktorych nie bylo. Best-effort: gdy sie nie powiedzie, w ksiedze
+        // zostaje plan, czyli wersja ostrozniejsza.
+        _ = await ReportRestraintAsync(
+                identity,
+                actionId,
+                idempotencyKey,
+                pinned,
+                loweredIo,
+                steered,
+                restrainedAtUtc)
+            .ConfigureAwait(false);
         return true;
     }
 

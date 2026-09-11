@@ -2570,6 +2570,7 @@ public sealed class LocalGameSessionOrchestrator : IAsyncDisposable
                     application.Identity.RuntimeKey.ProcessId,
                     application.Identity.RuntimeKey.StartedAtUtc,
                     application.AppliedAtUtc ?? requestedAtUtc,
+                    application.AffinityActionId is not null,
                     application.IoPriorityActionId is not null,
                     application.MemoryPriorityActionId is not null));
             }
@@ -2606,12 +2607,16 @@ public sealed class LocalGameSessionOrchestrator : IAsyncDisposable
         // GameShifcie nic nie zostalo.
         foreach (SweepRoot root in sweepRoots)
         {
+            // Maska tylko dla korzenia, ktory ja dostal. Podanie jej dla
+            // korzenia bez maski (tryb EcoQoS albo samego priorytetu)
+            // otwieraloby regule sierot: kazdy obcy proces z cwiartka
+            // bylby poszerzany na podstawie ograniczenia, ktorego nie bylo.
             InheritedRestraintSweep sweep = InheritedRestraintSweeper.Release(
                 root.ProcessId,
                 root.StartedAtUtc,
                 TryCaptureParentMap,
                 root.NotBeforeUtc,
-                backgroundMask,
+                root.Mask ? backgroundMask : 0,
                 root.Io,
                 root.Memory,
                 resetPriorityClass: true);
@@ -2673,6 +2678,7 @@ public sealed class LocalGameSessionOrchestrator : IAsyncDisposable
         int ProcessId,
         DateTimeOffset StartedAtUtc,
         DateTimeOffset NotBeforeUtc,
+        bool Mask,
         bool Io,
         bool Memory);
 
@@ -3286,8 +3292,11 @@ public sealed class LocalGameSessionOrchestrator : IAsyncDisposable
                         "LIMIT_BACKGROUND_CPU",
                         $"Na czas gry ustaw „{application.DisplayName}” "
                         + "na BelowNormal i włącz EcoQoS, aby ograniczyć "
-                        + "rywalizację tła o CPU. Bez przypinania do rdzeni "
-                        + "i bez zmiany priorytetów pamięci i dysku.",
+                        + "rywalizację tła o CPU. Ten plan nie przypina do "
+                        + "rdzeni i nie zmienia priorytetów pamięci ani dysku; "
+                        + "niezależnie od planu włączona pętla ProBalance może "
+                        + "ograniczyć każdy proces, który w trakcie gry "
+                        + "zacznie zjadać procesor.",
                         "Niskie",
                         "Przywróć poprzedni priorytet i stan EcoQoS; "
                         + "jeśli proces sam się zakończy, nie rób nic."),
@@ -3353,8 +3362,12 @@ public sealed class LocalGameSessionOrchestrator : IAsyncDisposable
         int loweredCount =
             plan.BackgroundApplications.Length - closeCount;
         int ecoQosCount = plan.BackgroundApplications.Count(application =>
+            application.ActionMode is
+                BackgroundProcessActionMode.LowerPriorityAndEcoQos
+                or BackgroundProcessActionMode.RestrainBackground);
+        int restrainCount = plan.BackgroundApplications.Count(application =>
             application.ActionMode
-                == BackgroundProcessActionMode.LowerPriorityAndEcoQos);
+                == BackgroundProcessActionMode.RestrainBackground);
         return new(
             plan.PlanId,
             plan.SessionId,
@@ -3366,7 +3379,8 @@ public sealed class LocalGameSessionOrchestrator : IAsyncDisposable
                 plan.BackgroundApplications.Length > 0
                 || plan.GamePriority is not null,
              $"Do zamknięcia: {closeCount}; do ograniczenia: "
-                 + $"{loweredCount}; EcoQoS: {ecoQosCount}; "
+                 + $"{loweredCount}; EcoQoS: {ecoQosCount}; pełny pakiet "
+                 + $"(rdzenie tła, pamięć, dysk): {restrainCount}; "
                  + "working set aplikacji do zamknięcia: "
                  + $"{FormatMemory(estimatedBytes)} (to nie jest miara FPS); "
                  + "priorytet gry: "
@@ -3587,15 +3601,24 @@ public sealed class LocalGameSessionOrchestrator : IAsyncDisposable
             }
         }
 
-        internal void AddDynamicRestraint(
+        /// <summary>
+        /// Adds or replaces the entry for the process; returns what it
+        /// replaced, so a failed checkpoint write can put it back.
+        /// </summary>
+        internal PlannedBackgroundApplication? AddDynamicRestraint(
             PlannedBackgroundApplication restraint)
         {
             lock (_restraintLock)
             {
+                PlannedBackgroundApplication? previous =
+                    _dynamicRestraints.Find(existing =>
+                        existing.Identity.RuntimeKey
+                            == restraint.Identity.RuntimeKey);
                 _dynamicRestraints.RemoveAll(existing =>
                     existing.Identity.RuntimeKey
                         == restraint.Identity.RuntimeKey);
                 _dynamicRestraints.Add(restraint);
+                return previous;
             }
         }
 
@@ -3678,9 +3701,34 @@ public sealed class LocalGameSessionOrchestrator : IAsyncDisposable
             CancellationToken cancellationToken)
         {
             ArgumentNullException.ThrowIfNull(record);
-            runtime.AddDynamicRestraint(ToPlannedApplication(record));
-            await owner.CheckpointRestraintsAsync(runtime, cancellationToken)
-                .ConfigureAwait(false);
+            PlannedBackgroundApplication? previous =
+                runtime.AddDynamicRestraint(ToPlannedApplication(record));
+            bool recorded = false;
+            try
+            {
+                await owner.CheckpointRestraintsAsync(runtime, cancellationToken)
+                    .ConfigureAwait(false);
+                recorded = true;
+            }
+            finally
+            {
+                if (!recorded)
+                {
+                    // Wpis w pamieci bez sladu na dysku bylby widmem: przy
+                    // zamknieciu sesji przegladalby potomkow procesu, ktorego
+                    // aktuator — po naszej odmowie — wcale nie ograniczyl.
+                    // Wracamy do stanu sprzed meldunku; blad idzie dalej.
+                    if (previous is null)
+                    {
+                        _ = runtime.RemoveDynamicRestraint(
+                            record.Identity.RuntimeKey);
+                    }
+                    else
+                    {
+                        _ = runtime.AddDynamicRestraint(previous);
+                    }
+                }
+            }
         }
 
         public async ValueTask ForgetAsync(
