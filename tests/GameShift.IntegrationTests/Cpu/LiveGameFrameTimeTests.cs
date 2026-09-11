@@ -622,9 +622,13 @@ public sealed class LiveGameFrameTimeTests
 
         if (frameTimes.Count == 0)
         {
-            return new(0, 0, 0, 0, 0, 0);
+            return new(0, 0, 0, 0, 0, 0, 0, seconds);
         }
 
+        // Zacieciami nazywamy klatki powyzej 50 ms. Przy 80 klatkach na
+        // sekunde budzet klatki to 12,5 ms, wiec 50 ms to cztery zgubione
+        // klatki z rzedu — widoczne szarpniecie, nie wahniecie.
+        int stutters = frameTimes.Count(frameTime => frameTime > 50);
         frameTimes.Sort();
         return new(
             frameTimes[frameTimes.Count / 2],
@@ -632,7 +636,9 @@ public sealed class LiveGameFrameTimeTests
             frameTimes[^1],
             frameTimes.Count,
             Median(gpuBusy),
-            Median(gpuWait));
+            Median(gpuWait),
+            stutters,
+            seconds);
     }
 
     /// <summary>
@@ -700,8 +706,23 @@ public sealed class LiveGameFrameTimeTests
         double Worst,
         int SampleCount,
         double GpuBusyMedian = 0,
-        double GpuWaitMedian = 0)
+        double GpuWaitMedian = 0,
+        int StutterCount = 0,
+        int BlockSeconds = 0)
     {
+        /// <summary>
+        /// Zaciecia powyzej 50 ms na minute.
+        /// <para>
+        /// p99 tego nie widzi i to nie jest wada p99, tylko jego definicja.
+        /// Zmierzone na Sons of the Forest: blok z p99 17,38 ms zawieral
+        /// klatke 375,65 ms. Jedna na 2339 klatek nie rusza setnego
+        /// percentyla, a gracz ja czuje.
+        /// </para>
+        /// </summary>
+        public double StuttersPerMinute => BlockSeconds > 0
+            ? StutterCount * 60d / BlockSeconds
+            : 0;
+
         public override string ToString() => SampleCount == 0
             ? "brak klatek"
             : $"p50 {Median:F2} ms, p99 {Percentile99:F2} ms, "
@@ -709,6 +730,10 @@ public sealed class LiveGameFrameTimeTests
                 + (GpuBusyMedian > 0 || GpuWaitMedian > 0
                     ? $", GPU zajete {GpuBusyMedian:F2} ms, "
                         + $"GPU czeka {GpuWaitMedian:F2} ms"
+                    : string.Empty)
+                + (StutterCount > 0
+                    ? $", zaciec >50 ms: {StutterCount} "
+                        + $"({StuttersPerMinute:F1}/min)"
                     : string.Empty);
     }
 }
