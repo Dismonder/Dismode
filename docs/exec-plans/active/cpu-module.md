@@ -817,6 +817,26 @@ benchmark opóźnienia wybudzenia dostał kategorię Live i filtr własnych
 procesów (z pełnym próbnikiem obniżał priorytet najcięższym procesom
 maszyny).
 
+**Druga runda tej samej recenzji (nad b4ae652).** Cztery soczewki, 11
+ustaleń, zweryfikowane ręcznie w kodzie. Naprawione: nieudany zapis punktu
+kontrolnego zostawiał widmowy wpis w pamięci sesji (księga cofa wpis, gdy
+zapis nie przejdzie, a aktuator dodatkowo woła Forget); księga dostaje po
+pakiecie drugi meldunek z tym, co realnie się nałożyło, żeby odtwarzanie po
+awarii nie przeglądało potomków po dźwigniach, których nie było; korzeń
+przeglądu bez maski (tryb EcoQoS albo samego priorytetu) nie otwiera już
+reguły sierot maską sesji; korzeń, którego czas startu nie pasuje
+(recykling PID), traktuje wszystkich kandydatów jak sieroty; rodzic, którego
+już nie ma, nie daje potomkom klasy „Normal" (nie da się odróżnić
+dziedziczenia od wyboru); proces, którego nie da się odczytać, nie jest
+błędem odtwarzania — błędem jest tylko żywy proces, który nie dał sobie
+zdjąć naszej wartości; podgląd planu dla trybu EcoQoS mówi, że pętla
+ProBalance i tak może ograniczyć każdy proces, a podsumowanie planu liczy
+pełny pakiet osobno. Odrzucone świadomie: dziecko żywego rodzica
+z klasą BelowNormal wraca do Normal także wtedy, gdy samo ją wybrało
+(np. renderer Chrome) — Chrome nakłada ją ponownie sam, a alternatywa
+zostawia odziedziczone BelowNormal na zawsze; test starego dziennika
+sprawdza czytelność formatu, nie fallback maski, i tak został pomyślany.
+
 ### Co ustaliła sesja obok tego samego ranka (pomiary, Sons of the Forest)
 
 - Scena powtarzalna (postać stoi): rozrzut p99 między blokami 0,68 ms,
