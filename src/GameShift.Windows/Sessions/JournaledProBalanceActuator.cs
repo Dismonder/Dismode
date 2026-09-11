@@ -20,11 +20,31 @@ namespace GameShift.Windows.Sessions;
 /// The in-memory actuator remembers what it changed and undoes it on stop,
 /// which is enough while the process is alive. It is not enough if GameShift
 /// dies mid-session: the priorities it lowered would stay lowered with nothing
-/// left to record that it was us. Going through the journal means the recovery
-/// pass on the next start finds them and puts them back.
+/// left to record that it was us. Journal entries are written so that a
+/// recovery pass has something to work from.
+/// </para>
+/// <para>
+/// UWAGA, stan na teraz: te wpisy NIE sa jeszcze odczytywane.
+/// <c>LocalGameSessionOrchestrator.RecoverUserSessionAsync</c> bierze z
+/// dziennika wylacznie ostatni wpis metadanych sesji i odtwarza z niego
+/// proces gry, aplikacje tla oraz priorytet gry; po wpisach akcji z tego
+/// aktuatora nikt nie iteruje. Sprawdzone w kodzie. Poprzednia wersja tego
+/// komentarza twierdzila, ze odtwarzanie „znajduje je i przywraca", co bylo
+/// nieprawda.
+/// </para>
+/// <para>
+/// Skutek jest realny: po awarii hosta proces tla zostaje w cwiartce
+/// maszyny, z obnizonym priorytetem i z priorytetem wejscia-wyjscia
+/// VeryLow, i nic tego nie cofa. Priorytet wejscia-wyjscia jest przy tym
+/// gorszy w skutkach niz maska, bo maski nie widac tylko w polowie narzedzi,
+/// a priorytetu wejscia-wyjscia nie widac w zadnym standardowym — uzytkownik
+/// nie ma jak sam tego naprawic. Domkniecie tej luki idzie przez
+/// <c>IRestraintLedger</c> po stronie orkiestratora.
 /// </para>
 /// </summary>
-public sealed class JournaledProBalanceActuator : IProBalanceActuator
+public sealed class JournaledProBalanceActuator :
+    IProBalanceActuator,
+    IRestraintLedgerAware
 {
     private readonly IRecoveryJournal _journal;
     private readonly SessionId _sessionId;
@@ -58,6 +78,17 @@ public sealed class JournaledProBalanceActuator : IProBalanceActuator
     private readonly Dictionary<ProcessRuntimeKey, RestraintRecord> _applied =
         [];
 
+    /// <summary>
+    /// Gdzie zglaszamy, co ograniczylismy, zeby przetrwalo awarie hosta.
+    /// <para>
+    /// Sam wpis w dzienniku nie wystarcza: po awarii nikt nie wie, ktore
+    /// identyfikatory akcji naleza do ograniczenia, ktorego nigdy nie
+    /// zdjeto. Punkt kontrolny sesji to jedyne miejsce, ktore awarie
+    /// przezywa i jest odtwarzane przy nastepnym starcie.
+    /// </para>
+    /// </summary>
+    private IRestraintLedger? _ledger;
+
     public JournaledProBalanceActuator(
         IRecoveryJournal journal,
         SessionId sessionId,
@@ -75,6 +106,12 @@ public sealed class JournaledProBalanceActuator : IProBalanceActuator
         _backgroundCpuSetIds = backgroundCpuSetIds ?? [];
         _backgroundAffinityMask = backgroundAffinityMask;
         _lowerBackgroundIoPriority = lowerBackgroundIoPriority;
+    }
+
+    public void AttachLedger(IRestraintLedger ledger)
+    {
+        ArgumentNullException.ThrowIfNull(ledger);
+        _ledger = ledger;
     }
 
     public async ValueTask<bool> RestrainAsync(
@@ -145,6 +182,14 @@ public sealed class JournaledProBalanceActuator : IProBalanceActuator
                 steered,
                 pinned,
                 loweredIo);
+            await ReportRestraintAsync(
+                    identity,
+                    actionId,
+                    idempotencyKey,
+                    pinned,
+                    loweredIo,
+                    cancellationToken)
+                .ConfigureAwait(false);
             return true;
         }
         catch (Exception exception) when (IsExpected(exception))
@@ -201,10 +246,20 @@ public sealed class JournaledProBalanceActuator : IProBalanceActuator
                         RuntimeProcessPriorityState>(_journal)
                     .RecoverAsync(action, context, cancellationToken)
                     .ConfigureAwait(false);
-            return result.Status
+            bool restored = result.Status
                 is ActionRecoveryStatus.Restored
                 or ActionRecoveryStatus.AlreadyRestored
                 or ActionRecoveryStatus.NotRequired;
+            if (restored)
+            {
+                // Dopiero po faktycznym przywroceniu. Wykreslenie z ksiegi
+                // wczesniej odebraloby odtwarzaniu po awarii jedyny slad po
+                // ograniczeniu, ktore moze wlasnie nie zostalo zdjete.
+                await ForgetRestraintAsync(runtimeKey, cancellationToken)
+                    .ConfigureAwait(false);
+            }
+
+            return restored;
         }
         catch (Exception exception) when (IsExpected(exception))
         {
@@ -338,6 +393,71 @@ public sealed class JournaledProBalanceActuator : IProBalanceActuator
         catch (Exception exception) when (IsExpected(exception))
         {
             return null;
+        }
+    }
+
+    /// <summary>
+    /// Zglasza ograniczenie do ksiegi sesji.
+    /// <para>
+    /// Niepowodzenie zapisu nie moze wywrocic samego ograniczenia — ono juz
+    /// obowiazuje i jest w dzienniku. Traci wtedy tylko odtwarzalnosc po
+    /// awarii, wiec lykamy wyjatek zamiast przewracac petle nadzorcy.
+    /// </para>
+    /// </summary>
+    private async ValueTask ReportRestraintAsync(
+        ProcessIdentity identity,
+        ActionId priorityActionId,
+        IdempotencyKey priorityIdempotencyKey,
+        PinnedAffinity? pinned,
+        LoweredIo? loweredIo,
+        CancellationToken cancellationToken)
+    {
+        if (_ledger is not { } ledger)
+        {
+            return;
+        }
+
+        try
+        {
+            await ledger.RecordAsync(
+                    new RestrainedProcessRecord(
+                        identity,
+                        Path.GetFileNameWithoutExtension(
+                            identity.ExecutablePath),
+                        priorityActionId,
+                        priorityIdempotencyKey,
+                        pinned?.ActionId,
+                        pinned?.IdempotencyKey,
+                        loweredIo?.ActionId,
+                        loweredIo?.IdempotencyKey,
+                        // Priorytet pamieci nalezy do orkiestratora, nie do
+                        // tej petli.
+                        null,
+                        null),
+                    cancellationToken)
+                .ConfigureAwait(false);
+        }
+        catch (Exception exception) when (IsExpected(exception))
+        {
+        }
+    }
+
+    private async ValueTask ForgetRestraintAsync(
+        ProcessRuntimeKey runtimeKey,
+        CancellationToken cancellationToken)
+    {
+        if (_ledger is not { } ledger)
+        {
+            return;
+        }
+
+        try
+        {
+            await ledger.ForgetAsync(runtimeKey, cancellationToken)
+                .ConfigureAwait(false);
+        }
+        catch (Exception exception) when (IsExpected(exception))
+        {
         }
     }
 

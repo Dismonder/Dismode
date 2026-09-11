@@ -442,3 +442,68 @@ przy progu 0,75 — bramka przepuszczała w obu przypadkach, zgodnie z zamiarem.
 Zmierzone osobno przy zwykłej pracy gracza: tło 1,11 rdzenia sumarycznie, ale
 najcięższy pojedynczy proces 0,18 — poniżej progu pojedynczego procesu, więc
 moduł słusznie milczy. Cisza, gdy nie ma czego naprawiać.
+
+## Pomiar z widocznym GPU, Sons of the Forest, 11 września 2026
+
+Sekcja dopisana przez sesję pracującą nad aparatem pomiarowym i priorytetem
+wejścia-wyjścia. Wcześniejsze pomiary w tym dokumencie powstały narzędziem,
+które **nie widziało GPU** — PresentMon szedł z `--no_track_gpu` i
+`--no_track_display`, więc wszystko poniżej jest pierwszym spojrzeniem na
+drugą stronę klatki.
+
+### Profil bazowy, 2339 klatek w 30 sekundach
+
+| metryka | p50 | p99 | max |
+|---|---|---|---|
+| FrameTime | 12,45 ms | 17,38 ms | 375,65 ms |
+| CPUBusy | 11,89 ms | 16,85 ms | — |
+| GPUBusy | 6,70 ms | 7,14 ms | — |
+| GPUWait | 5,71 ms | 10,30 ms | — |
+| DisplayLatency | 23,43 ms | 31,36 ms | — |
+
+`PresentMode` to `Hardware Composed: Independent Flip` dla wszystkich klatek,
+`SyncInterval` = 3, `AllowsTearing` = 0, panel 3840×2160 przy 240 Hz.
+
+### Co z tego wynika
+
+**Gra jest zsynchronizowana co trzecie odświeżenie, czyli twardo 80 klatek na
+sekundę.** Budżet klatki to 12,5 ms. Pierwotnie odczytałem brak limitu, bo
+panel ma 240 Hz, a czasy klatek były rozrzucone od 11,3 do 13,8 ms zamiast
+siedzieć w jednym punkcie; przeoczyłem `SyncInterval`. Poprawka odnotowana,
+bo wnioski budowane na „braku limitu" byłyby fałszywe.
+
+**Na tej maszynie po stronie GPU nie ma czego ugrać.** Karta zjada 6,70 ms
+z 12,5 ms budżetu, czyli nudzi się przez prawie połowę każdej klatki, a
+ścieżka prezentacji jest już optymalna — `Independent Flip` omija kompozycję
+DWM. Cała grupa `graphics.*` w katalogu tweaków jest tu bezwartościowa i jest
+to wniosek z pomiaru, nie z opinii.
+
+**Procesor jest o włos od przekroczenia budżetu**: 11,89 ms z 12,5 ms, czyli
+95%. To najmocniejsze dotąd uzasadnienie modułu masek — przy tak ciasnym
+budżecie każda rywalizacja o rdzeń natychmiast kosztuje klatkę. Tłumaczy też,
+dlaczego akurat maska dała −60,7% p99, a priorytet nie dał nic.
+
+### Czego p99 nie widzi
+
+Blok o p99 17,38 ms zawierał klatkę **375,65 ms**. Jedna na 2339 nie rusza
+setnego percentyla, a gracz ją czuje. Aparat liczy teraz osobno klatki
+powyżej 50 ms i przelicza je na minutę; próg wzięty z budżetu, bo 50 ms przy
+12,5 ms to cztery zgubione klatki z rzędu.
+
+### Nierozstrzygnięty wynik priorytetu wejścia-wyjścia
+
+Pierwszy sparowany przebieg z hogiem dyskowym dał średnią sugerującą 85%
+poprawy i **nie jest to prawda**. Rozbity na rundy: runda pierwsza 318,61 ms
+wobec 18,22 ms, runda druga 18,76 ms wobec 31,31 ms — kierunek odwrócony.
+Cały rzekomy zysk niósł pierwszy blok po starcie hoga, skażony rozgrzewaniem
+pętli i dociąganiem świeżo zapisanego pliku. Protokół poprawiony: blok
+rozgrzewkowy odrzucany, cztery rundy naprzemiennie AB/BA, mediana różnic
+w parach zamiast średniej i jawny werdykt „nierozstrzygnięte", gdy kierunek
+nie jest spójny między rundami.
+
+### Ograniczenia aparatu, które zostają
+
+Próg asercji w `LiveGameFrameTimeTests` nadal dopuszcza pogorszenie mediany
+o połowę, bo służy wykrywaniu regresji, a nie dowodzeniu poprawy. Do
+wykazania zysku mniejszego niż kilkadziesiąt procent to za mało i trzeba
+będzie osobnej asercji.
