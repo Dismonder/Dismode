@@ -16,9 +16,12 @@
           <SolidColorBrush x:Key="MemoryNavigationBrush" Color="#F20B1117" />
           <SolidColorBrush x:Key="MemoryCardBrush" Color="#F2121A21" />
           <!-- Tlo okna menu w trayu. Nieprzezroczyste celowo: przy #F2121A21
-               panel przepuszczal 5% tego, co akurat lezy pod oknem. Wartosc to
-               zmierzony wynik tamtego zlozenia na ciemnym tle, wiec wyglad
-               zostaje ten sam, znika tylko zaleznosc od pulpitu. -->
+               panel przepuszczal 5% tego, co akurat lezy pod oknem, wiec jego
+               odcien zalezal od pulpitu. To jest swiadoma zmiana wygladu, a
+               nie neutralna poprawka: nowa wartosc odpowiada zmierzonemu
+               zlozeniu na ciemnym tle, na jasnym panel bedzie teraz ciemniejszy
+               niz wczesniej. Menu ma wygladac tak samo niezaleznie od tego, co
+               pod nim lezy. -->
           <SolidColorBrush x:Key="MemoryTrayPanelBrush" Color="#FF11191F" />
           <SolidColorBrush x:Key="MemoryElevatedBrush" Color="#FF18222B" />
           <SolidColorBrush x:Key="MemoryInsetBrush" Color="#B90C1319" />
