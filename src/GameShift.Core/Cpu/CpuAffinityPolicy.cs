@@ -107,9 +107,40 @@ public static class CpuAffinityPolicy
                     + "niż pomaga.");
         }
 
-        int corner = Math.Max(2, usable.Count / 4);
+        // Cwiartka puli, ale liczona calymi rdzeniami fizycznymi. Wersja
+        // biorąca po prostu N najnizszych procesorow logicznych dzielila
+        // rdzen na pol wszedzie tam, gdzie cwiartka wypadala nieparzysto:
+        // na 12 watkach (6 rdzeni, czyli i5-12400 albo Ryzen 5 5600) dawala
+        // logiczne 0,1,2 — caly rdzen 0 i polowe rdzenia 1. Drugi watek
+        // rdzenia 1 zostawal grze, wiec gra i tlo lądowaly na tym samym
+        // rdzeniu fizycznym i bily sie o jego jednostki wykonawcze. To
+        // dokladnie ta rywalizacja, ktora ta maska ma likwidowac.
+        int target = Math.Max(2, usable.Count / 4);
+        List<uint> cores = [.. usable
+            .GroupBy(processor => processor.CoreIndex)
+            .OrderBy(group => group.Min(
+                processor => processor.LogicalProcessorIndex))
+            .Select(group => group.Key)];
+        HashSet<uint> chosen = [];
+        int taken = 0;
+        foreach (uint core in cores)
+        {
+            if (taken >= target)
+            {
+                break;
+            }
+
+            // Rdzen bierzemy w calosci albo wcale, wiec przy nieparzystej
+            // cwiartce zaokraglamy w gore. W dol znaczyloby oddac tlu mniej,
+            // niz przewiduje polityka, a tlo tez musi gdzies policzyc swoje.
+            chosen.Add(core);
+            taken += usable.Count(
+                processor => processor.CoreIndex == core);
+        }
+
         ulong mask = 0;
-        foreach (CpuLogicalProcessor processor in usable.Take(corner))
+        foreach (CpuLogicalProcessor processor in usable.Where(
+            processor => chosen.Contains(processor.CoreIndex)))
         {
             mask |= 1UL << processor.LogicalProcessorIndex;
         }
@@ -118,8 +149,9 @@ public static class CpuAffinityPolicy
             true,
             mask,
             CpuAffinityDecline.None,
-            $"Procesy w tle dostają {corner} z {usable.Count} procesorów "
-                + "logicznych. Resztę maszyny zostawiamy grze.");
+            $"Procesy w tle dostają {taken} z {usable.Count} procesorów "
+                + $"logicznych ({chosen.Count} pełnych rdzeni). Resztę "
+                + "maszyny zostawiamy grze.");
     }
 
     public static CpuAffinityDecision Decide(
