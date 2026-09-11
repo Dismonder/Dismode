@@ -95,4 +95,21 @@ public sealed record ProBalanceSettings
     /// </para>
     /// </summary>
     public int MaximumRestrained { get; init; } = 3;
+
+    /// <summary>
+    /// Czy ograniczanemu procesowi obnizac takze priorytet wejscia-wyjscia.
+    /// <para>
+    /// Maska powinowactwa odbiera procesowi tla rdzenie, ale nie odbiera mu
+    /// dysku: kopia zapasowa albo indeksowanie moze siedziec na dwoch
+    /// rdzeniach i dalej zapychac kolejke odczytow, a gra czeka na swoje
+    /// zasoby.
+    /// </para>
+    /// <para>
+    /// Domyslnie wlaczone, bo mechanizm jest odwracalny, tani i sprawdzony
+    /// odczytem. Zysk w czasie klatki pozostaje jednak niezmierzony na zywej
+    /// sesji, dlatego stoi to tutaj jako przelacznik, a nie jako zaszyte
+    /// zachowanie.
+    /// </para>
+    /// </summary>
+    public bool LowerBackgroundIoPriority { get; init; } = true;
 }
