@@ -6,6 +6,7 @@ using GameShift.Core.Profiles;
 using GameShift.UI.Services;
 using Microsoft.UI.Windowing;
 using Microsoft.UI.Xaml;
+using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Media;
 using Windows.UI;
 using WinRT.Interop;
@@ -177,10 +178,21 @@ public sealed partial class PerformanceOverlayWindow : Window, IDisposable
         if (framesPerSecond is double fps && frameTimeMilliseconds is double ms)
         {
             AddFrameTimeSample(ms);
-            FpsValueText.Text = fps.ToString("0", CultureInfo.CurrentCulture);
-            FrameTimeValueText.Text =
-                ms.ToString("0.0", CultureInfo.CurrentCulture) + " ms";
-            OnePercentLowText.Text = FormatOnePercentLow();
+            // Jednostka przy liczbie, bo kolumna etykiet zniknela razem
+            // z panelem. "138 FPS" czyta sie bez niej tak samo dobrze,
+            // a nie zajmuje polowy szerokosci nakladki.
+            SetWithShadow(
+                FpsValueText,
+                FpsShadowText,
+                fps.ToString("0", CultureInfo.CurrentCulture) + " FPS");
+            SetWithShadow(
+                FrameTimeValueText,
+                FrameTimeShadowText,
+                ms.ToString("0.0", CultureInfo.CurrentCulture) + " ms");
+            SetWithShadow(
+                OnePercentLowText,
+                OnePercentLowShadowText,
+                FormatOnePercentLow());
 
             Color metricColor = GetMetricColor(ms);
             FpsValueText.Foreground = new SolidColorBrush(metricColor);
@@ -192,9 +204,9 @@ public sealed partial class PerformanceOverlayWindow : Window, IDisposable
             return;
         }
 
-        FpsValueText.Text = "—";
-        FrameTimeValueText.Text = "—";
-        OnePercentLowText.Text = "—";
+        SetWithShadow(FpsValueText, FpsShadowText, "— FPS");
+        SetWithShadow(FrameTimeValueText, FrameTimeShadowText, "—");
+        SetWithShadow(OnePercentLowText, OnePercentLowShadowText, "—");
         SourceStatusText.Text = string.IsNullOrWhiteSpace(gameName)
             ? "brak gry na pierwszym planie"
             : "brak pomiaru";
@@ -208,6 +220,23 @@ public sealed partial class PerformanceOverlayWindow : Window, IDisposable
     /// corresponds to what a player notices. An average hides a stutter; this
     /// does not.
     /// </summary>
+    /// <summary>
+    /// Wpisuje ten sam napis w warstwe widoczna i w lezacy pod nia cien.
+    /// <para>
+    /// Cien zastepuje tlo: bez niego biale cyfry gina na jasnej scenie,
+    /// a polprzezroczysty panel zaslanialby obraz zawsze, takze wtedy, gdy
+    /// scena jest ciemna i nic nie zaslania.
+    /// </para>
+    /// </summary>
+    private static void SetWithShadow(
+        TextBlock front,
+        TextBlock shadow,
+        string text)
+    {
+        front.Text = text;
+        shadow.Text = text;
+    }
+
     private string FormatOnePercentLow()
     {
         if (_frameTimeHistory.Count < 8)
@@ -220,7 +249,8 @@ public sealed partial class PerformanceOverlayWindow : Window, IDisposable
         double worst = sorted[(int)(sorted.Length * 0.99)];
         return worst <= 0
             ? "—"
-            : (1000d / worst).ToString("0", CultureInfo.CurrentCulture);
+            : (1000d / worst).ToString("0", CultureInfo.CurrentCulture)
+                + " min 1%";
     }
 
     public void ApplyPreferences(

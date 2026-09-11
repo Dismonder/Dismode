@@ -115,6 +115,35 @@ public sealed class DiagnosticsProbeService
                 "Połączenie z pipe zostało przerwane.",
                 stopwatch.ElapsedMilliseconds);
         }
+        catch (RpcException exception)
+            when (exception.StatusCode is
+                StatusCode.PermissionDenied
+                or StatusCode.Unauthenticated)
+        {
+            // Odmowa jest poprawna odpowiedzia utwardzonej uslugi, nie awaria.
+            // Host sprawdza, czy rozmowca dziala z katalogu instalacji, i
+            // odmawia kazdemu innemu. Zmierzone: uruchomienie interfejsu
+            // z katalogu kompilacji konczylo sie wyjatkiem, ktory uciekal
+            // z OnRootLoaded i ZABIJAL CALY PROCES — aplikacja nie wstawala
+            // wcale, a dziennik pokazywal tylko stowed exception w XAML.
+            return Unavailable(
+                component,
+                "Host odmówił rozmowy: "
+                    + (string.IsNullOrWhiteSpace(exception.Status.Detail)
+                        ? exception.StatusCode.ToString()
+                        : exception.Status.Detail),
+                stopwatch.ElapsedMilliseconds);
+        }
+        catch (RpcException exception)
+        {
+            // Zadna odpowiedz hosta nie moze konczyc sie smiercia interfejsu.
+            // Sonda ma opisywac stan komponentu, wiec nieznany kod tez jest
+            // stanem — pokazujemy go zamiast wyrzucac wyjatek w gore.
+            return Unavailable(
+                component,
+                $"Host odpowiedział błędem {exception.StatusCode}.",
+                stopwatch.ElapsedMilliseconds);
+        }
     }
 
     /// <summary>
