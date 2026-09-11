@@ -77,7 +77,8 @@
               </Grid.ColumnDefinitions>
               <TextBlock x:Name="MemoryUsageText" Text="Oczekiwanie na pomiar" FontSize="12"
                          TextTrimming="CharacterEllipsis" Foreground="{ThemeResource MemoryMutedBrush}" />
-              <TextBlock x:Name="MemoryPressureText" Grid.Column="1" FontSize="12" Foreground="{ThemeResource MemorySecondaryTextBrush}" />
+              <TextBlock x:Name="MemoryPressureText" Grid.Column="1" FontSize="12" MaxWidth="150"
+                         TextTrimming="CharacterEllipsis" Foreground="{ThemeResource MemorySecondaryTextBrush}" />
             </Grid>
           </Grid>
         </Border>
@@ -86,7 +87,8 @@
           <StackPanel x:Name="ActionButtonsPanel" Spacing="8">
             <Button x:Name="OptimizeMenuButton" Height="44" HorizontalAlignment="Stretch"
                     HorizontalContentAlignment="Stretch" Padding="14,8" Click="OptimizeMenuButton_Click"
-                    Style="{StaticResource MemoryPrimaryButtonStyle}">
+                    Style="{StaticResource MemoryPrimaryButtonStyle}"
+                    AutomationProperties.Name="Optymalizuj zapisany profil">
               <Grid ColumnSpacing="10">
                 <Grid.ColumnDefinitions>
                   <ColumnDefinition Width="20" />
@@ -105,7 +107,8 @@
                 <ColumnDefinition Width="*" />
                 <ColumnDefinition Width="*" />
               </Grid.ColumnDefinitions>
-              <Button x:Name="PauseMenuButton" Height="44" Click="PauseMenuButton_Click" Style="{StaticResource TrayActionStyle}">
+              <Button x:Name="PauseMenuButton" Height="44" Click="PauseMenuButton_Click" Style="{StaticResource TrayActionStyle}"
+                      AutomationProperties.Name="Wstrzymaj optymalizacje">
                 <Grid ColumnSpacing="8">
                   <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="16" />
@@ -115,7 +118,8 @@
                   <TextBlock x:Name="PauseMenuTitle" Grid.Column="1" Text="Wstrzymaj" VerticalAlignment="Center" />
                 </Grid>
               </Button>
-              <Button x:Name="OpenMenuButton" Grid.Column="1" Height="44" Click="OpenMenuButton_Click" Style="{StaticResource TrayActionStyle}">
+              <Button x:Name="OpenMenuButton" Grid.Column="1" Height="44" Click="OpenMenuButton_Click" Style="{StaticResource TrayActionStyle}"
+                      AutomationProperties.Name="Otwórz panel">
                 <Grid ColumnSpacing="8">
                   <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="16" />
@@ -133,12 +137,14 @@
               </Grid.ColumnDefinitions>
               <Ellipse x:Name="ServiceStatusDot" Width="6" Height="6" VerticalAlignment="Top" Margin="0,7,0,0" Fill="{ThemeResource MemoryMutedBrush}" />
               <StackPanel Grid.Column="1" Spacing="2">
-                <TextBlock x:Name="MemoryStatusText" Text="Łączenie z usługą…" FontSize="13" FontWeight="SemiBold" />
+                <TextBlock x:Name="MemoryStatusText" Text="Łączenie z usługą…" FontSize="13" FontWeight="SemiBold"
+                           TextTrimming="CharacterEllipsis" />
                 <TextBlock x:Name="ServiceDetailText" FontSize="12" TextTrimming="CharacterEllipsis" Foreground="{ThemeResource MemoryMutedBrush}" />
               </StackPanel>
             </Grid>
             <Border Height="1" Background="{ThemeResource MemoryDividerBrush}" />
             <Button x:Name="ExitMenuButton" Click="ExitMenuButton_Click" Style="{StaticResource TrayQuietActionStyle}"
+                    AutomationProperties.Name="Zamknij interfejs, zostaw usługę"
                     ToolTipService.ToolTip="Zamknij okno i ikonę w trayu. Usługa nadal pracuje w tle.">
               <Grid ColumnSpacing="10">
                 <Grid.ColumnDefinitions>
@@ -150,6 +156,7 @@
               </Grid>
             </Button>
             <Button x:Name="DisableMenuButton" Click="DisableMenuButton_Click" Style="{StaticResource TrayQuietActionStyle}"
+                    AutomationProperties.Name="Wyłącz Memory Optimizer"
                     Foreground="{ThemeResource MemoryDangerBrush}">
               <Grid ColumnSpacing="10">
                 <Grid.ColumnDefinitions>
@@ -182,7 +189,8 @@
               <Button x:Name="ConfirmDisableButton" Grid.Column="1" Click="ConfirmDisableButton_Click" Content="Wyłącz moduł"
                       Style="{StaticResource TrayActionStyle}" HorizontalContentAlignment="Center" Foreground="{ThemeResource MemoryDangerBrush}" />
             </Grid>
-            <TextBlock x:Name="DisableStatusText" FontSize="12" TextWrapping="Wrap" Foreground="{ThemeResource MemoryMutedBrush}" />
+            <TextBlock x:Name="DisableStatusText" FontSize="12" TextWrapping="Wrap" MaxLines="3"
+                       TextTrimming="CharacterEllipsis" Foreground="{ThemeResource MemoryMutedBrush}" />
           </StackPanel>
         </Grid>
         <TextBlock Grid.Row="3" Text="Usługa działa niezależnie od interfejsu." FontSize="12"

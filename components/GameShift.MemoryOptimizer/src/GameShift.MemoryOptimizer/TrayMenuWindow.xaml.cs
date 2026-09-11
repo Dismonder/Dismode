@@ -81,13 +81,75 @@ internal sealed partial class TrayMenuWindow : Window
         MenuRoot.Measure(new Windows.Foundation.Size(BaseWidth, BaseHeight));
         MenuRoot.Arrange(new Windows.Foundation.Rect(0, 0, BaseWidth, BaseHeight));
         MenuRoot.UpdateLayout();
-        if (MenuRoot.DesiredSize.Width > BaseWidth || MenuRoot.DesiredSize.Height > BaseHeight ||
-            ActionButtonsPanel.DesiredSize.Height > ActionArea.ActualHeight + 1)
+        if (MenuRoot.DesiredSize.Width > BaseWidth || MenuRoot.DesiredSize.Height > BaseHeight)
         {
             throw new InvalidOperationException("Memory Optimizer tray content exceeds its window bounds.");
         }
 
+        VerifyFitsInActionArea(ActionButtonsPanel, "Panel akcji");
+
         VerifyNoNonClientFrame();
+        VerifyDisablePromptFits();
+    }
+
+    /// <summary>
+    /// Sprawdza, czy panel miesci sie w przeznaczonym na niego miejscu.
+    /// <para>
+    /// Mierzy przy nieograniczonej wysokosci. Pomiar w granicach okna nic by
+    /// nie dal: <c>Measure</c> nigdy nie zwraca wiecej, niz mu pozwolono, wiec
+    /// <c>DesiredSize.Height</c> z tego ukladu nie moze przekroczyc
+    /// <c>ActionArea.ActualHeight</c> i warunek nigdy sie nie zapala.
+    /// Sprawdzone: wersja porownujaca oba te pola przechodzila takze wtedy,
+    /// gdy tresc faktycznie nie miescila sie w oknie.
+    /// </para>
+    /// </summary>
+    private void VerifyFitsInActionArea(FrameworkElement panel, string nazwa)
+    {
+        double dostepneWszerz = ActionArea.ActualWidth > 0
+            ? ActionArea.ActualWidth
+            : BaseWidth;
+        panel.Measure(new Windows.Foundation.Size(dostepneWszerz, double.PositiveInfinity));
+        double potrzebne = panel.DesiredSize.Height;
+        if (potrzebne > ActionArea.ActualHeight + 1)
+        {
+            throw new InvalidOperationException(
+                $"{nazwa} nie miesci sie w oknie menu: potrzebuje {potrzebne} " +
+                $"jednostek, a ma {ActionArea.ActualHeight}.");
+        }
+    }
+
+    /// <summary>
+    /// Sprawdza wariant z pytaniem o wylaczenie modulu, bo tam trafia tresc,
+    /// nad ktora nie mamy kontroli.
+    /// <para>
+    /// <c>DisableStatusText</c> pokazuje komunikat wyjatku, wiec moze byc
+    /// dowolnie dlugi. Panel akcji miescil sie z zapasem dziewieciu jednostek,
+    /// wiec kilka dodatkowych wierszy tego komunikatu wypchneloby przyciski
+    /// poza okno. Zwykla probe uklada tylko stan domyslny i tego by nie
+    /// zlapala.
+    /// </para>
+    /// </summary>
+    private void VerifyDisablePromptFits()
+    {
+        Visibility poprzedniePanelu = ActionButtonsPanel.Visibility;
+        Visibility poprzedniePytania = DisablePromptPanel.Visibility;
+        string poprzedniTekst = DisableStatusText.Text;
+        try
+        {
+            ActionButtonsPanel.Visibility = Visibility.Collapsed;
+            DisablePromptPanel.Visibility = Visibility.Visible;
+            DisableStatusText.Text = new string('a', 400);
+            MenuRoot.Measure(new Windows.Foundation.Size(BaseWidth, BaseHeight));
+            MenuRoot.Arrange(new Windows.Foundation.Rect(0, 0, BaseWidth, BaseHeight));
+            MenuRoot.UpdateLayout();
+            VerifyFitsInActionArea(DisablePromptPanel, "Pytanie o wylaczenie modulu");
+        }
+        finally
+        {
+            DisableStatusText.Text = poprzedniTekst;
+            DisablePromptPanel.Visibility = poprzedniePytania;
+            ActionButtonsPanel.Visibility = poprzedniePanelu;
+        }
     }
 
     /// <summary>
