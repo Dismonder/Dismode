@@ -161,6 +161,37 @@ public sealed partial class MainWindow : Window, IDisposable
         TimeSpan.FromSeconds(6);
 
     private DateTimeOffset _lastUnoptimizedGameScanUtc;
+
+    /// <summary>
+    /// Jak czesto pytamy usluge o stan sesji, gdy okno jest widoczne, a jak
+    /// czesto, gdy siedzi w zasobniku.
+    /// <para>
+    /// Schowane okno niczego nie rysuje, wiec dwusekundowy rytm nie ma komu
+    /// sluzyc. Odpytywanie zostaje, bo napedza powiadomienia z ikony, ale
+    /// rzadsze: przy schowanym oknie te same zdarzenia docieraja kilkanascie
+    /// sekund pozniej i nikt tego nie zauwazy.
+    /// </para>
+    /// </summary>
+    private static readonly TimeSpan SessionPollWhileVisible =
+        TimeSpan.FromSeconds(2);
+
+    private static readonly TimeSpan SessionPollWhileHidden =
+        TimeSpan.FromSeconds(15);
+
+    /// <summary>
+    /// Czy okno siedzi w zasobniku. Steruje tym, ile pracy wolno pominac.
+    /// </summary>
+    private bool _hiddenInTray;
+
+    /// <summary>
+    /// Czy zamkniecie okna ma naprawde zamknac program.
+    /// <para>
+    /// Bez tego przechwycenie przycisku zamykania zablokowaloby takze
+    /// wyjscie z menu ikony, ktore konczy prace przez <see cref="Close"/>.
+    /// </para>
+    /// </summary>
+    private bool _exitRequested;
+
     private bool _disposed;
 
     public MainWindow()
@@ -219,6 +250,10 @@ public sealed partial class MainWindow : Window, IDisposable
                     windowIconPath);
                 _trayIcon.OpenRequested += OnTrayOpenRequested;
                 _trayIcon.ExitRequested += OnTrayExitRequested;
+                // Dopiero gdy ikona naprawde powstala. Przechwytywanie
+                // zamkniecia bez niej zostawiloby okno, ktorego nie da sie
+                // ani zobaczyc, ani zamknac.
+                AppWindow.Closing += OnAppWindowClosing;
             }
             catch
             {
@@ -323,9 +358,32 @@ public sealed partial class MainWindow : Window, IDisposable
         }
     }
 
+    /// <summary>
+    /// Chowa okno do zasobnika i zdejmuje z siebie prace, ktora niczemu juz
+    /// nie sluzy.
+    /// <para>
+    /// Co zostaje: odpytywanie stanu sesji, bo napedza powiadomienia z ikony,
+    /// oraz licznik nakladki, bo nakladka dziala WLASNIE wtedy, gdy okno jest
+    /// schowane i uzytkownik gra. Co odpada: metryki pulpitu, ktore wpisuja
+    /// liczby do niewidocznych pol, i skan uruchomionych gier, ktory sluzy
+    /// wylacznie banerowi w oknie.
+    /// </para>
+    /// <para>
+    /// Wlasciwa optymalizacja nie ma z tym nic wspolnego — prowadza ja osobne
+    /// procesy uslugi, a to okno jest tylko ich klientem. Schowanie go niczego
+    /// nie wylacza.
+    /// </para>
+    /// </summary>
     public void HideToTray()
     {
         AppWindow.Hide();
+        if (_hiddenInTray)
+        {
+            return;
+        }
+
+        _hiddenInTray = true;
+        _sessionPollTimer.Interval = SessionPollWhileHidden;
     }
 
     private void ShowFromTray()
@@ -336,6 +394,39 @@ public sealed partial class MainWindow : Window, IDisposable
         {
             presenter.Maximize();
         }
+
+        if (!_hiddenInTray)
+        {
+            return;
+        }
+
+        _hiddenInTray = false;
+        _sessionPollTimer.Interval = SessionPollWhileVisible;
+        // Natychmiast, bo inaczej uzytkownik zobaczylby stan sprzed
+        // kilkunastu sekund i uznal go za zepsuty.
+        OnSessionPollTick(this, EventArgs.Empty);
+    }
+
+    /// <summary>
+    /// Przycisk zamykania chowa okno do zasobnika zamiast konczyc prace.
+    /// <para>
+    /// Wyjscie z programu zostaje w menu ikony i przechodzi przez bramke,
+    /// ktora odmawia zamkniecia przy aktywnej sesji albo niedokonczonym
+    /// odtwarzaniu. Gdyby krzyzyk konczyl prace, uzytkownik zamykalby okno
+    /// w trakcie sesji jednym kliknieciem, omijajac te bramke.
+    /// </para>
+    /// </summary>
+    private void OnAppWindowClosing(
+        AppWindow sender,
+        AppWindowClosingEventArgs args)
+    {
+        if (_exitRequested)
+        {
+            return;
+        }
+
+        args.Cancel = true;
+        HideToTray();
     }
 
     private void OnTrayOpenRequested(object? sender, EventArgs args) =>
@@ -413,6 +504,9 @@ public sealed partial class MainWindow : Window, IDisposable
                     $"(kod {helper.ExitCode}).");
             }
 
+            // Inaczej przechwycenie przycisku zamykania schowaloby okno
+            // zamiast zakonczyc prace i z programu nie dalo by sie wyjsc.
+            _exitRequested = true;
             Close();
         }
         catch (Exception exception) when (IsExpectedUiFailure(exception))
@@ -3076,7 +3170,14 @@ public sealed partial class MainWindow : Window, IDisposable
         _isSessionPollRunning = true;
         try
         {
-            UpdateDashboardSystemMetrics();
+            if (!_hiddenInTray)
+            {
+                // Wpisuje liczby do pol pulpitu. Przy schowanym oknie nie ma
+                // ich gdzie zobaczyc, a probkowanie procesora i pamieci
+                // kosztuje przy kazdym takcie.
+                UpdateDashboardSystemMetrics();
+            }
+
             await RefreshActiveSessionCoreAsync(_lifetime.Token);
         }
         catch (OperationCanceledException)
@@ -4159,6 +4260,13 @@ public sealed partial class MainWindow : Window, IDisposable
                 UnoptimizedGameBanner.Visibility = Visibility.Collapsed;
             }
 
+            return;
+        }
+
+        if (_hiddenInTray)
+        {
+            // Skan sluzy wylacznie banerowi w oknie. Schowane okno nie ma go
+            // gdzie pokazac, a to najdrozsza rzecz w tej petli.
             return;
         }
 
