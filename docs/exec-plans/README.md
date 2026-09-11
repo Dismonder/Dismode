@@ -145,10 +145,13 @@ Zapisane tu, żeby nie udawać, że ich nie ma.
   rodzic już nie żyje) jest zgłaszany jako niepełne odtworzenie, ale nie ma
   testu — nie da się w teście wymusić błędu `GetSystemCpuSetInformation`
   bez atrapy dostawcy topologii, a sweeper czyta go statycznie.
-- **Pomiary (a)–(e) modułu CPU** (maska wobec maska + BelowNormal, zbiory
-  CPU gry, presja pamięci, EcoQoS) nie zostały wykonane: wymagają gry
-  w świecie i stojącej postaci, bo przy swobodnej grze rozrzut p99 między
-  blokami (60 ms) przewyższa szukane efekty.
+- **Pomiary modułu CPU**: (a) maska wobec maska + BelowNormal — zmierzone
+  2026-09-11 na Valheimie (3 pary, BelowNormal lepsze w 3 z 3, mediana
+  −0,24 ms, poniżej połowy rozrzutu: bez szkody, BelowNormal zostaje);
+  (c) priorytet I/O — dwukrotnie nierozstrzygnięte; (b) zbiory CPU gry,
+  (d) presja pamięci, (e) EcoQoS — nie wykonane, wymagają gry w świecie
+  i stojącej postaci, bo przy swobodnej grze rozrzut p99 między blokami
+  (60 ms) przewyższa szukane efekty.
 
 - ~~**Wpięcie orkiestratora sesji** nie ma testu automatycznego.~~
   **Zamknięte 2026-09-10.** `ProBalanceToggleReachesTheCpuModule` sprawdza, że

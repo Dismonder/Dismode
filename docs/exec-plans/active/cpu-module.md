@@ -864,6 +864,42 @@ więc dopasowanie po ścieżce niczego nie dodaje); kolejność sprzątania
 w testach (wzorzec całego repo). Bez testu: `Blocked` w przeglądzie
 potomków i `MachineMask()==0` — zapisane jako luka.
 
+### Wariant (a) zmierzony — Valheim, 2026-09-11 wieczór
+
+Damian dał dwuminutowe okno: postać stojąca w świecie, 16 pętli liczących
+zamkniętych w ćwiartce `0xF` w obu ramionach, różnica wyłącznie w klasie
+priorytetu hogów (Normal wobec BelowNormal). Trzy pary bloków po 15 s,
+naprzemiennie AB/BA, PresentMon 2.5.1 z `--v2_metrics`, własna sesja ETW
+sprzątana po pomiarze.
+
+| para | Normal p99 | BelowNormal p99 | różnica |
+|---|---|---|---|
+| 1 | 14,49 ms | 14,25 ms | −0,24 |
+| 2 | 15,62 ms | 15,38 ms | −0,24 |
+| 3 | 16,28 ms | 14,86 ms | −1,42 |
+
+Mediana różnicy −0,24 ms, BelowNormal lepsze w 3 z 3 par, rozrzut p99
+wewnątrz ramienia Normal 1,79 ms; żadnego bloku z klatką powyżej 50 ms;
+priorytety hogów nie dryfowały (stary ProBalance nie wtrącił się). Kierunek
+spójny, wielkość poniżej połowy rozrzutu — formalnie **nierozstrzygnięte**,
+ale rozstrzygające dla decyzji: obniżenie priorytetu procesów **już
+zamkniętych w ćwiartce** nie szkodzi (inwersja z pomiaru Valheima z 10.09
+dotyczyła priorytetu *zamiast* maski, nie *obok* niej), a bywa minimalnie
+lepsze. **BelowNormal w pakiecie zostaje.** Mediana p50 gry pod tym
+obciążeniem: 9,3–11,1 ms, czyli mniej więcej stan bez obciążenia (12,5 ms
+w pomiarze z 10.09 był przy innych ustawieniach graficznych) — maska
+odzyskuje praktycznie całość.
+
+Pułapka, która kosztowała dwa nieudane przebiegi: osierocona sesja ETW
+`gameshift-frametime` po przerwanym teście harnessu (Running, tysiące
+utraconych zdarzeń, zero klatek w każdym innym pomiarze na maszynie).
+Poprawka `facf5e8` sprząta sesję dostawcy produktu, ale nie tę nazwę
+harnessu po zabiciu hosta testów. Przed każdym pomiarem:
+`logman query -ets | findstr gameshift`, i `logman stop <nazwa> -ets`.
+
+Skrypt: `pomiar-a.ps1` w katalogu roboczym sesji (czeka, aż gra jest na
+pierwszym planie; hogi, PresentMon i sesja ETW sprzątane w `finally`).
+
 ### Co ustaliła sesja obok tego samego ranka (pomiary, Sons of the Forest)
 
 - Scena powtarzalna (postać stoi): rozrzut p99 między blokami 0,68 ms,
