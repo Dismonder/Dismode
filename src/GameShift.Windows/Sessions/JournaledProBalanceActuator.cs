@@ -1,5 +1,6 @@
 using System.ComponentModel;
 using System.Diagnostics;
+using System.Runtime.InteropServices;
 using GameShift.Contracts.Protocol;
 using GameShift.Core.Actions;
 using GameShift.Core.Domain.Identifiers;
@@ -49,6 +50,7 @@ public sealed class JournaledProBalanceActuator :
     private readonly IRecoveryJournal _journal;
     private readonly SessionId _sessionId;
     private readonly IProcessIdentityProvider _identityProvider;
+    private readonly ProcessParentMapProvider _parentMapProvider;
     private readonly TimeProvider _timeProvider;
     private readonly IReadOnlyList<uint> _backgroundCpuSetIds;
 
@@ -102,6 +104,7 @@ public sealed class JournaledProBalanceActuator :
         _journal = journal;
         _sessionId = sessionId;
         _identityProvider = identityProvider ?? new ProcessIdentityProvider();
+        _parentMapProvider = new ProcessParentMapProvider();
         _timeProvider = timeProvider ?? TimeProvider.System;
         _backgroundCpuSetIds = backgroundCpuSetIds ?? [];
         _backgroundAffinityMask = backgroundAffinityMask;
@@ -212,6 +215,11 @@ public sealed class JournaledProBalanceActuator :
             // Wyczyszczenie oddaje procesowi cala maszyne.
             _ = ProcessCpuSets.TryApply(runtimeKey.ProcessId, []);
         }
+
+        // Przed przywroceniem rodzica, bo po nim nie odroznimy juz dzieci
+        // po odziedziczonych wartosciach.
+        await ReleaseDescendantsAsync(runtimeKey, cancellationToken)
+            .ConfigureAwait(false);
 
         if (record.LoweredIo is { } loweredIo)
         {
@@ -460,6 +468,142 @@ public sealed class JournaledProBalanceActuator :
         {
         }
     }
+
+    /// <summary>
+    /// Zdejmuje ograniczenia z procesow potomnych, ktore odziedziczyly je po
+    /// ograniczonym rodzicu.
+    /// <para>
+    /// Zmierzone na tej maszynie: proces uruchomiony przez ograniczonego
+    /// rodzica dostaje JEGO maske powinowactwa i JEGO priorytet
+    /// wejscia-wyjscia. Rodzic po sesji wraca do normy, dziecko zostaje
+    /// z maska cwiartki i z priorytetem VeryLow — na zawsze. Przegladarka,
+    /// Steam i launchery rodza dzieci w trakcie gry, wiec to nie jest
+    /// przypadek brzegowy.
+    /// </para>
+    /// <para>
+    /// Priorytet wejscia-wyjscia jest tu wazniejszy od maski: maske widac
+    /// w Menedzerze zadan i da sie cofnac recznie, a priorytetu
+    /// wejscia-wyjscia nie pokazuje zadne standardowe narzedzie.
+    /// </para>
+    /// <para>
+    /// Rozpoznajemy po DOKLADNEJ zgodnosci z wartosciami, ktore sami
+    /// nakladamy. Proces, ktory ma taka maske z wlasnej woli, jest mozliwy,
+    /// ale musialby byc jednoczesnie potomkiem procesu, ktory wlasnie
+    /// ograniczalismy — a wtedy i tak najpewniej odziedziczyl ja po nim.
+    /// </para>
+    /// </summary>
+    private async ValueTask ReleaseDescendantsAsync(
+        ProcessRuntimeKey runtimeKey,
+        CancellationToken cancellationToken)
+    {
+        if (_backgroundAffinityMask == 0 && !_lowerBackgroundIoPriority)
+        {
+            return;
+        }
+
+        IReadOnlyDictionary<int, int> parents;
+        try
+        {
+            parents = _parentMapProvider.Capture();
+        }
+        catch (Exception exception) when (IsExpected(exception))
+        {
+            return;
+        }
+
+        foreach (int descendant in Descendants(parents, runtimeKey.ProcessId))
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            RestoreInheritedLimits(descendant);
+        }
+
+        await ValueTask.CompletedTask.ConfigureAwait(false);
+    }
+
+    private static IEnumerable<int> Descendants(
+        IReadOnlyDictionary<int, int> parents,
+        int root)
+    {
+        // Wszerz, z odwiedzonymi, bo mapa rodzicow po ponownym uzyciu
+        // identyfikatorow potrafi zawierac cykl.
+        HashSet<int> seen = [root];
+        Queue<int> queue = new();
+        queue.Enqueue(root);
+        while (queue.Count > 0)
+        {
+            int current = queue.Dequeue();
+            foreach (KeyValuePair<int, int> pair in parents)
+            {
+                if (pair.Value == current && seen.Add(pair.Key))
+                {
+                    queue.Enqueue(pair.Key);
+                    yield return pair.Key;
+                }
+            }
+        }
+    }
+
+    private void RestoreInheritedLimits(int processId)
+    {
+        try
+        {
+            using Process process = Process.GetProcessById(processId);
+            if (_backgroundAffinityMask != 0
+                && (ulong)process.ProcessorAffinity.ToInt64()
+                    == _backgroundAffinityMask
+                && TryReadSystemAffinity(process, out ulong systemMask))
+            {
+                process.ProcessorAffinity = (nint)(long)systemMask;
+            }
+
+            if (_lowerBackgroundIoPriority
+                && IoPriorityNativeMethods.NtQueryInformationProcess(
+                        process.Handle,
+                        IoPriorityNativeMethods.ProcessIoPriority,
+                        out uint priority,
+                        sizeof(uint),
+                        out _) == IoPriorityNativeMethods.StatusSuccess
+                && priority == IoPriorityNativeMethods.IoPriorityVeryLow)
+            {
+                uint normal = IoPriorityNativeMethods.IoPriorityNormal;
+                _ = IoPriorityNativeMethods.NtSetInformationProcess(
+                    process.Handle,
+                    IoPriorityNativeMethods.ProcessIoPriority,
+                    in normal,
+                    sizeof(uint));
+            }
+        }
+        catch (Exception exception) when (IsExpected(exception))
+        {
+        }
+    }
+
+    private static bool TryReadSystemAffinity(
+        Process process,
+        out ulong systemMask)
+    {
+        // Oddajemy dziecku to, na co pozwala maszyna, bo jego wlasnej maski
+        // sprzed dziedziczenia juz nie ma — ono nigdy innej nie mialo.
+        if (GetProcessAffinityMask(
+                process.Handle,
+                out nuint _,
+                out nuint system))
+        {
+            systemMask = (ulong)system;
+            return systemMask != 0;
+        }
+
+        systemMask = 0;
+        return false;
+    }
+
+    [DllImport("kernel32.dll", EntryPoint = "GetProcessAffinityMask",
+        SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool GetProcessAffinityMask(
+        nint process,
+        out nuint processAffinityMask,
+        out nuint systemAffinityMask);
 
     private async ValueTask<LoweredIo?> TryLowerIoAsync(
         ProcessIdentity identity,
