@@ -3164,14 +3164,18 @@
                               x:Name="ProBalanceDescriptionText"
                               Foreground="{ThemeResource GameShiftMutedTextBrush}"
                               FontSize="11"
-                              Text="Proces w tle, który zaczyna zjadać procesor w trakcie gry, dostaje niższy priorytet i zostaje zamknięty w ćwiartce procesora — resztę GameShift zostawia grze. Zmierzone na 7 Days To Die pod pełnym obciążeniem: p99 czasu klatki 16,80 ms bez tego, 10,65 ms z tym. Wszystko wraca po sesji. Powłoki, anti-cheatu i samej gry GameShift nie dotyka."
+                              Text="GameShift zamyka procesy, które zaczynają zjadać procesor już w trakcie gry, w ćwiartce rdzeni, obniża im priorytet i priorytet dysku, a po sesji oddaje wszystko — także ich procesom potomnym. Zmierzone pod pełnym obciążeniem (7 Days To Die): p99 czasu klatki 16,80 ms bez tego, 10,65 ms z tym; przy lekkim tle pętla milczy. Powłoki, anti-cheat i samej gry nie dotyka."
                               TextWrapping="Wrap" />
                         </StackPanel>
+                        <!-- Domyślnie włączone (2026-09-11, decyzja Damiana):
+                             to jedyny mechanizm z udowodnionym zyskiem, a stan
+                             przełącznika nie jest zapisywany, więc „wyłączone"
+                             znaczyło „wyłączone przy każdym starcie". -->
                         <ToggleSwitch
                             x:Name="ProBalanceToggleSwitch"
                             Grid.Column="1"
                             AutomationProperties.Name="Ograniczaj procesy tła w trakcie gry"
-                            IsOn="False"
+                            IsOn="True"
                             OffContent="WYŁ."
                             OnContent="WŁ."
                             Toggled="OnProBalanceSettingChanged" />
