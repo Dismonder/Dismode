@@ -140,6 +140,69 @@ public sealed class CpuAffinityPolicyTests
             "Maska ma obejmowac najnizsze procesory logiczne.");
     }
 
+    /// <summary>
+    /// i5-12400 albo Ryzen 5 5600: 6 rdzeni po dwa watki, 12 logicznych.
+    /// Na takiej maszynie cwiartka puli wypada nieparzysto.
+    /// </summary>
+    private static CpuTopology SixCoresTwelveThreads()
+    {
+        List<CpuLogicalProcessor> processors = [];
+        byte index = 0;
+        for (uint core = 0; core < 6; core++)
+        {
+            processors.Add(new(index, 0, index, core, 0, false, true));
+            index++;
+            processors.Add(new(index, 0, index, core, 0, false, true));
+            index++;
+        }
+
+        return new(processors);
+    }
+
+    [TestMethod]
+    public void BackgroundCornerNeverSplitsAPhysicalCore()
+    {
+        // Na 12 watkach cwiartka to 3, a trzy watki to poltora rdzenia.
+        // Wersja liczaca same procesory logiczne brala logiczne 0,1,2 i
+        // zostawiala grze drugi watek rdzenia 1 — gra i tlo na jednym
+        // rdzeniu fizycznym, czyli ta sama rywalizacja, ktorej ta maska ma
+        // zapobiegac.
+        CpuAffinityDecision decision = CpuAffinityPolicy.Decide(
+            SixCoresTwelveThreads(),
+            CpuAffinityRole.Background);
+
+        Assert.IsTrue(decision.ShouldApply, decision.Explanation);
+
+        CpuTopology topology = SixCoresTwelveThreads();
+        foreach (IGrouping<uint, CpuLogicalProcessor> core in topology
+            .Processors.GroupBy(processor => processor.CoreIndex))
+        {
+            int wTle = core.Count(processor =>
+                (decision.Mask & (1UL << processor.LogicalProcessorIndex)) != 0);
+            Assert.IsTrue(
+                wTle == 0 || wTle == core.Count(),
+                $"Rdzen {core.Key} jest rozdarty: {wTle} z "
+                    + $"{core.Count()} watkow trafilo do tla. Rdzen ma byc "
+                    + "zajety w calosci albo wcale.");
+        }
+    }
+
+    [TestMethod]
+    public void RocketLakeBackgroundCornerIsUnchanged()
+    {
+        // Ta maszyna dala pomiar p99 36,50 -> 14,34 ms. Zmiana na liczenie
+        // calymi rdzeniami nie ma prawa ruszyc tego wyniku, bo cwiartka z
+        // szesnastu watkow i tak wypada rowno na dwa rdzenie.
+        CpuAffinityDecision decision = CpuAffinityPolicy.Decide(
+            RocketLake(),
+            CpuAffinityRole.Background);
+
+        Assert.AreEqual(
+            0b1111UL,
+            decision.Mask,
+            "Maska na Rocket Lake ma zostac dokladnie taka, jak byla.");
+    }
+
     [TestMethod]
     public void SmallUniformCpuIsLeftAloneEvenForBackground()
     {

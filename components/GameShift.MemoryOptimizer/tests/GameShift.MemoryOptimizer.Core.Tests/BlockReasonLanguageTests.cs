@@ -1,7 +1,7 @@
 using GameShift.MemoryOptimizer.Core.Activity;
+using GameShift.MemoryOptimizer.Core.Models;
 using GameShift.MemoryOptimizer.Core.Native;
 using GameShift.MemoryOptimizer.Core.Optimization;
-using GameShift.MemoryOptimizer.Core.Models;
 using GameShift.MemoryOptimizer.Presentation;
 
 namespace GameShift.MemoryOptimizer.Core.Tests;
