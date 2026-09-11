@@ -148,13 +148,18 @@ public sealed class JournaledProBalanceActuator :
         // ograniczenie jest opcjonalne, odtwarzalnosc po awarii nie.
         // Wczesniej nieudany zapis byl polykany i proces byl zmieniany
         // bez sladu w punkcie kontrolnym.
+        // Zbiory CPU meldujemy dopiero po nalozeniu (drugi meldunek nizej):
+        // nie sa dziennikowane, wiec odtwarzanie po awarii czysciloby je na
+        // podstawie samego planu — takze procesowi, ktory mial wlasne zbiory
+        // i ktorego host nie zdazyl ruszyc. Awaria miedzy nalozeniem a drugim
+        // meldunkiem zostawia preferencje, nie ograniczenie.
         if (!await ReportRestraintAsync(
                 identity,
                 actionId,
                 idempotencyKey,
                 plannedPin,
                 plannedIo,
-                plannedSteer,
+                steeredCpuSets: false,
                 restrainedAtUtc)
             .ConfigureAwait(false))
         {
