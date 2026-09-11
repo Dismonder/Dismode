@@ -68,6 +68,7 @@ internal sealed partial class TrayMenuWindow : Window
 
         Activated += OnActivated;
         Closed += OnClosed;
+        RemoveNonClientFrame();
         ApplyWindowChrome();
         UpdateState(status, canOptimize, canPause);
     }
@@ -84,6 +85,36 @@ internal sealed partial class TrayMenuWindow : Window
             ActionButtonsPanel.DesiredSize.Height > ActionArea.ActualHeight + 1)
         {
             throw new InvalidOperationException("Memory Optimizer tray content exceeds its window bounds.");
+        }
+
+        VerifyNoNonClientFrame();
+    }
+
+    /// <summary>
+    /// Pilnuje, ze okno menu nie ma ramki nieklienckiej.
+    /// <para>
+    /// Rozjazd miedzy prostokatem okna a prostokatem klienta to dokladnie ta
+    /// ramka, ktora rysowala sie na bialo wokol ciemnego panelu. Sprawdzenie
+    /// stoi tu, a nie w tescie jednostkowym, bo wymaga prawdziwego uchwytu
+    /// okna; probe startowa uruchamia skrypt budujacy przy kazdej kompilacji.
+    /// </para>
+    /// </summary>
+    private void VerifyNoNonClientFrame()
+    {
+        if (!GetWindowRect(_windowHandle, out Rect window) ||
+            !GetClientRect(_windowHandle, out Rect client))
+        {
+            return;
+        }
+
+        int horizontal = (window.Right - window.Left) - (client.Right - client.Left);
+        int vertical = (window.Bottom - window.Top) - (client.Bottom - client.Top);
+        if (horizontal != 0 || vertical != 0)
+        {
+            throw new InvalidOperationException(
+                "Okno menu w trayu ma ramke niekliencka " +
+                $"({horizontal} px w poziomie, {vertical} px w pionie), " +
+                "ktora rysuje sie jako biala obwodka wokol panelu.");
         }
     }
 
@@ -117,16 +148,81 @@ internal sealed partial class TrayMenuWindow : Window
     }
 
     /// <summary>
-    /// Applies the dark, borderless, rounded frame.
+    /// Zdejmuje niekliencka ramke okna — zrodlo bialej obwodki wokol menu.
     /// <para>
-    /// Has to run again after the window is shown. Set only in the constructor
-    /// these attributes are applied to a window that does not exist on screen
-    /// yet, and the first show puts the default frame back — which is how this
-    /// dark panel ended up wearing a white outline.
+    /// <see cref="OverlappedPresenter.SetBorderAndTitleBar"/> z dwoma
+    /// <c>false</c> zostawia w stylu <c>WS_DLGFRAME</c>. Zmierzone na zywym
+    /// oknie menu: styl <c>0x14480000</c>, a prostokat okna byl wiekszy od
+    /// prostokata klienta o 6 pikseli w kazdej osi przy 144 DPI, czyli po trzy
+    /// piksele ramki z kazdej strony. Odczyt pikseli lewej krawedzi dawal
+    /// <c>E3E3E3</c>, <c>FFFFFF</c>, <c>F0F0F0</c>, dopiero potem
+    /// <c>273640</c> z wlasnego obramowania panelu. To jest ta biala obwodka:
+    /// rysuje ja system jako ramke niekliencka, nie DWM i nie XAML.
+    /// </para>
+    /// <para>
+    /// Po zdjeciu <c>WS_DLGFRAME</c> prostokat klienta zrownal sie z
+    /// prostokatem okna (600x822 pikseli przy 144 DPI), a krawedz zaczyna sie
+    /// od <c>273640</c>. Dlatego atrybuty DWM tego nie naprawialy — one
+    /// dotycza obramowania rysowanego przez kompozytor, a nie ramki
+    /// nieklienckiej.
+    /// </para>
+    /// <para>
+    /// Uwaga przy sprawdzaniu z zewnatrz: proces mierzacy musi byc swiadomy
+    /// DPI. Dla procesu nieswiadomego Windows wirtualizuje
+    /// <c>GetWindowRect</c> i <c>GetClientRect</c>, dzielac wynik przez skale,
+    /// a <c>PrintWindow</c> i tak rysuje powierzchnie w pelnym rozmiarze —
+    /// wychodzi z tego zrzut przyciety do lewego gornego rogu, ktory latwo
+    /// wziac za blad ukladu.
+    /// </para>
+    /// </summary>
+    private void RemoveNonClientFrame()
+    {
+        const int StyleIndex = -16;
+        const int ExtendedStyleIndex = -20;
+        const int DialogFrame = 0x00400000;
+        const int WindowEdge = 0x00000100;
+        const uint FrameChanged = 0x0020;
+        const uint NoMove = 0x0002;
+        const uint NoSize = 0x0001;
+        const uint NoZOrder = 0x0004;
+        const uint NoActivate = 0x0010;
+
+        int style = GetWindowLong(_windowHandle, StyleIndex);
+        if ((style & DialogFrame) != 0)
+        {
+            _ = SetWindowLong(_windowHandle, StyleIndex, style & ~DialogFrame);
+        }
+
+        int extended = GetWindowLong(_windowHandle, ExtendedStyleIndex);
+        if ((extended & WindowEdge) != 0)
+        {
+            _ = SetWindowLong(_windowHandle, ExtendedStyleIndex, extended & ~WindowEdge);
+        }
+
+        // Bez SWP_FRAMECHANGED okno nie przeliczy obszaru nieklienckiego
+        // i ramka zostanie na ekranie mimo zmienionego stylu.
+        _ = SetWindowPos(
+            _windowHandle,
+            nint.Zero,
+            0,
+            0,
+            0,
+            0,
+            FrameChanged | NoMove | NoSize | NoZOrder | NoActivate);
+    }
+
+    /// <summary>
+    /// Nadaje ciemny, zaokraglony wyglad ramki rysowanej przez kompozytor.
+    /// <para>
+    /// To inne obramowanie niz to z <see cref="RemoveNonClientFrame"/>.
+    /// Kolor <c>COLOR_NONE</c> jest przyjmowany (HRESULT 0) i dotyczy
+    /// cienkiej ramki DWM; bialej obwodki nie zdejmowal, bo ta byla ramka
+    /// niekliencka.
     /// </para>
     /// </summary>
     private void ApplyWindowChrome()
     {
+        ChromeDiagnostics = string.Empty;
         const uint ImmersiveDarkMode = 20;
         const uint CornerPreference = 33;
         const uint BorderColour = 34;
@@ -144,12 +240,29 @@ internal sealed partial class TrayMenuWindow : Window
                 : NoBorder);
     }
 
+    /// <summary>
+    /// Wynik ostatniego nadania ramki: pusty, gdy wszystko przeszlo, albo
+    /// lista atrybutow z kodami bledu.
+    /// <para>
+    /// Wczesniej niepowodzenie szlo do Debug.WriteLine, czyli w wydaniu
+    /// donikad. Ciche niepowodzenie tych wywolan bylo jedna z hipotez o biala
+    /// obwodke; okazalo sie, ze wszystkie przechodza, a obwodke rysowala ramka
+    /// niekliencka. Zapis zostaje, bo bez niego nie da sie odroznic
+    /// przyjetego atrybutu od odrzuconego.
+    /// </para>
+    /// </summary>
+    internal string ChromeDiagnostics { get; private set; } = string.Empty;
+
     private void SetWindowAttribute(uint attribute, uint value)
     {
         int result = DwmSetWindowAttribute(_windowHandle, attribute, ref value, sizeof(uint));
         if (result < 0)
         {
-            Debug.WriteLine($"Tray window attribute {attribute}: HRESULT 0x{result:X8}");
+            string entry = $"atrybut {attribute}: HRESULT 0x{result:X8}";
+            ChromeDiagnostics = ChromeDiagnostics.Length == 0
+                ? entry
+                : ChromeDiagnostics + "; " + entry;
+            Debug.WriteLine($"Tray window {entry}");
         }
     }
 
@@ -164,9 +277,6 @@ internal sealed partial class TrayMenuWindow : Window
         _isShown = true;
         PositionAtCursor();
         Activate();
-        // Ponownie po pokazaniu: dopiero teraz okno istnieje na ekranie
-        // i dopiero teraz ustawienie ramki jest trwale.
-        ApplyWindowChrome();
         _ = DispatcherQueue.TryEnqueue(() =>
         {
             if (_isClosed)
@@ -240,16 +350,8 @@ internal sealed partial class TrayMenuWindow : Window
 
     private void OnActivated(object sender, WindowActivatedEventArgs args)
     {
-        if (args.WindowActivationState != WindowActivationState.Deactivated)
-        {
-            // Taniej niz zakladac, kiedy dokladnie system przywraca domyslna
-            // ramke. Nadanie jej przy kazdej aktywacji kosztuje trzy wywolania
-            // DWM i nie zalezy od tego, czy zgadlem moment resetu.
-            ApplyWindowChrome();
-            return;
-        }
-
-        if (_isShown && !_disableInProgress)
+        if (_isShown && !_disableInProgress &&
+            args.WindowActivationState == WindowActivationState.Deactivated)
         {
             CloseMenu();
         }
@@ -376,6 +478,15 @@ internal sealed partial class TrayMenuWindow : Window
     }
 
     [StructLayout(LayoutKind.Sequential)]
+    private struct Rect
+    {
+        internal int Left;
+        internal int Top;
+        internal int Right;
+        internal int Bottom;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
     private struct MonitorInfo
     {
         internal uint Size;
@@ -409,5 +520,39 @@ internal sealed partial class TrayMenuWindow : Window
     [DllImport("user32.dll", EntryPoint = "SetForegroundWindow")]
     [return: MarshalAs(UnmanagedType.Bool)]
     private static extern bool SetForegroundWindow(nint window);
+
+    [DllImport("user32.dll", EntryPoint = "GetWindowLongW")]
+    private static extern int GetWindowLong(
+        nint window,
+        int index);
+
+    [DllImport("user32.dll", EntryPoint = "SetWindowLongW")]
+    private static extern int SetWindowLong(
+        nint window,
+        int index,
+        int value);
+
+    [DllImport("user32.dll", EntryPoint = "GetWindowRect")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool GetWindowRect(
+        nint window,
+        out Rect rectangle);
+
+    [DllImport("user32.dll", EntryPoint = "GetClientRect")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool GetClientRect(
+        nint window,
+        out Rect rectangle);
+
+    [DllImport("user32.dll", EntryPoint = "SetWindowPos")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool SetWindowPos(
+        nint window,
+        nint insertAfter,
+        int x,
+        int y,
+        int width,
+        int height,
+        uint flags);
 #pragma warning restore SYSLIB1054
 }

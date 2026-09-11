@@ -15,6 +15,11 @@
           <SolidColorBrush x:Key="MemoryTitleBarBrush" Color="#FF090D12" />
           <SolidColorBrush x:Key="MemoryNavigationBrush" Color="#F20B1117" />
           <SolidColorBrush x:Key="MemoryCardBrush" Color="#F2121A21" />
+          <!-- Tlo okna menu w trayu. Nieprzezroczyste celowo: przy #F2121A21
+               panel przepuszczal 5% tego, co akurat lezy pod oknem. Wartosc to
+               zmierzony wynik tamtego zlozenia na ciemnym tle, wiec wyglad
+               zostaje ten sam, znika tylko zaleznosc od pulpitu. -->
+          <SolidColorBrush x:Key="MemoryTrayPanelBrush" Color="#FF11191F" />
           <SolidColorBrush x:Key="MemoryElevatedBrush" Color="#FF18222B" />
           <SolidColorBrush x:Key="MemoryInsetBrush" Color="#B90C1319" />
           <SolidColorBrush x:Key="MemoryBorderBrush" Color="#FF273640" />
@@ -35,6 +40,7 @@
           <SolidColorBrush x:Key="MemoryTitleBarBrush" Color="{ThemeResource SystemColorWindowColor}" />
           <SolidColorBrush x:Key="MemoryNavigationBrush" Color="{ThemeResource SystemColorWindowColor}" />
           <SolidColorBrush x:Key="MemoryCardBrush" Color="{ThemeResource SystemColorWindowColor}" />
+          <SolidColorBrush x:Key="MemoryTrayPanelBrush" Color="{ThemeResource SystemColorWindowColor}" />
           <SolidColorBrush x:Key="MemoryElevatedBrush" Color="{ThemeResource SystemColorWindowColor}" />
           <SolidColorBrush x:Key="MemoryInsetBrush" Color="{ThemeResource SystemColorWindowColor}" />
           <SolidColorBrush x:Key="MemoryBorderBrush" Color="{ThemeResource SystemColorWindowTextColor}" />
