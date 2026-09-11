@@ -21,7 +21,7 @@ public sealed class BackgroundApplicationListItem :
                 new(
                     BackgroundProcessClientActionMode
                         .LowerPriorityAndEcoQos,
-                    "Energooszczędne tło — BelowNormal + EcoQoS"));
+                    "Ogranicz tło — BelowNormal, EcoQoS, rdzenie tła"));
             options.Add(
                 new(
                     BackgroundProcessClientActionMode.LowerPriority,

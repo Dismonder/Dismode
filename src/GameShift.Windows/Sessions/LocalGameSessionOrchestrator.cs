@@ -14,6 +14,7 @@ using GameShift.Core.Recovery;
 using GameShift.Core.Sessions;
 using GameShift.Core.Transactions;
 using GameShift.Windows.Cpu;
+using GameShift.Windows.NativeInterop;
 using GameShift.Windows.Processes;
 using GameShift.Windows.Profiles;
 
@@ -636,6 +637,11 @@ public sealed class LocalGameSessionOrchestrator : IAsyncDisposable
                         application.ActionMode
                             == BackgroundProcessActionMode
                                 .LowerPriorityAndEcoQos);
+                int confinedProcessCount =
+                    ResolveBackgroundAffinityMask() == 0
+                        ? 0
+                        : plan.BackgroundApplications.Count(application =>
+                            application.AffinityActionId is not null);
                 return ToSnapshot(
                     runtime,
                     (launched.WasAlreadyRunning
@@ -644,7 +650,8 @@ public sealed class LocalGameSessionOrchestrator : IAsyncDisposable
                     + "Zamknięte: "
                     + $"{closedApplicationCount}; ograniczone: "
                     + $"{loweredProcessCount}; EcoQoS: "
-                    + $"{ecoQosProcessCount}; Windows potwierdził priorytet: "
+                    + $"{ecoQosProcessCount}; na rdzeniach tła: "
+                    + $"{confinedProcessCount}; Windows potwierdził priorytet: "
                     + $"{DescribePriority(plan.GamePriority)}."
                     + DescribeSavedRules(plan.SavedRuleSummary));
             }
@@ -1057,6 +1064,10 @@ public sealed class LocalGameSessionOrchestrator : IAsyncDisposable
                 (metadata.BackgroundApplications ?? [])
                     .Select(FromRecoveryMetadata)
                     .ToArray();
+            PlannedBackgroundApplication[] restrainedProcesses =
+                (metadata.RestrainedProcesses ?? [])
+                    .Select(FromRecoveryMetadata)
+                    .ToArray();
             SessionId sessionId = new(group.Key);
             bool launchWasRecorded = ordered.Any(entry =>
                 entry.SessionCheckpoint is
@@ -1075,6 +1086,21 @@ public sealed class LocalGameSessionOrchestrator : IAsyncDisposable
                         .ConfigureAwait(false);
                 if (observation.HasRunningProcess)
                 {
+                    // Ograniczenia reaktywne nie maja juz nadzorcy, ktory by
+                    // je zdjal, gdy proces sie uspokoi — a GameShift nie jest
+                    // niczyim planista na stale. Oddajemy je od razu;
+                    // zaplanowane aplikacje zostaja do konca sesji, bo na nie
+                    // uzytkownik sie zgodzil.
+                    if (restrainedProcesses.Length > 0)
+                    {
+                        _ = await RestoreBackgroundApplicationsAsync(
+                                sessionId,
+                                restrainedProcesses,
+                                metadata.StartedAtUtc,
+                                cancellationToken)
+                            .ConfigureAwait(false);
+                    }
+
                     ActiveRuntime recovered = new(
                         planId: Guid.Empty,
                         sessionId,
@@ -1102,7 +1128,8 @@ public sealed class LocalGameSessionOrchestrator : IAsyncDisposable
                             .ConfigureAwait(false)
                         : FrameRateSample.Disabled();
                     _activeSession = recovered;
-                    if (observation.NewlyDiscoveredCount > 0)
+                    if (observation.NewlyDiscoveredCount > 0
+                        || restrainedProcesses.Length > 0)
                     {
                         await RecordCheckpointAsync(
                                 recovered.SessionId,
@@ -1124,6 +1151,13 @@ public sealed class LocalGameSessionOrchestrator : IAsyncDisposable
                         metadata.StartedAtUtc,
                         cancellationToken)
                     .ConfigureAwait(false);
+            BackgroundRecoveryTotals restraintRecovery =
+                await RestoreBackgroundApplicationsAsync(
+                        sessionId,
+                        restrainedProcesses,
+                        metadata.StartedAtUtc,
+                        cancellationToken)
+                    .ConfigureAwait(false);
             BackgroundRecoveryTotals applicationRecovery =
                 await RestoreBackgroundApplicationsAsync(
                         sessionId,
@@ -1132,7 +1166,7 @@ public sealed class LocalGameSessionOrchestrator : IAsyncDisposable
                         cancellationToken)
                     .ConfigureAwait(false);
             BackgroundRecoveryTotals recovery = MergeRecoveryTotals(
-                priorityRecovery,
+                MergeRecoveryTotals(priorityRecovery, restraintRecovery),
                 applicationRecovery);
             if (recovery.ErrorCount > 0)
             {
@@ -1229,6 +1263,17 @@ public sealed class LocalGameSessionOrchestrator : IAsyncDisposable
                     ResolveBackgroundAffinityMask(),
                     _proBalanceSettings?.LowerBackgroundIoPriority
                         ?? new ProBalanceSettings().LowerBackgroundIoPriority);
+
+            // Kazde ograniczenie, ktore petla nalozy, trafia do punktu
+            // kontrolnego sesji. Bez tego wpisy w dzienniku sa, ale po
+            // awarii hosta nikt ich nie czyta — proces zostawalby w cwiartce
+            // maszyny z obnizonymi priorytetami na stale.
+            if (actuator is IRestraintLedgerAware ledgerAware)
+            {
+                ledgerAware.AttachLedger(
+                    new RuntimeRestraintLedger(this, runtime));
+            }
+
             ProBalanceSupervisor supervisor = new(
                 _cpuProcessSourceFactory(),
                 actuator,
@@ -1599,6 +1644,14 @@ public sealed class LocalGameSessionOrchestrator : IAsyncDisposable
         runtime.State = SessionStateMachine.Transition(
             runtime.State,
             OptimizationSessionState.Restoring);
+
+        // Petla ograniczania staje pierwsza i oddaje, co wziela, zanim
+        // zapiszemy poczatek przywracania — jej zwolnienia sa wtedy czescia
+        // sesji, nie czyms po jej zamknieciu. To, czego nie zdola oddac,
+        // zostaje w liscie ograniczen i przechodzi ta sama droga, co
+        // zaplanowane aplikacje.
+        await StopProBalanceAsync(runtime).ConfigureAwait(false);
+
         PresentMonCaptureCleanupException? frameRateCleanupFailure = null;
         try
         {
@@ -1639,6 +1692,13 @@ public sealed class LocalGameSessionOrchestrator : IAsyncDisposable
                     runtime.StartedAtUtc,
                     CancellationToken.None)
                 .ConfigureAwait(false);
+        BackgroundRecoveryTotals restraintRecovery =
+            await RestoreBackgroundApplicationsAsync(
+                    runtime.SessionId,
+                    runtime.SnapshotDynamicRestraints(),
+                    runtime.StartedAtUtc,
+                    CancellationToken.None)
+                .ConfigureAwait(false);
         BackgroundRecoveryTotals applicationRecovery =
             await RestoreBackgroundApplicationsAsync(
                     runtime.SessionId,
@@ -1647,8 +1707,15 @@ public sealed class LocalGameSessionOrchestrator : IAsyncDisposable
                     CancellationToken.None)
                 .ConfigureAwait(false);
         BackgroundRecoveryTotals recovery = MergeRecoveryTotals(
-            priorityRecovery,
+            MergeRecoveryTotals(priorityRecovery, restraintRecovery),
             applicationRecovery);
+        if (recovery.ErrorCount == 0)
+        {
+            // Lista zostaje przy bledzie, zeby „Przywroc teraz" objelo takze
+            // ograniczenia reaktywne. Powtorka jest idempotentna.
+            runtime.ClearDynamicRestraints();
+        }
+
         if (!systemProfileRecovery.Succeeded)
         {
             recovery = recovery with
@@ -1728,7 +1795,6 @@ public sealed class LocalGameSessionOrchestrator : IAsyncDisposable
             recovery.ConflictCount == 0
                 ? OptimizationSessionState.Completed
                 : OptimizationSessionState.CompletedWithWarnings);
-        await StopProBalanceAsync(runtime).ConfigureAwait(false);
         ClearGameCpuSets(runtime);
         _activeSession = null;
         await TryRefreshCompletedSessionMetadataAsync(
@@ -1793,7 +1859,59 @@ public sealed class LocalGameSessionOrchestrator : IAsyncDisposable
             runtime.GamePriority,
             runtime.AppliedActionCount,
             runtime.FrameRateTrackingEnabled,
-            runtime.SystemProfileActive);
+            runtime.SystemProfileActive,
+            runtime.SnapshotDynamicRestraints()
+                .Select(ToRecoveryMetadata)
+                .ToArray());
+
+    /// <summary>
+    /// Writes the session checkpoint that carries the current set of reactive
+    /// restraints. Called from the restraint loop's thread, so it must not
+    /// take the orchestrator's gate — the loop is stopped under that gate
+    /// when the session closes, and its final releases land here. The journal
+    /// serialises its own writes.
+    /// </summary>
+    private async ValueTask CheckpointRestraintsAsync(
+        ActiveRuntime runtime,
+        CancellationToken cancellationToken)
+    {
+        if (!ReferenceEquals(_activeSession, runtime))
+        {
+            return;
+        }
+
+        await RecordCheckpointAsync(
+                runtime.SessionId,
+                SessionCheckpoint.BackgroundRestraintChanged,
+                CreateRecoveryMetadata(runtime),
+                cancellationToken)
+            .ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// A reactive restraint in the shape of a planned application, so the
+    /// planned-application restore path reverses it. The loop lowers priority
+    /// with the same BelowNormal action the plan uses; the rest of the bundle
+    /// is carried by the optional action ids.
+    /// </summary>
+    private static PlannedBackgroundApplication ToPlannedApplication(
+        RestrainedProcessRecord record) =>
+        new(
+            record.PriorityActionId,
+            record.PriorityIdempotencyKey,
+            record.DisplayName,
+            record.Identity,
+            BackgroundProcessActionMode.LowerPriority,
+            EcoQosActionId: null,
+            EcoQosIdempotencyKey: null,
+            record.AffinityActionId,
+            record.AffinityIdempotencyKey,
+            record.IoPriorityActionId,
+            record.IoPriorityIdempotencyKey,
+            record.MemoryPriorityActionId,
+            record.MemoryPriorityIdempotencyKey,
+            RestartDescriptor: null,
+            EstimatedWorkingSetBytes: 0);
 
     private GameProcessTreeSessionTracker CreateGameProcessTreeTracker(
         ProcessIdentity root,
@@ -2102,6 +2220,13 @@ public sealed class LocalGameSessionOrchestrator : IAsyncDisposable
         CancellationToken cancellationToken)
     {
         int appliedCount = 0;
+
+        // Cwiartka maszyny dla procesow tla — liczona raz na sesje, bo
+        // topologia sie nie zmienia. Zero oznacza, ze ta maszyna sie nie
+        // kwalifikuje (za malo watkow albo wiele grup procesorow) i maski
+        // nie nakladamy w ogole.
+        ulong backgroundMask = ResolveBackgroundAffinityMask();
+
         foreach (PlannedBackgroundApplication application in applications)
         {
             ActionExecutionContext context =
@@ -2175,9 +2300,101 @@ public sealed class LocalGameSessionOrchestrator : IAsyncDisposable
                 application.DisplayName,
                 "włączenie EcoQoS");
             appliedCount++;
+
+            // Reszta pakietu idzie po priorytecie i EcoQoS i jest
+            // best-effort: nieudane nalozenie nie przewraca sesji, to, co juz
+            // nalozone, zostaje. Kolejnosc od najmocniejszej dzwigni: maska
+            // (jedyna, ktora w pomiarze ruszyla czas klatki, gdy priorytet
+            // nie ruszal), potem pamiec, potem dysk. Maska jest najmniej
+            // odporna na stan procesu — proces, ktory sam zawezil sobie
+            // affinity, jej nie przyjmie — i wlasnie dlatego nie moze byc
+            // warunkiem powodzenia calej sesji.
+            if (backgroundMask != 0
+                && application.AffinityActionId is { } affinityActionId
+                && await TryApplyOptionalActionAsync(
+                        new ProcessAffinityAction(
+                            affinityActionId,
+                            application.Identity,
+                            backgroundMask,
+                            _identityProvider),
+                        CreateOptionalActionContext(
+                            sessionId,
+                            affinityActionId,
+                            application.AffinityIdempotencyKey,
+                            requestedAtUtc),
+                        cancellationToken)
+                    .ConfigureAwait(false))
+            {
+                appliedCount++;
+            }
+
+            if (application.MemoryPriorityActionId is { } memoryPriorityActionId
+                && await TryApplyOptionalActionAsync(
+                        new ProcessMemoryPriorityAction(
+                            memoryPriorityActionId,
+                            application.Identity,
+                            identityProvider: _identityProvider),
+                        CreateOptionalActionContext(
+                            sessionId,
+                            memoryPriorityActionId,
+                            application.MemoryPriorityIdempotencyKey,
+                            requestedAtUtc),
+                        cancellationToken)
+                    .ConfigureAwait(false))
+            {
+                appliedCount++;
+            }
+
+            if (application.IoPriorityActionId is { } ioPriorityActionId
+                && await TryApplyOptionalActionAsync(
+                        new ProcessIoPriorityAction(
+                            ioPriorityActionId,
+                            application.Identity,
+                            IoPriorityNativeMethods.IoPriorityVeryLow,
+                            _identityProvider),
+                        CreateOptionalActionContext(
+                            sessionId,
+                            ioPriorityActionId,
+                            application.IoPriorityIdempotencyKey,
+                            requestedAtUtc),
+                        cancellationToken)
+                    .ConfigureAwait(false))
+            {
+                appliedCount++;
+            }
         }
 
         return appliedCount;
+    }
+
+    /// <summary>
+    /// Executes one optional action of the background bundle through the
+    /// journal. Optional means the session does not depend on it: a process
+    /// that has already narrowed its own affinity, already lowered its own
+    /// priorities, or changed identity keeps whatever it already received
+    /// instead of failing the start. When it does apply, it is journaled like
+    /// everything else and reversed by <see cref="RestoreOptionalActionAsync{TState}"/>.
+    /// </summary>
+    private async ValueTask<bool> TryApplyOptionalActionAsync<TState>(
+        IReversibleAction<TState> action,
+        ActionExecutionContext context,
+        CancellationToken cancellationToken)
+        where TState : notnull
+    {
+        try
+        {
+            ActionExecutionResult result =
+                await new TransactionCoordinator<TState>(_journal)
+                    .ExecuteAsync(action, context, cancellationToken)
+                    .ConfigureAwait(false);
+            return result.Status is ActionExecutionStatus.AppliedAndVerified
+                or ActionExecutionStatus.AlreadyCompleted;
+        }
+        catch (Exception exception) when (
+            IsExpectedRecoveryFailure(exception))
+        {
+            return false;
+        }
     }
 
     private async ValueTask<BackgroundRecoveryTotals>
@@ -2189,9 +2406,81 @@ public sealed class LocalGameSessionOrchestrator : IAsyncDisposable
     {
         BackgroundRecoveryTotals totals = new(0, 0, 0);
 
+        // Maska musi byc niezerowa tylko po to, by konstruktor akcji ja
+        // przyjal. Samo odtwarzanie i tak przywraca maske sprzed zmiany,
+        // odczytana z dziennika, a nie te wartosc. Zero oznacza maszyne,
+        // ktora nie kwalifikuje sie do maski — nic nie nalozono, wiec nie ma
+        // czego cofac.
+        ulong backgroundMask = ResolveBackgroundAffinityMask();
+
         foreach (PlannedBackgroundApplication application
                      in applications.Reverse())
         {
+            // Pakiet odwracany w kolejnosci odwrotnej do nakladania: dysk,
+            // pamiec, maska, EcoQoS, priorytet. Kazde odtworzenie jest
+            // niezalezne i idempotentne, wiec kolejnosc nie jest krytyczna,
+            // ale trzyma dziennik czytelnym.
+            if (application.IoPriorityActionId is { } ioPriorityActionId)
+            {
+                totals = MergeRecoveryTotals(
+                    totals,
+                    await RestoreOptionalActionAsync<ProcessIoPriorityState>(
+                            application,
+                            () => new ProcessIoPriorityAction(
+                                ioPriorityActionId,
+                                application.Identity,
+                                IoPriorityNativeMethods.IoPriorityVeryLow,
+                                _identityProvider),
+                            CreateOptionalActionContext(
+                                sessionId,
+                                ioPriorityActionId,
+                                application.IoPriorityIdempotencyKey,
+                                requestedAtUtc),
+                            cancellationToken)
+                        .ConfigureAwait(false));
+            }
+
+            if (application.MemoryPriorityActionId is { } memoryPriorityActionId)
+            {
+                totals = MergeRecoveryTotals(
+                    totals,
+                    await RestoreOptionalActionAsync<
+                            ProcessMemoryPriorityState>(
+                            application,
+                            () => new ProcessMemoryPriorityAction(
+                                memoryPriorityActionId,
+                                application.Identity,
+                                identityProvider: _identityProvider),
+                            CreateOptionalActionContext(
+                                sessionId,
+                                memoryPriorityActionId,
+                                application.MemoryPriorityIdempotencyKey,
+                                requestedAtUtc),
+                            cancellationToken)
+                        .ConfigureAwait(false));
+            }
+
+            if (backgroundMask != 0
+                && application.AffinityActionId is { } affinityActionId)
+            {
+                totals = MergeRecoveryTotals(
+                    totals,
+                    await RestoreOptionalActionAsync<ProcessAffinityState>(
+                            application,
+                            () => new ProcessAffinityAction(
+                                affinityActionId,
+                                application.Identity,
+                                backgroundMask,
+                                _identityProvider),
+                            CreateOptionalActionContext(
+                                sessionId,
+                                affinityActionId,
+                                application.AffinityIdempotencyKey,
+                                requestedAtUtc),
+                            cancellationToken)
+                        .ConfigureAwait(false));
+            }
+
             if (application.ActionMode
                 == BackgroundProcessActionMode.LowerPriorityAndEcoQos)
             {
@@ -2273,6 +2562,50 @@ public sealed class LocalGameSessionOrchestrator : IAsyncDisposable
         }
     }
 
+    /// <summary>
+    /// Reverses one optional action of the background bundle through the
+    /// journal. A process that has exited on its own is skipped outright:
+    /// every setting in the bundle dies with the process, so there is nothing
+    /// to put back, and reading state from a process that no longer exists
+    /// would count as a recovery error and end an otherwise clean session in
+    /// the "recovery required" state. The plan promises the user exactly
+    /// this: if the process ends by itself, do nothing.
+    /// </summary>
+    private async ValueTask<BackgroundRecoveryTotals>
+        RestoreOptionalActionAsync<TState>(
+            PlannedBackgroundApplication application,
+            Func<IReversibleAction<TState>> actionFactory,
+            ActionExecutionContext context,
+            CancellationToken cancellationToken)
+        where TState : notnull
+    {
+        try
+        {
+            if (!await _identityProvider
+                    .MatchesRuntimeIdentityAsync(
+                        application.Identity,
+                        cancellationToken)
+                    .ConfigureAwait(false))
+            {
+                return new(0, 0, 0);
+            }
+
+            ActionRecoveryResult result =
+                await new ActionRecoveryCoordinator<TState>(_journal)
+                    .RecoverAsync(
+                        actionFactory(),
+                        context,
+                        cancellationToken)
+                    .ConfigureAwait(false);
+            return ToRecoveryTotals(result);
+        }
+        catch (Exception exception) when (
+            IsExpectedRecoveryFailure(exception))
+        {
+            return new(0, 0, 1);
+        }
+    }
+
     private async ValueTask<BackgroundRecoveryTotals>
         RestoreEcoQosActionAsync(
             SessionId sessionId,
@@ -2341,6 +2674,19 @@ public sealed class LocalGameSessionOrchestrator : IAsyncDisposable
                     "Brakuje klucza idempotencji EcoQoS."),
             requestedAtUtc);
 
+    private static ActionExecutionContext CreateOptionalActionContext(
+        SessionId sessionId,
+        ActionId actionId,
+        IdempotencyKey? idempotencyKey,
+        DateTimeOffset requestedAtUtc) =>
+        new(
+            sessionId,
+            actionId,
+            idempotencyKey
+                ?? throw new InvalidDataException(
+                    "Brakuje klucza idempotencji akcji tła."),
+            requestedAtUtc);
+
     private static void EnsureActionApplied(
         ActionExecutionResult result,
         string displayName,
@@ -2396,7 +2742,13 @@ public sealed class LocalGameSessionOrchestrator : IAsyncDisposable
             application.EcoQosIdempotencyKey?.Value,
             application.RestartDescriptor?.WorkingDirectory,
             application.RestartDescriptor?.Arguments.ToArray(),
-            application.EstimatedWorkingSetBytes);
+            application.EstimatedWorkingSetBytes,
+            application.AffinityActionId?.Value,
+            application.AffinityIdempotencyKey?.Value,
+            application.IoPriorityActionId?.Value,
+            application.IoPriorityIdempotencyKey?.Value,
+            application.MemoryPriorityActionId?.Value,
+            application.MemoryPriorityIdempotencyKey?.Value);
 
     private static GamePriorityRecoveryMetadata ToRecoveryMetadata(
         PlannedGamePriority priority,
@@ -2438,6 +2790,27 @@ public sealed class LocalGameSessionOrchestrator : IAsyncDisposable
                 "Journal zawiera niespójne identyfikatory akcji EcoQoS.");
         }
 
+        // Reszta pakietu jest opcjonalna takze dla trybu z EcoQoS: dzienniki
+        // sprzed jej wprowadzenia nie maja tych identyfikatorow, a
+        // odtwarzanie ma je czytac bez bledu. Brak identyfikatora znaczy
+        // tylko tyle, ze danej dzwigni nigdy nie nalozono.
+        (ActionId? affinityActionId, IdempotencyKey? affinityIdempotencyKey) =
+            ReadOptionalAction(
+                metadata.AffinityActionId,
+                metadata.AffinityIdempotencyKey,
+                "powinowactwa");
+        (ActionId? ioPriorityActionId, IdempotencyKey? ioPriorityIdempotencyKey) =
+            ReadOptionalAction(
+                metadata.IoPriorityActionId,
+                metadata.IoPriorityIdempotencyKey,
+                "priorytetu wejścia-wyjścia");
+        (ActionId? memoryPriorityActionId,
+            IdempotencyKey? memoryPriorityIdempotencyKey) =
+            ReadOptionalAction(
+                metadata.MemoryPriorityActionId,
+                metadata.MemoryPriorityIdempotencyKey,
+                "priorytetu pamięci");
+
         return new(
             new ActionId(metadata.ActionId),
             new IdempotencyKey(metadata.IdempotencyKey),
@@ -2446,6 +2819,12 @@ public sealed class LocalGameSessionOrchestrator : IAsyncDisposable
             actionMode,
             ecoQosActionId,
             ecoQosIdempotencyKey,
+            affinityActionId,
+            affinityIdempotencyKey,
+            ioPriorityActionId,
+            ioPriorityIdempotencyKey,
+            memoryPriorityActionId,
+            memoryPriorityIdempotencyKey,
             actionMode
                     == BackgroundProcessActionMode.CloseAndRestore
                 ? new ApplicationRestartDescriptor(
@@ -2457,6 +2836,28 @@ public sealed class LocalGameSessionOrchestrator : IAsyncDisposable
                     ApplicationRestartability.Restartable)
                 : null,
             metadata.EstimatedWorkingSetBytes);
+    }
+
+    /// <summary>
+    /// One optional action's identifiers out of the journal. Both halves are
+    /// present or both are absent; anything else is a corrupted record and
+    /// is refused rather than half-recovered.
+    /// </summary>
+    private static (ActionId? ActionId, IdempotencyKey? IdempotencyKey)
+        ReadOptionalAction(
+            Guid? actionId,
+            Guid? idempotencyKey,
+            string actionName)
+    {
+        if ((actionId is null) != (idempotencyKey is null))
+        {
+            throw new InvalidDataException(
+                $"Journal zawiera niespójne identyfikatory akcji {actionName}.");
+        }
+
+        return actionId is Guid id && idempotencyKey is Guid key
+            ? (new ActionId(id), new IdempotencyKey(key))
+            : (null, null);
     }
 
     private static string FormatMemory(long bytes)
@@ -2494,9 +2895,25 @@ public sealed class LocalGameSessionOrchestrator : IAsyncDisposable
             first.ConflictCount + second.ConflictCount,
             first.ErrorCount + second.ErrorCount);
 
+    /// <summary>
+    /// The clause the plan preview adds when this machine qualifies for the
+    /// background corner, so what the user approves is what will happen.
+    /// Empty when the policy declines and no mask will be applied.
+    /// </summary>
+    private static string DescribeBackgroundCorner(
+        CpuAffinityDecision decision) =>
+        decision.ShouldApply
+            ? " i przypnij do "
+                + $"{System.Numerics.BitOperations.PopCount(decision.Mask)} "
+                + "wątków tła, żeby nie dzielił rdzeni z grą"
+            : string.Empty;
+
     private static SessionPlanPreview ToPreview(PendingPlan plan)
     {
         List<SessionPlanItem> items = [];
+        CpuAffinityDecision backgroundCorner = CpuAffinityPolicy.Decide(
+            SystemCpuTopologyProvider.Read(),
+            CpuAffinityRole.Background);
         if (plan.SavedRuleSummary is not null)
         {
             items.Add(
@@ -2527,11 +2944,16 @@ public sealed class LocalGameSessionOrchestrator : IAsyncDisposable
                             .LowerPriorityAndEcoQos => new(
                         "LIMIT_BACKGROUND_CPU",
                         $"Na czas gry ustaw „{application.DisplayName}” "
-                        + "na BelowNormal i włącz EcoQoS, aby ograniczyć "
-                        + "rywalizację tła o CPU.",
+                        + "na BelowNormal, włącz EcoQoS"
+                        + DescribeBackgroundCorner(backgroundCorner)
+                        + " i obniż jej priorytet pamięci oraz "
+                        + "wejścia-wyjścia, aby tło ustępowało grze na "
+                        + "procesorze, w pamięci i na dysku.",
                         "Niskie",
-                        "Przywróć poprzedni priorytet i stan EcoQoS; "
-                        + "jeśli proces sam się zakończy, nie rób nic."),
+                        "Przywróć poprzedni priorytet, stan EcoQoS, "
+                        + "przypisanie rdzeni oraz priorytety pamięci "
+                        + "i wejścia-wyjścia; jeśli proces sam się "
+                        + "zakończy, nie rób nic."),
                     _ => new(
                         "LOWER_BACKGROUND_PRIORITY",
                         $"Na czas gry ustaw „{application.DisplayName}” "
@@ -2749,8 +3171,13 @@ public sealed class LocalGameSessionOrchestrator : IAsyncDisposable
         int appliedActionCount,
         bool recoveredFromHostCrash,
         bool frameRateTrackingEnabled = true,
-        bool systemProfileActive = false)
+        bool systemProfileActive = false,
+        IReadOnlyList<PlannedBackgroundApplication>? dynamicRestraints = null)
     {
+        private readonly object _restraintLock = new();
+        private readonly List<PlannedBackgroundApplication> _dynamicRestraints =
+            [.. dynamicRestraints ?? []];
+
         internal Guid PlanId { get; } = planId;
 
         internal SessionId SessionId { get; } = sessionId;
@@ -2771,6 +3198,51 @@ public sealed class LocalGameSessionOrchestrator : IAsyncDisposable
         /// does. Null when the feature is off for this orchestrator.
         /// </summary>
         internal ProBalanceSupervisor? ProBalance { get; set; }
+
+        /// <summary>
+        /// Processes the reactive loop has restrained during this session, in
+        /// the same shape as the planned applications so one restore path
+        /// reverses both — at session end, or after a crash from the checkpoint.
+        /// Guarded by a lock of its own: entries arrive from the loop's thread,
+        /// including while the session is being closed under the orchestrator's
+        /// gate.
+        /// </summary>
+        internal PlannedBackgroundApplication[] SnapshotDynamicRestraints()
+        {
+            lock (_restraintLock)
+            {
+                return [.. _dynamicRestraints];
+            }
+        }
+
+        internal void AddDynamicRestraint(
+            PlannedBackgroundApplication restraint)
+        {
+            lock (_restraintLock)
+            {
+                _dynamicRestraints.RemoveAll(existing =>
+                    existing.Identity.RuntimeKey
+                        == restraint.Identity.RuntimeKey);
+                _dynamicRestraints.Add(restraint);
+            }
+        }
+
+        internal bool RemoveDynamicRestraint(ProcessRuntimeKey runtimeKey)
+        {
+            lock (_restraintLock)
+            {
+                return _dynamicRestraints.RemoveAll(existing =>
+                    existing.Identity.RuntimeKey == runtimeKey) > 0;
+            }
+        }
+
+        internal void ClearDynamicRestraints()
+        {
+            lock (_restraintLock)
+            {
+                _dynamicRestraints.Clear();
+            }
+        }
 
         private FrameRateSample _frameRate =
             FrameRateSample.WaitingForGame();
@@ -2819,6 +3291,40 @@ public sealed class LocalGameSessionOrchestrator : IAsyncDisposable
             systemProfileActive;
     }
 
+    /// <summary>
+    /// The ledger handed to the reactive restraint loop: every restraint it
+    /// applies or releases is mirrored into the session's dynamic list and
+    /// written as a checkpoint, so a host crash leaves a record that the next
+    /// start can reverse. Never touches the orchestrator's gate.
+    /// </summary>
+    private sealed class RuntimeRestraintLedger(
+        LocalGameSessionOrchestrator owner,
+        ActiveRuntime runtime) : IRestraintLedger
+    {
+        public async ValueTask RecordAsync(
+            RestrainedProcessRecord record,
+            CancellationToken cancellationToken)
+        {
+            ArgumentNullException.ThrowIfNull(record);
+            runtime.AddDynamicRestraint(ToPlannedApplication(record));
+            await owner.CheckpointRestraintsAsync(runtime, cancellationToken)
+                .ConfigureAwait(false);
+        }
+
+        public async ValueTask ForgetAsync(
+            ProcessRuntimeKey runtimeKey,
+            CancellationToken cancellationToken)
+        {
+            if (runtime.RemoveDynamicRestraint(runtimeKey))
+            {
+                await owner.CheckpointRestraintsAsync(
+                        runtime,
+                        cancellationToken)
+                    .ConfigureAwait(false);
+            }
+        }
+    }
+
     private sealed record SessionRecoveryMetadata(
         GameProfileId ProfileId,
         string GameDisplayName,
@@ -2830,7 +3336,12 @@ public sealed class LocalGameSessionOrchestrator : IAsyncDisposable
         GamePriorityRecoveryMetadata? GamePriority,
         int AppliedActionCount,
         bool FrameRateTrackingEnabled = true,
-        bool SystemProfileActive = false);
+        bool SystemProfileActive = false,
+        // Ograniczenia nalozone reaktywnie w trakcie sesji. Na koncu
+        // i z domyslnym null, zeby starsze punkty kontrolne nadal sie
+        // odczytywaly.
+        IReadOnlyList<BackgroundApplicationRecoveryMetadata>?
+            RestrainedProcesses = null);
 
     private sealed record BackgroundApplicationRecoveryMetadata(
         Guid ActionId,
@@ -2842,7 +3353,15 @@ public sealed class LocalGameSessionOrchestrator : IAsyncDisposable
         Guid? EcoQosIdempotencyKey,
         string? WorkingDirectory,
         string[]? Arguments,
-        long EstimatedWorkingSetBytes);
+        long EstimatedWorkingSetBytes,
+        // Na koncu i z domyslnym null, zeby dzienniki zapisane przed
+        // wprowadzeniem pakietu dla aplikacji tla nadal sie odczytywaly.
+        Guid? AffinityActionId = null,
+        Guid? AffinityIdempotencyKey = null,
+        Guid? IoPriorityActionId = null,
+        Guid? IoPriorityIdempotencyKey = null,
+        Guid? MemoryPriorityActionId = null,
+        Guid? MemoryPriorityIdempotencyKey = null);
 
     private sealed record GamePriorityRecoveryMetadata(
         Guid ActionId,

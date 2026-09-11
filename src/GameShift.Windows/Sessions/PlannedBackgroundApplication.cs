@@ -13,5 +13,11 @@ public sealed record PlannedBackgroundApplication(
     BackgroundProcessActionMode ActionMode,
     ActionId? EcoQosActionId,
     IdempotencyKey? EcoQosIdempotencyKey,
+    ActionId? AffinityActionId,
+    IdempotencyKey? AffinityIdempotencyKey,
+    ActionId? IoPriorityActionId,
+    IdempotencyKey? IoPriorityIdempotencyKey,
+    ActionId? MemoryPriorityActionId,
+    IdempotencyKey? MemoryPriorityIdempotencyKey,
     ApplicationRestartDescriptor? RestartDescriptor,
     long EstimatedWorkingSetBytes);

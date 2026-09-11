@@ -208,12 +208,37 @@ public sealed class BackgroundApplicationGuard
 
             ActionId? ecoQosActionId = null;
             IdempotencyKey? ecoQosIdempotencyKey = null;
+            ActionId? affinityActionId = null;
+            IdempotencyKey? affinityIdempotencyKey = null;
+            ActionId? ioPriorityActionId = null;
+            IdempotencyKey? ioPriorityIdempotencyKey = null;
+            ActionId? memoryPriorityActionId = null;
+            IdempotencyKey? memoryPriorityIdempotencyKey = null;
             if (selection.ActionMode
                 == BackgroundProcessActionMode.LowerPriorityAndEcoQos)
             {
                 _ = ProcessPowerThrottlingController.Read(process);
                 ecoQosActionId = ActionId.Create();
                 ecoQosIdempotencyKey = IdempotencyKey.Create();
+
+                // Pelny pakiet dla tla, po jednej dzwigni na zasob:
+                // rdzenie (twarda maska cwiartki — jedyna dzwignia CPU,
+                // ktora w pomiarze ruszyla czas klatki: p99 lepsze o 60,7%
+                // na Valheim, gdzie samo obnizenie priorytetu nie dawalo
+                // nic), pamiec (priorytet pamieci, zeby pod presja
+                // wylatywaly strony tla, nie gry) i dysk (priorytet
+                // wejscia-wyjscia, zeby kolejka odczytow nalezala do gry).
+                // Identyfikatory powstaja tu, bo kazda z tych zmian
+                // przezywa smierc GameShifta i musi zostac co odwrocic —
+                // tak samo jak przy EcoQoS. Czy maszyna kwalifikuje sie do
+                // maski, rozstrzyga sie dopiero przy nakladaniu; jesli nie,
+                // akcja jest pomijana, a odtwarzanie nie ma czego cofac.
+                affinityActionId = ActionId.Create();
+                affinityIdempotencyKey = IdempotencyKey.Create();
+                ioPriorityActionId = ActionId.Create();
+                ioPriorityIdempotencyKey = IdempotencyKey.Create();
+                memoryPriorityActionId = ActionId.Create();
+                memoryPriorityIdempotencyKey = IdempotencyKey.Create();
             }
 
             return new(
@@ -224,6 +249,12 @@ public sealed class BackgroundApplicationGuard
                 selection.ActionMode,
                 ecoQosActionId,
                 ecoQosIdempotencyKey,
+                affinityActionId,
+                affinityIdempotencyKey,
+                ioPriorityActionId,
+                ioPriorityIdempotencyKey,
+                memoryPriorityActionId,
+                memoryPriorityIdempotencyKey,
                 restartDescriptor,
                 Math.Max(0, process.WorkingSet64));
         }
