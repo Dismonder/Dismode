@@ -22,7 +22,7 @@ internal static class MemoryUiFormatting
         timestamp.ToLocalTime().ToString("g", CultureInfo.CurrentCulture);
 
     /// <summary>
-    /// Tlumaczy komunikat straznika gry na jezyk interfejsu.
+    /// Tlumaczy komunikat z warstwy Core na jezyk interfejsu.
     /// <para>
     /// Warstwa Core pisze po angielsku i tak trafia to do dziennika. Interfejs
     /// jest polski, wiec bez tego na ekranie ladowalo zdanie w obcym jezyku
@@ -32,16 +32,30 @@ internal static class MemoryUiFormatting
     /// <para>
     /// Kod powodu z <see cref="GuardDecision"/> nie dociera tutaj, bo
     /// <see cref="OptimizationResult"/> niesie sam komunikat. Dopasowanie idzie
-    /// wiec po tresci. Zeby to nie zgnilo po cichu, test przepuszcza kazda
-    /// galaz straznika przez ta metode i sprawdza, ze zadna nie wraca po
-    /// angielsku.
+    /// wiec po tresci. Zeby to nie zgnilo po cichu, test przepuszcza przez ta
+    /// metode kazda galaz straznika oraz wyniki prawdziwego silnika i sprawdza,
+    /// ze zaden komunikat nie wraca po angielsku.
     /// </para>
     /// </summary>
-    public static string DescribeBlockReason(string message)
+    public static string DescribeServiceMessage(string message)
     {
         if (string.IsNullOrWhiteSpace(message))
         {
             return string.Empty;
+        }
+
+        switch (message)
+        {
+            case "Memory optimization completed.":
+                return "Optymalizacja pamięci zakończona.";
+            case "One or more memory areas could not be optimized.":
+                return "Nie udało się zoptymalizować części obszarów pamięci.";
+            case "Memory optimization was cancelled between operations.":
+                return "Optymalizacja pamięci została przerwana między operacjami.";
+            case "Another memory optimization is already running.":
+                return "Inna optymalizacja pamięci właśnie trwa.";
+            default:
+                break;
         }
 
         const string aktywnaSesja = "Optimization blocked while ";

@@ -50,9 +50,9 @@ internal sealed record TrayMenuState
                     .ToString("+0;-0;0", culture) + " MB" +
                     (result.State == OptimizationState.PartiallyCompleted ? " · częściowo" : ""),
                 OptimizationState.Blocked => "Ostatnia próba zablokowana: " +
-                    MemoryUiFormatting.DescribeBlockReason(result.Message),
+                    MemoryUiFormatting.DescribeServiceMessage(result.Message),
                 _ => "Ostatnia próba: " +
-                    MemoryUiFormatting.DescribeBlockReason(result.Message),
+                    MemoryUiFormatting.DescribeServiceMessage(result.Message),
             };
         }
 

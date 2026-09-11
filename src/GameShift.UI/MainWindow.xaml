@@ -1756,7 +1756,7 @@
                     <Border Style="{StaticResource GameShiftPillStyle}">
                       <StackPanel Orientation="Horizontal" Spacing="6">
                         <FontIcon Foreground="{ThemeResource GameShiftSuccessBrush}" FontSize="12" Glyph="&#xE73E;" />
-                        <TextBlock FontSize="11" FontWeight="SemiBold" Text="Auto-Recovery" />
+                        <TextBlock FontSize="11" FontWeight="SemiBold" Text="Automatyczne przywracanie" />
                       </StackPanel>
                     </Border>
                     <Border Style="{StaticResource GameShiftPillStyle}">
@@ -3321,7 +3321,7 @@
                         VerticalAlignment="Center"
                         Style="{StaticResource GameShiftSecondaryButtonStyle}"
                         Click="OnOpenSystemOptimizerClicked"
-                        Content="Otwórz optimizer" />
+                        Content="Otwórz optymalizator" />
                   </Grid>
                 </Border>
               </Grid>

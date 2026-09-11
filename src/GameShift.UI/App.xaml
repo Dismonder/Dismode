@@ -184,6 +184,9 @@
         <Setter Property="FontSize" Value="32" />
         <Setter Property="FontWeight" Value="SemiBold" />
         <Setter Property="CharacterSpacing" Value="-10" />
+        <!-- Dlugie polskie tytuly stron zostawaly jednoliniowe i przy
+             zwezeniu okna sie ucinaly. -->
+        <Setter Property="TextWrapping" Value="Wrap" />
       </Style>
 
       <Style
