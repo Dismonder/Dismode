@@ -141,6 +141,15 @@ Wyliczenie zamknięte — każde działanie zmieniające stan zewnętrzny ma ter
 
 Zapisane tu, żeby nie udawać, że ich nie ma.
 
+- **Przegląd potomków przy braku topologii** (`MachineMask() == 0`, gdy
+  rodzic już nie żyje) jest zgłaszany jako niepełne odtworzenie, ale nie ma
+  testu — nie da się w teście wymusić błędu `GetSystemCpuSetInformation`
+  bez atrapy dostawcy topologii, a sweeper czyta go statycznie.
+- **Pomiary (a)–(e) modułu CPU** (maska wobec maska + BelowNormal, zbiory
+  CPU gry, presja pamięci, EcoQoS) nie zostały wykonane: wymagają gry
+  w świecie i stojącej postaci, bo przy swobodnej grze rozrzut p99 między
+  blokami (60 ms) przewyższa szukane efekty.
+
 - ~~**Wpięcie orkiestratora sesji** nie ma testu automatycznego.~~
   **Zamknięte 2026-09-10.** `ProBalanceToggleReachesTheCpuModule` sprawdza, że
   przełącznik faktycznie powołuje pętlę ograniczania z prawdziwymi
