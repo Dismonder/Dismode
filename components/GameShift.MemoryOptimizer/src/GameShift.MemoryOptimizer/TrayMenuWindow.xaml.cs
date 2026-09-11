@@ -156,8 +156,22 @@ internal sealed partial class TrayMenuWindow : Window
     /// prostokata klienta o 6 pikseli w kazdej osi przy 144 DPI, czyli po trzy
     /// piksele ramki z kazdej strony. Odczyt pikseli lewej krawedzi dawal
     /// <c>E3E3E3</c>, <c>FFFFFF</c>, <c>F0F0F0</c>, dopiero potem
-    /// <c>273640</c> z wlasnego obramowania panelu. To jest ta biala obwodka:
-    /// rysuje ja system jako ramke niekliencka, nie DWM i nie XAML.
+    /// <c>273640</c> z wlasnego obramowania panelu. Zdjecie samego
+    /// <c>WS_DLGFRAME</c> wystarcza; <c>WS_EX_WINDOWEDGE</c> jest na tym
+    /// oknie ustawione, ale jego usuwanie nic nie zmienialo, wiec tego nie
+    /// robimy.
+    /// </para>
+    /// <para>
+    /// <c>OverlappedPresenter.CreateForContextMenu()</c> sprawdzone jako
+    /// wyjscie zgodne z API: samo zmniejsza ramke z szesciu pikseli do dwoch,
+    /// ale jej nie usuwa, wiec nie zastepuje tej zmiany stylu.
+    /// </para>
+    /// <para>
+    /// Mowi to o zachowaniu zmierzonym na tym Windowsie i tej wersji Windows
+    /// App SDK. Gdyby w przyszlosci pojawilo sie ponowne
+    /// <c>SetPresenter</c> albo <c>SetBorderAndTitleBar</c>, trzeba wywolac
+    /// te metode jeszcze raz, bo prezenter nie obiecuje konkretnych bitow
+    /// stylu.
     /// </para>
     /// <para>
     /// Po zdjeciu <c>WS_DLGFRAME</c> prostokat klienta zrownal sie z
@@ -178,9 +192,7 @@ internal sealed partial class TrayMenuWindow : Window
     private void RemoveNonClientFrame()
     {
         const int StyleIndex = -16;
-        const int ExtendedStyleIndex = -20;
         const int DialogFrame = 0x00400000;
-        const int WindowEdge = 0x00000100;
         const uint FrameChanged = 0x0020;
         const uint NoMove = 0x0002;
         const uint NoSize = 0x0001;
@@ -188,16 +200,22 @@ internal sealed partial class TrayMenuWindow : Window
         const uint NoActivate = 0x0010;
 
         int style = GetWindowLong(_windowHandle, StyleIndex);
-        if ((style & DialogFrame) != 0)
+        if ((style & DialogFrame) == 0)
         {
-            _ = SetWindowLong(_windowHandle, StyleIndex, style & ~DialogFrame);
+            return;
         }
 
-        int extended = GetWindowLong(_windowHandle, ExtendedStyleIndex);
-        if ((extended & WindowEdge) != 0)
+        Marshal.SetLastSystemError(0);
+        if (SetWindowLong(_windowHandle, StyleIndex, style & ~DialogFrame) == 0 &&
+            Marshal.GetLastWin32Error() != 0)
         {
-            _ = SetWindowLong(_windowHandle, ExtendedStyleIndex, extended & ~WindowEdge);
+            // Poprzedni styl rowny zeru jest poprawnym wynikiem, dlatego
+            // liczy sie dopiero para: zero i niezerowy kod bledu.
+            ChromeDiagnostics = $"WS_DLGFRAME: blad {Marshal.GetLastWin32Error()}";
+            Debug.WriteLine($"Tray window {ChromeDiagnostics}");
+            return;
         }
+
 
         // Bez SWP_FRAMECHANGED okno nie przeliczy obszaru nieklienckiego
         // i ramka zostanie na ekranie mimo zmienionego stylu.
