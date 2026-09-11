@@ -215,12 +215,17 @@ public sealed class BackgroundApplicationGuard
             ActionId? memoryPriorityActionId = null;
             IdempotencyKey? memoryPriorityIdempotencyKey = null;
             if (selection.ActionMode
-                == BackgroundProcessActionMode.LowerPriorityAndEcoQos)
+                is BackgroundProcessActionMode.LowerPriorityAndEcoQos
+                    or BackgroundProcessActionMode.RestrainBackground)
             {
                 _ = ProcessPowerThrottlingController.Read(process);
                 ecoQosActionId = ActionId.Create();
                 ecoQosIdempotencyKey = IdempotencyKey.Create();
+            }
 
+            if (selection.ActionMode
+                == BackgroundProcessActionMode.RestrainBackground)
+            {
                 // Pelny pakiet dla tla, po jednej dzwigni na zasob:
                 // rdzenie (twarda maska cwiartki — jedyna dzwignia CPU,
                 // ktora w pomiarze ruszyla czas klatki: p99 lepsze o 60,7%
@@ -286,7 +291,45 @@ public sealed class BackgroundApplicationGuard
         !string.IsNullOrWhiteSpace(processName)
         && (ProtectedProcessNames.Contains(processName)
             || ProtectedLauncherNames.Contains(processName)
-            || IsMeasurementComponent(processName));
+            || IsMeasurementComponent(processName)
+            || LooksLikeAntiCheat(processName));
+
+    /// <summary>
+    /// Anti-cheat by fragment of name, for the components the fixed lists
+    /// do not spell out. The reactive loop and the descendant sweep both
+    /// ask this question, and until now only the approval path did — so a
+    /// service named after its vendor rather than its product could be
+    /// caught by the loop, given the corner mask and a VeryLow I/O
+    /// priority, and start failing integrity checks it has to finish on
+    /// time. Substrings are deliberately broad; a false positive here costs
+    /// one process left alone, a miss costs a kicked player.
+    /// </summary>
+    private static readonly string[] AntiCheatFragments =
+    [
+        "anticheat",
+        "anti-cheat",
+        "faceit",
+        "gameguard",
+        "gamemon",
+        "xhunter",
+        "xigncode",
+        "nprotect",
+        "vanguard",
+        "ricochet",
+        "javelin",
+        "mhyprot",
+        "hyperprotect",
+        "aceanticheat",
+        "ace-base",
+        "acetray",
+        "wellbia",
+        "battleye",
+        "easyanticheat",
+    ];
+
+    private static bool LooksLikeAntiCheat(string processName) =>
+        AntiCheatFragments.Any(fragment =>
+            processName.Contains(fragment, StringComparison.OrdinalIgnoreCase));
 
     /// <summary>
     /// GameShift's own frame-time capture. Matched by prefix because the
@@ -317,9 +360,7 @@ public sealed class BackgroundApplicationGuard
                 $"Launcher „{processName}” pozostaje uruchomiony, ponieważ gra może go wymagać.");
         }
 
-        if (processName.Contains("anticheat", StringComparison.OrdinalIgnoreCase)
-            || processName.Contains("anti-cheat", StringComparison.OrdinalIgnoreCase)
-            || processName.Contains("faceit", StringComparison.OrdinalIgnoreCase))
+        if (LooksLikeAntiCheat(processName))
         {
             throw new InvalidOperationException(
                 $"Proces „{processName}” wygląda na składnik anti-cheat i nie może być zmieniany.");

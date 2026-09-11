@@ -567,7 +567,7 @@ public sealed class LocalGameSessionOrchestrator : IAsyncDisposable
                         CancellationToken.None)
                     .ConfigureAwait(false);
 
-                int appliedActionCount =
+                BackgroundBundleOutcome bundle =
                     await ApplyBackgroundApplicationsAsync(
                             plan.SessionId,
                             plan.BackgroundApplications,
@@ -575,6 +575,7 @@ public sealed class LocalGameSessionOrchestrator : IAsyncDisposable
                             backgroundMask,
                             CancellationToken.None)
                         .ConfigureAwait(false);
+                int appliedActionCount = bundle.AppliedCount;
                 SystemGameProfileOperationResult systemProfile =
                     await _systemProfileCoordinator.ActivateAsync(
                             currentProfile.ProfileId,
@@ -651,14 +652,13 @@ public sealed class LocalGameSessionOrchestrator : IAsyncDisposable
                                 .CloseAndRestore);
                 int ecoQosProcessCount =
                     plan.BackgroundApplications.Count(application =>
-                        application.ActionMode
-                            == BackgroundProcessActionMode
-                                .LowerPriorityAndEcoQos);
-                int confinedProcessCount =
-                    backgroundMask == 0
-                        ? 0
-                        : plan.BackgroundApplications.Count(application =>
-                            application.AffinityActionId is not null);
+                        application.ActionMode is
+                            BackgroundProcessActionMode.LowerPriorityAndEcoQos
+                            or BackgroundProcessActionMode.RestrainBackground);
+                // Liczba masek faktycznie nalozonych, nie zaplanowanych:
+                // maska jest best-effort i proces, ktory sam zawezil sobie
+                // affinity, jej nie przyjmie. Komunikat ma mowic prawde.
+                int confinedProcessCount = bundle.ConfinedCount;
                 return ToSnapshot(
                     runtime,
                     (launched.WasAlreadyRunning
@@ -1108,8 +1108,15 @@ public sealed class LocalGameSessionOrchestrator : IAsyncDisposable
                     // niczyim planista na stale. Oddajemy je od razu;
                     // zaplanowane aplikacje zostaja do konca sesji, bo na nie
                     // uzytkownik sie zgodzil.
+                    // Punkt kontrolny sprzed pola z maska: maske bierzemy
+                    // z dziennika tamtej sesji, nigdy z dzisiejszej
+                    // topologii. Brak sladu znaczy, ze nic nie przypieto.
                     ulong recoveredMask = metadata.BackgroundAffinityMask
-                        ?? ResolveBackgroundAffinityMask();
+                        ?? ReadHistoricalBackgroundMask(
+                            entries,
+                            group.Key,
+                            restrainedProcesses.Concat(backgroundApplications))
+                        ?? 0;
                     BackgroundRecoveryTotals liveRestraintRecovery =
                         restrainedProcesses.Length > 0
                             ? await RestoreBackgroundApplicationsAsync(
@@ -1180,7 +1187,11 @@ public sealed class LocalGameSessionOrchestrator : IAsyncDisposable
                         cancellationToken)
                     .ConfigureAwait(false);
             ulong finalMask = metadata.BackgroundAffinityMask
-                ?? ResolveBackgroundAffinityMask();
+                ?? ReadHistoricalBackgroundMask(
+                    entries,
+                    group.Key,
+                    restrainedProcesses.Concat(backgroundApplications))
+                ?? 0;
             BackgroundRecoveryTotals restraintRecovery =
                 await RestoreBackgroundApplicationsAsync(
                         sessionId,
@@ -1968,7 +1979,9 @@ public sealed class LocalGameSessionOrchestrator : IAsyncDisposable
             record.MemoryPriorityActionId,
             record.MemoryPriorityIdempotencyKey,
             RestartDescriptor: null,
-            EstimatedWorkingSetBytes: 0);
+            EstimatedWorkingSetBytes: 0,
+            AppliedAtUtc: record.RestrainedAtUtc,
+            SteeredCpuSets: record.SteeredCpuSets);
 
     private GameProcessTreeSessionTracker CreateGameProcessTreeTracker(
         ProcessIdentity root,
@@ -2270,14 +2283,16 @@ public sealed class LocalGameSessionOrchestrator : IAsyncDisposable
         }
     }
 
-    private async ValueTask<int> ApplyBackgroundApplicationsAsync(
-        SessionId sessionId,
-        IReadOnlyList<PlannedBackgroundApplication> applications,
-        DateTimeOffset requestedAtUtc,
-        ulong backgroundMask,
-        CancellationToken cancellationToken)
+    private async ValueTask<BackgroundBundleOutcome>
+        ApplyBackgroundApplicationsAsync(
+            SessionId sessionId,
+            IReadOnlyList<PlannedBackgroundApplication> applications,
+            DateTimeOffset requestedAtUtc,
+            ulong backgroundMask,
+            CancellationToken cancellationToken)
     {
         int appliedCount = 0;
+        int confinedCount = 0;
         foreach (PlannedBackgroundApplication application in applications)
         {
             ActionExecutionContext context =
@@ -2324,8 +2339,9 @@ public sealed class LocalGameSessionOrchestrator : IAsyncDisposable
                 "obniżenie priorytetu");
             appliedCount++;
 
-            if (application.ActionMode
-                != BackgroundProcessActionMode.LowerPriorityAndEcoQos)
+            if (application.ActionMode is not (
+                BackgroundProcessActionMode.LowerPriorityAndEcoQos
+                or BackgroundProcessActionMode.RestrainBackground))
             {
                 continue;
             }
@@ -2377,6 +2393,7 @@ public sealed class LocalGameSessionOrchestrator : IAsyncDisposable
                     .ConfigureAwait(false))
             {
                 appliedCount++;
+                confinedCount++;
             }
 
             if (application.MemoryPriorityActionId is { } memoryPriorityActionId
@@ -2415,7 +2432,7 @@ public sealed class LocalGameSessionOrchestrator : IAsyncDisposable
             }
         }
 
-        return appliedCount;
+        return new(appliedCount, confinedCount);
     }
 
     /// <summary>
@@ -2458,10 +2475,12 @@ public sealed class LocalGameSessionOrchestrator : IAsyncDisposable
     {
         BackgroundRecoveryTotals totals = new(0, 0, 0);
 
-        // Rodzice, po ktorych trzeba jeszcze przejrzec potomkow: maska
-        // i priorytet wejscia-wyjscia dziedzicza sie na procesy urodzone
-        // pod ograniczeniem, a dziennik zna tylko rodzica.
-        List<(int ProcessId, bool Io, bool Memory)> sweepRoots = [];
+        // Rodzice, po ktorych trzeba jeszcze przejrzec potomkow: maska,
+        // priorytet wejscia-wyjscia, priorytet pamieci i klasa BelowNormal
+        // dziedzicza sie na procesy urodzone pod ograniczeniem, a dziennik
+        // zna tylko rodzica. Kazdy ograniczony proces jest korzeniem, bo
+        // klase dziedziczy dziecko kazdego z nich.
+        List<SweepRoot> sweepRoots = [];
 
         foreach (PlannedBackgroundApplication application
                      in applications.Reverse())
@@ -2532,18 +2551,32 @@ public sealed class LocalGameSessionOrchestrator : IAsyncDisposable
                         .ConfigureAwait(false));
             }
 
-            if (application.AffinityActionId is not null
-                || application.IoPriorityActionId is not null
-                || application.MemoryPriorityActionId is not null)
+            if (application.ActionMode
+                != BackgroundProcessActionMode.CloseAndRestore)
             {
-                sweepRoots.Add((
+                if (application.SteeredCpuSets)
+                {
+                    await ClearSteeredCpuSetsAsync(
+                            application,
+                            cancellationToken)
+                        .ConfigureAwait(false);
+                }
+
+                // Granica czasu: chwila nalozenia tego konkretnego
+                // ograniczenia, gdy jest znana, a nie poczatek sesji.
+                // Potomek urodzony miedzy startem sesji a ograniczeniem
+                // reaktywnym rodzica niczego po nim nie odziedziczyl.
+                sweepRoots.Add(new(
                     application.Identity.RuntimeKey.ProcessId,
+                    application.Identity.RuntimeKey.StartedAtUtc,
+                    application.AppliedAtUtc ?? requestedAtUtc,
                     application.IoPriorityActionId is not null,
                     application.MemoryPriorityActionId is not null));
             }
 
-            if (application.ActionMode
-                == BackgroundProcessActionMode.LowerPriorityAndEcoQos)
+            if (application.ActionMode is
+                BackgroundProcessActionMode.LowerPriorityAndEcoQos
+                or BackgroundProcessActionMode.RestrainBackground)
             {
                 BackgroundRecoveryTotals ecoQosRecovery =
                     await RestoreEcoQosActionAsync(
@@ -2571,29 +2604,77 @@ public sealed class LocalGameSessionOrchestrator : IAsyncDisposable
         // ktorego nie udalo sie oddac, liczy sie jako blad odtwarzania —
         // sesja zostaje otwarta do ponownej proby, zamiast udawac, ze po
         // GameShifcie nic nie zostalo.
-        if (sweepRoots.Count > 0 && TryCaptureParentMap() is { } parentMap)
+        foreach (SweepRoot root in sweepRoots)
         {
-            foreach ((int processId, bool io, bool memory) in sweepRoots)
+            InheritedRestraintSweep sweep = InheritedRestraintSweeper.Release(
+                root.ProcessId,
+                root.StartedAtUtc,
+                TryCaptureParentMap,
+                root.NotBeforeUtc,
+                backgroundMask,
+                root.Io,
+                root.Memory,
+                resetPriorityClass: true);
+            if (sweep.SnapshotFailed)
             {
-                InheritedRestraintSweep sweep = InheritedRestraintSweeper.Release(
-                    processId,
-                    parentMap,
-                    requestedAtUtc,
-                    backgroundMask,
-                    io,
-                    memory);
-                if (sweep.Failed > 0)
+                // Bez migawki drzewa nie wiemy, czy cos zostalo. To jest
+                // blad odtwarzania, nie sukces: sesja zostaje otwarta do
+                // ponownej proby, zamiast udawac, ze po GameShifcie nic nie
+                // zostalo.
+                totals = totals with
                 {
-                    totals = totals with
-                    {
-                        ErrorCount = totals.ErrorCount + sweep.Failed,
-                    };
-                }
+                    ErrorCount = totals.ErrorCount + 1,
+                };
+                break;
+            }
+
+            if (sweep.Failed > 0)
+            {
+                totals = totals with
+                {
+                    ErrorCount = totals.ErrorCount + sweep.Failed,
+                };
             }
         }
 
         return totals;
     }
+
+    /// <summary>
+    /// Takes the default CPU sets off a process the reactive loop steered.
+    /// Best-effort and not counted as an error: sets are a preference, not a
+    /// restriction, and a process that is gone has nothing to clear. The
+    /// identity check keeps a recycled id from having its sets touched.
+    /// </summary>
+    private async ValueTask ClearSteeredCpuSetsAsync(
+        PlannedBackgroundApplication application,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            if (await _identityProvider
+                    .MatchesRuntimeIdentityAsync(
+                        application.Identity,
+                        cancellationToken)
+                    .ConfigureAwait(false))
+            {
+                _ = ProcessCpuSets.TryApply(
+                    application.Identity.RuntimeKey.ProcessId,
+                    []);
+            }
+        }
+        catch (Exception exception) when (
+            IsExpectedRecoveryFailure(exception))
+        {
+        }
+    }
+
+    private sealed record SweepRoot(
+        int ProcessId,
+        DateTimeOffset StartedAtUtc,
+        DateTimeOffset NotBeforeUtc,
+        bool Io,
+        bool Memory);
 
     private async ValueTask<BackgroundRecoveryTotals>
         RestorePrimaryBackgroundActionAsync(
@@ -2658,7 +2739,7 @@ public sealed class LocalGameSessionOrchestrator : IAsyncDisposable
     /// before anything else happens. Best-effort and silent — the game runs
     /// either way, only slower if this fails.
     /// </summary>
-    private static void ClearInheritedCornerFromGame(
+    private void ClearInheritedCornerFromGame(
         ActiveRuntime runtime,
         IReadOnlyList<ProcessIdentity> gameProcesses)
     {
@@ -2674,8 +2755,42 @@ public sealed class LocalGameSessionOrchestrator : IAsyncDisposable
             return;
         }
 
-        foreach (ProcessIdentity identity in gameProcesses)
+        // Tylko proces, ktory mogl cwiartke odziedziczyc: urodzony w trakcie
+        // tej sesji, po rodzicu, ktorego my zamknelismy w cwiartce
+        // (zatwierdzona aplikacja tla albo ograniczenie reaktywne), albo po
+        // innym procesie gry z tego samego lancucha. Sama rownosc maski nie
+        // wystarcza — gra moze wybrac sobie maske sama, a jej wybor nie jest
+        // nasza sprawa.
+        HashSet<int> confinedParents = [.. runtime.BackgroundApplications
+            .Concat(runtime.SnapshotDynamicRestraints())
+            .Where(application => application.AffinityActionId is not null)
+            .Select(application => application.Identity.RuntimeKey.ProcessId)];
+        if (confinedParents.Count == 0)
         {
+            return;
+        }
+
+        IReadOnlyDictionary<int, int>? parents = TryCaptureParentMap();
+        if (parents is null)
+        {
+            return;
+        }
+
+        HashSet<int> gameProcessIds = [.. gameProcesses
+            .Select(identity => identity.RuntimeKey.ProcessId)];
+        foreach (ProcessIdentity identity in gameProcesses
+            .OrderBy(identity => identity.RuntimeKey.StartedAtUtc))
+        {
+            if (identity.RuntimeKey.StartedAtUtc < runtime.StartedAtUtc
+                || !parents.TryGetValue(
+                    identity.RuntimeKey.ProcessId,
+                    out int parentProcessId)
+                || (!confinedParents.Contains(parentProcessId)
+                    && !gameProcessIds.Contains(parentProcessId)))
+            {
+                continue;
+            }
+
             try
             {
                 using Process process = Process.GetProcessById(
@@ -2693,6 +2808,64 @@ public sealed class LocalGameSessionOrchestrator : IAsyncDisposable
             }
         }
     }
+
+    /// <summary>
+    /// The mask a session actually imposed, read back from the journal when
+    /// the checkpoint predates the field that records it. Today's topology
+    /// is not evidence about a historical change: a machine that fails the
+    /// policy now may still have processes confined by a session that ran
+    /// before, and the reverse. Null when no affinity action left a
+    /// preparation record — then nothing was confined.
+    /// </summary>
+    private static ulong? ReadHistoricalBackgroundMask(
+        IReadOnlyList<RecoveryJournalEntry> entries,
+        Guid sessionId,
+        IEnumerable<PlannedBackgroundApplication> applications)
+    {
+        HashSet<Guid> affinityActionIds = [.. applications
+            .Select(application => application.AffinityActionId)
+            .OfType<ActionId>()
+            .Select(actionId => actionId.Value)];
+        if (affinityActionIds.Count == 0)
+        {
+            return null;
+        }
+
+        foreach (RecoveryJournalEntry entry in entries)
+        {
+            if (entry.SessionId != sessionId
+                || entry.ActionId is not Guid actionId
+                || !affinityActionIds.Contains(actionId)
+                || entry.DesiredStateJson is null)
+            {
+                continue;
+            }
+
+            try
+            {
+                ProcessAffinityState? desired =
+                    JsonSerializer.Deserialize<ProcessAffinityState>(
+                        entry.DesiredStateJson,
+                        JournalStateSerializerOptions);
+                if (desired is { Mask: not 0 })
+                {
+                    return desired.Mask;
+                }
+            }
+            catch (JsonException)
+            {
+            }
+        }
+
+        return null;
+    }
+
+    /// <summary>
+    /// Same options the transaction machinery serializes action states with,
+    /// so a state written by <c>TransactionCoordinator</c> reads back here.
+    /// </summary>
+    private static readonly JsonSerializerOptions JournalStateSerializerOptions =
+        new(JsonSerializerDefaults.General);
 
     private IReadOnlyDictionary<int, int>? TryCaptureParentMap()
     {
@@ -2895,7 +3068,9 @@ public sealed class LocalGameSessionOrchestrator : IAsyncDisposable
             application.IoPriorityActionId?.Value,
             application.IoPriorityIdempotencyKey?.Value,
             application.MemoryPriorityActionId?.Value,
-            application.MemoryPriorityIdempotencyKey?.Value);
+            application.MemoryPriorityIdempotencyKey?.Value,
+            application.AppliedAtUtc,
+            application.SteeredCpuSets);
 
     private static GamePriorityRecoveryMetadata ToRecoveryMetadata(
         PlannedGamePriority priority,
@@ -2927,8 +3102,8 @@ public sealed class LocalGameSessionOrchestrator : IAsyncDisposable
                 ? new IdempotencyKey(idempotencyKey)
                 : null;
         bool requiresEcoQos =
-            actionMode
-                == BackgroundProcessActionMode.LowerPriorityAndEcoQos;
+            actionMode is BackgroundProcessActionMode.LowerPriorityAndEcoQos
+                or BackgroundProcessActionMode.RestrainBackground;
         if (requiresEcoQos
             != (ecoQosActionId is not null
                 && ecoQosIdempotencyKey is not null))
@@ -2982,7 +3157,9 @@ public sealed class LocalGameSessionOrchestrator : IAsyncDisposable
                     metadata.Arguments ?? [],
                     ApplicationRestartability.Restartable)
                 : null,
-            metadata.EstimatedWorkingSetBytes);
+            metadata.EstimatedWorkingSetBytes,
+            metadata.RestrainedAtUtc,
+            metadata.SteeredCpuSets);
     }
 
     /// <summary>
@@ -3087,20 +3264,33 @@ public sealed class LocalGameSessionOrchestrator : IAsyncDisposable
                         "Niskie",
                         "Po zakończeniu gry uruchom ponownie ten sam, "
                         + "zweryfikowany plik EXE."),
-                    BackgroundProcessActionMode
-                            .LowerPriorityAndEcoQos => new(
-                        "LIMIT_BACKGROUND_CPU",
+                    BackgroundProcessActionMode.RestrainBackground => new(
+                        "RESTRAIN_BACKGROUND",
                         $"Na czas gry ustaw „{application.DisplayName}” "
                         + "na BelowNormal, włącz EcoQoS"
                         + DescribeBackgroundCorner(backgroundCorner)
                         + " i obniż jej priorytet pamięci oraz "
                         + "wejścia-wyjścia, aby tło ustępowało grze na "
-                        + "procesorze, w pamięci i na dysku.",
+                        + "procesorze, w pamięci i na dysku. Zysk w czasie "
+                        + "klatki zmierzono tylko dla przypięcia i tylko "
+                        + "pod obciążeniem; reszta to dźwignie odwracalne "
+                        + "bez zmierzonego zysku.",
                         "Niskie",
                         "Przywróć poprzedni priorytet, stan EcoQoS, "
                         + "przypisanie rdzeni oraz priorytety pamięci "
-                        + "i wejścia-wyjścia; jeśli proces sam się "
+                        + "i wejścia-wyjścia, także procesom potomnym, "
+                        + "które je odziedziczyły; jeśli proces sam się "
                         + "zakończy, nie rób nic."),
+                    BackgroundProcessActionMode
+                            .LowerPriorityAndEcoQos => new(
+                        "LIMIT_BACKGROUND_CPU",
+                        $"Na czas gry ustaw „{application.DisplayName}” "
+                        + "na BelowNormal i włącz EcoQoS, aby ograniczyć "
+                        + "rywalizację tła o CPU. Bez przypinania do rdzeni "
+                        + "i bez zmiany priorytetów pamięci i dysku.",
+                        "Niskie",
+                        "Przywróć poprzedni priorytet i stan EcoQoS; "
+                        + "jeśli proces sam się zakończy, nie rób nic."),
                     _ => new(
                         "LOWER_BACKGROUND_PRIORITY",
                         $"Na czas gry ustaw „{application.DisplayName}” "
@@ -3546,7 +3736,17 @@ public sealed class LocalGameSessionOrchestrator : IAsyncDisposable
         Guid? IoPriorityActionId = null,
         Guid? IoPriorityIdempotencyKey = null,
         Guid? MemoryPriorityActionId = null,
-        Guid? MemoryPriorityIdempotencyKey = null);
+        Guid? MemoryPriorityIdempotencyKey = null,
+        // Chwila nalozenia ograniczenia reaktywnego i miekkie zbiory CPU.
+        // Na koncu i z wartosciami domyslnymi, zeby wczesniejsze punkty
+        // kontrolne nadal sie odczytywaly.
+        DateTimeOffset? RestrainedAtUtc = null,
+        bool SteeredCpuSets = false);
+
+    /// <summary>What the background bundle actually did at session start.</summary>
+    private sealed record BackgroundBundleOutcome(
+        int AppliedCount,
+        int ConfinedCount);
 
     private sealed record GamePriorityRecoveryMetadata(
         Guid ActionId,

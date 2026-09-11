@@ -61,7 +61,13 @@ public static class BackgroundOptimizationAdvisor
             return BackgroundProcessActionMode.CloseAndRestore;
         }
 
-        return BackgroundProcessActionMode.LowerPriorityAndEcoQos;
+        // Tryb agresywny obiecuje najsilniejsze odwracalne ograniczenia,
+        // a jedyna dzwignia CPU, ktora w pomiarze ruszyla czas klatki, to
+        // twarda maska cwiartki — czyli pelny pakiet. Tryb zwykly zostaje
+        // przy BelowNormal + EcoQoS, tak jak dotad.
+        return isAggressive
+            ? BackgroundProcessActionMode.RestrainBackground
+            : BackgroundProcessActionMode.LowerPriorityAndEcoQos;
     }
 
     public static long EstimatePotentialMemorySavings(
@@ -76,7 +82,9 @@ public static class BackgroundOptimizationAdvisor
         return action switch
         {
             BackgroundProcessActionMode.CloseAndRestore => workingSetBytes,
-            BackgroundProcessActionMode.LowerPriorityAndEcoQos => (long)(workingSetBytes * 0.6),
+            BackgroundProcessActionMode.LowerPriorityAndEcoQos
+                or BackgroundProcessActionMode.RestrainBackground =>
+                    (long)(workingSetBytes * 0.6),
             _ => (long)(workingSetBytes * 0.3),
         };
     }

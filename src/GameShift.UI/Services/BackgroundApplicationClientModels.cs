@@ -10,6 +10,7 @@ public enum BackgroundProcessClientActionMode
     CloseAndRestore = 1,
     LowerPriority = 2,
     LowerPriorityAndEcoQos = 3,
+    RestrainBackground = 4,
 }
 
 public sealed record DiscoveredProcessClientSnapshot(

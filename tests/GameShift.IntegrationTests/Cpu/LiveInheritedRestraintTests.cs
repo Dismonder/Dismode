@@ -3,6 +3,7 @@ using GameShift.Core.Domain.Identifiers;
 using GameShift.Core.Domain.Processes;
 using GameShift.Data.Journal;
 using GameShift.Windows.NativeInterop;
+using GameShift.Windows.Processes;
 using GameShift.Windows.Sessions;
 
 namespace GameShift.IntegrationTests.Cpu;
@@ -148,20 +149,42 @@ public sealed class LiveInheritedRestraintTests
         return priority;
     }
 
+    /// <summary>
+    /// The child by its parent, not by its mask. Any other PowerShell on the
+    /// machine carrying the corner mask — another test's, a user's — would
+    /// otherwise be mistaken for it, and the assertions would be made
+    /// against a stranger.
+    /// </summary>
     private static async Task<Process> WaitForChildAsync(int parentId)
     {
+        ProcessParentMapProvider parents = new();
         for (int attempt = 0; attempt < 60; attempt++)
         {
-            foreach (Process candidate in Process.GetProcessesByName(
-                "powershell"))
+            foreach ((int childId, int childParentId) in parents.Capture())
             {
-                if (candidate.Id != parentId
-                    && (ulong)candidate.ProcessorAffinity.ToInt64() == Corner)
+                if (childParentId != parentId || childId == parentId)
                 {
-                    return candidate;
+                    continue;
                 }
 
-                candidate.Dispose();
+                Process? candidate = null;
+                try
+                {
+                    candidate = Process.GetProcessById(childId);
+                    if (string.Equals(
+                            candidate.ProcessName,
+                            "powershell",
+                            StringComparison.OrdinalIgnoreCase))
+                    {
+                        return candidate;
+                    }
+
+                    candidate.Dispose();
+                }
+                catch (ArgumentException)
+                {
+                    candidate?.Dispose();
+                }
             }
 
             await Task.Delay(500);

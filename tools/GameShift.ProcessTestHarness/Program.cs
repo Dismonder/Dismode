@@ -21,6 +21,10 @@ int? spawnChildAfterMilliseconds = ReadIntegerOption(
     "--spawn-child-after-ms",
     minimum: 10,
     maximum: 60_000);
+// Dziecko spawnowane na sygnal: test tworzy ten plik dopiero wtedy, gdy
+// sprawdzil, ze rodzic jest juz ograniczony. Czasomierz zalezal od
+// obciazenia maszyny — osiem sekund raz wystarczalo, raz nie.
+string? spawnChildTriggerFile = ReadOption(args, "--spawn-child-when-file");
 bool ignoreClose = args.Contains(
     "--ignore-close",
     StringComparer.OrdinalIgnoreCase);
@@ -36,6 +40,13 @@ using Form window = new()
     StartPosition = FormStartPosition.Manual,
     Text = "GameShift Process Test Harness",
 };
+using System.Windows.Forms.Timer? spawnChildTriggerTimer =
+    spawnChildTriggerFile is null
+        ? null
+        : new()
+        {
+            Interval = 200,
+        };
 using System.Windows.Forms.Timer? exitAfterSpawnTimer =
     exitAfterSpawnMilliseconds is int delay
         ? new()
@@ -79,7 +90,21 @@ window.Shown += (_, _) =>
 
     if (childReadyFile is not null && !isChild)
     {
-        if (spawnChildTimer is not null)
+        if (spawnChildTriggerTimer is not null && spawnChildTriggerFile is not null)
+        {
+            spawnChildTriggerTimer.Tick += (_, _) =>
+            {
+                if (!File.Exists(spawnChildTriggerFile))
+                {
+                    return;
+                }
+
+                spawnChildTriggerTimer.Stop();
+                SpawnChild(childReadyFile);
+            };
+            spawnChildTriggerTimer.Start();
+        }
+        else if (spawnChildTimer is not null)
         {
             spawnChildTimer.Tick += (_, _) =>
             {

@@ -84,6 +84,10 @@ public sealed class GameShiftSessionGrpcService :
                                     .LowerPriorityAndEcoQos =>
                                 SessionBackgroundProcessActionMode
                                     .LowerPriorityAndEcoQos,
+                            RpcBackgroundProcessActionMode
+                                    .RestrainBackground =>
+                                SessionBackgroundProcessActionMode
+                                    .RestrainBackground,
                             _ => throw new RpcException(
                                 new Status(
                                     StatusCode.InvalidArgument,

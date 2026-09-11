@@ -130,7 +130,7 @@ public sealed class JournaledProBalanceActuator :
         ActionId actionId = new(Guid.NewGuid());
         // Kazde ograniczenie to osobna akcja; powtorzenie w obrebie tej
         // samej sesji blokuje slownik powyzej, a po awarii sprawe przejmuje
-        // odtwarzanie z journala.
+        // odtwarzanie z ksiegi sesji.
         IdempotencyKey idempotencyKey = IdempotencyKey.Create();
         PinnedAffinity? plannedPin = _backgroundAffinityMask == 0
             ? null
@@ -138,22 +138,28 @@ public sealed class JournaledProBalanceActuator :
         LoweredIo? plannedIo = _lowerBackgroundIoPriority
             ? new(new(Guid.NewGuid()), IdempotencyKey.Create())
             : null;
+        bool plannedSteer = _backgroundCpuSetIds.Count > 0;
         DateTimeOffset restrainedAtUtc = _timeProvider.GetUtcNow();
 
-        // Meldunek do ksiegi PRZED pierwsza zmiana. Identyfikatory sa juz
-        // znane, a odtwarzanie akcji, ktorej nigdy nie nalozono, jest
-        // nieszkodliwe — dziennik nie ma dla niej wpisu o mutacji. Odwrotna
-        // kolejnosc zostawiala okno: awaria hosta miedzy nalozeniem maski
-        // a meldunkiem, i po ograniczeniu nie bylo sladu poza dziennikiem,
-        // ktorego nikt nie potrafi dopasowac do procesu.
-        await ReportRestraintAsync(
+        // Meldunek do ksiegi PRZED pierwsza zmiana i tylko potwierdzony.
+        // Identyfikatory sa juz znane, a odtwarzanie akcji, ktorej nigdy nie
+        // nalozono, jest nieszkodliwe — dziennik nie ma dla niej wpisu
+        // o mutacji. Bez potwierdzonego zapisu nie ma ograniczenia:
+        // ograniczenie jest opcjonalne, odtwarzalnosc po awarii nie.
+        // Wczesniej nieudany zapis byl polykany i proces byl zmieniany
+        // bez sladu w punkcie kontrolnym.
+        if (!await ReportRestraintAsync(
                 identity,
                 actionId,
                 idempotencyKey,
                 plannedPin,
                 plannedIo,
-                CancellationToken.None)
-            .ConfigureAwait(false);
+                plannedSteer,
+                restrainedAtUtc)
+            .ConfigureAwait(false))
+        {
+            return false;
+        }
 
         RuntimeProcessPriorityAction action = new(
             actionId,
@@ -166,76 +172,123 @@ public sealed class JournaledProBalanceActuator :
             idempotencyKey,
             _timeProvider.GetUtcNow());
 
+        ActionExecutionResult result;
         try
         {
-            ActionExecutionResult result =
-                await new TransactionCoordinator<RuntimeProcessPriorityState>(
-                        _journal)
-                    .ExecuteAsync(action, context, cancellationToken)
-                    .ConfigureAwait(false);
-            if (result.Status is not (
-                ActionExecutionStatus.AppliedAndVerified
-                or ActionExecutionStatus.AlreadyCompleted))
-            {
-                // Nic nie nalozono, wiec meldunek sprzed chwili jest
-                // bezprzedmiotowy.
-                await ForgetRestraintAsync(runtimeKey, CancellationToken.None)
-                    .ConfigureAwait(false);
-                return false;
-            }
-
-            // Od tego miejsca proces JEST juz zmieniony: priorytet lezy na
-            // nim i tylko nasz rekord pamieta, ze to my. Anulowanie nie moze
-            // nas tu wyrzucic, bo wyjatek przeskoczylby zapis do _applied,
-            // ReleaseAll nie mialoby czego zwalniac i proces zostalby
-            // w cwiartce z obnizonym priorytetem na zawsze. Reszte robimy
-            // wiec bez tokenu, a rekord powstaje w finally z tym, co realnie
-            // zdazylo sie nalozyc.
-            bool steered = false;
-            PinnedAffinity? pinned = null;
-            LoweredIo? loweredIo = null;
-            try
-            {
-                // Odsuniecie od rdzeni gry. Idzie po ograniczeniu priorytetu,
-                // bo tamto jest wazniejsze i nie chcemy, zeby nieudane
-                // sterowanie zbiorami przeslonilo udane obnizenie priorytetu.
-                steered = TrySteerAway(runtimeKey);
-                pinned = await TryPinAsync(identity, plannedPin)
-                    .ConfigureAwait(false);
-                // Na koncu, bo z trzech ograniczen to najmniej sprawdzone.
-                // Niepowodzenie nie moze przeslonic udanej maski.
-                loweredIo = await TryLowerIoAsync(identity, plannedIo)
-                    .ConfigureAwait(false);
-            }
-            finally
-            {
-                _applied[runtimeKey] = new(
-                    identity,
-                    actionId,
-                    idempotencyKey,
-                    steered,
-                    pinned,
-                    loweredIo,
-                    restrainedAtUtc);
-            }
-
-            return true;
+            result = await new TransactionCoordinator<
+                    RuntimeProcessPriorityState>(_journal)
+                .ExecuteAsync(action, context, cancellationToken)
+                .ConfigureAwait(false);
         }
         catch (Exception exception) when (IsExpected(exception))
         {
-            // Wyjatek z transakcji priorytetu znaczy, ze nic nie nalozono
-            // (kazdy pozniejszy krok lapie swoje wyjatki sam), a rekordu
-            // w _applied nie ma. Meldunek sprzed chwili jest wtedy
-            // bezprzedmiotowy.
-            if (!_applied.ContainsKey(runtimeKey))
-            {
-                await ForgetRestraintAsync(runtimeKey, CancellationToken.None)
-                    .ConfigureAwait(false);
-            }
-
-            return false;
+            // Nie wiemy, czy priorytet juz lezy na procesie: wyjatek mogl
+            // przyjsc po ApplyAsync, a przed wpisem ActionApplied, i wtedy
+            // transakcja niczego nie cofa. Rekord zostaje — w ksiedze
+            // i tutaj — a zwolnienie pojdzie przez odtwarzanie, ktore
+            // rozstrzyga to z dziennika: akcja nigdy nierozpoczeta wraca
+            // jako NotRequired albo MissingPreparation, rozpoczeta zostaje
+            // cofnieta. Zapomnienie meldunku w tym miejscu kasowalo jedyny
+            // slad po zmianie, ktora mogla zajsc.
+            Remember(
+                runtimeKey,
+                identity,
+                actionId,
+                idempotencyKey,
+                plannedPin,
+                plannedIo,
+                restrainedAtUtc);
+            return true;
         }
+
+        switch (result.Status)
+        {
+            case ActionExecutionStatus.Blocked:
+                // Walidacja odmowila przed jakakolwiek zmiana; dziennik ma
+                // tylko ActionPrepared i ActionBlocked. Meldunek sprzed
+                // chwili jest bezprzedmiotowy.
+                await ForgetRestraintAsync(runtimeKey).ConfigureAwait(false);
+                return false;
+            case ActionExecutionStatus.AppliedAndVerified:
+            case ActionExecutionStatus.AlreadyCompleted:
+                break;
+            default:
+                // RecoveryRequired albo VerificationFailed: proces mogl
+                // zostac zmieniony. Kolejnych dzwigni nie dokladamy do
+                // procesu w niejasnym stanie, ale rekord zostaje, zeby
+                // zwolnienie i odtwarzanie mialy co cofac.
+                Remember(
+                    runtimeKey,
+                    identity,
+                    actionId,
+                    idempotencyKey,
+                    plannedPin,
+                    plannedIo,
+                    restrainedAtUtc);
+                return true;
+        }
+
+        // Od tego miejsca proces JEST juz zmieniony: priorytet lezy na nim
+        // i tylko nasz rekord pamieta, ze to my. Anulowanie nie moze nas tu
+        // wyrzucic, bo wyjatek przeskoczylby zapis do _applied, ReleaseAll
+        // nie mialoby czego zwalniac i proces zostalby w cwiartce
+        // z obnizonym priorytetem na zawsze. Reszte robimy wiec bez tokenu,
+        // a rekord powstaje w finally z tym, co realnie zdazylo sie nalozyc
+        // — albo moglo sie nalozyc, bo niepewnosc tez trzeba pamietac.
+        bool steered = false;
+        PinnedAffinity? pinned = null;
+        LoweredIo? loweredIo = null;
+        try
+        {
+            // Odsuniecie od rdzeni gry. Idzie po ograniczeniu priorytetu,
+            // bo tamto jest wazniejsze i nie chcemy, zeby nieudane
+            // sterowanie zbiorami przeslonilo udane obnizenie priorytetu.
+            steered = plannedSteer && TrySteerAway(runtimeKey);
+            pinned = await TryPinAsync(identity, plannedPin)
+                .ConfigureAwait(false);
+            // Na koncu, bo z trzech ograniczen to najmniej sprawdzone.
+            // Niepowodzenie nie moze przeslonic udanej maski.
+            loweredIo = await TryLowerIoAsync(identity, plannedIo)
+                .ConfigureAwait(false);
+        }
+        finally
+        {
+            _applied[runtimeKey] = new(
+                identity,
+                actionId,
+                idempotencyKey,
+                steered,
+                pinned,
+                loweredIo,
+                restrainedAtUtc);
+        }
+
+        return true;
     }
+
+    /// <summary>
+    /// Records a restraint whose priority transaction ended in doubt. The
+    /// planned ids stay in the record because the ledger already carries
+    /// them; releasing an action that never started is a no-op through the
+    /// journal, so keeping them costs nothing and losing them could leave
+    /// a real change unreversed.
+    /// </summary>
+    private void Remember(
+        ProcessRuntimeKey runtimeKey,
+        ProcessIdentity identity,
+        ActionId actionId,
+        IdempotencyKey idempotencyKey,
+        PinnedAffinity? plannedPin,
+        LoweredIo? plannedIo,
+        DateTimeOffset restrainedAtUtc) =>
+        _applied[runtimeKey] = new(
+            identity,
+            actionId,
+            idempotencyKey,
+            Steered: false,
+            plannedPin,
+            plannedIo,
+            restrainedAtUtc);
 
     /// <summary>
     /// Zdejmuje ograniczenia z procesu.
@@ -260,11 +313,12 @@ public sealed class JournaledProBalanceActuator :
             return false;
         }
 
-        if (record.Steered)
-        {
-            // Wyczyszczenie oddaje procesowi cala maszyne.
-            _ = ProcessCpuSets.TryApply(runtimeKey.ProcessId, []);
-        }
+        // Zbiory czyscimy dopiero po sprawdzeniu, ze za numerem stoi nadal
+        // ten sam proces. Zwolnienie „zniknal z inwentaryzacji" przychodzi
+        // wlasnie wtedy, gdy numer mogl juz zmienic wlasciciela, a czyszczenie
+        // po samym numerze trafialoby w obcy proces.
+        bool setsCleared = !record.Steered
+            || await TryClearCpuSetsAsync(record.Identity).ConfigureAwait(false);
 
         // Cala ta sciezka idzie bez tokenu i jest to ta sama zasada, co przy
         // nakladaniu: zwalnianie przerwane w polowie zostawia proces
@@ -312,62 +366,93 @@ public sealed class JournaledProBalanceActuator :
         // Wykreslenie dopiero po rozliczeniu CALEGO pakietu. Rekord, ktory
         // zostaje, to jedyny slad po ograniczeniu, ktore moze wlasnie nie
         // zostalo zdjete — ksiega sesji ponowi probe przy jej zamknieciu.
-        bool restored = ioRestored
+        bool restored = setsCleared
+            && ioRestored
             && pinRestored
             && priorityRestored
             && descendantsRestored;
         if (restored)
         {
             _ = _applied.Remove(runtimeKey);
-            await ForgetRestraintAsync(runtimeKey, CancellationToken.None)
-                .ConfigureAwait(false);
+            await ForgetRestraintAsync(runtimeKey).ConfigureAwait(false);
         }
 
         return restored;
     }
 
+    /// <summary>
+    /// Statuses after which nothing of ours is left on the process.
+    /// MissingPreparation belongs here: a planned action whose transaction
+    /// never wrote a preparation record never touched the process either.
+    /// </summary>
     private static bool IsRestored(ActionRecoveryStatus status) =>
         status is ActionRecoveryStatus.Restored
             or ActionRecoveryStatus.AlreadyRestored
-            or ActionRecoveryStatus.NotRequired;
+            or ActionRecoveryStatus.NotRequired
+            or ActionRecoveryStatus.MissingPreparation;
 
     /// <summary>
-    /// Releases what the restrained process's children inherited from it —
-    /// the corner mask and the lowered I/O priority. Runs after the parent is
-    /// restored, so the children are widened to what the parent has now.
-    /// True when nothing that needed releasing was left behind.
+    /// Clears the default CPU sets of a restrained process, but only when the
+    /// process behind the id is still the one that was restrained. A process
+    /// that has exited has nothing to clear; its number may already belong to
+    /// something else.
     /// </summary>
-    private bool ReleaseDescendants(RestraintRecord record)
+    private async ValueTask<bool> TryClearCpuSetsAsync(ProcessIdentity identity)
     {
-        if (record.Pinned is null && record.LoweredIo is null)
-        {
-            return true;
-        }
-
-        IReadOnlyDictionary<int, int> parents;
         try
         {
-            parents = _parentMapProvider.Capture();
+            bool sameProcess = await _identityProvider
+                .MatchesRuntimeIdentityAsync(identity, CancellationToken.None)
+                .ConfigureAwait(false);
+            return !sameProcess
+                || ProcessCpuSets.TryApply(identity.RuntimeKey.ProcessId, []);
         }
         catch (Exception exception) when (IsExpected(exception))
         {
             return false;
         }
-
-        InheritedRestraintSweep sweep = InheritedRestraintSweeper.Release(
-            record.Identity.RuntimeKey.ProcessId,
-            parents,
-            record.RestrainedAtUtc,
-            record.Pinned is null ? 0 : _backgroundAffinityMask,
-            resetIoPriority: record.LoweredIo is not null,
-            resetMemoryPriority: false);
-        return sweep.Failed == 0;
     }
 
     /// <summary>
-    /// Skips a process already at or below BelowNormal. The action itself only
-    /// allows lowering, but asking it to "lower" something already lower would
-    /// still write a journal record for a change that changes nothing.
+    /// Releases what the restrained process's children inherited from it —
+    /// the corner mask, the lowered I/O priority and the BelowNormal class,
+    /// which Windows hands to every child of a BelowNormal parent. Runs after
+    /// the parent is restored, so the children are widened to what the parent
+    /// has now. True when nothing that needed releasing was left behind.
+    /// </summary>
+    private bool ReleaseDescendants(RestraintRecord record)
+    {
+        InheritedRestraintSweep sweep = InheritedRestraintSweeper.Release(
+            record.Identity.RuntimeKey.ProcessId,
+            record.Identity.RuntimeKey.StartedAtUtc,
+            CaptureParentsOrNull,
+            record.RestrainedAtUtc,
+            record.Pinned is null ? 0 : _backgroundAffinityMask,
+            resetIoPriority: record.LoweredIo is not null,
+            resetMemoryPriority: false,
+            resetPriorityClass: true);
+        return sweep.Complete;
+    }
+
+    private IReadOnlyDictionary<int, int>? CaptureParentsOrNull()
+    {
+        try
+        {
+            return _parentMapProvider.Capture();
+        }
+        catch (Exception exception) when (IsExpected(exception))
+        {
+            return null;
+        }
+    }
+
+    /// <summary>
+    /// A process at Normal or BelowNormal qualifies. BelowNormal used to be
+    /// skipped as "already lowered", which also skipped the mask — the one
+    /// lever that moves frame times — for every hog that lowers itself, and
+    /// browsers' renderers and updaters routinely do. The priority action
+    /// treats BelowNormal to BelowNormal as a no-op. Idle and anything above
+    /// Normal stay out of reach: the action would refuse them anyway.
     /// </summary>
     private static bool IsWorthLowering(ProcessRuntimeKey runtimeKey)
     {
@@ -376,8 +461,8 @@ public sealed class JournaledProBalanceActuator :
             using Process process =
                 Process.GetProcessById(runtimeKey.ProcessId);
             return process.PriorityClass
-                is not (ProcessPriorityClass.BelowNormal
-                    or ProcessPriorityClass.Idle);
+                is ProcessPriorityClass.Normal
+                    or ProcessPriorityClass.BelowNormal;
         }
         catch (Exception exception) when (IsExpected(exception))
         {
@@ -479,37 +564,45 @@ public sealed class JournaledProBalanceActuator :
                 await new TransactionCoordinator<ProcessAffinityState>(_journal)
                     .ExecuteAsync(action, context, CancellationToken.None)
                     .ConfigureAwait(false);
-            return result.Status is (
-                ActionExecutionStatus.AppliedAndVerified
-                or ActionExecutionStatus.AlreadyCompleted)
-                ? planned
-                : null;
+            // Tylko odmowa walidacji znaczy „nic nie nalozono". Kazdy inny
+            // wynik — takze VerificationFailed i wyjatek po ApplyAsync —
+            // zostawia identyfikatory w rekordzie, bo zmiana mogla zajsc,
+            // a odtwarzanie akcji nierozpoczetej jest nieszkodliwe.
+            return result.Status == ActionExecutionStatus.Blocked
+                ? null
+                : planned;
         }
         catch (Exception exception) when (IsExpected(exception))
         {
-            return null;
+            return planned;
         }
     }
 
     /// <summary>
-    /// Zglasza ograniczenie do ksiegi sesji.
+    /// Zglasza ograniczenie do ksiegi sesji, zanim cokolwiek zostanie
+    /// zmienione. Zwraca false, gdy zapis sie nie powiodl — wtedy wolajacy
+    /// nie zmienia procesu. Bez ksiegi (testy, aktuator z fabryki) zawsze
+    /// true.
     /// <para>
-    /// Niepowodzenie zapisu nie moze wywrocic samego ograniczenia — ono juz
-    /// obowiazuje i jest w dzienniku. Traci wtedy tylko odtwarzalnosc po
-    /// awarii, wiec lykamy wyjatek zamiast przewracac petle nadzorcy.
+    /// Wczesniej nieudany zapis byl polykany z uzasadnieniem, ze ograniczenie
+    /// „juz obowiazuje". Po przeniesieniu meldunku przed mutacje to
+    /// uzasadnienie przestalo byc prawdziwe, a skutek zostal: proces
+    /// zmieniony bez sladu w punkcie kontrolnym i po awarii hosta nie do
+    /// odtworzenia.
     /// </para>
     /// </summary>
-    private async ValueTask ReportRestraintAsync(
+    private async ValueTask<bool> ReportRestraintAsync(
         ProcessIdentity identity,
         ActionId priorityActionId,
         IdempotencyKey priorityIdempotencyKey,
         PinnedAffinity? pinned,
         LoweredIo? loweredIo,
-        CancellationToken cancellationToken)
+        bool steeredCpuSets,
+        DateTimeOffset restrainedAtUtc)
     {
         if (_ledger is not { } ledger)
         {
-            return;
+            return true;
         }
 
         try
@@ -528,18 +621,20 @@ public sealed class JournaledProBalanceActuator :
                         // Priorytet pamieci nalezy do orkiestratora, nie do
                         // tej petli.
                         null,
-                        null),
-                    cancellationToken)
+                        null,
+                        restrainedAtUtc,
+                        steeredCpuSets),
+                    CancellationToken.None)
                 .ConfigureAwait(false);
+            return true;
         }
         catch (Exception exception) when (IsExpected(exception))
         {
+            return false;
         }
     }
 
-    private async ValueTask ForgetRestraintAsync(
-        ProcessRuntimeKey runtimeKey,
-        CancellationToken cancellationToken)
+    private async ValueTask ForgetRestraintAsync(ProcessRuntimeKey runtimeKey)
     {
         if (_ledger is not { } ledger)
         {
@@ -548,7 +643,7 @@ public sealed class JournaledProBalanceActuator :
 
         try
         {
-            await ledger.ForgetAsync(runtimeKey, cancellationToken)
+            await ledger.ForgetAsync(runtimeKey, CancellationToken.None)
                 .ConfigureAwait(false);
         }
         catch (Exception exception) when (IsExpected(exception))
@@ -583,15 +678,15 @@ public sealed class JournaledProBalanceActuator :
                         _journal)
                     .ExecuteAsync(action, context, CancellationToken.None)
                     .ConfigureAwait(false);
-            return result.Status is (
-                ActionExecutionStatus.AppliedAndVerified
-                or ActionExecutionStatus.AlreadyCompleted)
-                ? planned
-                : null;
+            // Jak przy masce: tylko odmowa walidacji znaczy, ze nic nie
+            // nalozono. Reszta zostawia identyfikatory w rekordzie.
+            return result.Status == ActionExecutionStatus.Blocked
+                ? null
+                : planned;
         }
         catch (Exception exception) when (IsExpected(exception))
         {
-            return null;
+            return planned;
         }
     }
 

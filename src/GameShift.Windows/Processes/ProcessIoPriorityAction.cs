@@ -93,8 +93,19 @@ public sealed class ProcessIoPriorityAction :
                         + "zmieniamy mu priorytetu wejścia-wyjścia.");
             }
 
-            if (preparedAction.OriginalState.Priority
-                <= preparedAction.DesiredState.Priority)
+            // Odczyt ponowny, nie zapisany stan z przygotowania: proces,
+            // ktory w miedzyczasie sam zszedl na VeryLow, nie moze zostac
+            // przez nas „obnizony" do tej samej wartosci — odtwarzanie
+            // podnioslby potem jego wlasny wybor do Normal.
+            ProcessIoPriorityState current = Read(process);
+            if (current != preparedAction.OriginalState)
+            {
+                return ActionValidationResult.Blocked(
+                    "Priorytet wejścia-wyjścia procesu zmienił się po "
+                        + "przygotowaniu akcji.");
+            }
+
+            if (current.Priority <= preparedAction.DesiredState.Priority)
             {
                 // Proces juz czyta z nizszym albo rownym priorytetem. Zapis
                 // nic by nie zmienil, a zostawilby wpis w journalu sugerujacy,
@@ -138,6 +149,12 @@ public sealed class ProcessIoPriorityAction :
                 _identityProvider,
                 cancellationToken)
             .ConfigureAwait(false);
+        return Read(process);
+    }
+
+    internal static ProcessIoPriorityState Read(Process process)
+    {
+        ArgumentNullException.ThrowIfNull(process);
         int status = IoPriorityNativeMethods.NtQueryInformationProcess(
             process.Handle,
             IoPriorityNativeMethods.ProcessIoPriority,

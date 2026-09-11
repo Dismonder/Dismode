@@ -27,7 +27,17 @@ public sealed record RestrainedProcessRecord(
     ActionId? IoPriorityActionId,
     IdempotencyKey? IoPriorityIdempotencyKey,
     ActionId? MemoryPriorityActionId,
-    IdempotencyKey? MemoryPriorityIdempotencyKey);
+    IdempotencyKey? MemoryPriorityIdempotencyKey,
+    // Kiedy nalozono ograniczenie. Potomek starszy niz ta chwila nie mogl
+    // go odziedziczyc, wiec przeglad potomkow po awarii ma sie zaczynac
+    // tutaj, a nie od poczatku sesji — inaczej po awarii poszerzalby procesy,
+    // ktore swoj stan wybraly same, zanim rodzic zostal ograniczony.
+    DateTimeOffset? RestrainedAtUtc = null,
+    // Czy proces dostal domyslne zbiory procesorow (miekkie sterowanie).
+    // Zbiory nie sa dziennikowane, bo nie ograniczaja, tylko podpowiadaja —
+    // ale po awarii hosta zostalyby na procesie do jego konca, wiec
+    // odtwarzanie ma je wyczyscic.
+    bool SteeredCpuSets = false);
 
 /// <summary>
 /// Where the reactive restraint loop reports what it has restrained and

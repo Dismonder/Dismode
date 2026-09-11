@@ -53,18 +53,21 @@ public sealed class BackgroundConfinementSessionTests
         string directory = CreateTestDirectory();
         string gameReadyFile = Path.Combine(directory, "game.ready");
         string childReadyFile = Path.Combine(directory, "background-child.ready");
+        string childTriggerFile = Path.Combine(directory, "background-child.go");
         int? gameProcessId = null;
         int? childProcessId = null;
-        // Aplikacja tla urodzi potomka juz po tym, jak sesja zdazy nalozyc
-        // maske. Maska powinowactwa dziedziczy sie, a dziennik zna tylko
-        // rodzica — to jest przypadek, ktory bez osobnej obslugi zostawia
-        // dziecko w cwiartce maszyny do konca jego zycia.
+        // Aplikacja tla urodzi potomka dopiero na sygnal, czyli po tym, jak
+        // test sprawdzil, ze sesja zdazyla nalozyc maske. Maska powinowactwa
+        // dziedziczy sie, a dziennik zna tylko rodzica — to jest przypadek,
+        // ktory bez osobnej obslugi zostawia dziecko w cwiartce maszyny do
+        // konca jego zycia. Sygnal zamiast czasomierza, bo osiem sekund
+        // zalezalo od obciazenia maszyny.
         RenamedHarnessFixture background =
             await RenamedHarnessFixture.StartAsync(
                 directory,
                 [
                     "--spawn-child-ready-file", childReadyFile,
-                    "--spawn-child-after-ms", "8000",
+                    "--spawn-child-when-file", childTriggerFile,
                 ]);
         SqliteUserDataStore store =
             new(Path.Combine(directory, "user.db"));
@@ -111,9 +114,14 @@ public sealed class BackgroundConfinementSessionTests
             // Zgoda ma dotyczyc tego, co sie naprawde stanie: plan musi
             // mowic o przypieciu, zanim uzytkownik go zatwierdzi.
             SessionPlanItem limit = plan.Items.Single(item =>
-                item.Code == "LIMIT_BACKGROUND_CPU");
+                item.Code == "RESTRAIN_BACKGROUND");
             StringAssert.Contains(limit.Description, "przypnij");
             StringAssert.Contains(limit.Recovery, "przypisanie rdzeni");
+            StringAssert.Contains(
+                limit.Recovery,
+                "potomnym",
+                "Plan ma obiecywac przywrocenie takze procesom potomnym, "
+                    + "bo to robi odtwarzanie.");
 
             GameSessionSnapshot started = await orchestrator.StartAsync(
                 plan.PlanId,
@@ -148,6 +156,9 @@ public sealed class BackgroundConfinementSessionTests
             Assert.IsGreaterThanOrEqualTo(5, started.AppliedActionCount);
             StringAssert.Contains(started.Message, "na rdzeniach tła: 1");
 
+            // Rodzic jest juz ograniczony, wiec dziecko urodzone od teraz
+            // dziedziczy caly pakiet.
+            await File.WriteAllTextAsync(childTriggerFile, "go");
             await WaitForFileAsync(childReadyFile, TimeSpan.FromSeconds(25));
             childProcessId = ReadProcessId(childReadyFile);
             using Process child = Process.GetProcessById(childProcessId.Value);
@@ -157,11 +168,25 @@ public sealed class BackgroundConfinementSessionTests
                 "Warunek testu: potomek urodzony po nalozeniu maski mial ja "
                     + "odziedziczyc. Jesli nie odziedziczyl, sesja ruszyla "
                     + "rodzica pozniej niz on spawnowal dziecko.");
+            // Warunki testu, nie tylko log: bez nich asercje po przywroceniu
+            // przechodzilyby pozornie, gdyby dziecko niczego nie
+            // odziedziczylo. Zmierzone na tej maszynie: klasa priorytetu,
+            // priorytet I/O i priorytet pamieci dziedzicza sie, EcoQoS nie.
+            Assert.AreEqual(
+                ProcessPriorityClass.BelowNormal,
+                child.PriorityClass,
+                "Warunek testu: potomek mial odziedziczyc BelowNormal.");
+            Assert.AreEqual(
+                IoPriorityNativeMethods.IoPriorityVeryLow,
+                ReadIoPriority(child),
+                "Warunek testu: potomek mial odziedziczyc priorytet I/O.");
+            Assert.AreEqual(
+                ProcessNativeMethods.MemoryPriorityVeryLow,
+                ProcessMemoryPriorityAction.Read(child).MemoryPriority,
+                "Warunek testu: potomek mial odziedziczyc priorytet pamieci.");
             TestContext.WriteLine(
-                $"potomek: priorytet {child.PriorityClass}, I/O "
-                    + $"{ReadIoPriority(child)}, pamiec "
-                    + $"{ProcessMemoryPriorityAction.Read(child).MemoryPriority}, "
-                    + $"EcoQoS {ProcessPowerThrottlingController.Read(child)
+                "potomek: EcoQoS "
+                    + $"{ProcessPowerThrottlingController.Read(child)
                         .ExecutionSpeedThrottled}");
 
             GameSessionSnapshot completed = await orchestrator.RestoreAsync(
@@ -175,6 +200,12 @@ public sealed class BackgroundConfinementSessionTests
                 "Potomek zostal w cwiartce po zakonczeniu sesji. Dziennik "
                     + "cofa tylko to, co zrobiono rodzicowi; dzieci urodzone "
                     + "z odziedziczona maska trzeba przejrzec osobno.");
+            Assert.AreEqual(
+                ProcessPriorityClass.Normal,
+                child.PriorityClass,
+                "Potomek zostal z odziedziczonym BelowNormal. Windows daje "
+                    + "te klase kazdemu dziecku rodzica z BelowNormal, a "
+                    + "dziennik zna tylko rodzica.");
             Assert.AreEqual(
                 IoPriorityNativeMethods.IoPriorityNormal,
                 ReadIoPriority(child),
@@ -306,6 +337,19 @@ public sealed class BackgroundConfinementSessionTests
                 corner.Mask,
                 (ulong)background.Process.ProcessorAffinity.ToInt64(),
                 "Warunek wstepny: maska musi byc nalozona przed awaria.");
+            // Reszta pakietu jest best-effort, wiec jej nalozenie tez jest
+            // warunkiem wstepnym — inaczej asercje o przywroceniu po
+            // restarcie przechodzilyby na procesie, ktorego nikt nie ruszyl.
+            Assert.AreEqual(
+                IoPriorityNativeMethods.IoPriorityVeryLow,
+                ReadIoPriority(background.Process),
+                "Warunek wstepny: priorytet I/O musi byc obnizony przed awaria.");
+            Assert.AreEqual(
+                ProcessNativeMethods.MemoryPriorityVeryLow,
+                ProcessMemoryPriorityAction.Read(background.Process)
+                    .MemoryPriority,
+                "Warunek wstepny: priorytet pamieci musi byc obnizony przed "
+                    + "awaria.");
 
             // Awaria hosta. Zadnego Restore, zadnego zwalniania.
             await firstHost.DisposeAsync();
@@ -703,7 +747,7 @@ public sealed class BackgroundConfinementSessionTests
             new DateTimeOffset(
                 process.StartTime.ToUniversalTime(),
                 TimeSpan.Zero),
-            BackgroundProcessActionMode.LowerPriorityAndEcoQos);
+            BackgroundProcessActionMode.RestrainBackground);
 
     private static async ValueTask<ManualGameProfile> CreateGameProfileAsync(
         string readyFile) =>

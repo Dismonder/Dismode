@@ -16,6 +16,14 @@ public enum SavedBackgroundActionMode
     LowerPriority = 2,
     Ignore = 3,
     LowerPriorityAndEcoQos = 4,
+
+    /// <summary>
+    /// The full background bundle (corner affinity mask, EcoQoS, lowered
+    /// memory and I/O priority). A value of its own so a rule saved as
+    /// <see cref="LowerPriorityAndEcoQos"/> before the bundle existed keeps
+    /// the meaning the user agreed to.
+    /// </summary>
+    RestrainBackground = 5,
 }
 
 public sealed record SavedBackgroundProcessRule

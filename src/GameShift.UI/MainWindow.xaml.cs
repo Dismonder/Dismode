@@ -864,14 +864,18 @@ public sealed partial class MainWindow : Window, IDisposable
         // Ustawienie dotyczy nastepnej sesji: zmiana w trakcie trwajacej
         // oznaczalaby wlaczenie lub wylaczenie nadzorcy w polowie, a on trzyma
         // stan tego, co juz ograniczyl.
+        // Opis ma mowic, co petla robi naprawde: samo obnizenie priorytetu
+        // w pomiarze nie dalo nic, a maska cwiartki dala 60,7% lepsze p99
+        // pod obciazeniem — i to ona, razem z priorytetem dysku, jest tresc
+        // tego przelacznika.
+        const string ProBalanceDescription =
+            "GameShift zamyka procesy, które zaczynają zjadać procesor już "
+            + "w trakcie gry, w ćwiartce rdzeni, obniża im priorytet "
+            + "i priorytet dysku, a po sesji oddaje wszystko — także ich "
+            + "procesom potomnym. Powłoki, anti-cheat i samej gry nie dotyka.";
         ProBalanceDescriptionText.Text = toggle.IsOn
-            ? "Zadziała od następnej sesji. GameShift obniża priorytet "
-                + "procesom, które zaczynają zjadać procesor już w trakcie "
-                + "gry, i oddaje go po sesji. Powłoki, anti-cheat i samej gry "
-                + "nie dotyka."
-            : "GameShift obniża priorytet procesom, które zaczynają zjadać "
-                + "procesor już w trakcie gry, i oddaje go po sesji. Powłoki, "
-                + "anti-cheat i samej gry nie dotyka.";
+            ? "Zadziała od następnej sesji. " + ProBalanceDescription
+            : ProBalanceDescription;
     }
 
     private async void OnFpsTrackingSettingChanged(
@@ -5287,6 +5291,8 @@ public sealed partial class MainWindow : Window, IDisposable
                     BackgroundProcessActionMode.CloseAndRestore,
                 BackgroundProcessClientActionMode.LowerPriorityAndEcoQos =>
                     BackgroundProcessActionMode.LowerPriorityAndEcoQos,
+                BackgroundProcessClientActionMode.RestrainBackground =>
+                    BackgroundProcessActionMode.RestrainBackground,
                 _ => BackgroundProcessActionMode.LowerPriority,
             };
             return BackgroundOptimizationAdvisor.EstimatePotentialMemorySavings(
@@ -5334,6 +5340,7 @@ public sealed partial class MainWindow : Window, IDisposable
                 BackgroundProcessClientActionMode clientMode = recommended switch
                 {
                     BackgroundProcessActionMode.CloseAndRestore => BackgroundProcessClientActionMode.CloseAndRestore,
+                    BackgroundProcessActionMode.RestrainBackground => BackgroundProcessClientActionMode.RestrainBackground,
                     _ => BackgroundProcessClientActionMode.LowerPriorityAndEcoQos,
                 };
 
@@ -5465,6 +5472,8 @@ public sealed partial class MainWindow : Window, IDisposable
                 SavedBackgroundActionMode.LowerPriorityAndEcoQos =>
                     BackgroundProcessClientActionMode
                         .LowerPriorityAndEcoQos,
+                SavedBackgroundActionMode.RestrainBackground =>
+                    BackgroundProcessClientActionMode.RestrainBackground,
                 _ => BackgroundProcessClientActionMode.LowerPriority,
             };
             if (application.ApplySavedAction(mode))
@@ -5514,11 +5523,17 @@ public sealed partial class MainWindow : Window, IDisposable
                                 : selected.Any(application =>
                                     application.SelectedAction.Mode
                                         == BackgroundProcessClientActionMode
-                                            .LowerPriorityAndEcoQos)
+                                            .RestrainBackground)
                                     ? SavedBackgroundActionMode
-                                        .LowerPriorityAndEcoQos
-                                    : SavedBackgroundActionMode
-                                        .LowerPriority;
+                                        .RestrainBackground
+                                    : selected.Any(application =>
+                                        application.SelectedAction.Mode
+                                            == BackgroundProcessClientActionMode
+                                                .LowerPriorityAndEcoQos)
+                                        ? SavedBackgroundActionMode
+                                            .LowerPriorityAndEcoQos
+                                        : SavedBackgroundActionMode
+                                            .LowerPriority;
                     return new SavedBackgroundProcessRule(
                         group.Key,
                         mode);
@@ -5689,6 +5704,9 @@ public sealed partial class MainWindow : Window, IDisposable
             application.SelectedAction.Mode
                 == BackgroundProcessClientActionMode
                     .LowerPriorityAndEcoQos);
+        int restrainCount = selected.Count(application =>
+            application.SelectedAction.Mode
+                == BackgroundProcessClientActionMode.RestrainBackground);
         long selectedBytes = selected.Sum(application =>
             application.SelectedAction.Mode
                     == BackgroundProcessClientActionMode.CloseAndRestore
@@ -5699,8 +5717,9 @@ public sealed partial class MainWindow : Window, IDisposable
             + $"aplikacji: {closeCount} "
             + $"(working set około {FormatMemory(selectedBytes)}; nie jest "
             + "to miara FPS), obniży "
-            + $"priorytet procesów: {lowerCount}, włączy EcoQoS dla: "
-            + $"{ecoQosCount}. "
+            + $"priorytet procesów: {lowerCount}, w tym ograniczy pełnym "
+            + "pakietem (rdzenie tła, EcoQoS, niski priorytet pamięci "
+            + $"i dysku): {restrainCount}, a samym EcoQoS: {ecoQosCount}. "
             + "Po zakończeniu sesji odtworzy poprzedni stan. Niezapisane "
             + "dane mogą wywołać własne pytanie aplikacji o zapis.";
     }

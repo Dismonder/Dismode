@@ -122,6 +122,10 @@ public sealed class SessionClientService : IDisposable
                             .LowerPriorityAndEcoQos =>
                             BackgroundProcessActionMode
                                 .LowerPriorityAndEcoQos,
+                        BackgroundProcessClientActionMode
+                            .RestrainBackground =>
+                            BackgroundProcessActionMode
+                                .RestrainBackground,
                         _ => throw new ArgumentOutOfRangeException(
                             nameof(backgroundApplications),
                             application.ActionMode,

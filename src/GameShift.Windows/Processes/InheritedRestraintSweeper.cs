@@ -7,113 +7,175 @@ using GameShift.Windows.NativeInterop;
 namespace GameShift.Windows.Processes;
 
 /// <summary>What one sweep did, so a caller can count failures as errors.</summary>
-public sealed record InheritedRestraintSweep(int Released, int Failed)
+public sealed record InheritedRestraintSweep(
+    int Released,
+    int Failed,
+    bool SnapshotFailed = false)
 {
     public static InheritedRestraintSweep None { get; } = new(0, 0);
 
+    /// <summary>
+    /// True when every inherited restraint the sweep could see is gone. A
+    /// sweep that could not see the process tree at all is not complete: it
+    /// may have left children behind without knowing.
+    /// </summary>
+    public bool Complete => Failed == 0 && !SnapshotFailed;
+
     public InheritedRestraintSweep Add(InheritedRestraintSweep other) =>
-        new(Released + other.Released, Failed + other.Failed);
+        new(
+            Released + other.Released,
+            Failed + other.Failed,
+            SnapshotFailed || other.SnapshotFailed);
 }
 
 /// <summary>
 /// Gives back the machine to processes that inherited a restraint from a
 /// restrained parent.
 /// <para>
-/// An affinity mask and an I/O priority are inherited by every process
-/// created after they were set — measured on this machine, not assumed —
-/// and browsers, launchers and chat clients create processes for the whole
-/// length of a game. The journal reverses what was done to the parent and
-/// knows nothing about children born confined. Left alone they keep a quarter
-/// of the machine and an I/O priority no standard tool even shows, until they
-/// exit; for a browser's renderer that can be the rest of the day.
+/// An affinity mask, an I/O priority, a memory priority and a BelowNormal
+/// priority class are inherited by every process created after they were
+/// set — measured on this machine, not assumed — and browsers, launchers and
+/// chat clients create processes for the whole length of a game. The journal
+/// reverses what was done to the parent and knows nothing about children
+/// born confined. Left alone they keep a quarter of the machine and an I/O
+/// priority no standard tool even shows, until they exit; for a browser's
+/// renderer that can be the rest of the day.
 /// </para>
 /// <para>
-/// Three rules keep this from touching anything it should not. The candidate
-/// must descend from the restrained root, or be an orphan whose parent is
-/// gone — a grandchild whose middle generation exited would otherwise be
-/// unreachable. It must have started after the restraint was applied;
-/// nothing older can have inherited it. And it must carry exactly the value
-/// the restraint imposed: precisely the corner mask, precisely the lowest
-/// I/O or memory priority. Every widening goes to what the parent has now,
-/// which after restoration is what it had before, or to the whole machine
-/// when the parent is gone. The direction of any residual mistake is safe:
-/// a process regains processors it was entitled to.
+/// Rules that keep this from touching anything it should not:
+/// a descendant of the restrained root must have started after the restraint
+/// and carry, lever by lever, exactly the value the restraint imposed; an
+/// orphan — a process whose recorded parent is gone, the only way to reach a
+/// grandchild behind an exited middle generation — must additionally carry
+/// the whole signature at once, mask included, because a lone I/O priority
+/// is a value some processes pick for themselves. The values written back
+/// are what the parent has now, which after restoration is what it had
+/// before, or the machine-wide defaults when the parent is gone; the parent
+/// is trusted only if its start time still matches, so a recycled id cannot
+/// lend its mask. Children are never narrowed: a parent mask that does not
+/// contain the corner is replaced by the whole machine. The sweep repeats
+/// until a pass releases nothing, because a child restored in one pass may
+/// have created a grandchild while the pass ran.
 /// </para>
 /// </summary>
 public static class InheritedRestraintSweeper
 {
     /// <summary>
+    /// Passes over the tree. Children born while a pass ran inherit from
+    /// parents that pass restored, so one snapshot is never the last word;
+    /// three passes bound the work while catching the realistic case.
+    /// </summary>
+    private const int MaximumPasses = 3;
+
+    /// <summary>
     /// Releases descendants of <paramref name="rootProcessId"/>.
     /// </summary>
     /// <param name="rootProcessId">The process whose restraint was reversed.</param>
-    /// <param name="parentMap">Child to parent, captured after the parent was restored.</param>
+    /// <param name="rootStartedAtUtc">
+    /// When the root started, so a recycled id is not mistaken for it. Null
+    /// when unknown, in which case the id is trusted.
+    /// </param>
+    /// <param name="captureParents">
+    /// Takes a fresh child-to-parent snapshot; returns null when Windows
+    /// refuses one, which the sweep reports rather than treats as success.
+    /// </param>
     /// <param name="notBeforeUtc">Start time before which nothing can have inherited.</param>
     /// <param name="cornerMask">The mask the restraint imposed, or zero when none was.</param>
     /// <param name="resetIoPriority">Whether the restraint lowered I/O priority.</param>
     /// <param name="resetMemoryPriority">Whether the restraint lowered memory priority.</param>
+    /// <param name="resetPriorityClass">Whether the restraint lowered the priority class.</param>
     public static InheritedRestraintSweep Release(
         int rootProcessId,
-        IReadOnlyDictionary<int, int> parentMap,
+        DateTimeOffset? rootStartedAtUtc,
+        Func<IReadOnlyDictionary<int, int>?> captureParents,
         DateTimeOffset notBeforeUtc,
         ulong cornerMask,
         bool resetIoPriority,
-        bool resetMemoryPriority)
+        bool resetMemoryPriority,
+        bool resetPriorityClass)
     {
-        ArgumentNullException.ThrowIfNull(parentMap);
-        if (cornerMask == 0 && !resetIoPriority && !resetMemoryPriority)
+        ArgumentNullException.ThrowIfNull(captureParents);
+        if (cornerMask == 0
+            && !resetIoPriority
+            && !resetMemoryPriority
+            && !resetPriorityClass)
         {
             return InheritedRestraintSweep.None;
         }
 
-        ulong restoredMask = cornerMask == 0
-            ? 0
-            : ReadAffinityOrMachineMask(rootProcessId);
-        if (cornerMask != 0 && restoredMask == cornerMask)
+        RestoreTargets targets = ReadRestoreTargets(
+            rootProcessId,
+            rootStartedAtUtc,
+            cornerMask);
+        if (targets.Mask == 0
+            && !resetIoPriority
+            && !resetMemoryPriority
+            && !resetPriorityClass)
         {
-            // Rodzic nadal siedzi w cwiartce: przywracanie sie nie powiodlo
-            // albo ktos tak chcial. Dzieci zostaja, jak sa — poszerzanie ich
-            // do cwiartki nic by nie zmienilo, a do czegos wiecej byloby
-            // zgadywaniem.
             return InheritedRestraintSweep.None;
         }
 
         int released = 0;
-        int failed = 0;
-        foreach (int candidate in Candidates(rootProcessId, parentMap))
+        HashSet<int> failed = [];
+        for (int pass = 0; pass < MaximumPasses; pass++)
         {
-            switch (TryRelease(
-                candidate,
-                notBeforeUtc,
-                cornerMask,
-                restoredMask,
-                resetIoPriority,
-                resetMemoryPriority))
+            IReadOnlyDictionary<int, int>? parentMap = captureParents();
+            if (parentMap is null)
             {
-                case ReleaseOutcome.Released:
-                    released++;
-                    break;
-                case ReleaseOutcome.Failed:
-                    failed++;
-                    break;
+                return new(released, failed.Count, SnapshotFailed: true);
+            }
+
+            int releasedThisPass = 0;
+            foreach ((int candidate, bool isOrphan) in SelectCandidates(
+                rootProcessId,
+                parentMap,
+                allowOrphans: cornerMask != 0))
+            {
+                switch (TryRelease(
+                    candidate,
+                    isOrphan,
+                    notBeforeUtc,
+                    cornerMask,
+                    targets,
+                    resetIoPriority,
+                    resetMemoryPriority,
+                    resetPriorityClass))
+                {
+                    case ReleaseOutcome.Released:
+                        releasedThisPass++;
+                        break;
+                    case ReleaseOutcome.Failed:
+                        failed.Add(candidate);
+                        break;
+                }
+            }
+
+            released += releasedThisPass;
+            if (releasedThisPass == 0)
+            {
+                break;
             }
         }
 
-        return new(released, failed);
+        return new(released, failed.Count);
     }
 
     /// <summary>
-    /// Descendants of the root by breadth-first walk, then orphans — processes
-    /// whose recorded parent no longer exists. The orphan rule is what reaches
-    /// a grandchild after its parent exited: the map still says the grandchild
-    /// belongs to a process that is gone, and nothing links that process to
-    /// the root any more. The value check in <see cref="TryRelease"/> is what
-    /// keeps orphans from being touched indiscriminately.
+    /// Descendants of the root by breadth-first walk, then — when allowed —
+    /// orphans: processes whose recorded parent no longer exists. The orphan
+    /// rule is what reaches a grandchild after its parent exited; the caller
+    /// allows it only when the restraint included the mask, so the signature
+    /// checked in <see cref="TryRelease"/> is strong enough to stand alone.
+    /// Exposed for tests: the walk is pure, the rest needs live processes.
     /// </summary>
-    private static IEnumerable<int> Candidates(
+    internal static IReadOnlyList<(int ProcessId, bool IsOrphan)> SelectCandidates(
         int rootProcessId,
-        IReadOnlyDictionary<int, int> parentMap)
+        IReadOnlyDictionary<int, int> parentMap,
+        bool allowOrphans)
     {
-        HashSet<int> seen = [rootProcessId];
+        ArgumentNullException.ThrowIfNull(parentMap);
+        List<(int, bool)> candidates = [];
+        HashSet<int> seen = [rootProcessId, Environment.ProcessId, 0, 4];
         Queue<int> pending = new();
         pending.Enqueue(rootProcessId);
         while (pending.Count > 0)
@@ -126,18 +188,23 @@ public static class InheritedRestraintSweeper
                 if (childParent == parent && seen.Add(child))
                 {
                     pending.Enqueue(child);
-                    yield return child;
+                    candidates.Add((child, false));
                 }
             }
         }
 
-        foreach ((int child, int childParent) in parentMap)
+        if (allowOrphans)
         {
-            if (!parentMap.ContainsKey(childParent) && seen.Add(child))
+            foreach ((int child, int childParent) in parentMap)
             {
-                yield return child;
+                if (!parentMap.ContainsKey(childParent) && seen.Add(child))
+                {
+                    candidates.Add((child, true));
+                }
             }
         }
+
+        return candidates;
     }
 
     private enum ReleaseOutcome
@@ -147,17 +214,117 @@ public static class InheritedRestraintSweeper
         Failed,
     }
 
-    private static ReleaseOutcome TryRelease(
-        int processId,
-        DateTimeOffset notBeforeUtc,
-        ulong cornerMask,
-        ulong restoredMask,
-        bool resetIoPriority,
-        bool resetMemoryPriority)
+    /// <summary>
+    /// What a released child gets: the parent's values after restoration, or
+    /// the machine-wide defaults when the parent is gone or still carries the
+    /// restraint. <see cref="Mask"/> is zero when masks must be left alone.
+    /// <see cref="PriorityClass"/> is null when the parent is still
+    /// BelowNormal — a BelowNormal child could then have inherited it
+    /// legitimately, and the two cases cannot be told apart.
+    /// </summary>
+    private sealed record RestoreTargets(
+        ulong Mask,
+        uint IoPriority,
+        uint MemoryPriority,
+        ProcessPriorityClass? PriorityClass);
+
+    private static RestoreTargets ReadRestoreTargets(
+        int rootProcessId,
+        DateTimeOffset? rootStartedAtUtc,
+        ulong cornerMask)
     {
+        ulong machine = MachineMask();
         try
         {
-            using Process process = Process.GetProcessById(processId);
+            using Process parent = Process.GetProcessById(rootProcessId);
+            if (rootStartedAtUtc is DateTimeOffset expectedStart)
+            {
+                DateTimeOffset actualStart = new(
+                    parent.StartTime.ToUniversalTime(),
+                    TimeSpan.Zero);
+                if (Math.Abs((actualStart - expectedStart).TotalSeconds) > 1)
+                {
+                    // Numer nalezy juz do kogos innego. Jego maska niczego
+                    // nie mowi o tym, co mialy odziedziczyc dzieci.
+                    return Defaults(machine, cornerMask);
+                }
+            }
+
+            ulong parentMask = (ulong)parent.ProcessorAffinity.ToInt64();
+            ulong mask;
+            if (cornerMask == 0)
+            {
+                mask = 0;
+            }
+            else if (parentMask == cornerMask)
+            {
+                // Rodzic nadal siedzi w cwiartce: przywracanie sie nie
+                // powiodlo albo ktos tak chcial. Maski dzieci zostaja, jak
+                // sa; reszte pakietu i tak oddajemy.
+                mask = 0;
+            }
+            else if ((parentMask & cornerMask) != cornerMask)
+            {
+                // Maska rodzica nie zawiera cwiartki, wiec przepisanie jej
+                // dziecku byloby zawezeniem, nie poszerzeniem. Cala maszyna
+                // jest jedyna wartoscia, ktorej nie da sie zarzucic zawezenia.
+                mask = machine;
+            }
+            else
+            {
+                mask = parentMask;
+            }
+
+            uint? parentIo = ReadIoPriority(parent);
+            uint io = parentIo is { } value
+                && value != IoPriorityNativeMethods.IoPriorityVeryLow
+                    ? value
+                    : IoPriorityNativeMethods.IoPriorityNormal;
+            uint parentMemory =
+                ProcessMemoryPriorityAction.Read(parent).MemoryPriority;
+            uint memory = parentMemory != ProcessNativeMethods.MemoryPriorityVeryLow
+                ? parentMemory
+                : ProcessNativeMethods.MemoryPriorityNormal;
+            ProcessPriorityClass? priorityClass = parent.PriorityClass
+                is ProcessPriorityClass.BelowNormal or ProcessPriorityClass.Idle
+                    ? null
+                    : ProcessPriorityClass.Normal;
+            return new(mask, io, memory, priorityClass);
+        }
+        catch (Exception exception) when (
+            exception is ArgumentException
+                or InvalidOperationException
+                or Win32Exception)
+        {
+            return Defaults(machine, cornerMask);
+        }
+    }
+
+    /// <summary>
+    /// Targets for a child whose parent is gone: every processor, normal
+    /// priorities. The only honest defaults for a process nobody restricted.
+    /// </summary>
+    private static RestoreTargets Defaults(ulong machine, ulong cornerMask) =>
+        new(
+            cornerMask == 0 ? 0 : machine,
+            IoPriorityNativeMethods.IoPriorityNormal,
+            ProcessNativeMethods.MemoryPriorityNormal,
+            ProcessPriorityClass.Normal);
+
+    private static ReleaseOutcome TryRelease(
+        int processId,
+        bool isOrphan,
+        DateTimeOffset notBeforeUtc,
+        ulong cornerMask,
+        RestoreTargets targets,
+        bool resetIoPriority,
+        bool resetMemoryPriority,
+        bool resetPriorityClass)
+    {
+        Process? process = null;
+        try
+        {
+            process = Process.GetProcessById(processId);
             if (BackgroundApplicationGuard.IsProtectedProcessName(
                     process.ProcessName))
             {
@@ -174,29 +341,61 @@ public static class InheritedRestraintSweeper
                 return ReleaseOutcome.Untouched;
             }
 
-            bool touched = false;
-            if (cornerMask != 0
-                && restoredMask != 0
-                && (ulong)process.ProcessorAffinity.ToInt64() == cornerMask)
-            {
-                process.ProcessorAffinity = (nint)(long)restoredMask;
-                touched = true;
-            }
-
-            if (resetIoPriority && ReadIoPriority(process)
-                == IoPriorityNativeMethods.IoPriorityVeryLow)
-            {
-                WriteIoPriority(process, IoPriorityNativeMethods.IoPriorityNormal);
-                touched = true;
-            }
-
-            if (resetMemoryPriority
+            bool maskMatches = cornerMask != 0
+                && (ulong)process.ProcessorAffinity.ToInt64() == cornerMask;
+            bool ioMatches = resetIoPriority
+                && ReadIoPriority(process)
+                    == IoPriorityNativeMethods.IoPriorityVeryLow;
+            bool memoryMatches = resetMemoryPriority
                 && ProcessMemoryPriorityAction.Read(process).MemoryPriority
-                    == ProcessNativeMethods.MemoryPriorityVeryLow)
+                    == ProcessNativeMethods.MemoryPriorityVeryLow;
+            bool classMatches = resetPriorityClass
+                && targets.PriorityClass is not null
+                && process.PriorityClass == ProcessPriorityClass.BelowNormal;
+
+            if (isOrphan)
+            {
+                // Sierota nie ma udowodnionego pokrewienstwa, wiec musi niesc
+                // caly odcisk ograniczenia naraz. Sama maska, sam priorytet
+                // I/O albo sama klasa to wartosci, ktore procesy wybieraja
+                // tez same; wszystkie naraz — nie.
+                bool fullSignature = maskMatches
+                    && (!resetIoPriority || ioMatches)
+                    && (!resetMemoryPriority || memoryMatches);
+                if (!fullSignature)
+                {
+                    return ReleaseOutcome.Untouched;
+                }
+
+                // Klasy priorytetu sierocie nie ruszamy: to najslabszy
+                // element odcisku i najlatwiejszy do pomylenia z wyborem.
+                classMatches = false;
+            }
+
+            bool touched = false;
+            if (maskMatches && targets.Mask != 0)
+            {
+                process.ProcessorAffinity = (nint)(long)targets.Mask;
+                touched = true;
+            }
+
+            if (ioMatches)
+            {
+                WriteIoPriority(process, targets.IoPriority);
+                touched = true;
+            }
+
+            if (memoryMatches)
             {
                 ProcessMemoryPriorityAction.Write(
                     process,
-                    ProcessNativeMethods.MemoryPriorityNormal);
+                    targets.MemoryPriority);
+                touched = true;
+            }
+
+            if (classMatches && targets.PriorityClass is { } priorityClass)
+            {
+                process.PriorityClass = priorityClass;
                 touched = true;
             }
 
@@ -210,9 +409,30 @@ public static class InheritedRestraintSweeper
         catch (Exception exception) when (
             exception is InvalidOperationException or Win32Exception)
         {
-            // Zyje, ale nie dal sie zmienic. To jest blad odtwarzania, nie
-            // szum: proces zostaje z odziedziczonym ograniczeniem.
-            return ReleaseOutcome.Failed;
+            // Proces, ktory wyszedl miedzy otwarciem a zapisem, nie jest
+            // bledem odtwarzania: nie ma juz na nim niczego naszego. Zywy
+            // proces, ktory nie dal sie zmienic, jest — zostaje
+            // z odziedziczonym ograniczeniem.
+            return HasExited(process)
+                ? ReleaseOutcome.Untouched
+                : ReleaseOutcome.Failed;
+        }
+        finally
+        {
+            process?.Dispose();
+        }
+    }
+
+    private static bool HasExited(Process? process)
+    {
+        try
+        {
+            return process is null || process.HasExited;
+        }
+        catch (Exception exception) when (
+            exception is InvalidOperationException or Win32Exception)
+        {
+            return false;
         }
     }
 
@@ -238,27 +458,6 @@ public static class InheritedRestraintSweeper
             throw new InvalidOperationException(
                 "Nie udało się przywrócić priorytetu wejścia-wyjścia "
                     + $"potomkowi (NTSTATUS 0x{status:X8}).");
-        }
-    }
-
-    /// <summary>
-    /// The mask the restrained parent has now, or the whole machine when it is
-    /// already gone — its children can outlive it, and the only honest default
-    /// for a process nobody restricted is every processor.
-    /// </summary>
-    public static ulong ReadAffinityOrMachineMask(int processId)
-    {
-        try
-        {
-            using Process parent = Process.GetProcessById(processId);
-            return (ulong)parent.ProcessorAffinity.ToInt64();
-        }
-        catch (Exception exception) when (
-            exception is ArgumentException
-                or InvalidOperationException
-                or Win32Exception)
-        {
-            return MachineMask();
         }
     }
 

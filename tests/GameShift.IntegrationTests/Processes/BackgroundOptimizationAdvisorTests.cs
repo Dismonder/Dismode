@@ -51,6 +51,22 @@ public sealed class BackgroundOptimizationAdvisorTests
     }
 
     [TestMethod]
+    public void RecommendsTheFullBundleInAggressiveModeWhenItCannotClose()
+    {
+        // Tryb agresywny obiecuje najsilniejsze odwracalne ograniczenia,
+        // a jedyna dzwignia CPU ze zmierzonym zyskiem to twarda maska
+        // cwiartki — czyli pelny pakiet, nie BelowNormal + EcoQoS.
+        BackgroundProcessActionMode action =
+            BackgroundOptimizationAdvisor.RecommendAction(
+                "chrome",
+                hasMainWindow: false,
+                canClose: false,
+                isAggressive: true);
+
+        Assert.AreEqual(BackgroundProcessActionMode.RestrainBackground, action);
+    }
+
+    [TestMethod]
     public void RecommendsEcoQosInBalancedMode()
     {
         BackgroundProcessActionMode action =

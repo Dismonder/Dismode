@@ -17,11 +17,20 @@ public sealed class BackgroundApplicationListItem :
         List<BackgroundProcessActionOption> options = [];
         if (canLowerPriority)
         {
+            // Pierwsza opcja jest domyslna. Pelny pakiet idzie pierwszy,
+            // bo twarda maska to jedyna dzwignia CPU, ktora w pomiarze
+            // ruszyla czas klatki; etykieta wymienia kazda dzwignie, zeby
+            // zgoda dotyczyla tego, co sie naprawde stanie.
+            options.Add(
+                new(
+                    BackgroundProcessClientActionMode.RestrainBackground,
+                    "Ogranicz tło — rdzenie tła, EcoQoS, niski priorytet "
+                        + "pamięci i dysku"));
             options.Add(
                 new(
                     BackgroundProcessClientActionMode
                         .LowerPriorityAndEcoQos,
-                    "Ogranicz tło — BelowNormal, EcoQoS, rdzenie tła"));
+                    "Energooszczędne tło — BelowNormal + EcoQoS"));
             options.Add(
                 new(
                     BackgroundProcessClientActionMode.LowerPriority,

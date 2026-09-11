@@ -87,11 +87,15 @@ i GameShift już ich używa gdzie indziej.
    powinien od razu dostawać wszystkiego.
 8. ~~Odsuwanie tła od rdzeni gry~~ — zrobione przez domyślne zbiory
    procesorów, sprawdzone na żywym procesie.
-9. Priorytet pamięci dla procesów ograniczonych — `SetProcessInformation`
-   z `ProcessMemoryPriority`. Proces czytający z dysku potrafi psuć płynność,
-   nie zjadając procesora. Priorytet wejścia-wyjścia jest osiągalny tylko
-   przez nieudokumentowane `NtSetInformationProcess`, więc wchodzi wyłącznie
-   wtedy, gdy pomiar pokaże, że sam priorytet pamięci nie wystarcza.
+9. ~~Priorytet pamięci i wejścia-wyjścia dla procesów ograniczonych~~ —
+   **wdrożone 2026-09-11** (`ProcessMemoryPriorityAction`,
+   `ProcessIoPriorityAction`): dla zatwierdzonego tła w trybie „Ogranicz
+   tło" oba, w pętli reaktywnej priorytet I/O. Pierwotna kolejność
+   (najpierw pomiar, potem I/O) nie została dotrzymana: oba mechanizmy są
+   potwierdzone odczytem na żywym procesie, ale ich wpływ na czas klatki
+   pozostaje **niezmierzony** — wariant (c) dał wynik nierozstrzygnięty na
+   dwóch protokołach. Zostają jako dźwignie odwracalne bez obietnicy zysku;
+   plan dla użytkownika mówi to wprost.
 10. Przypisanie per wątek zamiast per proces. Gra ma jeden wątek renderujący,
     który liczy się bardziej niż reszta jej wątków, a
     `SetThreadSelectedCpuSets` pozwala go wyróżnić. Wymaga rozpoznania, który
@@ -157,9 +161,16 @@ sukces przypisania, które nie ma prawa zadziałać.
   wybudzenia — wiążący jest czas klatki gry.
 - Nie kopiujemy algorytmu Process Lasso. Progi mają wynikać z pomiaru na
   konkretnym sprzęcie, a nie z odtwarzania cudzych stałych.
-- Sterowanie procesami tła pozostaje podpowiedzią, nie regułą. Twarda maska
-  na cudzym procesie mogłaby go zatrzymać, a nikt nas nie prosił o ruszanie
-  go w ogóle.
+- Twarda maska na cudzym procesie jest regułą, więc trafia wyłącznie tam,
+  gdzie użytkownik na nią wskazał albo gdzie proces sam ją sobie wysłużył:
+  na aplikacje zatwierdzone w planie w trybie „Ogranicz tło" i, reaktywnie,
+  na procesy liczące bez przerwy powyżej obu bramek. Zawsze ćwiartka liczona
+  całymi rdzeniami, nigdy mniej niż dwa; zawsze w dzienniku i w punkcie
+  kontrolnym sesji; zawsze zdejmowana także z potomków, którzy ją
+  odziedziczyli. Gra i tryb „Energooszczędne tło" dostają co najwyżej
+  podpowiedź (domyślne zbiory procesorów). Ten punkt brzmiał wcześniej
+  odwrotnie („sterowanie tłem pozostaje podpowiedzią") i był nieprawdziwy od
+  przebudowy na twarde maski 2026-09-10.
 
 ## Walidacja
 
@@ -522,12 +533,20 @@ przekracza. Aplikacje, na których ograniczenie użytkownik zgodził się
 w planie, dostawały tylko BelowNormal + EcoQoS, czyli dokładnie to, co
 w pomiarze nie dało nic.
 
-Tryb „Ogranicz tło" (dawniej „Energooszczędne tło") nakłada teraz od
-pierwszej sekundy sesji pełny pakiet, po jednej dźwigni na zasób:
+Nowy tryb „Ogranicz tło" (`RestrainBackground`) nakłada od pierwszej sekundy
+sesji pełny pakiet, po jednej dźwigni na zasób. Dotychczasowy tryb
+„Energooszczędne tło — BelowNormal + EcoQoS" **znaczy nadal dokładnie to**:
+zgoda zapisana w regułach Szybkiego Play przed wprowadzeniem pakietu nie
+obejmowała ani maski, ani priorytetów zasobów, a Szybki Play nie pokazuje
+planu, więc nie ma gdzie poprosić o nową. Pełny pakiet ma własną wartość
+w kontrakcie IPC, w zapisanych regułach i w UI; doradca w trybie agresywnym
+poleca jego, w trybie zwykłym zostaje przy EcoQoS. (Pierwsza wersja tej
+zmiany podmieniła znaczenie starego trybu pod starą etykietą — recenzja
+z 2026-09-11 wskazała, że to obchodzi zgodę, i to zostało cofnięte.)
 
 | zasób | dźwignia | akcja | stan pomiaru |
 |---|---|---|---|
-| rdzenie | twarda maska ćwiartki | `ProcessAffinityAction` | −60,7% p99 (Valheim, pełne obciążenie) |
+| rdzenie | twarda maska ćwiartki | `ProcessAffinityAction` | −60,7% p99 (Valheim) **wyłącznie pod obciążeniem** — pomiar dotyczył 16 pętli liczących. Aplikacji bezczynnej maska nie zmienia, dopóki ta nie zacznie liczyć; maska na ~100 lekkich procesach systemowych dała brak zysku i dwa bloki po 76–79 ms (sesja obok, 2026-09-11, inna interwencja niż ta). Dla zatwierdzonego tła to ubezpieczenie od zrywów, nie zmierzony zysk |
 | częstotliwość | EcoQoS | bez zmian | niezmierzone osobno |
 | pamięć | priorytet pamięci VeryLow | `ProcessMemoryPriorityAction` (nowa) | mechanizm potwierdzony na żywym procesie; wpływ na klatki niezmierzony |
 | dysk | priorytet wejścia-wyjścia VeryLow | `ProcessIoPriorityAction` (sesja obok) | jw.; pierwszy sparowany pomiar nierozstrzygnięty |
@@ -710,3 +729,126 @@ W jednym przebiegu 99 procesów miało maskę 0xF, a host testów widział
 procesy (`FilteredCpuProcessSource`). `LiveGameFrameTimeTests` celowo
 zostaje przy pełnym próbniku, bo mierzy zachowanie na całej maszynie —
 uruchamiać wyłącznie świadomie.
+
+### Recenzja adwersaryjna i drugie utwardzenie — 2026-09-11, rano
+
+Druga para oczu nad `6cde271..f57e0c8` (Codex CLI, `gpt-6-astra`, xhigh,
+tylko odczyt) i równolegle siedem niezależnych recenzentów nad całą deltą
+`542c5cb..HEAD` (odtwarzanie, współbieżność, interop, niezmienniki, testy,
+uczciwość tekstów, zgodność wsteczna). Razem 13 + 30 ustaleń; wagi
+„krytyczna" u Codexa były zawyżone, ale prawie każde ustalenie było
+prawdziwe co do linii. Co zmieniono:
+
+**Księga i aktuator.**
+- Meldunek do księgi jest teraz *warunkiem* mutacji: nieudany zapis punktu
+  kontrolnego kończy `RestrainAsync` bez zmiany procesu. Wcześniej wyjątek
+  był połykany z uzasadnieniem, które przestało być prawdziwe po
+  przeniesieniu meldunku przed mutację.
+- Rekord ograniczenia nie ginie po transakcji, która padła *po* `ApplyAsync`
+  (np. na zapisie `ActionApplied`): identyfikatory zostają w rekordzie
+  i w księdze, a zwolnienie idzie przez odtwarzanie, które z dziennika wie,
+  czy zmiana zaszła. Tylko odmowa walidacji (`Blocked`) cofa meldunek.
+  Test: `RestraintLedgerContractTests` z dziennikiem, który raz odmawia.
+- Zbiory CPU są czyszczone po sprawdzeniu tożsamości procesu, nie po samym
+  numerze, i są zapisane w księdze (`SteeredCpuSets`), więc po awarii
+  hosta też znikają.
+- Proces już przy BelowNormal nie jest pomijany: dostaje maskę, czyli tę
+  dźwignię, która działa. Wcześniej „już obniżony" znaczyło „nietykalny".
+- `MissingPreparation` liczy się jako przywrócone: akcja bez wpisu
+  przygotowania nigdy nie dotknęła procesu.
+
+**Sweeper potomków.**
+- Sierota (proces, którego rodzic już nie istnieje) musi nieść *cały*
+  odcisk ograniczenia naraz — maskę ćwiartki i, gdy były nałożone,
+  priorytety I/O i pamięci. Sam priorytet I/O VeryLow to wartość, którą
+  procesy wybierają też same. Bez maski w odcisku sierot nie ruszamy wcale.
+- Potomek dostaje wartości, które rodzic ma po przywróceniu (I/O, pamięć,
+  maska), a nie stałe „Normal": rodzic, który przed sesją czytał z „Low",
+  wraca do „Low" i jego dziecko też. Test:
+  `ChildOfAParentThatWasLowGetsLowBackNotNormal`.
+- Tożsamość korzenia jest sprawdzana czasem startu, żeby proces po
+  recyklingu PID nie pożyczył swojej maski dzieciom; maska rodzica, która
+  nie zawiera ćwiartki, jest zastępowana całą maszyną — dzieci nigdy nie
+  są zawężane.
+- Rodzic nadal w ćwiartce nie przerywa już całego przeglądu: maski dzieci
+  zostają, ale I/O, pamięć i klasa wracają.
+- Klasa BelowNormal odziedziczona przez potomka też wraca (Windows daje ją
+  każdemu dziecku rodzica z BelowNormal), ale tylko potomkom o udowodnionym
+  pokrewieństwie i tylko wtedy, gdy rodzic po przywróceniu sam nie jest
+  BelowNormal — inaczej nie da się odróżnić dziedziczenia od wyboru.
+- Przegląd powtarza się (do trzech przejść), bo dziecko przywrócone
+  w jednym przejściu mogło w międzyczasie urodzić wnuka; nieudana migawka
+  drzewa liczy się jako błąd odtwarzania, nie jako sukces; wyjście
+  kandydata w trakcie zapisu nie jest błędem.
+- Czysta część przeglądu (dobór kandydatów) ma testy jednostkowe:
+  `InheritedRestraintSweeperCandidateTests`.
+
+**Orkiestrator.**
+- Zdejmowanie ćwiartki z procesów gry wymaga teraz dowodu dziedziczenia:
+  proces urodzony w tej sesji, po rodzicu, którego my zamknęliśmy
+  w ćwiartce (albo po innym procesie gry). Sama równość maski nie
+  wystarczała — gra może wybrać maskę sama.
+- Granica czasu dla przeglądu potomków to chwila nałożenia konkretnego
+  ograniczenia (`RestrainedAtUtc` w księdze i w JSON), nie start sesji.
+- Punkt kontrolny bez zapisanej maski (sprzed pola) dostaje maskę
+  z dziennika tamtej sesji, nigdy z dzisiejszej topologii; brak śladu
+  znaczy zero. Test na dzienniku w kształcie z 0.6.6:
+  `LegacyJournalCompatibilityTests`.
+- Komunikat po starcie liczy maski faktycznie nałożone, nie zaplanowane.
+- `ProcessIoPriorityAction` czyta stan ponownie przy walidacji, jak akcja
+  pamięci — proces, który sam zszedł na VeryLow, nie jest „obniżany" do
+  tej samej wartości, bo odtwarzanie podniosłoby potem jego własny wybór.
+- Lista chronionych rozpoznaje anti-cheat także po fragmentach nazwy
+  (`gameguard`, `xhunter`, `vanguard`, `mhyprot`, …) we wszystkich trzech
+  miejscach, nie tylko przy zatwierdzaniu.
+- Nadzorca: padnięty worker nie blokuje zwalniania, a nieprzewidziany
+  wyjątek w jednej próbce nie kończy pętli na całą sesję.
+
+**Zgoda.** Opisane wyżej rozdzielenie trybów: `RestrainBackground` jako
+nowa wartość w proto, w zapisanych regułach i w UI; etykiety, podgląd planu
+i opis przełącznika ProBalance mówią, co naprawdę się stanie, i nie
+obiecują zysku w klatkach tam, gdzie go nie zmierzono.
+
+**Testy.** Test potomka asertuje dziedziczenie *przed* przywróceniem
+(inaczej przechodził pozornie); testy awarii mają warunki wstępne dla
+dźwigni best-effort; potomek w teście jest spawnowany na sygnał pliku, nie
+po 8 s; test dziedziczenia rozpoznaje dziecko po rodzicu, nie po masce;
+benchmark opóźnienia wybudzenia dostał kategorię Live i filtr własnych
+procesów (z pełnym próbnikiem obniżał priorytet najcięższym procesom
+maszyny).
+
+### Co ustaliła sesja obok tego samego ranka (pomiary, Sons of the Forest)
+
+- Scena powtarzalna (postać stoi): rozrzut p99 między blokami 0,68 ms,
+  przy swobodnej grze 60 ms. Małych efektów nie da się rozstrzygać bez
+  takiej sceny.
+- Profil w rozgrywce: CPUBusy 11,89 ms przy budżecie 12,5 ms (SyncInterval 3
+  na panelu 240 Hz → 80 klatek), GPU zajęte 6,7 ms, sieć 0,03% łącza.
+  Jedynym zasobem, o który jest o co walczyć na tej maszynie, jest CPU.
+- Maska na ~100 lekkich procesach systemowych: mediana −1,58 ms, poprawa
+  w 2 z 6 rund, dwa bloki po 76–79 ms. **Brak zysku; masowe maskowanie
+  szkodzi.** Obecne milczenie pętli przy lekkim tle jest uzasadnione.
+- Priorytet I/O (wariant c): hog sekwencyjny — mediana −0,23 ms (bez
+  korzyści, bo bez rywalizacji); hog losowy z zapisami — mediana +0,74 ms
+  przy rozrzucie 7,57 ms wewnątrz wariantu. **Nierozstrzygnięte.**
+- Zwykła rozgrywka: tło 0,21 rdzenia, najcięższy proces 0,075. Pętla
+  reaktywna nie odpala się, i przy takich liczbach nie powinna.
+
+### Poza modułem, znalezione przy okazji
+
+`GameShift.UI` zjada na biegu jałowym 0,023 rdzenia (925 s CPU przez 9 h,
+także zminimalizowane). Źródło zmierzone: `CheckForRunningUnoptimizedGameAsync`
+co 2 s czyta `MainModule.FileName` każdego procesu na maszynie — 50 ms na
+skan, czyli dokładnie te 2,3%. W trakcie sesji ten skan nie działa, więc
+gry nie kosztuje; kosztuje pulpit przez cały dzień. Do naprawy osobno:
+porównanie nazwy przed ścieżką i rzadszy skan.
+
+### Nadal otwarte
+
+- Warianty (a), (b), (d), (e) — wymagają gry w świecie, postaci stojącej,
+  ośmiu par po 20 s. Analiza zewnętrzna podważa (b): gra ma dziś sześć
+  rdzeni na wyłączność plus dostęp do dwóch pozostałych, a preferencja by
+  to odbierała; rozstrzygający jest pomiar 0xFFFF wobec 0xFFF0 z czasem
+  gotowości wątków gry, nie sam p99.
+- Pełne śledzenie pochodzenia potomków w trakcie sesji (zamiast reguły
+  sierot) zostaje na później.
