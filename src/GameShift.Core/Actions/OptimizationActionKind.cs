@@ -16,4 +16,6 @@ public enum OptimizationActionKind
     ConfigureHibernation = 11,
     ConfigureSystemTweak = 12,
     RestrictProcessAffinity = 13,
+    LowerProcessMemoryPriority = 14,
+    LowerProcessIoPriority = 15,
 }

@@ -16,4 +16,11 @@ public enum SessionCheckpoint
     GameCloseRequested = 12,
     GameProcessTreeObserved = 13,
     GameForceTerminated = 14,
+
+    /// <summary>
+    /// The set of processes the reactive restraint loop currently holds
+    /// changed. Recorded so a host crash leaves enough in the journal to
+    /// reverse restraints nobody planned in advance.
+    /// </summary>
+    BackgroundRestraintChanged = 15,
 }

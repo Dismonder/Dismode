@@ -9,6 +9,19 @@ internal static partial class ProcessNativeMethods
     internal const uint ProcessPowerThrottlingCurrentVersion = 1;
     internal const uint ProcessPowerThrottlingExecutionSpeed = 0x1;
 
+    /// <summary>
+    /// MEMORY_PRIORITY_INFORMATION values. Five is the default for every
+    /// user process and the highest a process can be given through this
+    /// call; one is what Windows itself assigns to its own background work
+    /// (indexing, prefetch), so the memory manager repurposes those pages
+    /// before anyone else's when physical memory runs short.
+    /// </summary>
+    internal const uint MemoryPriorityVeryLow = 1;
+    internal const uint MemoryPriorityLow = 2;
+    internal const uint MemoryPriorityMedium = 3;
+    internal const uint MemoryPriorityBelowNormal = 4;
+    internal const uint MemoryPriorityNormal = 5;
+
     [LibraryImport("advapi32.dll", SetLastError = true)]
     internal static partial int OpenProcessToken(
         SafeProcessHandle processHandle,
@@ -27,6 +40,20 @@ internal static partial class ProcessNativeMethods
         SafeProcessHandle processHandle,
         ProcessInformationClass processInformationClass,
         in ProcessPowerThrottlingState processInformation,
+        uint processInformationSize);
+
+    [LibraryImport("kernel32.dll", SetLastError = true)]
+    internal static partial int GetProcessInformation(
+        SafeProcessHandle processHandle,
+        ProcessInformationClass processInformationClass,
+        ref MemoryPriorityInformation processInformation,
+        uint processInformationSize);
+
+    [LibraryImport("kernel32.dll", SetLastError = true)]
+    internal static partial int SetProcessInformation(
+        SafeProcessHandle processHandle,
+        ProcessInformationClass processInformationClass,
+        in MemoryPriorityInformation processInformation,
         uint processInformationSize);
 
     [LibraryImport(
@@ -85,6 +112,7 @@ internal static partial class ProcessNativeMethods
 
 internal enum ProcessInformationClass
 {
+    ProcessMemoryPriority = 0,
     ProcessPowerThrottling = 4,
 }
 
@@ -94,6 +122,12 @@ internal struct ProcessPowerThrottlingState
     internal uint Version;
     internal uint ControlMask;
     internal uint StateMask;
+}
+
+[StructLayout(LayoutKind.Sequential)]
+internal struct MemoryPriorityInformation
+{
+    internal uint MemoryPriority;
 }
 
 [Flags]
