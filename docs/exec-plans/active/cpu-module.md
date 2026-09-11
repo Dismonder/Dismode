@@ -935,3 +935,49 @@ porównanie nazwy przed ścieżką i rzadszy skan.
   gotowości wątków gry, nie sam p99.
 - Pełne śledzenie pochodzenia potomków w trakcie sesji (zamiast reguły
   sierot) zostaje na później.
+
+### Warianty (c) i (d) na powtarzalnej scenie, Valheim
+
+Pomiary z sesji harnessu, Damian stojący nieruchomo w świecie. Baza:
+p50 8,3 ms (około 120 klatek na sekundę), p99 11,0 ms po bloku
+rozgrzewkowym, GPU zajęte przez 62% czasu klatki, `Hardware: Independent
+Flip`. Rozrzut p99 między blokami po rozgrzewce: 0,16 ms.
+
+**Priorytet wejścia-wyjścia, hog losowy 64 KiB z zapisami, cztery procesy
+w ćwiartce.** Różnice Normal minus VeryLow: −4,66, +6,87, +0,91, +0,21,
++0,74. Cztery z pięciu na plus, mediana +0,74 ms, ale rozrzut wewnątrz
+ramienia Normal wynosił 7,57 ms. **Nierozstrzygnięte.**
+
+Skrypt ogłosił wtedy „POMAGA", porównując medianę z szumem 0,68 ms
+zmierzonym **bez** hoga. To był zły punkt odniesienia: hog sam podnosi
+zmienność. Kryterium liczy teraz próg z rozrzutu wewnątrz ramion tego
+samego przebiegu. Wart zapamiętania rodzaj błędu — automatyczny werdykt
+wyglądał wiarygodnie i był fałszywy.
+
+**Priorytet pamięci, dwa przebiegi.** Przy hogu 4 GB zestaw rezydentny gry
+nie drgnął (1558 → 1572 MB), wolnej pamięci zostało 2439 MB — menedżer
+pamięci ani razu nie musiał wybierać, czyje strony wyrzucić, więc
+eksperyment nie miał czego zmierzyć. Przy hogu 7 GB presja była realna:
+wolna pamięć 1175 MB, zestaw rezydentny gry skurczył się z 1604 do
+1292 MB. Różnice: +4,71, +0,01, −0,22, +4,34, −2,59; mediana 0,01 ms,
+rozrzut ramion 5,96 i 6,78 ms. **Nierozstrzygnięte także pod realną
+presją.**
+
+### Wzorzec, który powtórzył się trzy razy
+
+Hog sekwencyjny na NVMe nie ruszył gry. Hog 4 GB nie ruszył jej zestawu
+rezydentnego. Maska na lekkim tle nie miała czego odbierać. Za każdym razem
+wychodziło „nierozstrzygnięte", co brzmi jak porażka mechanizmu, a było
+porażką eksperymentu.
+
+Zasada na przyszłość: **każdy wariant ochronny wymaga najpierw dowodu, że
+bez niego coś realnie boli.** Dowód ma być w metryce zasobu, nie w czasie
+klatki — zestaw rezydentny gry, opóźnienie sondy dyskowej, zajętość rdzeni
+— i dopiero po nim wolno porównywać warianty. Inaczej mierzy się
+skuteczność parasola przy bezchmurnym niebie.
+
+Drugi wniosek: pod presją rozrzut p99 wewnątrz jednego ramienia rośnie do
+6–7 ms, czyli kilkukrotnie powyżej spodziewanego efektu. Pięć par to za
+mało. Albo dużo więcej par, albo metryka bliższa przyczynie niż p99 —
+twarde błędy stron w procesie gry dla pamięci, opóźnienie operacji dla
+dysku.
