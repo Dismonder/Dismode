@@ -479,15 +479,42 @@ public sealed class LiveGameFrameTimeTests
     }
 
     private const int Rounds = 4;
-    private const int BlockSeconds = 8;
 
+    /// <summary>
+    /// Dlugosc jednego bloku pomiarowego.
+    /// <para>
+    /// Bylo 8 sekund. Przy 60 klatkach na sekunde to okolo 480 klatek, czyli
+    /// p99 opiera sie na piatce najwolniejszych. Do wykazania roznicy rzedu
+    /// 60% to wystarczalo, ale kazdy kolejny obszar — GPU, dysk, siec — da
+    /// efekty znacznie mniejsze i taki ogon bylby szumem. Trzydziesci sekund
+    /// daje okolo 1800 klatek i p99 z osiemnastu obserwacji.
+    /// </para>
+    /// </summary>
+    private const int BlockSeconds = 30;
+
+    /// <summary>
+    /// Mediana, ktora dla parzystej liczby probek usrednia dwie srodkowe.
+    /// <para>
+    /// Poprzednia wersja brala sorted[Count / 2], czyli przy czterech rundach
+    /// zawsze gorna srodkowa. To nie jest mediana, tylko trzeci co do
+    /// wielkosci wynik, i przy malej liczbie rund przesuwa oba warianty w
+    /// gore. Przy roznicy rzedu 60% nie mialo to znaczenia, ale efekty GPU,
+    /// dysku i sieci beda znacznie mniejsze.
+    /// </para>
+    /// </summary>
     private static double Median(List<double> values)
     {
+        if (values.Count == 0)
+        {
+            return 0;
+        }
+
         List<double> sorted = [.. values];
         sorted.Sort();
-        return sorted.Count == 0
-            ? 0
-            : sorted[sorted.Count / 2];
+        int srodek = sorted.Count / 2;
+        return sorted.Count % 2 == 1
+            ? sorted[srodek]
+            : (sorted[srodek - 1] + sorted[srodek]) / 2;
     }
 
     /// <summary>
@@ -520,7 +547,12 @@ public sealed class LiveGameFrameTimeTests
         {
             "--process_id", processId.ToString(CultureInfo.InvariantCulture),
             "--output_stdout", "--no_console_stats", "--v2_metrics",
-            "--no_track_input", "--no_track_display", "--no_track_gpu",
+            // Bez sledzenia GPU i wyswietlania widac tylko czas klatki po
+            // stronie CPU, wiec rywalizacji o karte nie da sie ani zobaczyc,
+            // ani wykluczyc. Sprawdzone na tej maszynie: z tymi flagami
+            // PresentMon 2.5.1 wystawia GPULatency, GPUTime, GPUBusy,
+            // GPUWait, VideoBusy, DisplayLatency, DisplayedTime i PresentMode.
+            "--no_track_input", "--track_gpu_video",
             "--stop_existing_session",
             "--session_name", "gameshift-frametime",
         })
@@ -531,7 +563,11 @@ public sealed class LiveGameFrameTimeTests
         using Process presentMon = Process.Start(startInfo)
             ?? throw new InvalidOperationException("Nie uruchomiono PresentMon.");
         List<double> frameTimes = [];
+        List<double> gpuBusy = [];
+        List<double> gpuWait = [];
         int frameTimeColumn = -1;
+        int gpuBusyColumn = -1;
+        int gpuWaitColumn = -1;
 
         using CancellationTokenSource deadline =
             new(TimeSpan.FromSeconds(seconds));
@@ -544,8 +580,13 @@ public sealed class LiveGameFrameTimeTests
                 if (frameTimeColumn < 0)
                 {
                     frameTimeColumn = Array.IndexOf(parts, "FrameTime");
+                    gpuBusyColumn = Array.IndexOf(parts, "GPUBusy");
+                    gpuWaitColumn = Array.IndexOf(parts, "GPUWait");
                     continue;
                 }
+
+                AddIfPositive(parts, gpuBusyColumn, gpuBusy);
+                AddIfPositive(parts, gpuWaitColumn, gpuWait);
 
                 if (parts.Length > frameTimeColumn
                     && double.TryParse(
@@ -581,7 +622,7 @@ public sealed class LiveGameFrameTimeTests
 
         if (frameTimes.Count == 0)
         {
-            return new(0, 0, 0, 0);
+            return new(0, 0, 0, 0, 0, 0);
         }
 
         frameTimes.Sort();
@@ -589,7 +630,31 @@ public sealed class LiveGameFrameTimeTests
             frameTimes[frameTimes.Count / 2],
             frameTimes[(int)(frameTimes.Count * 0.99)],
             frameTimes[^1],
-            frameTimes.Count);
+            frameTimes.Count,
+            Median(gpuBusy),
+            Median(gpuWait));
+    }
+
+    /// <summary>
+    /// Bierze wartosc z kolumny, jesli ta kolumna w ogole jest w tym wydaniu
+    /// PresentMon. Brak kolumny nie moze wywracac pomiaru czasu klatki.
+    /// </summary>
+    private static void AddIfPositive(
+        string[] parts,
+        int column,
+        List<double> target)
+    {
+        if (column >= 0
+            && parts.Length > column
+            && double.TryParse(
+                parts[column],
+                NumberStyles.Float,
+                CultureInfo.InvariantCulture,
+                out double value)
+            && value > 0)
+        {
+            target.Add(value);
+        }
     }
 
     private static bool TryFindGame(
@@ -633,11 +698,17 @@ public sealed class LiveGameFrameTimeTests
         double Median,
         double Percentile99,
         double Worst,
-        int SampleCount)
+        int SampleCount,
+        double GpuBusyMedian = 0,
+        double GpuWaitMedian = 0)
     {
         public override string ToString() => SampleCount == 0
             ? "brak klatek"
             : $"p50 {Median:F2} ms, p99 {Percentile99:F2} ms, "
-                + $"max {Worst:F2} ms ({SampleCount} klatek)";
+                + $"max {Worst:F2} ms ({SampleCount} klatek)"
+                + (GpuBusyMedian > 0 || GpuWaitMedian > 0
+                    ? $", GPU zajete {GpuBusyMedian:F2} ms, "
+                        + $"GPU czeka {GpuWaitMedian:F2} ms"
+                    : string.Empty);
     }
 }
