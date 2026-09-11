@@ -4,7 +4,7 @@
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
     Title="GameShift Memory Optimizer">
   <Grid x:Name="MenuRoot" RequestedTheme="Dark"
-        Background="{ThemeResource MemoryCardBrush}" UseLayoutRounding="True"
+        Background="{ThemeResource MemoryTrayPanelBrush}" UseLayoutRounding="True"
         KeyDown="MenuRoot_KeyDown">
     <Grid.Resources>
       <Style x:Key="TrayActionStyle" TargetType="Button" BasedOn="{StaticResource MemorySecondaryButtonStyle}">
