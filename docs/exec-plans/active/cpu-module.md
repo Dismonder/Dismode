@@ -649,3 +649,29 @@ mógłby rozstrzygnąć.
 Zarówno maska, jak i priorytet wejścia-wyjścia **dziedziczą się na procesy
 potomne** — zmierzone. Dlatego zwolnienie przegląda potomków i przywraca
 tym, którzy mają dokładnie nasze wartości.
+
+### Tańszy próbnik i krótszy interwał pętli — 2026-09-11
+
+Punkty 11, 12 i 14 planu domknięte tym, co da się zmierzyć bez gry.
+Próbnik pętli czyta teraz wszystkie procesy jednym wywołaniem
+`NtQuerySystemInformation` zamiast otwierać uchwyt do każdego z osobna.
+Zmierzone medianą z piętnastu przejść na maszynie deweloperskiej:
+
+| droga | procesów | mediana | na proces |
+|---|---|---|---|
+| uchwyt na proces (`Process`) | 171 | 6,66 ms | 38,9 µs |
+| jedno wywołanie systemowe | 316 | 3,42 ms | 10,8 µs |
+
+Uchwyty widziały tylko 171 z 316 procesów, bo test nie jest podniesiony;
+SessionHost jest, więc tam płacił za wszystkie. Całe przejście nadzorcy
+z tym próbnikiem: 4,3 ms. Czasy startu z obu dróg są identyczne co do tiku
+(sprawdzone dla każdego ze 171 wspólnych procesów), bo aktuator dopasowuje
+próbki do tożsamości procesów przez równość tej wartości. Droga przez
+uchwyty zostaje jako zapasowa.
+
+Interwał pętli z 2 s na 1 s: przy 4,3 ms na przejście to 0,43% jednego
+rdzenia, a hog jest łapany po około 3 s zamiast 6. Progi (`SustainedSamples`,
+`RestrainAboveCores` i reszta) nie zmieniły się — krótszy jest wyłącznie czas
+reakcji, nie warunek. Czy 3 s zamiast 6 przekłada się na czas klatki, wymaga
+pomiaru z hogiem startującym w trakcie sesji; koszt własny pętli jest
+zmierzony i mieści się w tym, co plan uznaje za akceptowalne.
