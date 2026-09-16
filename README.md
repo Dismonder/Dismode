@@ -16,7 +16,10 @@ seconds, also while hidden in the tray, and attaches a session with that
 game's saved rules on its own. The automatic path only ever attaches to a
 running game and never launches one; an instance whose session the user ended
 by hand is left alone until the game is started again. The switch for this
-lives in the settings page and in the tray icon menu.
+lives in the settings page and in the tray icon menu; a single game can be
+excluded on the plan page. Detection reacts to a new foreground window
+right away and falls back to a periodic scan, and the tray tooltip names
+the game of the active session.
 Known launchers, anti-cheat components, Windows processes, and helpers from
 the selected game's installation directory are excluded from background
 optimization.

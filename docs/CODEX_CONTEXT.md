@@ -273,6 +273,17 @@ zakończyła się kodem 0: build Release bez ostrzeżeń, format bez zmian i
     czy profil jest w bibliotece i czy PID nadal należy do tego samego
     procesu (czas startu). Baner mówi wprost, gdy automat pomija
     egzemplarz.
+  - Wzorce przeniesione z projektów otwartoźródłowych (16.09):
+    `ForegroundWindowChangeListener` — hak `SetWinEventHook(EVENT_SYSTEM_FOREGROUND)`
+    obok zapasowego taktu, z odbiciem 1 s, jak `ProcessManager` w
+    HandheldCompanion (Playnite zostaje przy odpytywaniu
+    `Process.GetProcesses()` z filtrem `SessionId`); wyjątek per gra
+    `GameOptimizationPreferences.AutoOptimizeWhenDetected` (schemat 13,
+    pole na stronie planu, zapis od razu) jak czarna lista Feral GameMode
+    i wyłączenie wstrzykiwania per gra w Special K; podpowiedź ikony
+    z nazwą gry aktywnej sesji. Kandydat nie wdrożony: porównywanie
+    ścieżek po rozwiązaniu junctionów/symlinków (Playnite #913,
+    `GetFinalPathNameByHandle`) — dotyka tożsamości procesu w hoście.
   - `TrayIconService`: pozycja menu z zaznaczeniem „Automatycznie optymalizuj
     wykryte gry", podpowiedź ikony mówi, czy automat czuwa.
   - `StartSessionRequest.attach_only` → `LocalGameSessionOrchestrator` →

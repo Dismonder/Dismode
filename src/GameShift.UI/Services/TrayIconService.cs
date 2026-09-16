@@ -16,6 +16,7 @@ public sealed class TrayIconService : IDisposable
     private readonly WindowSubclassProcedure _subclassProcedure;
     private NotifyIconData _iconData;
     private bool _automaticOptimizationEnabled;
+    private string? _activeGameDisplayName;
     private bool _disposed;
 
     public TrayIconService(nint windowHandle, string iconPath)
@@ -102,12 +103,42 @@ public sealed class TrayIconService : IDisposable
     public void SetAutomaticOptimizationState(bool enabled)
     {
         _automaticOptimizationEnabled = enabled;
+        RefreshTooltip();
+    }
+
+    /// <summary>
+    /// Gra z aktywna sesja albo null, gdy sesji nie ma. Podpowiedz ikony
+    /// mowi wtedy, co GameShift wlasnie pilnuje — wzorzec z narzedzi
+    /// siedzacych w zasobniku (HandheldCompanion pokazuje tak biezacy
+    /// profil), bo okno jest schowane, a najechanie na ikone to najtanszy
+    /// sposob, by to sprawdzic.
+    /// </summary>
+    public void SetActiveGame(string? gameDisplayName)
+    {
+        string? normalized = string.IsNullOrWhiteSpace(gameDisplayName)
+            ? null
+            : gameDisplayName.Trim();
+        if (string.Equals(_activeGameDisplayName, normalized, StringComparison.Ordinal))
+        {
+            return;
+        }
+
+        _activeGameDisplayName = normalized;
+        RefreshTooltip();
+    }
+
+    private void RefreshTooltip()
+    {
         if (_disposed)
         {
             return;
         }
 
-        _iconData.Tip = Truncate(DescribeTooltip(enabled), 127);
+        _iconData.Tip = Truncate(
+            DescribeTooltip(
+                _automaticOptimizationEnabled,
+                _activeGameDisplayName),
+            127);
         NotifyIconData tooltip = _iconData;
         tooltip.Flags = NotifyIconTip | NotifyIconShowTip;
         _ = ShellNotifyIcon(NotifyIconModify, ref tooltip);
@@ -242,16 +273,27 @@ public sealed class TrayIconService : IDisposable
         Flags = flags,
         CallbackMessage = CallbackMessage,
         IconHandle = _iconHandle,
-        Tip = DescribeTooltip(_automaticOptimizationEnabled),
+        Tip = DescribeTooltip(
+            _automaticOptimizationEnabled,
+            _activeGameDisplayName),
         Info = string.Empty,
         InfoTitle = string.Empty,
         BalloonIconHandle = nint.Zero,
     };
 
-    private static string DescribeTooltip(bool automaticOptimizationEnabled) =>
-        automaticOptimizationEnabled
+    private static string DescribeTooltip(
+        bool automaticOptimizationEnabled,
+        string? activeGameDisplayName)
+    {
+        if (activeGameDisplayName is not null)
+        {
+            return $"GameShift — sesja: {activeGameDisplayName}";
+        }
+
+        return automaticOptimizationEnabled
             ? "GameShift — czuwa: wykryta gra dostanie sesję automatycznie"
             : "GameShift — działa w tle";
+    }
 
     private static string Truncate(string value, int maximumLength)
     {

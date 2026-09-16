@@ -69,7 +69,8 @@ public sealed record GameOptimizationPreferences
         GameProfileId profileId,
         SavedGamePriorityMode gamePriority,
         IEnumerable<SavedBackgroundProcessRule>? backgroundRules,
-        DateTimeOffset updatedAtUtc)
+        DateTimeOffset updatedAtUtc,
+        bool autoOptimizeWhenDetected = true)
     {
         if (!Enum.IsDefined(gamePriority))
         {
@@ -104,6 +105,7 @@ public sealed record GameOptimizationPreferences
         BackgroundRules =
             new ReadOnlyCollection<SavedBackgroundProcessRule>(rules);
         UpdatedAtUtc = updatedAtUtc.ToUniversalTime();
+        AutoOptimizeWhenDetected = autoOptimizeWhenDetected;
     }
 
     public GameProfileId ProfileId { get; }
@@ -113,6 +115,15 @@ public sealed record GameOptimizationPreferences
     public IReadOnlyList<SavedBackgroundProcessRule> BackgroundRules { get; }
 
     public DateTimeOffset UpdatedAtUtc { get; }
+
+    /// <summary>
+    /// Whether the automatic optimization may attach a session when this
+    /// game is detected running outside GameShift. Off means banner only.
+    /// The same per-game escape hatch as GameMode's blacklist or Special K's
+    /// per-game injection toggle: a global automat needs a way to leave one
+    /// title alone without being switched off for everything.
+    /// </summary>
+    public bool AutoOptimizeWhenDetected { get; }
 
     public static GameOptimizationPreferences CreateDefault(
         GameProfileId profileId) =>

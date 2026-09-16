@@ -1861,6 +1861,16 @@
                           AutomationProperties.Name="Stosuj i zapamiętuj reguły dla wybranej gry"
                           Content="Zapamiętaj ustawienia dla tej gry"
                           IsChecked="True" />
+                      <!-- Wyjątek per gra dla automatu z zasobnika: to samo,
+                           co czarna lista GameMode albo wyłączenie
+                           wstrzykiwania per gra w Special K. Zapisywane od
+                           razu po kliknięciu, bez przygotowywania planu. -->
+                      <CheckBox
+                          x:Name="AutoOptimizeGameCheckBox"
+                          AutomationProperties.Name="Automatycznie optymalizuj tę grę po wykryciu"
+                          Content="Automatycznie optymalizuj tę grę, gdy wystartuje poza GameShiftem"
+                          IsChecked="True"
+                          Click="OnAutoOptimizeGameCheckBoxClicked" />
                     </StackPanel>
                   </Border>
 

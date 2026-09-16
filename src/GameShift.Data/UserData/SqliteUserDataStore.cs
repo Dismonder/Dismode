@@ -19,7 +19,7 @@ public sealed class SqliteUserDataStore :
     IGameDetectionPreferencesRepository,
     IDisposable
 {
-    private const int CurrentSchemaVersion = 12;
+    private const int CurrentSchemaVersion = 13;
     private const int MaximumHistoryPageSize = 1000;
 
     private readonly string _databasePath;
@@ -363,11 +363,12 @@ public sealed class SqliteUserDataStore :
         SavedGamePriorityMode priority =
             SavedGamePriorityMode.Normal;
         DateTimeOffset updatedAtUtc = DateTimeOffset.UtcNow;
+        bool autoOptimizeWhenDetected = true;
         await using (SqliteCommand preference = connection.CreateCommand())
         {
             preference.CommandText =
                 """
-                SELECT GamePriority, UpdatedAtUtc
+                SELECT GamePriority, UpdatedAtUtc, AutoOptimizeWhenDetected
                 FROM GameOptimizationPreferences
                 WHERE ProfileId = $profileId;
                 """;
@@ -383,6 +384,7 @@ public sealed class SqliteUserDataStore :
                 priority =
                     (SavedGamePriorityMode)reader.GetInt32(0);
                 updatedAtUtc = ParseTimestamp(reader.GetString(1));
+                autoOptimizeWhenDetected = reader.GetBoolean(2);
             }
         }
 
@@ -416,7 +418,82 @@ public sealed class SqliteUserDataStore :
             profileId,
             priority,
             rules,
-            updatedAtUtc);
+            updatedAtUtc,
+            autoOptimizeWhenDetected);
+    }
+
+    /// <summary>
+    /// Zapisuje sam wyjatek per gra dla automatu, nie ruszajac priorytetu
+    /// ani regul: ten przelacznik ma dzialac od razu po kliknieciu, a nie
+    /// dopiero przy nastepnym zapisie calego planu.
+    /// </summary>
+    public async ValueTask SetAutomaticOptimizationForProfileAsync(
+        GameProfileId profileId,
+        bool autoOptimizeWhenDetected,
+        CancellationToken cancellationToken)
+    {
+        await InitializeAsync(cancellationToken).ConfigureAwait(false);
+        await using SqliteConnection connection = CreateConnection();
+        await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
+        await ConfigureConnectionAsync(connection, cancellationToken)
+            .ConfigureAwait(false);
+
+        await using SqliteCommand command = connection.CreateCommand();
+        command.CommandText =
+            """
+            INSERT INTO GameOptimizationPreferences (
+                ProfileId, GamePriority, UpdatedAtUtc,
+                AutoOptimizeWhenDetected)
+            VALUES (
+                $profileId, $gamePriority, $updatedAtUtc,
+                $autoOptimizeWhenDetected)
+            ON CONFLICT(ProfileId) DO UPDATE SET
+                AutoOptimizeWhenDetected = excluded.AutoOptimizeWhenDetected,
+                UpdatedAtUtc = excluded.UpdatedAtUtc;
+            """;
+        command.Parameters.AddWithValue(
+            "$profileId",
+            profileId.Value.ToString("D"));
+        command.Parameters.AddWithValue(
+            "$gamePriority",
+            (int)SavedGamePriorityMode.Normal);
+        command.Parameters.AddWithValue(
+            "$updatedAtUtc",
+            FormatTimestamp(DateTimeOffset.UtcNow));
+        command.Parameters.AddWithValue(
+            "$autoOptimizeWhenDetected",
+            autoOptimizeWhenDetected ? 1 : 0);
+        await command.ExecuteNonQueryAsync(cancellationToken)
+            .ConfigureAwait(false);
+    }
+
+    public async ValueTask<IReadOnlyCollection<GameProfileId>>
+        ListProfilesExcludedFromAutomaticOptimizationAsync(
+            CancellationToken cancellationToken)
+    {
+        await InitializeAsync(cancellationToken).ConfigureAwait(false);
+        await using SqliteConnection connection = CreateConnection();
+        await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
+        await ConfigureConnectionAsync(connection, cancellationToken)
+            .ConfigureAwait(false);
+
+        await using SqliteCommand command = connection.CreateCommand();
+        command.CommandText =
+            """
+            SELECT ProfileId
+            FROM GameOptimizationPreferences
+            WHERE AutoOptimizeWhenDetected = 0;
+            """;
+        List<GameProfileId> excluded = [];
+        await using SqliteDataReader reader =
+            await command.ExecuteReaderAsync(cancellationToken)
+                .ConfigureAwait(false);
+        while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+        {
+            excluded.Add(new(Guid.Parse(reader.GetString(0))));
+        }
+
+        return excluded;
     }
 
     public async ValueTask SaveOptimizationPreferencesAsync(
@@ -443,11 +520,15 @@ public sealed class SqliteUserDataStore :
             upsert.CommandText =
                 """
                 INSERT INTO GameOptimizationPreferences (
-                    ProfileId, GamePriority, UpdatedAtUtc)
-                VALUES ($profileId, $gamePriority, $updatedAtUtc)
+                    ProfileId, GamePriority, UpdatedAtUtc,
+                    AutoOptimizeWhenDetected)
+                VALUES (
+                    $profileId, $gamePriority, $updatedAtUtc,
+                    $autoOptimizeWhenDetected)
                 ON CONFLICT(ProfileId) DO UPDATE SET
                     GamePriority = excluded.GamePriority,
-                    UpdatedAtUtc = excluded.UpdatedAtUtc;
+                    UpdatedAtUtc = excluded.UpdatedAtUtc,
+                    AutoOptimizeWhenDetected = excluded.AutoOptimizeWhenDetected;
                 """;
             upsert.Parameters.AddWithValue("$profileId", profileId);
             upsert.Parameters.AddWithValue(
@@ -456,6 +537,9 @@ public sealed class SqliteUserDataStore :
             upsert.Parameters.AddWithValue(
                 "$updatedAtUtc",
                 FormatTimestamp(preferences.UpdatedAtUtc));
+            upsert.Parameters.AddWithValue(
+                "$autoOptimizeWhenDetected",
+                preferences.AutoOptimizeWhenDetected ? 1 : 0);
             await upsert.ExecuteNonQueryAsync(cancellationToken)
                 .ConfigureAwait(false);
         }
@@ -1540,6 +1624,36 @@ public sealed class SqliteUserDataStore :
                 .ConfigureAwait(false);
             existingVersion = 12;
         }
+
+        if (existingVersion < 13)
+        {
+            await using SqliteTransaction transaction =
+                (SqliteTransaction)await connection
+                    .BeginTransactionAsync(
+                        IsolationLevel.Serializable,
+                        cancellationToken)
+                    .ConfigureAwait(false);
+            await using SqliteCommand schema = connection.CreateCommand();
+            schema.Transaction = transaction;
+            schema.CommandText =
+                """
+                ALTER TABLE GameOptimizationPreferences
+                    ADD COLUMN AutoOptimizeWhenDetected INTEGER NOT NULL
+                        DEFAULT 1
+                        CHECK (AutoOptimizeWhenDetected IN (0, 1));
+
+                INSERT INTO SchemaMigrations (Version, AppliedAtUtc)
+                VALUES (13, $appliedAtUtc);
+                """;
+            schema.Parameters.AddWithValue(
+                "$appliedAtUtc",
+                FormatTimestamp(DateTimeOffset.UtcNow));
+            await schema.ExecuteNonQueryAsync(cancellationToken)
+                .ConfigureAwait(false);
+            await transaction.CommitAsync(cancellationToken)
+                .ConfigureAwait(false);
+            existingVersion = 13;
+        }
     }
 
     private static async ValueTask VerifyRequiredSchemaAsync(
@@ -1604,7 +1718,8 @@ public sealed class SqliteUserDataStore :
                 FROM SessionSummaries
                 LIMIT 0;
 
-                SELECT ProfileId, GamePriority, UpdatedAtUtc
+                SELECT ProfileId, GamePriority, UpdatedAtUtc,
+                       AutoOptimizeWhenDetected
                 FROM GameOptimizationPreferences
                 LIMIT 0;
 
