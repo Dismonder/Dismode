@@ -5,6 +5,7 @@ using System.IO.Pipes;
 using System.Runtime.InteropServices;
 using System.Security.Principal;
 using GameShift.Core.Activation;
+using GameShift.Windows.Processes;
 
 namespace GameShift.Launcher;
 
@@ -240,6 +241,15 @@ internal static partial class Program
             foreach (string argument in arguments)
             {
                 startInfo.ArgumentList.Add(argument);
+            }
+
+            if (!requireElevation)
+            {
+                // Launcher sam dziala podniesiony (manifest), a interfejs ma
+                // byc zwyklym procesem uzytkownika: token pulpitu, nie
+                // administratora.
+                DesktopUserProcessStarter.Start(startInfo).Dispose();
+                return true;
             }
 
             using Process? started = Process.Start(startInfo);

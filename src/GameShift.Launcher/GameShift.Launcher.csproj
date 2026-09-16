@@ -15,4 +15,12 @@
   <ItemGroup>
     <ProjectReference Include="..\GameShift.Core\GameShift.Core.csproj" />
   </ItemGroup>
+
+  <!-- Launcher zalezy tylko od Core; start interfejsu z tokenem pulpitu
+       bierze jako zrodlo, nie jako referencje do GameShift.Windows. -->
+  <ItemGroup>
+    <Compile Include="..\GameShift.Windows\Processes\DesktopUserProcessStarter.cs" Link="Processes\DesktopUserProcessStarter.cs" />
+    <Compile Include="..\GameShift.Windows\Processes\StartedProcess.cs" Link="Processes\StartedProcess.cs" />
+    <Compile Include="..\GameShift.Windows\Processes\WindowsCommandLine.cs" Link="Processes\WindowsCommandLine.cs" />
+  </ItemGroup>
 </Project>

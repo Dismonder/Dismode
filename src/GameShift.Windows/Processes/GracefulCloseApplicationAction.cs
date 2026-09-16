@@ -262,9 +262,10 @@ public sealed class GracefulCloseApplicationAction :
             startInfo.ArgumentList.Add(argument);
         }
 
-        using Process restarted = Process.Start(startInfo)
-            ?? throw new InvalidOperationException(
-                "Windows did not start the approved application.");
+        // Przywracana aplikacja (Discord, Spotify) ma wrocic jako zwykly
+        // proces uzytkownika, nie jako dziecko podniesionego hosta.
+        using StartedProcess restarted =
+            DesktopUserProcessStarter.Start(startInfo);
         _restartedProcessId = restarted.Id;
 
         using CancellationTokenSource observationTimeout =
