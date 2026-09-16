@@ -4824,8 +4824,20 @@ public sealed partial class MainWindow : Window, IDisposable
 
     private bool IsUserConfiguringPlan =>
         !_hiddenInTray
+        && !IsWindowMinimized
         && PlanPage.Visibility == Visibility.Visible
         && _backgroundApplications.Count > 0;
+
+    /// <summary>
+    /// Okno zminimalizowane to nie okno, przy ktorym ktos siedzi: strona
+    /// planu z wynikiem analizy zostawiona w tle nie ma prawa trzymac
+    /// automatu.
+    /// </summary>
+    private bool IsWindowMinimized =>
+        AppWindow.Presenter is OverlappedPresenter
+        {
+            State: OverlappedPresenterState.Minimized,
+        };
 
     /// <summary>
     /// Czy proces o tym PID nadal dziala i jest tym samym procesem, ktory
@@ -5196,9 +5208,13 @@ public sealed partial class MainWindow : Window, IDisposable
     private void OnForegroundProcessChanged(int processId) =>
         _ = DispatcherQueue.TryEnqueue(() =>
         {
+            // Przy aktywnej sesji automat nie ma nic do roboty, a alt-tab
+            // miedzy gra a czatem szedlby co sekunde do hosta i probnika
+            // metryk. Zwykly takt wystarczy, by zauwazyc koniec sesji.
             if (_disposed
                 || !_isLoaded
                 || !_sessionPollTimer.IsEnabled
+                || _activeSession is not null
                 || processId == _detectedRunningProcessId
                 || (_hiddenInTray && !IsAutomaticOptimizationEnabled))
             {
@@ -5822,16 +5838,11 @@ public sealed partial class MainWindow : Window, IDisposable
                 .Profile.ProfileId.Value;
         IReadOnlyList<ManualGameProfile> profiles;
         IReadOnlyList<GameMetadata> metadata;
-        IReadOnlyCollection<Core.Domain.Identifiers.GameProfileId>
-            excludedFromAutomaticOptimization;
         try
         {
             profiles = await _userDataStore.ListAsync(cancellationToken);
             metadata =
                 await _userDataStore.ListMetadataAsync(cancellationToken);
-            excludedFromAutomaticOptimization = await _userDataStore
-                .ListProfilesExcludedFromAutomaticOptimizationAsync(
-                    cancellationToken);
         }
         catch (Exception exception) when (IsExpectedUiFailure(exception))
         {
@@ -5846,11 +5857,29 @@ public sealed partial class MainWindow : Window, IDisposable
                 exception.Message);
             return;
         }
-        _automaticOptimizationExcludedProfiles.Clear();
-        foreach (Core.Domain.Identifiers.GameProfileId excluded
-                     in excludedFromAutomaticOptimization)
+        // Lista wyjatkow automatu to dodatek do biblioteki: gdy jej odczyt
+        // sie nie uda, biblioteka i tak ma sie wczytac, a automat zachowuje
+        // liste sprzed bledu zamiast uznac, ze wyjatkow nie ma.
+        try
         {
-            _ = _automaticOptimizationExcludedProfiles.Add(excluded.Value);
+            IReadOnlyCollection<Core.Domain.Identifiers.GameProfileId>
+                excludedFromAutomaticOptimization = await _userDataStore
+                    .ListProfilesExcludedFromAutomaticOptimizationAsync(
+                        cancellationToken);
+            _automaticOptimizationExcludedProfiles.Clear();
+            foreach (Core.Domain.Identifiers.GameProfileId excluded
+                         in excludedFromAutomaticOptimization)
+            {
+                _ = _automaticOptimizationExcludedProfiles.Add(excluded.Value);
+            }
+        }
+        catch (Exception exception) when (IsExpectedUiFailure(exception))
+        {
+            ShowInfo(
+                DashboardInfoBar,
+                InfoBarSeverity.Warning,
+                "Nie wczytano wyjątków automatu",
+                exception.Message);
         }
 
         // Nie ToDictionary: dwa wpisy metadanych dla jednego profilu rzucaja
@@ -6149,6 +6178,9 @@ public sealed partial class MainWindow : Window, IDisposable
             !_isBusy && _activeSession is null;
         OptimizationIntensitySelector.IsEnabled =
             !_isBusy && _activeSession is null;
+        // Bez wybranej gry klikniecie nie mialoby czego zapisac, a pole
+        // zmienialoby widok, udajac decyzje.
+        AutoOptimizeGameCheckBox.IsEnabled = !_isBusy && hasSelectedProfile;
         PrepareSelectedProfileButton.IsEnabled = canPrepare;
         DashboardHeroPlayButton.IsEnabled = canPrepare;
         PreparePlanButton.IsEnabled = canPrepare;
