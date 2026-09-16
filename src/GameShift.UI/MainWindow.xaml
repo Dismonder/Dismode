@@ -1861,6 +1861,17 @@
                           AutomationProperties.Name="Stosuj i zapamiętuj reguły dla wybranej gry"
                           Content="Zapamiętaj ustawienia dla tej gry"
                           IsChecked="True" />
+                      <!-- Te same reguły dla każdej gry z biblioteki: to, co
+                           automat z zasobnika ma zamykać albo ograniczać przy
+                           każdej wykrytej grze. Reguła zapisana dla konkretnej
+                           gry (także „Ignoruj") ma pierwszeństwo. Pole gaśnie
+                           po zapisie, żeby plan innej gry nie nadpisał zestawu
+                           przez przypadek. -->
+                      <CheckBox
+                          x:Name="ApplyRulesToAllGamesCheckBox"
+                          AutomationProperties.Name="Zapisz te reguły także dla wszystkich innych gier"
+                          Content="Zapisz te reguły także dla wszystkich innych gier"
+                          IsChecked="False" />
                       <!-- Wyjątek per gra dla automatu z zasobnika: to samo,
                            co czarna lista GameMode albo wyłączenie
                            wstrzykiwania per gra w Special K. Zapisywane od
@@ -3225,6 +3236,30 @@
                             OffContent="WYŁ."
                             OnContent="WŁ."
                             Toggled="OnAutoOptimizeDetectedGamesSettingChanged" />
+                      </Grid>
+
+                      <Grid ColumnSpacing="12">
+                        <Grid.ColumnDefinitions>
+                          <ColumnDefinition Width="*" />
+                          <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+                        <StackPanel VerticalAlignment="Center" Spacing="2">
+                          <TextBlock FontSize="13" Text="Reguły dla wszystkich gier" />
+                          <TextBlock
+                              x:Name="GlobalRulesSummaryText"
+                              Foreground="{ThemeResource GameShiftMutedTextBrush}"
+                              FontSize="11"
+                              Text="Brak. Zapiszesz je na stronie planu polem „także dla wszystkich innych gier”; reguła zapisana dla konkretnej gry ma pierwszeństwo."
+                              TextWrapping="Wrap" />
+                        </StackPanel>
+                        <Button
+                            x:Name="ClearGlobalRulesButton"
+                            Grid.Column="1"
+                            VerticalAlignment="Center"
+                            AutomationProperties.Name="Wyczyść reguły dla wszystkich gier"
+                            Content="Wyczyść"
+                            IsEnabled="False"
+                            Click="OnClearGlobalRulesClicked" />
                       </Grid>
                     </StackPanel>
                   </StackPanel>

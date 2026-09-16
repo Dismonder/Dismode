@@ -404,6 +404,7 @@ public sealed partial class MainWindow : Window, IDisposable
         await LoadPerformanceOverlayPreferencesAsync(_lifetime.Token);
         await LoadUpdatePreferencesAsync(_lifetime.Token);
         await LoadGameDetectionPreferencesAsync(_lifetime.Token);
+        await RefreshGlobalRulesSummaryAsync(_lifetime.Token);
 
         // Odczyt topologii dotyka rejestru i CPU sets, wiec nie na watku UI.
         await Task.Run(
@@ -2995,6 +2996,15 @@ public sealed partial class MainWindow : Window, IDisposable
                     await SaveSelectedOptimizationPreferencesAsync(
                         selected.Profile.ProfileId,
                         _lifetime.Token);
+            }
+
+            if (ApplyRulesToAllGamesCheckBox.IsChecked == true)
+            {
+                await SaveGlobalBackgroundRulesFromSelectionAsync(
+                    _lifetime.Token);
+                // Pole gasnie po zapisie: plan innej gry nie ma nadpisac
+                // zestawu dla wszystkich przez przypadek.
+                ApplyRulesToAllGamesCheckBox.IsChecked = false;
             }
 
             SessionPlanClientSnapshot plan =
@@ -6181,6 +6191,8 @@ public sealed partial class MainWindow : Window, IDisposable
         // Bez wybranej gry klikniecie nie mialoby czego zapisac, a pole
         // zmienialoby widok, udajac decyzje.
         AutoOptimizeGameCheckBox.IsEnabled = !_isBusy && hasSelectedProfile;
+        ApplyRulesToAllGamesCheckBox.IsEnabled =
+            !_isBusy && _activeSession is null;
         PrepareSelectedProfileButton.IsEnabled = canPrepare;
         DashboardHeroPlayButton.IsEnabled = canPrepare;
         PreparePlanButton.IsEnabled = canPrepare;
@@ -6434,50 +6446,173 @@ public sealed partial class MainWindow : Window, IDisposable
             ? AggressiveMaximumBackgroundProcesses
             : StandardMaximumBackgroundProcesses;
 
+    /// <summary>
+    /// Zapisuje biezacy wybor z analizy jako reguly dla wszystkich gier.
+    /// „Ignoruj" nie ma tu sensu (brak reguly to to samo), wiec zostaja
+    /// same dzialania.
+    /// </summary>
+    private async Task SaveGlobalBackgroundRulesFromSelectionAsync(
+        CancellationToken cancellationToken)
+    {
+        SavedBackgroundProcessRule[] rules = BuildBackgroundRulesFromSelection()
+            .Where(rule => rule.ActionMode != SavedBackgroundActionMode.Ignore)
+            .ToArray();
+        await _userDataStore.SaveGlobalBackgroundRulesAsync(
+            rules,
+            cancellationToken);
+        await RefreshGlobalRulesSummaryAsync(cancellationToken);
+        ShowInfo(
+            PlanInfoBar,
+            InfoBarSeverity.Success,
+            "Reguły dla wszystkich gier zapisane",
+            rules.Length == 0
+                ? "Zestaw jest pusty: żadna aplikacja nie była zaznaczona."
+                : $"{DescribeRuleCount(rules.Length)} zadziała przy każdej "
+                    + "grze, także wykrytej automatycznie. Reguła zapisana "
+                    + "dla konkretnej gry ma pierwszeństwo.");
+    }
+
+    private async Task RefreshGlobalRulesSummaryAsync(
+        CancellationToken cancellationToken)
+    {
+        if (GlobalRulesSummaryText is null || ClearGlobalRulesButton is null)
+        {
+            return;
+        }
+
+        try
+        {
+            IReadOnlyList<SavedBackgroundProcessRule> rules =
+                await _userDataStore.LoadGlobalBackgroundRulesAsync(
+                    cancellationToken);
+            if (rules.Count == 0)
+            {
+                GlobalRulesSummaryText.Text =
+                    "Brak. Zapiszesz je na stronie planu polem „także dla "
+                    + "wszystkich innych gier”; reguła zapisana dla "
+                    + "konkretnej gry ma pierwszeństwo.";
+                ClearGlobalRulesButton.IsEnabled = false;
+                return;
+            }
+
+            string names = string.Join(
+                ", ",
+                rules
+                    .Take(6)
+                    .Select(rule =>
+                        Path.GetFileNameWithoutExtension(rule.ExecutablePath)));
+            if (rules.Count > 6)
+            {
+                names += $" i {rules.Count - 6} więcej";
+            }
+
+            GlobalRulesSummaryText.Text =
+                $"{DescribeRuleCount(rules.Count)}: {names}. Działają przy "
+                + "każdej grze, także wykrytej automatycznie; reguła "
+                + "zapisana dla konkretnej gry ma pierwszeństwo.";
+            ClearGlobalRulesButton.IsEnabled = !_isBusy;
+        }
+        catch (OperationCanceledException)
+            when (_lifetime.IsCancellationRequested)
+        {
+        }
+        catch (Exception exception) when (IsExpectedUiFailure(exception))
+        {
+            GlobalRulesSummaryText.Text =
+                "Nie udało się odczytać reguł: " + exception.Message;
+            ClearGlobalRulesButton.IsEnabled = false;
+        }
+    }
+
+    private async void OnClearGlobalRulesClicked(
+        object sender,
+        RoutedEventArgs args)
+    {
+        if (_isBusy)
+        {
+            return;
+        }
+
+        try
+        {
+            await _userDataStore.SaveGlobalBackgroundRulesAsync(
+                [],
+                _lifetime.Token);
+        }
+        catch (OperationCanceledException)
+            when (_lifetime.IsCancellationRequested)
+        {
+            return;
+        }
+        catch (Exception exception) when (IsExpectedUiFailure(exception))
+        {
+            _trayIcon?.ShowNotification(
+                "GameShift — nie wyczyszczono reguł",
+                exception.Message);
+            return;
+        }
+
+        await RefreshGlobalRulesSummaryAsync(_lifetime.Token);
+    }
+
+    private static string DescribeRuleCount(int count)
+    {
+        int lastTwoDigits = count % 100;
+        int lastDigit = count % 10;
+        string noun = count == 1
+            ? "reguła"
+            : lastDigit is >= 2 and <= 4 && lastTwoDigits is < 12 or > 14
+                ? "reguły"
+                : "reguł";
+        return $"{count} {noun}";
+    }
+
+    private SavedBackgroundProcessRule[] BuildBackgroundRulesFromSelection() =>
+        _backgroundApplications
+            .GroupBy(
+                application => application.Process.ExecutablePath,
+                StringComparer.OrdinalIgnoreCase)
+            .Select(group =>
+            {
+                BackgroundApplicationListItem[] selected =
+                    group
+                        .Where(application =>
+                            application.IsSelected)
+                        .ToArray();
+                SavedBackgroundActionMode mode =
+                    selected.Length == 0
+                        ? SavedBackgroundActionMode.Ignore
+                        : selected.Any(application =>
+                            application.SelectedAction.Mode
+                                == BackgroundProcessClientActionMode
+                                    .CloseAndRestore)
+                            ? SavedBackgroundActionMode.CloseAndRestore
+                            : selected.Any(application =>
+                                application.SelectedAction.Mode
+                                    == BackgroundProcessClientActionMode
+                                        .RestrainBackground)
+                                ? SavedBackgroundActionMode
+                                    .RestrainBackground
+                                : selected.Any(application =>
+                                    application.SelectedAction.Mode
+                                        == BackgroundProcessClientActionMode
+                                            .LowerPriorityAndEcoQos)
+                                    ? SavedBackgroundActionMode
+                                        .LowerPriorityAndEcoQos
+                                    : SavedBackgroundActionMode
+                                        .LowerPriority;
+                return new SavedBackgroundProcessRule(
+                    group.Key,
+                    mode);
+            })
+            .ToArray();
+
     private async ValueTask<GameOptimizationPreferences>
         SaveSelectedOptimizationPreferencesAsync(
             Core.Domain.Identifiers.GameProfileId profileId,
             CancellationToken cancellationToken)
     {
-        SavedBackgroundProcessRule[] rules =
-            _backgroundApplications
-                .GroupBy(
-                    application => application.Process.ExecutablePath,
-                    StringComparer.OrdinalIgnoreCase)
-                .Select(group =>
-                {
-                    BackgroundApplicationListItem[] selected =
-                        group
-                            .Where(application =>
-                                application.IsSelected)
-                            .ToArray();
-                    SavedBackgroundActionMode mode =
-                        selected.Length == 0
-                            ? SavedBackgroundActionMode.Ignore
-                            : selected.Any(application =>
-                                application.SelectedAction.Mode
-                                    == BackgroundProcessClientActionMode
-                                        .CloseAndRestore)
-                                ? SavedBackgroundActionMode.CloseAndRestore
-                                : selected.Any(application =>
-                                    application.SelectedAction.Mode
-                                        == BackgroundProcessClientActionMode
-                                            .RestrainBackground)
-                                    ? SavedBackgroundActionMode
-                                        .RestrainBackground
-                                    : selected.Any(application =>
-                                        application.SelectedAction.Mode
-                                            == BackgroundProcessClientActionMode
-                                                .LowerPriorityAndEcoQos)
-                                        ? SavedBackgroundActionMode
-                                            .LowerPriorityAndEcoQos
-                                        : SavedBackgroundActionMode
-                                            .LowerPriority;
-                    return new SavedBackgroundProcessRule(
-                        group.Key,
-                        mode);
-                })
-                .ToArray();
+        SavedBackgroundProcessRule[] rules = BuildBackgroundRulesFromSelection();
         GameOptimizationPreferences preferences = new(
             profileId,
             GetSelectedGamePriority() switch

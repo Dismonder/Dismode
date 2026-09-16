@@ -45,6 +45,7 @@ public sealed class LocalGameSessionOrchestrator : IAsyncDisposable
     private readonly BackgroundApplicationGuard _backgroundApplicationGuard;
     private readonly IGameOptimizationPreferencesRepository?
         _optimizationPreferences;
+    private readonly IGlobalBackgroundRuleRepository? _globalBackgroundRules;
     private readonly SavedBackgroundRuleResolver _savedRuleResolver;
     private readonly IGameMetadataRepository? _gameMetadataRepository;
     private readonly GameMetadataRefreshService? _metadataRefreshService;
@@ -91,9 +92,11 @@ public sealed class LocalGameSessionOrchestrator : IAsyncDisposable
         bool enableProBalance = false,
         ProBalanceSettings? proBalanceSettings = null,
         Func<ICpuProcessSource>? cpuProcessSourceFactory = null,
-        Func<SessionId, IProBalanceActuator>? proBalanceActuatorFactory = null)
+        Func<SessionId, IProBalanceActuator>? proBalanceActuatorFactory = null,
+        IGlobalBackgroundRuleRepository? globalBackgroundRules = null)
     {
         _profiles = profiles;
+        _globalBackgroundRules = globalBackgroundRules;
         _history = history;
         _journal = journal;
         _checkpointWriter = new(journal);
@@ -308,6 +311,19 @@ public sealed class LocalGameSessionOrchestrator : IAsyncDisposable
                 {
                     throw new InvalidDataException(
                         "Wczytane preferencje należą do innego profilu gry.");
+                }
+
+                if (_globalBackgroundRules is not null)
+                {
+                    // Reguly zapisane „dla wszystkich gier" dochodza do regul
+                    // tej gry; regula tej gry (takze „Ignoruj") wygrywa dla
+                    // tej samej sciezki. Kazda z nich przechodzi dalej te sama
+                    // walidacje, co reczny wybor.
+                    IReadOnlyList<SavedBackgroundProcessRule> globalRules =
+                        await _globalBackgroundRules
+                            .LoadGlobalBackgroundRulesAsync(cancellationToken)
+                            .ConfigureAwait(false);
+                    preferences = preferences.WithGlobalRules(globalRules);
                 }
 
                 // One-click launch applies only previously approved

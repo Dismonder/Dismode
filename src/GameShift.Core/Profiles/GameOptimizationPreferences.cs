@@ -132,4 +132,46 @@ public sealed record GameOptimizationPreferences
             SavedGamePriorityMode.Normal,
             backgroundRules: null,
             DateTimeOffset.UtcNow);
+
+    /// <summary>
+    /// The rules of this game plus the rules saved for every game. A rule of
+    /// this game wins for the same executable, including an explicit
+    /// <see cref="SavedBackgroundActionMode.Ignore"/>, which switches the
+    /// global rule off for this title. The result never exceeds the per-game
+    /// limit: global rules beyond it are dropped in path order instead of
+    /// failing the whole plan.
+    /// </summary>
+    public GameOptimizationPreferences WithGlobalRules(
+        IEnumerable<SavedBackgroundProcessRule> globalRules)
+    {
+        ArgumentNullException.ThrowIfNull(globalRules);
+        List<SavedBackgroundProcessRule> merged = new(BackgroundRules);
+        HashSet<string> covered = new(
+            BackgroundRules.Select(rule => rule.ExecutablePath),
+            StringComparer.OrdinalIgnoreCase);
+        foreach (SavedBackgroundProcessRule rule in globalRules
+                     .OrderBy(
+                         rule => rule.ExecutablePath,
+                         StringComparer.OrdinalIgnoreCase))
+        {
+            if (merged.Count >= MaximumRuleCount)
+            {
+                break;
+            }
+
+            if (covered.Add(rule.ExecutablePath))
+            {
+                merged.Add(rule);
+            }
+        }
+
+        return merged.Count == BackgroundRules.Count
+            ? this
+            : new(
+                ProfileId,
+                GamePriority,
+                merged,
+                UpdatedAtUtc,
+                AutoOptimizeWhenDetected);
+    }
 }
