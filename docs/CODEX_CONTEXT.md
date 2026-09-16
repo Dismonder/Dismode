@@ -273,6 +273,17 @@ zakończyła się kodem 0: build Release bez ostrzeżeń, format bez zmian i
     czy profil jest w bibliotece i czy PID nadal należy do tego samego
     procesu (czas startu). Baner mówi wprost, gdy automat pomija
     egzemplarz.
+  - Jeden egzemplarz i bramka startowa (16.09): `SingleInstanceLock` (Core,
+    mutex `Local\GameShift.<komponent>.<hash SID>`, wspólny dla procesów
+    z uprawnieniami i bez) w `GameShift.UI` (`StartupGate`) i w SessionHost
+    (`Program.cs`, poza trybami pomocniczymi). Drugi UI oddaje żądanie
+    pierwszemu przez rurę aktywacji (`UiActivationClient`, nowe pole
+    `ShowOnly` w `UiActivationRequest`, stare launchery bez pola = start gry)
+    i kończy pracę; drugi host kończy pracę kodem 3. UI bez hosta z tego
+    samego katalogu uruchamia go z `runas`; odmowa UAC (1223) = komunikat
+    i kod 4, host z innej lokalizacji = komunikat i kod 3. Powód: dwie kopie
+    (artifacts + Program Files) walczyły o tę samą rurę, a UI bez hosta
+    było atrapą.
   - Reguły dla wszystkich gier (16.09): `IGlobalBackgroundRuleRepository`
     + tabela `GlobalBackgroundProcessRules` (schemat 14), scalanie
     w `GameOptimizationPreferences.WithGlobalRules` (reguła gry, także

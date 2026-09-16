@@ -83,4 +83,40 @@ public sealed class ActivationProtocolTests
                 Encoding.UTF8.GetBytes(extended),
                 now.AddMinutes(-5)));
     }
+
+    [TestMethod]
+    public void ShowOnlyRoundTripsAndDefaultsToFalseForOlderSenders()
+    {
+        DateTimeOffset now = DateTimeOffset.UtcNow;
+        UiActivationRequest showOnly = new(
+            UiActivationProtocol.CurrentSchemaVersion,
+            Guid.NewGuid(),
+            now,
+            Path.GetFullPath("GameShift.UI.exe"),
+            KeepWindowHidden: false,
+            ShowOnly: true);
+
+        UiActivationRequest actual = UiActivationProtocol.DeserializeAndValidate(
+            UiActivationProtocol.Serialize(showOnly),
+            now);
+        Assert.IsTrue(actual.ShowOnly);
+
+        // Launcher sprzed tej wersji nie wysyla tego pola: znaczenie zostaje
+        // takie, jakie mial zawsze — uruchom gre.
+        string path = Path.GetFullPath("game.exe").Replace("\\", "\\\\");
+        string legacy = $$"""
+            {
+              "schemaVersion": 1,
+              "requestId": "{{Guid.NewGuid():D}}",
+              "requestedAtUtc": "{{now:O}}",
+              "gameExecutablePath": "{{path}}",
+              "keepWindowHidden": false
+            }
+            """;
+        UiActivationRequest fromLegacy =
+            UiActivationProtocol.DeserializeAndValidate(
+                Encoding.UTF8.GetBytes(legacy),
+                now);
+        Assert.IsFalse(fromLegacy.ShowOnly);
+    }
 }
