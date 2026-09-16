@@ -251,6 +251,36 @@ zakończyła się kodem 0: build Release bez ostrzeżeń, format bez zmian i
 
 ## Ostatnio zmieniane pliki
 
+- Automatyczna optymalizacja wykrytej gry (2026-09-12):
+  - `GameDetectionPreferences` (Core) i tabela `GameDetectionPreferences`
+    (schemat 12) w `SqliteUserDataStore`: jedno ustawienie „automatycznie
+    optymalizuj wykrytą grę", domyślnie włączone, zapisywane w bazie.
+  - `MainWindow.xaml.cs`: skan uruchomionej gry działa także w zasobniku
+    (takt 6 s zamiast 15 s, gdy automat czuwa); po wykryciu automat robi to,
+    co przycisk „Optymalizuj w locie" — plan z zapisanymi regułami i start
+    sesji. Egzemplarze gry, której sesja się skończyła (Przywróć, Zamknij
+    grę, wyjście z gry, odtwarzanie), oraz egzemplarz z nieudanym startem
+    są pomijane po PID i czasie startu procesu, aż znikną; nowe
+    uruchomienie gry znów się kwalifikuje. Skan bierze tylko procesy
+    z bieżącej sesji Windows, czyta ścieżkę przez `ProcessImagePath`
+    (`QueryFullProcessImageName`), więc widzi też gry pod DRM, a przy dwóch
+    egzemplarzach tej samej gry automat nie próbuje. Stara odpowiedź
+    odpytywania hosta nie nadpisuje stanu sesji zmienionego w międzyczasie;
+    automat stoi, gdy czeka start zlecony z zewnątrz.
+  - `TrayIconService`: pozycja menu z zaznaczeniem „Automatycznie optymalizuj
+    wykryte gry", podpowiedź ikony mówi, czy automat czuwa.
+  - `StartSessionRequest.attach_only` → `LocalGameSessionOrchestrator` →
+    `ManualGameProfileLauncher`: automat dołącza wyłącznie do działającej
+    gry i nigdy jej nie uruchamia; brak egzemplarza kończy start jak każdy
+    nieudany launch (testy `AttachOnly*` w `GameSessionOrchestratorTests`).
+    Przy okazji: błąd w preflight `StartAsync` (profil usunięty lub
+    zmieniony, EXE nieczytelny) porzuca plan hosta zamiast trzymać go do
+    wygaśnięcia i blokować wyłączenie.
+  - Bez podbicia `ProtocolInfo.CurrentVersion` (6): test
+    `SystemOptimizerContractTests` przypina ją, bo osobno instalowana usługa
+    SystemAgent musi zostać zgodna. Nowe UI ze starym SessionHostem (tylko
+    scenariusz deweloperski) zignoruje `attach_only` i zachowa się jak przed
+    zmianą.
 - Rozszerzenia wydania 0.1.9:
   - `SystemMemoryCleaner`: globalne czyszczenie pamięci podręcznej i buforów
     plików (`SetSystemFileCacheSize`) oraz zwalnianie working setu procesów tła.

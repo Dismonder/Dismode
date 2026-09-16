@@ -151,6 +151,43 @@ public sealed partial class MainWindow : Window, IDisposable
     private int _detectedRunningProcessId;
 
     /// <summary>
+    /// Czy wykryty proces ma dokladnie sciezke EXE profilu, a nie tylko
+    /// jego nazwe. Baner zadowala sie nazwa; automat wymaga sciezki, bo
+    /// host dolacza po sciezce i tozsamosci pliku — dopasowanie po nazwie
+    /// dawaloby proby na cudzych procesach o tej samej nazwie.
+    /// </summary>
+    private bool _detectedRunningGamePathVerified;
+    private DateTime? _detectedRunningProcessStartTime;
+
+    /// <summary>
+    /// Ustawienia wykrywania gier. Null do czasu odczytu z bazy: pierwszy
+    /// skan nie ma prawa uruchomic sesji na wartosci domyslnej, ktorej
+    /// uzytkownik mogl nie wybrac.
+    /// </summary>
+    private GameDetectionPreferences? _gameDetectionPreferences;
+    private bool _isLoadingGameDetectionPreferences;
+    private bool _isAutomaticOptimizationRunning;
+    private readonly SemaphoreSlim _gameDetectionSaveGate = new(1, 1);
+
+    /// <summary>
+    /// Egzemplarze gier, ktorych automat ma nie ruszac: te, ktorym
+    /// uzytkownik (albo odtwarzanie) zakonczyl sesje, i te, dla ktorych
+    /// start sie nie udal. Klucz to PID, wartosc to czas startu procesu, bo
+    /// Windows oddaje numery PID nowym procesom; wpis znika, gdy proces
+    /// zniknie. Nowe uruchomienie gry znow sie kwalifikuje.
+    /// </summary>
+    private readonly Dictionary<int, DateTime?>
+        _automaticOptimizationSkippedProcesses = [];
+
+    /// <summary>
+    /// Sesja Windows tego okna. Host dolacza tylko do procesow z tej samej
+    /// sesji, wiec skan po innej (drugi zalogowany uzytkownik) dawalby
+    /// proby skazane na odmowe.
+    /// </summary>
+    private static readonly int CurrentWindowsSessionId =
+        ReadCurrentWindowsSessionId();
+
+    /// <summary>
     /// Jak czesto szukac uruchomionej, niezoptymalizowanej gry. Skan szedl
     /// co tick (2 s) i czytal MainModule.FileName kazdego procesu na
     /// maszynie: zmierzone 50 ms na 246 procesow, czyli 2,3% rdzenia na
@@ -177,6 +214,24 @@ public sealed partial class MainWindow : Window, IDisposable
 
     private static readonly TimeSpan SessionPollWhileHidden =
         TimeSpan.FromSeconds(15);
+
+    /// <summary>
+    /// Rytm schowanego okna, gdy automat czuwa nad wykrytymi grami. Skan
+    /// gier idzie w takcie odpytywania, wiec przy 15 s gra czekalaby na
+    /// sesje do 15 s od startu. Sam skan to 4 ms, a pytanie hosta o stan
+    /// sesji jest tansze, wiec 6 s kosztuje tyle, co nic, a skraca to
+    /// czekanie o trzy piate.
+    /// </summary>
+    private static readonly TimeSpan SessionPollWhileHiddenWatching =
+        TimeSpan.FromSeconds(6);
+
+    private bool IsAutomaticOptimizationEnabled =>
+        _gameDetectionPreferences?.AutoOptimizeDetectedGames == true;
+
+    private TimeSpan HiddenSessionPollInterval =>
+        IsAutomaticOptimizationEnabled
+            ? SessionPollWhileHiddenWatching
+            : SessionPollWhileHidden;
 
     /// <summary>
     /// Czy okno siedzi w zasobniku. Steruje tym, ile pracy wolno pominac.
@@ -250,6 +305,8 @@ public sealed partial class MainWindow : Window, IDisposable
                     windowIconPath);
                 _trayIcon.OpenRequested += OnTrayOpenRequested;
                 _trayIcon.ExitRequested += OnTrayExitRequested;
+                _trayIcon.AutomaticOptimizationToggleRequested +=
+                    OnTrayAutomaticOptimizationToggleRequested;
                 // Dopiero gdy ikona naprawde powstala. Przechwytywanie
                 // zamkniecia bez niej zostawiloby okno, ktorego nie da sie
                 // ani zobaczyc, ani zamknac.
@@ -306,6 +363,7 @@ public sealed partial class MainWindow : Window, IDisposable
 
         await LoadPerformanceOverlayPreferencesAsync(_lifetime.Token);
         await LoadUpdatePreferencesAsync(_lifetime.Token);
+        await LoadGameDetectionPreferencesAsync(_lifetime.Token);
 
         // Odczyt topologii dotyka rejestru i CPU sets, wiec nie na watku UI.
         await Task.Run(
@@ -365,8 +423,9 @@ public sealed partial class MainWindow : Window, IDisposable
     /// Co zostaje: odpytywanie stanu sesji, bo napedza powiadomienia z ikony,
     /// oraz licznik nakladki, bo nakladka dziala WLASNIE wtedy, gdy okno jest
     /// schowane i uzytkownik gra. Co odpada: metryki pulpitu, ktore wpisuja
-    /// liczby do niewidocznych pol, i skan uruchomionych gier, ktory sluzy
-    /// wylacznie banerowi w oknie.
+    /// liczby do niewidocznych pol, i skan uruchomionych gier — chyba ze
+    /// automat czuwa, bo wtedy skan jest tym, co pozwala dolaczyc do gry
+    /// z zasobnika, i to on jest sensem schowanego okna.
     /// </para>
     /// <para>
     /// Wlasciwa optymalizacja nie ma z tym nic wspolnego — prowadza ja osobne
@@ -383,7 +442,7 @@ public sealed partial class MainWindow : Window, IDisposable
         }
 
         _hiddenInTray = true;
-        _sessionPollTimer.Interval = SessionPollWhileHidden;
+        _sessionPollTimer.Interval = HiddenSessionPollInterval;
     }
 
     private void ShowFromTray()
@@ -3079,6 +3138,9 @@ public sealed partial class MainWindow : Window, IDisposable
             }
 
             _activeSession = null;
+            await SuppressRunningInstancesOfEndedSessionAsync(
+                active.ProfileId,
+                _lifetime.Token);
             ClearPreparedPlan();
             ApplyCompletedSession(completed);
             await RefreshDashboardRecoveryStatusAsync(_lifetime.Token);
@@ -3131,6 +3193,9 @@ public sealed partial class MainWindow : Window, IDisposable
                     active.SessionId,
                     _lifetime.Token);
             _activeSession = null;
+            await SuppressRunningInstancesOfEndedSessionAsync(
+                active.ProfileId,
+                _lifetime.Token);
             ApplyCompletedSession(result);
             await RefreshDashboardRecoveryStatusAsync(_lifetime.Token);
             await LoadHistoryAsync(_lifetime.Token);
@@ -3179,6 +3244,7 @@ public sealed partial class MainWindow : Window, IDisposable
             }
 
             await RefreshActiveSessionCoreAsync(_lifetime.Token);
+            await OptimizeDetectedGameAutomaticallyAsync(_lifetime.Token);
         }
         catch (OperationCanceledException)
             when (_lifetime.IsCancellationRequested)
@@ -4218,6 +4284,14 @@ public sealed partial class MainWindow : Window, IDisposable
             return;
         }
 
+        if (!ReferenceEquals(_activeSession, previous))
+        {
+            // W trakcie pytania hosta inna sciezka (start z zewnatrz,
+            // „Przywróć", automat) zmienila stan sesji. Ta odpowiedz jest
+            // starsza niz ten stan; nastepny takt zapyta jeszcze raz.
+            return;
+        }
+
         _activeSession = current;
         if (current is not null)
         {
@@ -4236,6 +4310,9 @@ public sealed partial class MainWindow : Window, IDisposable
             ApplyNoActiveSession();
             if (previous is not null)
             {
+                await SuppressRunningInstancesOfEndedSessionAsync(
+                    previous.ProfileId,
+                    cancellationToken);
                 await RefreshDashboardRecoveryStatusAsync(cancellationToken);
                 await LoadHistoryAsync(cancellationToken);
                 _ = CompleteDeferredStartupAsync(cancellationToken);
@@ -4255,6 +4332,8 @@ public sealed partial class MainWindow : Window, IDisposable
         {
             _detectedRunningUnoptimizedGame = null;
             _detectedRunningProcessId = 0;
+            _detectedRunningGamePathVerified = false;
+            _detectedRunningProcessStartTime = null;
             if (UnoptimizedGameBanner is not null)
             {
                 UnoptimizedGameBanner.Visibility = Visibility.Collapsed;
@@ -4263,10 +4342,11 @@ public sealed partial class MainWindow : Window, IDisposable
             return;
         }
 
-        if (_hiddenInTray)
+        if (_hiddenInTray && !IsAutomaticOptimizationEnabled)
         {
-            // Skan sluzy wylacznie banerowi w oknie. Schowane okno nie ma go
-            // gdzie pokazac, a to najdrozsza rzecz w tej petli.
+            // Bez automatu skan sluzy wylacznie banerowi w oknie, a schowane
+            // okno nie ma go gdzie pokazac. Z automatem skan jest tym, co
+            // pozwala dolaczyc do gry, gdy GameShift siedzi w zasobniku.
             return;
         }
 
@@ -4307,34 +4387,40 @@ public sealed partial class MainWindow : Window, IDisposable
                 sameName.Add(profile);
             }
 
-            (ProfileListItem? matched, int pid) = profilesByName.Count == 0
-                ? (null, 0)
-                : await Task.Run<(ProfileListItem?, int)>(() =>
+            RunningGameScanResult scan = profilesByName.Count == 0
+                ? RunningGameScanResult.Empty
+                : await Task.Run(() =>
             {
                 Process[] processes = Process.GetProcesses();
                 try
                 {
+                    HashSet<int> liveProcessIds = new(processes.Length);
+                    ProfileListItem? matched = null;
+                    int matchedProcessId = 0;
+                    DateTime? matchedStartTime = null;
+                    bool matchedPathVerified = false;
+                    int duplicateInstances = 0;
                     foreach (Process process in processes)
                     {
                         try
                         {
+                            liveProcessIds.Add(process.Id);
                             if (!profilesByName.TryGetValue(
                                     process.ProcessName,
                                     out List<ProfileListItem>? candidates)
+                                || process.SessionId != CurrentWindowsSessionId
                                 || process.HasExited)
                             {
                                 continue;
                             }
 
-                            string? processExecutablePath = null;
-                            try
-                            {
-                                processExecutablePath = process.MainModule?.FileName;
-                            }
-                            catch
-                            {
-                            }
-
+                            // QueryFullProcessImageName zamiast MainModule:
+                            // to drugie wymaga PROCESS_VM_READ i odmawia dla
+                            // gier pod DRM i procesow o wyzszej integralnosci,
+                            // czyli dokladnie tych, ktore trzeba rozpoznac.
+                            // Host dolacza po tej samej sciezce.
+                            string? processExecutablePath =
+                                ProcessImagePath.TryRead(process);
                             ProfileListItem? exact = processExecutablePath is null
                                 ? null
                                 : candidates.FirstOrDefault(candidate =>
@@ -4342,12 +4428,34 @@ public sealed partial class MainWindow : Window, IDisposable
                                         processExecutablePath,
                                         candidate.ExecutablePath,
                                         StringComparison.OrdinalIgnoreCase));
-                            return (exact ?? candidates[0], process.Id);
+                            if (matched is null)
+                            {
+                                matched = exact ?? candidates[0];
+                                matchedProcessId = process.Id;
+                                matchedPathVerified = exact is not null;
+                                matchedStartTime = TryReadStartTime(process);
+                            }
+                            else if (exact is not null
+                                && ReferenceEquals(exact, matched))
+                            {
+                                // Drugi egzemplarz tej samej gry: host odmowi
+                                // („zamknij duplikaty"), wiec automat ma nie
+                                // probowac. Petla idzie dalej tylko po to, by
+                                // to policzyc; baner i tak pokaze pierwszy.
+                                duplicateInstances++;
+                            }
                         }
                         catch
                         {
                         }
                     }
+
+                    return new RunningGameScanResult(
+                        matched,
+                        matchedProcessId,
+                        matchedStartTime,
+                        matchedPathVerified && duplicateInstances == 0,
+                        liveProcessIds);
                 }
                 finally
                 {
@@ -4356,20 +4464,33 @@ public sealed partial class MainWindow : Window, IDisposable
                         p.Dispose();
                     }
                 }
-
-                return (null, 0);
             }, cancellationToken);
 
+            ForgetExitedSkippedProcesses(scan.LiveProcessIds);
+            ProfileListItem? matched = scan.Game;
+            int pid = scan.ProcessId;
             _detectedRunningUnoptimizedGame = matched;
             _detectedRunningProcessId = pid;
+            _detectedRunningProcessStartTime = scan.StartTime;
+            _detectedRunningGamePathVerified = scan.PathVerified;
 
             if (UnoptimizedGameBanner is not null)
             {
                 if (matched is not null && _activeSession is null)
                 {
+                    bool automaticAttachPending =
+                        IsAutomaticOptimizationEnabled
+                        && scan.PathVerified
+                        && !IsSkippedByAutomaticOptimization(
+                            pid,
+                            scan.StartTime)
+                        && (_pendingPlan is null
+                            || _pendingPlan.ExpiresAtUtc
+                                < DateTimeOffset.UtcNow);
                     UnoptimizedGameNameText.Text = $"„{matched.DisplayName}” (PID: {pid})";
-                    UnoptimizedGameDetailsText.Text =
-                        $"Gra {matched.DisplayName} działa w systemie Windows. Możesz włączyć profil optymalizacji w locie bez jej restartowania.";
+                    UnoptimizedGameDetailsText.Text = automaticAttachPending
+                        ? $"Gra {matched.DisplayName} działa. GameShift zaraz dołączy do niej automatycznie i zastosuje zapisane reguły."
+                        : $"Gra {matched.DisplayName} działa w systemie Windows. Możesz włączyć profil optymalizacji w locie bez jej restartowania.";
                     UnoptimizedGameBanner.Visibility = Visibility.Visible;
                 }
                 else
@@ -4468,6 +4589,481 @@ public sealed partial class MainWindow : Window, IDisposable
             SetBusy(false);
         }
     }
+
+    /// <summary>
+    /// Automat: to samo, co przycisk „Optymalizuj w locie", tylko bez
+    /// klikniecia. Wolany z taktu odpytywania po odswiezeniu stanu sesji,
+    /// a nie z samego skanu, zeby uruchomienie gry zlecone z zewnatrz
+    /// (menu kontekstowe, --launch-through-gameshift) nie scigalo sie
+    /// z automatem o jedyna sesje hosta: takt i tak stoi, poki okno jest
+    /// zajete.
+    /// </summary>
+    private async Task OptimizeDetectedGameAutomaticallyAsync(
+        CancellationToken cancellationToken)
+    {
+        ProfileListItem? target = _detectedRunningUnoptimizedGame;
+        int processId = _detectedRunningProcessId;
+        DateTime? startTime = _detectedRunningProcessStartTime;
+        if (target is null
+            || !ShouldOptimizeDetectedGameAutomatically(processId, startTime))
+        {
+            return;
+        }
+
+        if (!IsProcessAlive(processId))
+        {
+            // Wynik skanu ma do 6 s; gra mogla zdazyc sie zakonczyc. Host
+            // i tak by odmowil (tryb „tylko dolacz"), ale po co meldowac
+            // blad o czyms, co bledem nie jest.
+            _detectedRunningUnoptimizedGame = null;
+            _detectedRunningProcessId = 0;
+            _detectedRunningProcessStartTime = null;
+            _detectedRunningGamePathVerified = false;
+            if (UnoptimizedGameBanner is not null)
+            {
+                UnoptimizedGameBanner.Visibility = Visibility.Collapsed;
+            }
+
+            return;
+        }
+
+        _isAutomaticOptimizationRunning = true;
+        try
+        {
+            SetBusy(true);
+            ShowInfo(
+                DashboardInfoBar,
+                InfoBarSeverity.Informational,
+                "Automatyczna optymalizacja",
+                $"Wykryto „{target.DisplayName}” (PID: {processId}). "
+                + "GameShift dołącza do gry i stosuje zapisane reguły…");
+
+            SessionPlanClientSnapshot plan = await _sessions.PrepareAsync(
+                target.Profile.ProfileId.Value,
+                backgroundApplications: [],
+                GamePriorityClientMode.Normal,
+                cancellationToken,
+                useSavedBackgroundRules: true);
+            _sessionEndpointAvailable = true;
+            _pendingPlan = plan;
+            ApplyPreparedPlan(plan);
+
+            // Tylko dolacz: miedzy skanem a tym miejscem gra mogla sie
+            // zakonczyc, a uruchomienie jej od nowa bez klikniecia byloby
+            // dzialaniem, na ktore nikt sie nie zgodzil.
+            SessionStateClientSnapshot active = await _sessions.StartAsync(
+                plan.PlanId,
+                plan.SessionId,
+                cancellationToken,
+                enableFrameRateTracking: FpsTrackingToggleSwitch.IsOn,
+                enableProBalance: ProBalanceToggleSwitch.IsOn,
+                attachOnly: true);
+
+            _pendingPlan = null;
+            _planActions.Clear();
+            _activeSession = active;
+            _detectedRunningUnoptimizedGame = null;
+            _detectedRunningProcessId = 0;
+            _detectedRunningProcessStartTime = null;
+            _detectedRunningGamePathVerified = false;
+            if (UnoptimizedGameBanner is not null)
+            {
+                UnoptimizedGameBanner.Visibility = Visibility.Collapsed;
+            }
+
+            ApplyActiveSession(active);
+            UpdateSessionControls();
+            ShowInfo(
+                DashboardInfoBar,
+                InfoBarSeverity.Success,
+                "Wykryta gra zoptymalizowana",
+                $"GameShift dołączył do „{target.DisplayName}” "
+                + "automatycznie. " + active.Message);
+            _trayIcon?.ShowNotification(
+                "GameShift — gra zoptymalizowana",
+                $"„{target.DisplayName}” działa w Trybie gry. GameShift "
+                + "dołączył automatycznie i zastosował zapisane reguły.");
+        }
+        catch (OperationCanceledException)
+            when (cancellationToken.IsCancellationRequested)
+        {
+        }
+        catch (Exception exception) when (IsExpectedUiFailure(exception))
+        {
+            // Plan po nieudanym starcie nie ma juz czego zatwierdzac; gdyby
+            // zostal, blokowalby kolejne proby automatu i wylaczenie z ikony.
+            ClearPreparedPlan();
+            if (IsSessionConnectionFailure(exception))
+            {
+                _sessionEndpointAvailable = false;
+                ApplySessionUnavailable(exception.Message);
+            }
+            else
+            {
+                // Ten egzemplarz gry dostaje spokoj: ponawianie co 6 s
+                // dawaloby ten sam blad i to samo powiadomienie. Baner
+                // zostaje, wiec reczna proba jest o jedno klikniecie.
+                SkipAutomaticOptimizationFor(processId, startTime);
+            }
+
+            ShowInfo(
+                DashboardInfoBar,
+                InfoBarSeverity.Warning,
+                "Automatyczna optymalizacja nie powiodła się",
+                $"„{target.DisplayName}”: {exception.Message}");
+            _trayIcon?.ShowNotification(
+                "GameShift — nie dołączono do gry",
+                $"„{target.DisplayName}”: {exception.Message}");
+        }
+        finally
+        {
+            _isAutomaticOptimizationRunning = false;
+            SetBusy(false);
+        }
+    }
+
+    /// <summary>
+    /// Plan przygotowany recznie i jeszcze wazny blokuje automat: uzytkownik
+    /// jest w trakcie decyzji. Plan wygasly (host trzyma go 10 min) juz nie
+    /// — nie da sie go uruchomic, a bez tego wyjatku automat stalby, dopoki
+    /// ktos nie kliknie na stronie planu.
+    /// </summary>
+    private bool ShouldOptimizeDetectedGameAutomatically(
+        int processId,
+        DateTime? startTime) =>
+        IsAutomaticOptimizationEnabled
+        && _isLoaded
+        && !_disposed
+        && !_isBusy
+        && !_isAutomaticOptimizationRunning
+        && _sessionEndpointAvailable
+        && _activeSession is null
+        && (_pendingPlan is null
+            || _pendingPlan.ExpiresAtUtc < DateTimeOffset.UtcNow)
+        // Start zlecony z zewnatrz (menu kontekstowe, launcher) czeka albo
+        // trwa: to on ma dostac jedyna sesje hosta, nie automat.
+        && _externalLaunchGate.CurrentCount > 0
+        && _pendingActivationRequests.Count == 0
+        && _detectedRunningGamePathVerified
+        && processId > 0
+        && !IsSkippedByAutomaticOptimization(processId, startTime)
+        && !_lifetime.IsCancellationRequested;
+
+    private bool IsSkippedByAutomaticOptimization(
+        int processId,
+        DateTime? startTime) =>
+        _automaticOptimizationSkippedProcesses.TryGetValue(
+            processId,
+            out DateTime? skippedStartTime)
+        // Bez czasu startu po ktorejs stronie nie da sie odroznic nowego
+        // procesu pod starym PID; pomijanie ma byc ostrozne, nie dokladne.
+        && (skippedStartTime is null
+            || startTime is null
+            || skippedStartTime == startTime);
+
+    private void SkipAutomaticOptimizationFor(
+        int processId,
+        DateTime? startTime) =>
+        _automaticOptimizationSkippedProcesses[processId] = startTime;
+
+    private void ForgetExitedSkippedProcesses(
+        IReadOnlySet<int> liveProcessIds)
+    {
+        if (_automaticOptimizationSkippedProcesses.Count == 0)
+        {
+            return;
+        }
+
+        foreach (int processId in _automaticOptimizationSkippedProcesses.Keys
+                     .Where(processId => !liveProcessIds.Contains(processId))
+                     .ToList())
+        {
+            _ = _automaticOptimizationSkippedProcesses.Remove(processId);
+        }
+    }
+
+    private static bool IsProcessAlive(int processId)
+    {
+        try
+        {
+            using Process process = Process.GetProcessById(processId);
+            return !process.HasExited;
+        }
+        catch (Exception exception) when (
+            exception is
+                ArgumentException
+                or InvalidOperationException
+                or Win32Exception)
+        {
+            return false;
+        }
+    }
+
+    private static DateTime? TryReadStartTime(Process process)
+    {
+        try
+        {
+            return process.StartTime.ToUniversalTime();
+        }
+        catch (Exception exception) when (
+            exception is
+                InvalidOperationException
+                or NotSupportedException
+                or Win32Exception)
+        {
+            return null;
+        }
+    }
+
+    private static int ReadCurrentWindowsSessionId()
+    {
+        using Process current = Process.GetCurrentProcess();
+        return current.SessionId;
+    }
+
+    /// <summary>
+    /// Sesja sie skonczyla, a gra moze nadal dzialac: kazdy jej egzemplarz
+    /// widoczny TERAZ trafia do pominietych przez automat. Bez tego automat
+    /// dolaczylby ponownie kilka sekund po tym, jak uzytkownik kliknal
+    /// „Przywróć". Szukane po nazwie i sciezce profilu, niezaleznie od
+    /// ogolnego skanu: ten bierze pierwsze trafienie, bywa wstrzymany i nie
+    /// ma prawa decydowac o tym, co zostaje w spokoju.
+    /// </summary>
+    private async Task SuppressRunningInstancesOfEndedSessionAsync(
+        Guid profileId,
+        CancellationToken cancellationToken)
+    {
+        ProfileListItem? profile = _profiles.FirstOrDefault(item =>
+            item.Profile.ProfileId.Value == profileId);
+        if (profile is null)
+        {
+            return;
+        }
+
+        string executablePath = profile.ExecutablePath;
+        string processName = Path.GetFileNameWithoutExtension(executablePath);
+        List<(int ProcessId, DateTime? StartTime)> instances;
+        try
+        {
+            instances = await Task.Run(
+                () => FindRunningInstances(processName, executablePath),
+                cancellationToken);
+        }
+        catch (OperationCanceledException)
+            when (cancellationToken.IsCancellationRequested)
+        {
+            return;
+        }
+
+        foreach ((int processId, DateTime? startTime) in instances)
+        {
+            SkipAutomaticOptimizationFor(processId, startTime);
+        }
+
+        // Baner ma pokazac te gre od razu, wiec najblizszy takt skanuje
+        // bez czekania na odstep.
+        _lastUnoptimizedGameScanUtc = default;
+    }
+
+    private static List<(int ProcessId, DateTime? StartTime)>
+        FindRunningInstances(string processName, string executablePath)
+    {
+        List<(int ProcessId, DateTime? StartTime)> found = [];
+        foreach (Process process in Process.GetProcessesByName(processName))
+        {
+            using (process)
+            {
+                try
+                {
+                    if (process.SessionId != CurrentWindowsSessionId)
+                    {
+                        continue;
+                    }
+
+                    // Sciezka nieczytelna liczy sie jako trafienie:
+                    // pomijanie ma byc ostrozne, nie dokladne.
+                    string? path = ProcessImagePath.TryRead(process);
+                    if (path is not null
+                        && !string.Equals(
+                            path,
+                            executablePath,
+                            StringComparison.OrdinalIgnoreCase))
+                    {
+                        continue;
+                    }
+
+                    found.Add((process.Id, TryReadStartTime(process)));
+                }
+                catch (Exception exception) when (
+                    exception is
+                        InvalidOperationException
+                        or Win32Exception)
+                {
+                }
+            }
+        }
+
+        return found;
+    }
+
+    private sealed record RunningGameScanResult(
+        ProfileListItem? Game,
+        int ProcessId,
+        DateTime? StartTime,
+        bool PathVerified,
+        IReadOnlySet<int> LiveProcessIds)
+    {
+        public static readonly RunningGameScanResult Empty =
+            new(null, 0, null, false, new HashSet<int>());
+    }
+
+    private async Task LoadGameDetectionPreferencesAsync(
+        CancellationToken cancellationToken)
+    {
+        GameDetectionPreferences preferences;
+        try
+        {
+            preferences = await _userDataStore
+                .LoadGameDetectionPreferencesAsync(cancellationToken);
+        }
+        catch (OperationCanceledException)
+            when (_lifetime.IsCancellationRequested)
+        {
+            return;
+        }
+        catch (Exception exception) when (IsExpectedUiFailure(exception))
+        {
+            // Bez odczytu automat stoi do restartu. Sesja bez klikniecia
+            // na wartosci domyslnej to nie to samo, co na wartosci, ktora
+            // uzytkownik wybral — a mogl wybrac „wylaczone".
+            preferences = new(
+                AutoOptimizeDetectedGames: false,
+                DateTimeOffset.UtcNow);
+            ShowInfo(
+                PlanInfoBar,
+                InfoBarSeverity.Warning,
+                "Nie wczytano ustawień wykrywania gier",
+                "Automatyczna optymalizacja pozostaje wyłączona do "
+                + "ponownego uruchomienia. " + exception.Message);
+        }
+
+        if (_gameDetectionPreferences is not null)
+        {
+            // Uzytkownik przelaczyl ustawienie, zanim baza odpowiedziala;
+            // jego decyzja jest nowsza niz to, co wlasnie odczytano.
+            return;
+        }
+
+        ApplyGameDetectionPreferences(preferences);
+    }
+
+    /// <summary>
+    /// Jedno miejsce, ktore wie o wszystkich widokach tego ustawienia:
+    /// przelacznik w ustawieniach, znacznik i podpowiedz ikony oraz rytm
+    /// odpytywania schowanego okna.
+    /// </summary>
+    private void ApplyGameDetectionPreferences(
+        GameDetectionPreferences preferences)
+    {
+        _gameDetectionPreferences = preferences;
+        if (AutoOptimizeDetectedGamesToggleSwitch is not null)
+        {
+            _isLoadingGameDetectionPreferences = true;
+            try
+            {
+                AutoOptimizeDetectedGamesToggleSwitch.IsOn =
+                    preferences.AutoOptimizeDetectedGames;
+            }
+            finally
+            {
+                _isLoadingGameDetectionPreferences = false;
+            }
+        }
+
+        _trayIcon?.SetAutomaticOptimizationState(
+            preferences.AutoOptimizeDetectedGames);
+        if (_hiddenInTray)
+        {
+            _sessionPollTimer.Interval = HiddenSessionPollInterval;
+        }
+    }
+
+    private async void OnAutoOptimizeDetectedGamesSettingChanged(
+        object sender,
+        RoutedEventArgs args)
+    {
+        if (_isLoadingGameDetectionPreferences
+            || AutoOptimizeDetectedGamesToggleSwitch is null)
+        {
+            return;
+        }
+
+        GameDetectionPreferences updated = new(
+            AutoOptimizeDetectedGamesToggleSwitch.IsOn,
+            DateTimeOffset.UtcNow);
+        // Najpierw skutek, potem zapis: klikniecie dziala od razu, a
+        // nieudany zapis jest bledem do pokazania, nie powodem, zeby
+        // przelacznik pokazywal co innego, niz program robi.
+        ApplyGameDetectionPreferences(updated);
+        try
+        {
+            // Zapisy po kolei i zawsze z biezacego stanu: dwa szybkie
+            // klikniecia nie moga skonczyc w bazie w odwrotnej kolejnosci.
+            await _gameDetectionSaveGate.WaitAsync(_lifetime.Token);
+            try
+            {
+                await _userDataStore.SaveGameDetectionPreferencesAsync(
+                    _gameDetectionPreferences ?? updated,
+                    _lifetime.Token);
+            }
+            finally
+            {
+                _ = _gameDetectionSaveGate.Release();
+            }
+        }
+        catch (OperationCanceledException)
+            when (_lifetime.IsCancellationRequested)
+        {
+        }
+        catch (Exception exception) when (IsExpectedUiFailure(exception))
+        {
+            ShowInfo(
+                PlanInfoBar,
+                InfoBarSeverity.Error,
+                "Nie zapisano ustawień wykrywania gier",
+                "Ustawienie działa do ponownego uruchomienia. "
+                + exception.Message);
+        }
+    }
+
+    private void OnTrayAutomaticOptimizationToggleRequested(
+        object? sender,
+        EventArgs args) =>
+        _ = DispatcherQueue.TryEnqueue(() =>
+        {
+            if (_disposed
+                || _gameDetectionPreferences is null
+                || AutoOptimizeDetectedGamesToggleSwitch is null)
+            {
+                // Przed odczytem ustawien nie ma czego przelaczac; odczyt
+                // z bazy i tak nadpisalby te decyzje.
+                return;
+            }
+
+            bool enabled = !AutoOptimizeDetectedGamesToggleSwitch.IsOn;
+            // Przelacznik w ustawieniach jest zrodlem prawdy; jego zdarzenie
+            // Toggled zapisuje ustawienie i odswieza ikone.
+            AutoOptimizeDetectedGamesToggleSwitch.IsOn = enabled;
+            _trayIcon?.ShowNotification(
+                enabled
+                    ? "GameShift — automat włączony"
+                    : "GameShift — automat wyłączony",
+                enabled
+                    ? "Wykryta gra z biblioteki dostanie sesję z zapisanymi "
+                        + "regułami bez klikania, także z zasobnika."
+                    : "GameShift pokaże tylko baner; sesję dla wykrytej "
+                        + "gry uruchomisz ręcznie.");
+        });
 
     private void ApplyPreparedPlan(SessionPlanClientSnapshot plan)
     {
@@ -6146,6 +6742,8 @@ public sealed partial class MainWindow : Window, IDisposable
         {
             _trayIcon.OpenRequested -= OnTrayOpenRequested;
             _trayIcon.ExitRequested -= OnTrayExitRequested;
+            _trayIcon.AutomaticOptimizationToggleRequested -=
+                OnTrayAutomaticOptimizationToggleRequested;
             _trayIcon.Dispose();
         }
 
@@ -6155,6 +6753,7 @@ public sealed partial class MainWindow : Window, IDisposable
         _optiScaler.Dispose();
         _userDataStore.Dispose();
         _externalLaunchGate.Dispose();
+        _gameDetectionSaveGate.Dispose();
         _lifetime.Dispose();
         _disposed = true;
         GC.SuppressFinalize(this);

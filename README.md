@@ -11,6 +11,12 @@ BelowNormal plus EcoQoS to unrelated background processes, raise the game
 priority through the real Windows process API, attach to an already-running
 verified game instead of starting a duplicate, follow child processes after a
 launcher exits, and request a graceful game close.
+When a library game starts outside GameShift, the UI notices it within a few
+seconds, also while hidden in the tray, and attaches a session with that
+game's saved rules on its own. The automatic path only ever attaches to a
+running game and never launches one; an instance whose session the user ended
+by hand is left alone until the game is started again. The switch for this
+lives in the settings page and in the tray icon menu.
 Known launchers, anti-cheat components, Windows processes, and helpers from
 the selected game's installation directory are excluded from background
 optimization.

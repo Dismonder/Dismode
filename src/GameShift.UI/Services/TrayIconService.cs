@@ -9,11 +9,13 @@ public sealed class TrayIconService : IDisposable
     private const uint CallbackMessage = WmApp + 0x42;
     private const uint OpenCommand = 1001;
     private const uint ExitCommand = 1002;
+    private const uint AutomaticOptimizationCommand = 1003;
 
     private readonly nint _windowHandle;
     private readonly nint _iconHandle;
     private readonly WindowSubclassProcedure _subclassProcedure;
     private NotifyIconData _iconData;
+    private bool _automaticOptimizationEnabled;
     private bool _disposed;
 
     public TrayIconService(nint windowHandle, string iconPath)
@@ -86,6 +88,31 @@ public sealed class TrayIconService : IDisposable
 
     public event EventHandler? ExitRequested;
 
+    /// <summary>
+    /// Uzytkownik kliknal w menu ikony pozycje automatycznej optymalizacji.
+    /// Ikona nie zmienia stanu sama: okno jest jego wlascicielem, zapisuje
+    /// go i oddaje przez <see cref="SetAutomaticOptimizationState"/>.
+    /// </summary>
+    public event EventHandler? AutomaticOptimizationToggleRequested;
+
+    /// <summary>
+    /// Odswieza znacznik przy pozycji menu i podpowiedz ikony, zeby po
+    /// najechaniu bylo widac, czy GameShift czuwa nad wykrytymi grami.
+    /// </summary>
+    public void SetAutomaticOptimizationState(bool enabled)
+    {
+        _automaticOptimizationEnabled = enabled;
+        if (_disposed)
+        {
+            return;
+        }
+
+        _iconData.Tip = Truncate(DescribeTooltip(enabled), 127);
+        NotifyIconData tooltip = _iconData;
+        tooltip.Flags = NotifyIconTip | NotifyIconShowTip;
+        _ = ShellNotifyIcon(NotifyIconModify, ref tooltip);
+    }
+
     public void ShowNotification(string title, string message)
     {
         if (_disposed)
@@ -151,6 +178,19 @@ public sealed class TrayIconService : IDisposable
                 string.Empty);
             _ = AppendMenu(
                 menu,
+                MenuString
+                    | (_automaticOptimizationEnabled
+                        ? MenuChecked
+                        : MenuUnchecked),
+                AutomaticOptimizationCommand,
+                "Automatycznie optymalizuj wykryte gry");
+            _ = AppendMenu(
+                menu,
+                MenuSeparator,
+                0,
+                string.Empty);
+            _ = AppendMenu(
+                menu,
                 MenuString,
                 ExitCommand,
                 "Wyłącz GameShift — Memory Optimizer pozostaje");
@@ -177,6 +217,12 @@ public sealed class TrayIconService : IDisposable
             {
                 OpenRequested?.Invoke(this, EventArgs.Empty);
             }
+            else if (command == AutomaticOptimizationCommand)
+            {
+                AutomaticOptimizationToggleRequested?.Invoke(
+                    this,
+                    EventArgs.Empty);
+            }
             else if (command == ExitCommand)
             {
                 ExitRequested?.Invoke(this, EventArgs.Empty);
@@ -196,11 +242,16 @@ public sealed class TrayIconService : IDisposable
         Flags = flags,
         CallbackMessage = CallbackMessage,
         IconHandle = _iconHandle,
-        Tip = "GameShift — działa w tle",
+        Tip = DescribeTooltip(_automaticOptimizationEnabled),
         Info = string.Empty,
         InfoTitle = string.Empty,
         BalloonIconHandle = nint.Zero,
     };
+
+    private static string DescribeTooltip(bool automaticOptimizationEnabled) =>
+        automaticOptimizationEnabled
+            ? "GameShift — czuwa: wykryta gra dostanie sesję automatycznie"
+            : "GameShift — działa w tle";
 
     private static string Truncate(string value, int maximumLength)
     {
@@ -388,6 +439,8 @@ public sealed class TrayIconService : IDisposable
     private const uint NotifyInfoInformation = 0x00000001;
     private const uint NotifyIconVersion4 = 4;
     private const uint MenuString = 0x00000000;
+    private const uint MenuUnchecked = 0x00000000;
+    private const uint MenuChecked = 0x00000008;
     private const uint MenuSeparator = 0x00000800;
     private const uint TrackRightButton = 0x0002;
     private const uint TrackNonotify = 0x0080;

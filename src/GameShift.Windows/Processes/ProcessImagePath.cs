@@ -11,18 +11,23 @@ namespace GameShift.Windows.Processes;
 /// has to recognise. This asks only for PROCESS_QUERY_LIMITED_INFORMATION,
 /// which Windows grants for processes the user owns.
 /// </summary>
-internal static partial class ProcessImagePath
+/// <remarks>
+/// Public because the unprivileged UI scans for running library games with
+/// the same predicate the elevated host uses to attach: a path it cannot
+/// read is a game it must not claim to have found.
+/// </remarks>
+public static partial class ProcessImagePath
 {
     private const uint ProcessQueryLimitedInformation = 0x1000;
     private const int MaximumWindowsPath = 32767;
 
-    internal static string? TryRead(Process process)
+    public static string? TryRead(Process process)
     {
         ArgumentNullException.ThrowIfNull(process);
         return TryRead(process.Id);
     }
 
-    internal static unsafe string? TryRead(int processId)
+    public static unsafe string? TryRead(int processId)
     {
         nint handle = OpenProcess(
             ProcessQueryLimitedInformation,

@@ -223,6 +223,169 @@ public sealed class GameSessionOrchestratorTests
     }
 
     [TestMethod]
+    public async Task AttachOnlyStartRefusesToLaunchMissingGame()
+    {
+        string directory = CreateTestDirectory();
+        string readyFile = Path.Combine(directory, "attach-only.ready");
+        SqliteUserDataStore store =
+            new(Path.Combine(directory, "user.db"));
+        AppendOnlyRecoveryJournal journal =
+            new(Path.Combine(directory, "recovery.jsonl"));
+        LocalGameSessionOrchestrator orchestrator = new(
+            store,
+            store,
+            journal,
+            monitorInterval: TimeSpan.FromMilliseconds(50));
+
+        try
+        {
+            ManualGameProfile profile = await CreateHarnessProfileAsync(
+                readyFile);
+            await store.UpsertAsync(profile, CancellationToken.None);
+            await orchestrator.InitializeAsync(CancellationToken.None);
+
+            SessionPlanPreview plan = await orchestrator.PrepareAsync(
+                profile.ProfileId,
+                CancellationToken.None);
+
+            await Assert.ThrowsExactlyAsync<InvalidOperationException>(
+                async () => _ = await orchestrator.StartAsync(
+                    plan.PlanId,
+                    plan.SessionId,
+                    CancellationToken.None,
+                    attachOnly: true));
+
+            // Gdyby host mimo flagi uruchomil gre, harness zapisalby plik
+            // gotowosci w ulamku sekundy. Czekamy dluzej niz on potrzebuje.
+            await Task.Delay(TimeSpan.FromSeconds(2));
+            Assert.IsFalse(
+                File.Exists(readyFile),
+                "Tryb „tylko dołącz” nie może uruchamiać gry.");
+
+            GameSessionSnapshot? active =
+                await orchestrator.GetActiveAsync(CancellationToken.None);
+            SessionShutdownReadiness readiness =
+                await orchestrator.GetShutdownReadinessAsync(
+                    CancellationToken.None);
+            IReadOnlyList<SessionSummary> history =
+                await store.ListRecentAsync(10, CancellationToken.None);
+            IReadOnlyList<RecoveryJournalEntry> records =
+                await journal.ReadAllAsync(CancellationToken.None);
+
+            Assert.IsNull(active);
+            Assert.IsTrue(readiness.CanShutdown);
+            Assert.IsFalse(readiness.HasPreparedPlan);
+            Assert.HasCount(1, history);
+            Assert.AreEqual(
+                SessionCompletionStatus.FailedBeforeApply,
+                history[0].Status);
+            Assert.IsFalse(records.Any(record =>
+                record.SessionCheckpoint == SessionCheckpoint.GameLaunched));
+            Assert.AreEqual(
+                SessionCheckpoint.ReconciliationComplete,
+                records[^1].SessionCheckpoint);
+        }
+        finally
+        {
+            if (File.Exists(readyFile))
+            {
+                await CloseProcessAsync(ReadProcessId(readyFile));
+            }
+
+            await orchestrator.DisposeAsync();
+            journal.Dispose();
+            store.Dispose();
+            DeleteDirectory(directory);
+        }
+    }
+
+    [TestMethod]
+    public async Task AttachOnlyStartAttachesToRunningGameWithoutDuplicate()
+    {
+        string directory = CreateTestDirectory();
+        string readyFile = Path.Combine(directory, "attach-running.ready");
+        int? processId = null;
+        SqliteUserDataStore store =
+            new(Path.Combine(directory, "user.db"));
+        AppendOnlyRecoveryJournal journal =
+            new(Path.Combine(directory, "recovery.jsonl"));
+        LocalGameSessionOrchestrator orchestrator = new(
+            store,
+            store,
+            journal,
+            monitorInterval: TimeSpan.FromMilliseconds(50));
+
+        try
+        {
+            ManualGameProfile profile = await CreateHarnessProfileAsync(
+                readyFile);
+            await store.UpsertAsync(profile, CancellationToken.None);
+            await orchestrator.InitializeAsync(CancellationToken.None);
+
+            // Gra startuje poza GameShiftem, tak jak przy wykryciu z pulpitu.
+            ProcessStartInfo startInfo = new()
+            {
+                FileName = profile.ExecutablePath,
+                WorkingDirectory = profile.WorkingDirectory,
+                UseShellExecute = false,
+            };
+            foreach (string argument in profile.LaunchArguments)
+            {
+                startInfo.ArgumentList.Add(argument);
+            }
+
+            using (Process started = Process.Start(startInfo)
+                ?? throw new InvalidOperationException(
+                    "The process test harness did not start."))
+            {
+                processId = started.Id;
+            }
+
+            await WaitForFileAsync(readyFile);
+            Assert.AreEqual(processId, ReadProcessId(readyFile));
+            DateTimeOffset readyWrittenAtUtc =
+                File.GetLastWriteTimeUtc(readyFile);
+
+            SessionPlanPreview plan = await orchestrator.PrepareAsync(
+                profile.ProfileId,
+                CancellationToken.None);
+            GameSessionSnapshot active = await orchestrator.StartAsync(
+                plan.PlanId,
+                plan.SessionId,
+                CancellationToken.None,
+                attachOnly: true);
+
+            Assert.AreEqual(OptimizationSessionState.Active, active.State);
+            Assert.StartsWith("Dołączono", active.Message);
+            // Drugi egzemplarz nadpisalby plik gotowosci swoim PID.
+            Assert.AreEqual(processId, ReadProcessId(readyFile));
+            Assert.AreEqual(
+                readyWrittenAtUtc,
+                File.GetLastWriteTimeUtc(readyFile));
+
+            GameSessionSnapshot completed = await orchestrator.RestoreAsync(
+                plan.SessionId,
+                CancellationToken.None);
+            Assert.AreEqual(
+                OptimizationSessionState.Completed,
+                completed.State);
+            Assert.IsTrue(IsProcessRunning(processId.Value));
+        }
+        finally
+        {
+            if (processId is not null)
+            {
+                await CloseProcessAsync(processId.Value);
+            }
+
+            await orchestrator.DisposeAsync();
+            journal.Dispose();
+            store.Dispose();
+            DeleteDirectory(directory);
+        }
+    }
+
+    [TestMethod]
     public async Task SessionLifecycleActivatesAndRestoresSystemProfile()
     {
         string directory = CreateTestDirectory();

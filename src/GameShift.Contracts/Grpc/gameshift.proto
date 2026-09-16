@@ -195,6 +195,12 @@ message StartSessionRequest {
   // Reactive background restraint for this session. Absent means the host's
   // own default, which is off.
   optional bool enable_pro_balance = 4;
+  // Dolacz wylacznie do juz dzialajacej gry; nigdy jej nie uruchamiaj.
+  // Absent albo false zachowuje dotychczasowe zachowanie (uruchom, gdy gra
+  // nie dziala). Automatyczna optymalizacja wykrytej gry ustawia true, bo
+  // miedzy wykryciem a startem sesji gra mogla sie zakonczyc i bez tej
+  // flagi host uruchomilby ja od nowa bez udzialu uzytkownika.
+  optional bool attach_only = 5;
 }
 
 message GetActiveSessionRequest {

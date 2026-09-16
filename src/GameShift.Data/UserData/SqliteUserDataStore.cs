@@ -16,9 +16,10 @@ public sealed class SqliteUserDataStore :
     IGameOptimizationPreferencesRepository,
     ISessionHistoryRepository,
     IUpdatePreferencesRepository,
+    IGameDetectionPreferencesRepository,
     IDisposable
 {
-    private const int CurrentSchemaVersion = 11;
+    private const int CurrentSchemaVersion = 12;
     private const int MaximumHistoryPageSize = 1000;
 
     private readonly string _databasePath;
@@ -702,6 +703,67 @@ public sealed class SqliteUserDataStore :
         command.Parameters.AddWithValue(
             "$lastError",
             (object?)preferences.LastError ?? DBNull.Value);
+        command.Parameters.AddWithValue(
+            "$updatedAtUtc",
+            FormatTimestamp(preferences.UpdatedAtUtc));
+        await command.ExecuteNonQueryAsync(cancellationToken)
+            .ConfigureAwait(false);
+    }
+
+    public async ValueTask<GameDetectionPreferences>
+        LoadGameDetectionPreferencesAsync(
+            CancellationToken cancellationToken)
+    {
+        await InitializeAsync(cancellationToken).ConfigureAwait(false);
+        await using SqliteConnection connection = CreateConnection();
+        await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
+        await ConfigureConnectionAsync(connection, cancellationToken)
+            .ConfigureAwait(false);
+
+        await using SqliteCommand command = connection.CreateCommand();
+        command.CommandText =
+            """
+            SELECT AutoOptimizeDetectedGames, UpdatedAtUtc
+            FROM GameDetectionPreferences
+            WHERE SettingsKey = 1;
+            """;
+        await using SqliteDataReader reader =
+            await command.ExecuteReaderAsync(cancellationToken)
+                .ConfigureAwait(false);
+        if (!await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+        {
+            return GameDetectionPreferences.CreateDefault();
+        }
+
+        return new(
+            reader.GetBoolean(0),
+            ParseTimestamp(reader.GetString(1)));
+    }
+
+    public async ValueTask SaveGameDetectionPreferencesAsync(
+        GameDetectionPreferences preferences,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(preferences);
+        await InitializeAsync(cancellationToken).ConfigureAwait(false);
+        await using SqliteConnection connection = CreateConnection();
+        await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
+        await ConfigureConnectionAsync(connection, cancellationToken)
+            .ConfigureAwait(false);
+
+        await using SqliteCommand command = connection.CreateCommand();
+        command.CommandText =
+            """
+            INSERT INTO GameDetectionPreferences (
+                SettingsKey, AutoOptimizeDetectedGames, UpdatedAtUtc)
+            VALUES (1, $autoOptimizeDetectedGames, $updatedAtUtc)
+            ON CONFLICT(SettingsKey) DO UPDATE SET
+                AutoOptimizeDetectedGames = excluded.AutoOptimizeDetectedGames,
+                UpdatedAtUtc = excluded.UpdatedAtUtc;
+            """;
+        command.Parameters.AddWithValue(
+            "$autoOptimizeDetectedGames",
+            preferences.AutoOptimizeDetectedGames ? 1 : 0);
         command.Parameters.AddWithValue(
             "$updatedAtUtc",
             FormatTimestamp(preferences.UpdatedAtUtc));
@@ -1445,6 +1507,39 @@ public sealed class SqliteUserDataStore :
                 .ConfigureAwait(false);
             existingVersion = 11;
         }
+
+        if (existingVersion < 12)
+        {
+            await using SqliteTransaction transaction =
+                (SqliteTransaction)await connection
+                    .BeginTransactionAsync(
+                        IsolationLevel.Serializable,
+                        cancellationToken)
+                    .ConfigureAwait(false);
+            await using SqliteCommand schema = connection.CreateCommand();
+            schema.Transaction = transaction;
+            schema.CommandText =
+                """
+                CREATE TABLE GameDetectionPreferences (
+                    SettingsKey INTEGER NOT NULL PRIMARY KEY
+                        CHECK (SettingsKey = 1),
+                    AutoOptimizeDetectedGames INTEGER NOT NULL
+                        CHECK (AutoOptimizeDetectedGames IN (0, 1)),
+                    UpdatedAtUtc TEXT NOT NULL
+                );
+
+                INSERT INTO SchemaMigrations (Version, AppliedAtUtc)
+                VALUES (12, $appliedAtUtc);
+                """;
+            schema.Parameters.AddWithValue(
+                "$appliedAtUtc",
+                FormatTimestamp(DateTimeOffset.UtcNow));
+            await schema.ExecuteNonQueryAsync(cancellationToken)
+                .ConfigureAwait(false);
+            await transaction.CommitAsync(cancellationToken)
+                .ConfigureAwait(false);
+            existingVersion = 12;
+        }
     }
 
     private static async ValueTask VerifyRequiredSchemaAsync(
@@ -1466,7 +1561,8 @@ public sealed class SqliteUserDataStore :
                            'BackgroundProcessRules',
                            'PerformanceOverlayPreferences',
                            'UpdatePreferences',
-                           'GameMetadata'))
+                           'GameMetadata',
+                           'GameDetectionPreferences'))
                    OR (type = 'index' AND name IN (
                            'IX_GameProfiles_ExecutablePath',
                            'IX_SessionSummaries_EndedAtUtc',
@@ -1479,7 +1575,7 @@ public sealed class SqliteUserDataStore :
             int objectCount = Convert.ToInt32(
                 countResult,
                 CultureInfo.InvariantCulture);
-            if (objectCount != 12)
+            if (objectCount != 13)
             {
                 throw new InvalidDataException(
                     "The user database schema is incomplete.");
@@ -1533,6 +1629,10 @@ public sealed class SqliteUserDataStore :
                        LastPlayedAtUtc, TotalPlaytimeMinutes,
                        HeroArtworkPath, LastMetadataRefreshAtUtc
                 FROM GameMetadata
+                LIMIT 0;
+
+                SELECT SettingsKey, AutoOptimizeDetectedGames, UpdatedAtUtc
+                FROM GameDetectionPreferences
                 LIMIT 0;
                 """;
             await columns.ExecuteNonQueryAsync(cancellationToken)

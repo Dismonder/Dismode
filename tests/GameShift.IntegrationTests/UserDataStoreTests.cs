@@ -344,6 +344,40 @@ public sealed class UserDataStoreTests
     }
 
     [TestMethod]
+    public async Task GameDetectionPreferencesRoundTripAndDefaultToAutomatic()
+    {
+        using UserDataTestContext testContext = new();
+
+        GameDetectionPreferences defaults =
+            await testContext.Store.LoadGameDetectionPreferencesAsync(
+                CancellationToken.None);
+        Assert.IsTrue(defaults.AutoOptimizeDetectedGames);
+
+        DateTimeOffset updatedAtUtc = DateTimeOffset.UtcNow.AddMinutes(-3);
+        GameDetectionPreferences saved = new(
+            AutoOptimizeDetectedGames: false,
+            updatedAtUtc);
+        await testContext.Store.SaveGameDetectionPreferencesAsync(
+            saved,
+            CancellationToken.None);
+
+        GameDetectionPreferences loaded =
+            await testContext.Store.LoadGameDetectionPreferencesAsync(
+                CancellationToken.None);
+        Assert.AreEqual(saved, loaded);
+
+        // Drugi zapis nadpisuje pierwszy: jeden wiersz ustawien, nie
+        // historia zmian.
+        await testContext.Store.SaveGameDetectionPreferencesAsync(
+            new(AutoOptimizeDetectedGames: true, DateTimeOffset.UtcNow),
+            CancellationToken.None);
+        GameDetectionPreferences reenabled =
+            await testContext.Store.LoadGameDetectionPreferencesAsync(
+                CancellationToken.None);
+        Assert.IsTrue(reenabled.AutoOptimizeDetectedGames);
+    }
+
+    [TestMethod]
     public async Task MissingOptimizationPreferencesDefaultToNormalPriority()
     {
         using UserDataTestContext testContext = new();
@@ -394,7 +428,7 @@ public sealed class UserDataStoreTests
             Assert.AreEqual(legacySummary.SessionId, history[0].SessionId);
             Assert.IsNull(history[0].FrameRateStatistics);
             Assert.AreEqual(
-                11,
+                12,
                 await ReadMaximumSchemaVersionAsync(databasePath));
         }
         finally
@@ -451,7 +485,7 @@ public sealed class UserDataStoreTests
             Assert.AreEqual(artworkPath, migrated.ArtworkPath);
             Assert.IsEmpty(metadata);
             Assert.AreEqual(
-                11,
+                12,
                 await ReadMaximumSchemaVersionAsync(databasePath));
         }
         finally
@@ -505,6 +539,47 @@ public sealed class UserDataStoreTests
                 version: 10);
             using SqliteUserDataStore store = new(databasePath);
 
+            await Assert.ThrowsExactlyAsync<InvalidDataException>(
+                () => store
+                    .InitializeAsync(CancellationToken.None)
+                    .AsTask());
+        }
+        finally
+        {
+            Directory.Delete(directory, recursive: true);
+        }
+    }
+
+    [TestMethod]
+    public async Task InitializationRejectsCurrentSchemaWithoutGameDetectionTable()
+    {
+        string directory = Path.Combine(
+            Path.GetTempPath(),
+            "GameShift.UserDataTests",
+            Guid.NewGuid().ToString("N"));
+        string databasePath = Path.Combine(directory, "no-detection.db");
+        Directory.CreateDirectory(directory);
+
+        try
+        {
+            using (SqliteUserDataStore currentStore = new(databasePath))
+            {
+                await currentStore.InitializeAsync(CancellationToken.None);
+            }
+
+            // Baza oznaczona jako biezaca, ale bez tabeli z migracji 12:
+            // migracje nic nie zrobia, wiec brak musi wylapac weryfikacja
+            // schematu, a nie kolejny odczyt ustawien.
+            await using (SqliteConnection connection =
+                CreateConnection(databasePath))
+            {
+                await connection.OpenAsync();
+                await using SqliteCommand command = connection.CreateCommand();
+                command.CommandText = "DROP TABLE GameDetectionPreferences;";
+                await command.ExecuteNonQueryAsync();
+            }
+
+            using SqliteUserDataStore store = new(databasePath);
             await Assert.ThrowsExactlyAsync<InvalidDataException>(
                 () => store
                     .InitializeAsync(CancellationToken.None)
@@ -588,11 +663,13 @@ public sealed class UserDataStoreTests
                 ON SessionSummaries(EndedAtUtc DESC);
             DROP TABLE UpdatePreferences;
             DROP TABLE GameMetadata;
+            DROP TABLE GameDetectionPreferences;
             ALTER TABLE GameProfiles DROP COLUMN ArtworkPath;
             ALTER TABLE PerformanceOverlayPreferences DROP COLUMN Style;
             ALTER TABLE PerformanceOverlayPreferences DROP COLUMN Theme;
             ALTER TABLE PerformanceOverlayPreferences DROP COLUMN IsFpsTrackingEnabled;
-            DELETE FROM SchemaMigrations WHERE Version IN (5, 6, 7, 8, 9, 10, 11);
+            DELETE FROM SchemaMigrations
+            WHERE Version IN (5, 6, 7, 8, 9, 10, 11, 12);
             """;
         await command.ExecuteNonQueryAsync();
         await transaction.CommitAsync();
@@ -610,10 +687,11 @@ public sealed class UserDataStoreTests
         command.CommandText =
             """
             DROP TABLE GameMetadata;
+            DROP TABLE GameDetectionPreferences;
             ALTER TABLE PerformanceOverlayPreferences DROP COLUMN Style;
             ALTER TABLE PerformanceOverlayPreferences DROP COLUMN Theme;
             ALTER TABLE PerformanceOverlayPreferences DROP COLUMN IsFpsTrackingEnabled;
-            DELETE FROM SchemaMigrations WHERE Version IN (8, 9, 10, 11);
+            DELETE FROM SchemaMigrations WHERE Version IN (8, 9, 10, 11, 12);
             """;
         await command.ExecuteNonQueryAsync();
         await transaction.CommitAsync();

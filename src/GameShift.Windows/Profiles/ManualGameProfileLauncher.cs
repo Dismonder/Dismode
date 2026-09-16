@@ -42,10 +42,18 @@ public sealed class ManualGameProfileLauncher
             .ConfigureAwait(false);
     }
 
+    /// <param name="attachOnly">
+    /// Gdy true, brak dzialajacego egzemplarza jest bledem, a nie powodem
+    /// do uruchomienia gry. Automat dolaczajacy do wykrytej gry musi tak
+    /// pracowac: miedzy wykryciem a startem sesji gra mogla sie zakonczyc,
+    /// a uruchomienie jej od nowa bez klikniecia uzytkownika byloby
+    /// dzialaniem, na ktore nikt sie nie zgodzil.
+    /// </param>
     internal async ValueTask<LaunchedGameProcess>
         LaunchOrAttachAfterVerificationAsync(
             ManualGameProfile profile,
             string verifiedExecutableSha256,
+            bool attachOnly,
             CancellationToken cancellationToken)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(
@@ -62,6 +70,7 @@ public sealed class ManualGameProfileLauncher
                 profile,
                 attachToRunningProcess: true,
                 verifyExecutableBeforeLaunch: false,
+                attachOnly,
                 cancellationToken)
             .ConfigureAwait(false);
     }
@@ -74,6 +83,7 @@ public sealed class ManualGameProfileLauncher
                 profile,
                 attachToRunningProcess,
                 verifyExecutableBeforeLaunch: true,
+                attachOnly: false,
                 cancellationToken)
             .ConfigureAwait(false);
 
@@ -81,8 +91,16 @@ public sealed class ManualGameProfileLauncher
         ManualGameProfile profile,
         bool attachToRunningProcess,
         bool verifyExecutableBeforeLaunch,
+        bool attachOnly,
         CancellationToken cancellationToken)
     {
+        if (attachOnly && !attachToRunningProcess)
+        {
+            throw new ArgumentException(
+                "Attach-only launches require attaching to the running process.",
+                nameof(attachOnly));
+        }
+
         ArgumentNullException.ThrowIfNull(profile);
         if (!profile.IsEnabled)
         {
@@ -118,6 +136,14 @@ public sealed class ManualGameProfileLauncher
                 return new(
                     runningIdentity,
                     WasAlreadyRunning: true);
+            }
+
+            if (attachOnly)
+            {
+                throw new InvalidOperationException(
+                    "Gra nie jest już uruchomiona. GameShift dołącza "
+                    + "automatycznie tylko do działającej gry i nie "
+                    + "uruchamia jej samodzielnie.");
             }
         }
 
