@@ -189,6 +189,27 @@ public sealed partial class MainWindow : Window, IDisposable
         TimeSpan.FromMilliseconds(250);
 
     /// <summary>
+    /// Hak zmiany okna pierwszego planu: gra, ktora wlasnie wystartowala,
+    /// wychodzi na wierzch, wiec skan idzie od razu zamiast czekac do 6 s.
+    /// Null, gdy Windows odmowil haka — wtedy zostaje sam takt.
+    /// </summary>
+    private ForegroundWindowChangeListener? _foregroundChangeListener;
+    private DateTimeOffset _lastForegroundWakeUtc;
+
+    /// <summary>
+    /// Alt-tab potrafi zmienic okno kilka razy na sekunde; kazde zdarzenie
+    /// to pytanie hosta o sesje i skan, wiec jedno na sekunde wystarczy.
+    /// </summary>
+    private static readonly TimeSpan ForegroundWakeDebounce =
+        TimeSpan.FromSeconds(1);
+
+    /// <summary>
+    /// Gry, dla ktorych uzytkownik wylaczyl automat na stronie planu.
+    /// Baner dalej je pokazuje, ale sesja startuje tylko reka.
+    /// </summary>
+    private readonly HashSet<Guid> _automaticOptimizationExcludedProfiles = [];
+
+    /// <summary>
     /// Sesja Windows tego okna. Host dolacza tylko do procesow z tej samej
     /// sesji, wiec skan po innej (drugi zalogowany uzytkownik) dawalby
     /// proby skazane na odmowe.
@@ -331,6 +352,16 @@ public sealed partial class MainWindow : Window, IDisposable
             _userSid,
             request => DispatcherQueue.TryEnqueue(
                 () => HandleActivationRequest(request)));
+
+        try
+        {
+            _foregroundChangeListener = new(OnForegroundProcessChanged);
+        }
+        catch (Win32Exception)
+        {
+            // Bez haka zostaje takt odpytywania: automat dziala, tylko
+            // reaguje wolniej.
+        }
 
         if (!_launchOptions.StartInBackground
             && AppWindow.Presenter is OverlappedPresenter presenter)
@@ -4497,22 +4528,28 @@ public sealed partial class MainWindow : Window, IDisposable
                         _automaticOptimizationSkipList.IsSkipped(
                             pid,
                             scan.StartTime);
+                    bool excludedByProfile =
+                        _automaticOptimizationExcludedProfiles.Contains(
+                            matched.Profile.ProfileId.Value);
                     bool automaticAttachPending =
                         IsAutomaticOptimizationEnabled
                         && scan.PathVerified
                         && !skippedByAutomaticOptimization
+                        && !excludedByProfile
                         && (_pendingPlan is null
                             || _pendingPlan.ExpiresAtUtc
                                 < DateTimeOffset.UtcNow);
                     UnoptimizedGameNameText.Text = $"„{matched.DisplayName}” (PID: {pid})";
                     // Baner mowi, co automat zrobi albo dlaczego nie robi
-                    // nic: pominiety egzemplarz to najczestszy powod, dla
-                    // ktorego „wlaczony automat" niczego nie uruchamia.
+                    // nic: pominiety egzemplarz i wyjatek per gra to dwa
+                    // powody, dla ktorych „wlaczony automat" nic nie robi.
                     UnoptimizedGameDetailsText.Text = automaticAttachPending
                         ? $"Gra {matched.DisplayName} działa. GameShift zaraz dołączy do niej automatycznie i zastosuje zapisane reguły."
-                        : IsAutomaticOptimizationEnabled && skippedByAutomaticOptimization
-                            ? $"Gra {matched.DisplayName} działa. Automat pomija ten egzemplarz, bo jego sesję zakończono ręcznie albo start się nie udał; następne uruchomienie gry znów dostanie sesję. Możesz włączyć optymalizację ręcznie."
-                            : $"Gra {matched.DisplayName} działa w systemie Windows. Możesz włączyć profil optymalizacji w locie bez jej restartowania.";
+                        : IsAutomaticOptimizationEnabled && excludedByProfile
+                            ? $"Gra {matched.DisplayName} działa. Automat jest dla niej wyłączony (pole na stronie planu); możesz włączyć optymalizację ręcznie."
+                            : IsAutomaticOptimizationEnabled && skippedByAutomaticOptimization
+                                ? $"Gra {matched.DisplayName} działa. Automat pomija ten egzemplarz, bo jego sesję zakończono ręcznie albo start się nie udał; następne uruchomienie gry znów dostanie sesję. Możesz włączyć optymalizację ręcznie."
+                                : $"Gra {matched.DisplayName} działa w systemie Windows. Możesz włączyć profil optymalizacji w locie bez jej restartowania.";
                     UnoptimizedGameBanner.Visibility = Visibility.Visible;
                 }
                 else
@@ -4629,6 +4666,13 @@ public sealed partial class MainWindow : Window, IDisposable
         if (target is null
             || !ShouldOptimizeDetectedGameAutomatically(processId, startTime))
         {
+            return;
+        }
+
+        if (_automaticOptimizationExcludedProfiles.Contains(
+                target.Profile.ProfileId.Value))
+        {
+            // Wyjatek per gra: baner zostaje, sesja tylko reka.
             return;
         }
 
@@ -5084,6 +5128,94 @@ public sealed partial class MainWindow : Window, IDisposable
                         + "gry uruchomisz ręcznie.");
         });
 
+    /// <summary>
+    /// Wyjatek per gra dla automatu. Zapis od razu: kto odznacza to pole,
+    /// chce spokoju dla tej gry natychmiast, a nie po nastepnym
+    /// przygotowaniu planu.
+    /// </summary>
+    private async void OnAutoOptimizeGameCheckBoxClicked(
+        object sender,
+        RoutedEventArgs args)
+    {
+        if (ProfilesList.SelectedItem is not ProfileListItem selected
+            || AutoOptimizeGameCheckBox is null)
+        {
+            return;
+        }
+
+        bool enabled = AutoOptimizeGameCheckBox.IsChecked != false;
+        Guid profileId = selected.Profile.ProfileId.Value;
+        // Najpierw skutek, potem zapis: automat ma uszanowac decyzje od
+        // tej chwili, a nieudany zapis jest bledem do pokazania.
+        if (enabled)
+        {
+            _ = _automaticOptimizationExcludedProfiles.Remove(profileId);
+        }
+        else
+        {
+            _ = _automaticOptimizationExcludedProfiles.Add(profileId);
+        }
+
+        try
+        {
+            await _userDataStore.SetAutomaticOptimizationForProfileAsync(
+                selected.Profile.ProfileId,
+                enabled,
+                _lifetime.Token);
+            if (_loadedPreferences is not null
+                && _loadedPreferences.ProfileId == selected.Profile.ProfileId)
+            {
+                _loadedPreferences = new(
+                    _loadedPreferences.ProfileId,
+                    _loadedPreferences.GamePriority,
+                    _loadedPreferences.BackgroundRules,
+                    DateTimeOffset.UtcNow,
+                    enabled);
+            }
+        }
+        catch (OperationCanceledException)
+            when (_lifetime.IsCancellationRequested)
+        {
+        }
+        catch (Exception exception) when (IsExpectedUiFailure(exception))
+        {
+            ShowInfo(
+                PlanInfoBar,
+                InfoBarSeverity.Error,
+                "Nie zapisano wyjątku automatu dla gry",
+                "Ustawienie działa do ponownego uruchomienia. "
+                + exception.Message);
+        }
+    }
+
+    /// <summary>
+    /// Nowe okno na pierwszym planie: najczestszy moment, w ktorym gra
+    /// wlasnie wystartowala. Skan idzie od razu zamiast czekac do 6 s;
+    /// takt odpytywania zostaje jako zabezpieczenie dla gier bez okna.
+    /// </summary>
+    private void OnForegroundProcessChanged(int processId) =>
+        _ = DispatcherQueue.TryEnqueue(() =>
+        {
+            if (_disposed
+                || !_isLoaded
+                || !_sessionPollTimer.IsEnabled
+                || processId == _detectedRunningProcessId
+                || (_hiddenInTray && !IsAutomaticOptimizationEnabled))
+            {
+                return;
+            }
+
+            DateTimeOffset now = DateTimeOffset.UtcNow;
+            if (now - _lastForegroundWakeUtc < ForegroundWakeDebounce)
+            {
+                return;
+            }
+
+            _lastForegroundWakeUtc = now;
+            _lastUnoptimizedGameScanUtc = default;
+            OnSessionPollTick(this, EventArgs.Empty);
+        });
+
     private void ApplyPreparedPlan(SessionPlanClientSnapshot plan)
     {
         _planActions.Clear();
@@ -5104,6 +5236,7 @@ public sealed partial class MainWindow : Window, IDisposable
 
     private void ApplyActiveSession(SessionStateClientSnapshot session)
     {
+        _trayIcon?.SetActiveGame(session.GameDisplayName);
         _ = TryRenewActiveGameLeaseAsync(session, _lifetime.Token);
         if (_dashboardFrameSessionId != session.SessionId)
         {
@@ -5577,6 +5710,7 @@ public sealed partial class MainWindow : Window, IDisposable
 
     private void ApplyNoActiveSession()
     {
+        _trayIcon?.SetActiveGame(null);
         ActiveSessionStateText.Text = "Gotowość";
         ActiveSessionDetailsText.Text =
             "SessionHost nie monitoruje obecnie żadnej gry.";
@@ -5688,11 +5822,16 @@ public sealed partial class MainWindow : Window, IDisposable
                 .Profile.ProfileId.Value;
         IReadOnlyList<ManualGameProfile> profiles;
         IReadOnlyList<GameMetadata> metadata;
+        IReadOnlyCollection<Core.Domain.Identifiers.GameProfileId>
+            excludedFromAutomaticOptimization;
         try
         {
             profiles = await _userDataStore.ListAsync(cancellationToken);
             metadata =
                 await _userDataStore.ListMetadataAsync(cancellationToken);
+            excludedFromAutomaticOptimization = await _userDataStore
+                .ListProfilesExcludedFromAutomaticOptimizationAsync(
+                    cancellationToken);
         }
         catch (Exception exception) when (IsExpectedUiFailure(exception))
         {
@@ -5707,6 +5846,13 @@ public sealed partial class MainWindow : Window, IDisposable
                 exception.Message);
             return;
         }
+        _automaticOptimizationExcludedProfiles.Clear();
+        foreach (Core.Domain.Identifiers.GameProfileId excluded
+                     in excludedFromAutomaticOptimization)
+        {
+            _ = _automaticOptimizationExcludedProfiles.Add(excluded.Value);
+        }
+
         // Nie ToDictionary: dwa wpisy metadanych dla jednego profilu rzucaja
         // ArgumentException, a stad jest tylko do async void na sciezce
         // startowej. Uszkodzony wiersz w bazie zamykalby wtedy droge do
@@ -6168,6 +6314,10 @@ public sealed partial class MainWindow : Window, IDisposable
             // in a new session. The user must choose an experimental priority
             // again for each manual plan.
             GamePrioritySelector.SelectedIndex = 0;
+            // Pole odzwierciedla zapis; zdarzenie Click nie idzie przy
+            // programowej zmianie, wiec nic sie tu nie zapisuje ponownie.
+            AutoOptimizeGameCheckBox.IsChecked =
+                preferences.AutoOptimizeWhenDetected;
         }
         catch (OperationCanceledException)
             when (_lifetime.IsCancellationRequested)
@@ -6307,7 +6457,9 @@ public sealed partial class MainWindow : Window, IDisposable
                 _ => SavedGamePriorityMode.AboveNormal,
             },
             rules,
-            DateTimeOffset.UtcNow);
+            DateTimeOffset.UtcNow,
+            autoOptimizeWhenDetected:
+                AutoOptimizeGameCheckBox.IsChecked != false);
         await _userDataStore.SaveOptimizationPreferencesAsync(
             preferences,
             cancellationToken);
@@ -6753,6 +6905,8 @@ public sealed partial class MainWindow : Window, IDisposable
         _overlayPollTimer.Tick -= OnOverlayPollTick;
         _ = _foregroundGameWatcher?.DisposeAsync().AsTask();
         _foregroundGameWatcher = null;
+        _foregroundChangeListener?.Dispose();
+        _foregroundChangeListener = null;
         _lifetime.Cancel();
         _performanceOverlay?.Dispose();
         _performanceOverlay = null;

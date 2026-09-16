@@ -378,6 +378,106 @@ public sealed class UserDataStoreTests
     }
 
     [TestMethod]
+    public async Task PerGameAutomaticOptimizationFlagRoundTripsAndListsExclusions()
+    {
+        using UserDataTestContext testContext = new();
+        // Klucz obcy do GameProfiles: wyjatek moze dotyczyc tylko gry, ktora
+        // jest w bibliotece.
+        GameProfileId keptProfile = await UpsertProfileAsync(
+            testContext,
+            "Kept");
+        GameProfileId excludedProfile = await UpsertProfileAsync(
+            testContext,
+            "Excluded");
+        GameProfileId rulesProfile = await UpsertProfileAsync(
+            testContext,
+            "Rules");
+
+        // Brak wiersza znaczy „automat wolno": wyjatek jest decyzja, nie
+        // domyslnym stanem.
+        GameOptimizationPreferences missing =
+            await testContext.Store.LoadOptimizationPreferencesAsync(
+                keptProfile,
+                CancellationToken.None);
+        Assert.IsTrue(missing.AutoOptimizeWhenDetected);
+
+        await testContext.Store.SetAutomaticOptimizationForProfileAsync(
+            excludedProfile,
+            autoOptimizeWhenDetected: false,
+            CancellationToken.None);
+        await testContext.Store.SetAutomaticOptimizationForProfileAsync(
+            keptProfile,
+            autoOptimizeWhenDetected: true,
+            CancellationToken.None);
+
+        GameOptimizationPreferences excluded =
+            await testContext.Store.LoadOptimizationPreferencesAsync(
+                excludedProfile,
+                CancellationToken.None);
+        Assert.IsFalse(excluded.AutoOptimizeWhenDetected);
+        Assert.AreEqual(SavedGamePriorityMode.Normal, excluded.GamePriority);
+        Assert.IsEmpty(excluded.BackgroundRules);
+
+        // Pelny zapis planu niesie flage dalej, a wylaczenie nie kasuje
+        // regul zapisanych wczesniej.
+        DateTimeOffset updatedAtUtc = DateTimeOffset.UtcNow.AddMinutes(-2);
+        await testContext.Store.SaveOptimizationPreferencesAsync(
+            new(
+                rulesProfile,
+                SavedGamePriorityMode.AboveNormal,
+                [
+                    new(
+                        Path.Combine(
+                            testContext.DirectoryPath,
+                            "Background.exe"),
+                        SavedBackgroundActionMode.LowerPriority),
+                ],
+                updatedAtUtc,
+                autoOptimizeWhenDetected: false),
+            CancellationToken.None);
+        await testContext.Store.SetAutomaticOptimizationForProfileAsync(
+            rulesProfile,
+            autoOptimizeWhenDetected: false,
+            CancellationToken.None);
+        GameOptimizationPreferences rules =
+            await testContext.Store.LoadOptimizationPreferencesAsync(
+                rulesProfile,
+                CancellationToken.None);
+        Assert.IsFalse(rules.AutoOptimizeWhenDetected);
+        Assert.AreEqual(SavedGamePriorityMode.AboveNormal, rules.GamePriority);
+        Assert.HasCount(1, rules.BackgroundRules);
+
+        IReadOnlyCollection<GameProfileId> exclusions =
+            await testContext.Store
+                .ListProfilesExcludedFromAutomaticOptimizationAsync(
+                    CancellationToken.None);
+        CollectionAssert.AreEquivalent(
+            new[] { excludedProfile, rulesProfile },
+            exclusions.ToArray());
+    }
+
+    private static async Task<GameProfileId> UpsertProfileAsync(
+        UserDataTestContext testContext,
+        string displayName)
+    {
+        DateTimeOffset now = DateTimeOffset.UtcNow;
+        ManualGameProfile profile = new(
+            GameProfileId.Create(),
+            displayName,
+            Path.Combine(testContext.DirectoryPath, $"{displayName}.exe"),
+            new string('A', 64),
+            testContext.DirectoryPath,
+            launchArguments: [],
+            OptimizationPreset.Safe,
+            isEnabled: true,
+            now,
+            now,
+            artworkPath: null);
+        await testContext.Store.UpsertAsync(profile, CancellationToken.None);
+        return profile.ProfileId;
+    }
+
+    [TestMethod]
     public async Task MissingOptimizationPreferencesDefaultToNormalPriority()
     {
         using UserDataTestContext testContext = new();
@@ -428,7 +528,7 @@ public sealed class UserDataStoreTests
             Assert.AreEqual(legacySummary.SessionId, history[0].SessionId);
             Assert.IsNull(history[0].FrameRateStatistics);
             Assert.AreEqual(
-                12,
+                13,
                 await ReadMaximumSchemaVersionAsync(databasePath));
         }
         finally
@@ -485,7 +585,7 @@ public sealed class UserDataStoreTests
             Assert.AreEqual(artworkPath, migrated.ArtworkPath);
             Assert.IsEmpty(metadata);
             Assert.AreEqual(
-                12,
+                13,
                 await ReadMaximumSchemaVersionAsync(databasePath));
         }
         finally
@@ -668,8 +768,10 @@ public sealed class UserDataStoreTests
             ALTER TABLE PerformanceOverlayPreferences DROP COLUMN Style;
             ALTER TABLE PerformanceOverlayPreferences DROP COLUMN Theme;
             ALTER TABLE PerformanceOverlayPreferences DROP COLUMN IsFpsTrackingEnabled;
+            ALTER TABLE GameOptimizationPreferences
+                DROP COLUMN AutoOptimizeWhenDetected;
             DELETE FROM SchemaMigrations
-            WHERE Version IN (5, 6, 7, 8, 9, 10, 11, 12);
+            WHERE Version IN (5, 6, 7, 8, 9, 10, 11, 12, 13);
             """;
         await command.ExecuteNonQueryAsync();
         await transaction.CommitAsync();
@@ -691,7 +793,10 @@ public sealed class UserDataStoreTests
             ALTER TABLE PerformanceOverlayPreferences DROP COLUMN Style;
             ALTER TABLE PerformanceOverlayPreferences DROP COLUMN Theme;
             ALTER TABLE PerformanceOverlayPreferences DROP COLUMN IsFpsTrackingEnabled;
-            DELETE FROM SchemaMigrations WHERE Version IN (8, 9, 10, 11, 12);
+            ALTER TABLE GameOptimizationPreferences
+                DROP COLUMN AutoOptimizeWhenDetected;
+            DELETE FROM SchemaMigrations
+            WHERE Version IN (8, 9, 10, 11, 12, 13);
             """;
         await command.ExecuteNonQueryAsync();
         await transaction.CommitAsync();
