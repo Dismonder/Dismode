@@ -109,8 +109,13 @@ On this workstation the desktop shortcut `GameShift` points to that launcher.
 `GameShift.SessionHost.exe` backend when Windows requires it, then opens the
 unprivileged `GameShift.UI.exe` maximized. `GameShift.SystemAgent.exe` is
 installed and started separately as a LocalSystem Windows service; closing the
-gaming UI does not stop recovery supervision. A second launch reuses the
-already running interactive components and maximizes the existing window.
+gaming UI does not stop recovery supervision. Only one GameShift runs per
+user session, whichever directory it was started from: a second launch hands
+its request to the running window (or brings it to the front) and exits, and
+a second SessionHost backs off as well. The UI does not start without an
+elevated SessionHost from its own directory; it asks for elevation itself
+when started directly, and declining the UAC prompt ends the launch with an
+explanation instead of a window that optimizes nothing.
 
 To rebuild the clickable release after all sessions have completed:
 

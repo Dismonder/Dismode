@@ -2,6 +2,7 @@ using System.Security.Principal;
 using System.Text.Json;
 using GameShift.Contracts.Diagnostics;
 using GameShift.Contracts.Protocol;
+using GameShift.Core.Activation;
 using GameShift.Core.Ipc;
 using GameShift.Core.Product;
 using GameShift.Data.Journal;
@@ -60,6 +61,20 @@ if (args.Contains("--diagnostics", StringComparer.OrdinalIgnoreCase))
     Console.WriteLine(WindowsPlatformSupport.DescribeCurrentSystem());
     Console.WriteLine($"User pipe: {PipeNames.ForUser(userSid.Value)}");
     return 0;
+}
+
+// Jeden host na sesje uzytkownika, niezaleznie od katalogu: drugi
+// egzemplarz walczylby z pierwszym o te sama rure i dziennik. Pomocnicze
+// tryby wyzej (--diagnostics, --prepare-update, --shutdown-components)
+// dzialaja obok hosta i celowo nie przechodza przez te blokade.
+using SingleInstanceLock? hostInstance = SingleInstanceLock.TryAcquire(
+    SingleInstanceLock.BuildName("SessionHost", userSid.Value));
+if (hostInstance is null)
+{
+    Console.Error.WriteLine(
+        "GameShift.SessionHost już działa dla tego użytkownika; drugi "
+        + "egzemplarz nie wystartuje.");
+    return 3;
 }
 
 string pipeName = PipeNames.ForUser(userSid.Value);

@@ -5,12 +5,18 @@ using System.Text.Json.Serialization;
 
 namespace GameShift.Core.Activation;
 
+/// <param name="ShowOnly">
+/// Bring the running window to the front and nothing else. The executable
+/// path is still required and validated (the sender passes its own), so an
+/// old client that never sends this member keeps its meaning: false.
+/// </param>
 public sealed record UiActivationRequest(
     int SchemaVersion,
     Guid RequestId,
     DateTimeOffset RequestedAtUtc,
     string GameExecutablePath,
-    bool KeepWindowHidden);
+    bool KeepWindowHidden,
+    bool ShowOnly = false);
 
 public static class UiActivationProtocol
 {

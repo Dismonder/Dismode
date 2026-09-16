@@ -630,6 +630,14 @@ public sealed partial class MainWindow : Window, IDisposable
             return;
         }
 
+        if (request.ShowOnly)
+        {
+            // Drugi egzemplarz GameShift oddal nam klikniecie w skrot:
+            // pokaz okno i nic wiecej.
+            ShowFromTray();
+            return;
+        }
+
         if (!request.KeepWindowHidden)
         {
             ShowFromTray();

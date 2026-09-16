@@ -1,4 +1,5 @@
 using GameShift.Core.Activation;
+using GameShift.UI.Services;
 using Microsoft.UI.Xaml;
 
 namespace GameShift.UI;
@@ -30,6 +31,14 @@ public partial class App : Application
                 launchOptions = new(
                     StartInBackground: false,
                     GameExecutablePath: null);
+            }
+
+            // Jeden egzemplarz na sesje i dzialajacy, uprawniony host —
+            // inaczej okno bez zadnej optymalizacji, a takie udaje program.
+            if (StartupGate.Run(launchOptions) is int exitCode)
+            {
+                Environment.Exit(exitCode);
+                return;
             }
 
             MainWindow window = new(launchOptions);
