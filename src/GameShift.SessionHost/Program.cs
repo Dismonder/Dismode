@@ -108,7 +108,8 @@ await using LocalGameSessionOrchestrator sessionOrchestrator = new(
     userDataStore,
     recoveryJournal,
     optimizationPreferences: userDataStore,
-    systemProfileCoordinator: systemProfileCoordinator);
+    systemProfileCoordinator: systemProfileCoordinator,
+    globalBackgroundRules: userDataStore);
 await sessionOrchestrator.InitializeAsync(CancellationToken.None);
 GameShiftSessionGrpcService sessionService = new(
     validationPolicy,

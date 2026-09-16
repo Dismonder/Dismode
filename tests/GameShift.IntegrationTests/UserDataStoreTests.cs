@@ -456,6 +456,67 @@ public sealed class UserDataStoreTests
             exclusions.ToArray());
     }
 
+    [TestMethod]
+    public async Task GlobalBackgroundRulesRoundTripAndReplaceTheWholeSet()
+    {
+        using UserDataTestContext testContext = new();
+        Assert.IsEmpty(
+            await testContext.Store.LoadGlobalBackgroundRulesAsync(
+                CancellationToken.None));
+
+        string chrome = Path.Combine(testContext.DirectoryPath, "chrome.exe");
+        string discord = Path.Combine(testContext.DirectoryPath, "Discord.exe");
+        await testContext.Store.SaveGlobalBackgroundRulesAsync(
+            [
+                new(discord, SavedBackgroundActionMode.RestrainBackground),
+                new(chrome, SavedBackgroundActionMode.CloseAndRestore),
+            ],
+            CancellationToken.None);
+
+        IReadOnlyList<SavedBackgroundProcessRule> loaded =
+            await testContext.Store.LoadGlobalBackgroundRulesAsync(
+                CancellationToken.None);
+        Assert.HasCount(2, loaded);
+        Assert.AreEqual(chrome, loaded[0].ExecutablePath, ignoreCase: true);
+        Assert.AreEqual(
+            SavedBackgroundActionMode.CloseAndRestore,
+            loaded[0].ActionMode);
+        Assert.AreEqual(discord, loaded[1].ExecutablePath, ignoreCase: true);
+
+        // Zapis zastepuje caly zestaw, nie dopisuje.
+        await testContext.Store.SaveGlobalBackgroundRulesAsync(
+            [new(discord, SavedBackgroundActionMode.LowerPriority)],
+            CancellationToken.None);
+        loaded = await testContext.Store.LoadGlobalBackgroundRulesAsync(
+            CancellationToken.None);
+        Assert.HasCount(1, loaded);
+        Assert.AreEqual(
+            SavedBackgroundActionMode.LowerPriority,
+            loaded[0].ActionMode);
+
+        await Assert.ThrowsExactlyAsync<ArgumentException>(
+            () => testContext.Store.SaveGlobalBackgroundRulesAsync(
+                [
+                    new(chrome, SavedBackgroundActionMode.LowerPriority),
+                    new(
+                        chrome.ToUpperInvariant(),
+                        SavedBackgroundActionMode.CloseAndRestore),
+                ],
+                CancellationToken.None).AsTask());
+        Assert.HasCount(
+            1,
+            await testContext.Store.LoadGlobalBackgroundRulesAsync(
+                CancellationToken.None),
+            "Odrzucony zapis nie moze ruszyc poprzedniego zestawu.");
+
+        await testContext.Store.SaveGlobalBackgroundRulesAsync(
+            [],
+            CancellationToken.None);
+        Assert.IsEmpty(
+            await testContext.Store.LoadGlobalBackgroundRulesAsync(
+                CancellationToken.None));
+    }
+
     private static async Task<GameProfileId> UpsertProfileAsync(
         UserDataTestContext testContext,
         string displayName)
@@ -528,7 +589,7 @@ public sealed class UserDataStoreTests
             Assert.AreEqual(legacySummary.SessionId, history[0].SessionId);
             Assert.IsNull(history[0].FrameRateStatistics);
             Assert.AreEqual(
-                13,
+                14,
                 await ReadMaximumSchemaVersionAsync(databasePath));
         }
         finally
@@ -585,7 +646,7 @@ public sealed class UserDataStoreTests
             Assert.AreEqual(artworkPath, migrated.ArtworkPath);
             Assert.IsEmpty(metadata);
             Assert.AreEqual(
-                13,
+                14,
                 await ReadMaximumSchemaVersionAsync(databasePath));
         }
         finally
@@ -770,8 +831,9 @@ public sealed class UserDataStoreTests
             ALTER TABLE PerformanceOverlayPreferences DROP COLUMN IsFpsTrackingEnabled;
             ALTER TABLE GameOptimizationPreferences
                 DROP COLUMN AutoOptimizeWhenDetected;
+            DROP TABLE GlobalBackgroundProcessRules;
             DELETE FROM SchemaMigrations
-            WHERE Version IN (5, 6, 7, 8, 9, 10, 11, 12, 13);
+            WHERE Version IN (5, 6, 7, 8, 9, 10, 11, 12, 13, 14);
             """;
         await command.ExecuteNonQueryAsync();
         await transaction.CommitAsync();
@@ -795,8 +857,9 @@ public sealed class UserDataStoreTests
             ALTER TABLE PerformanceOverlayPreferences DROP COLUMN IsFpsTrackingEnabled;
             ALTER TABLE GameOptimizationPreferences
                 DROP COLUMN AutoOptimizeWhenDetected;
+            DROP TABLE GlobalBackgroundProcessRules;
             DELETE FROM SchemaMigrations
-            WHERE Version IN (8, 9, 10, 11, 12, 13);
+            WHERE Version IN (8, 9, 10, 11, 12, 13, 14);
             """;
         await command.ExecuteNonQueryAsync();
         await transaction.CommitAsync();

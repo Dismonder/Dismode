@@ -144,6 +144,178 @@ public sealed class SavedRuleGameSessionTests
         }
     }
 
+    [TestMethod]
+    public async Task GlobalRuleAppliesToGameWithoutOwnRulesAndRestoresAfterExit()
+    {
+        string directory = Path.Combine(
+            Path.GetTempPath(),
+            "GameShift.SavedRuleGameSessionTests",
+            Guid.NewGuid().ToString("N"));
+        string gameReadyFile = Path.Combine(directory, "game.ready");
+        Directory.CreateDirectory(directory);
+        int? gameProcessId = null;
+        RenamedHarnessFixture background =
+            await RenamedHarnessFixture.StartAsync(directory);
+        SqliteUserDataStore store =
+            new(Path.Combine(directory, "user.db"));
+        AppendOnlyRecoveryJournal journal =
+            new(Path.Combine(directory, "recovery.jsonl"));
+        TrackingFrameRateProvider frameRateProvider = new();
+        LocalGameSessionOrchestrator orchestrator = new(
+            store,
+            store,
+            journal,
+            monitorInterval: TimeSpan.FromMilliseconds(50),
+            frameRateProvider: frameRateProvider,
+            optimizationPreferences: store,
+            globalBackgroundRules: store);
+
+        try
+        {
+            background.Process.PriorityClass = ProcessPriorityClass.Normal;
+            ManualGameProfile profile =
+                await new ManualGameProfileFactory().CreateAsync(
+                    "Global-rule game",
+                    ProcessHarnessFixture.FindHarnessExecutable(),
+                    ["--ready-file", gameReadyFile],
+                    OptimizationPreset.Safe,
+                    CancellationToken.None);
+            await store.UpsertAsync(profile, CancellationToken.None);
+            // Zadnych regul tej gry: dziala wylacznie regula dla wszystkich.
+            await store.SaveGlobalBackgroundRulesAsync(
+                [
+                    new(
+                        background.ExecutablePath,
+                        SavedBackgroundActionMode.LowerPriority),
+                ],
+                CancellationToken.None);
+            await orchestrator.InitializeAsync(CancellationToken.None);
+
+            SessionPlanPreview plan = await orchestrator.PrepareAsync(
+                profile.ProfileId,
+                backgroundApplications: [],
+                desiredGamePriority: null,
+                CancellationToken.None,
+                useSavedBackgroundRules: true);
+            Assert.IsTrue(
+                plan.Items.Any(item =>
+                    item.Code == "LOWER_BACKGROUND_PRIORITY"),
+                "Regula globalna ma wejsc do planu gry bez wlasnych regul.");
+
+            await orchestrator.StartAsync(
+                plan.PlanId,
+                plan.SessionId,
+                CancellationToken.None);
+            await WaitForFileAsync(gameReadyFile);
+            gameProcessId = ReadProcessId(gameReadyFile);
+            background.Process.Refresh();
+            Assert.AreEqual(
+                ProcessPriorityClass.BelowNormal,
+                background.Process.PriorityClass);
+
+            await CloseProcessAsync(gameProcessId.Value);
+            gameProcessId = null;
+            await WaitForNoActiveSessionAsync(orchestrator);
+            background.Process.Refresh();
+            Assert.AreEqual(
+                ProcessPriorityClass.Normal,
+                background.Process.PriorityClass);
+        }
+        finally
+        {
+            if (gameProcessId is null && File.Exists(gameReadyFile))
+            {
+                gameProcessId = ReadProcessId(gameReadyFile);
+            }
+
+            if (gameProcessId is not null)
+            {
+                await CloseProcessAsync(gameProcessId.Value);
+            }
+
+            await orchestrator.DisposeAsync();
+            journal.Dispose();
+            store.Dispose();
+            await background.DisposeAsync();
+            await DeleteDirectorySafelyAsync(directory);
+        }
+    }
+
+    [TestMethod]
+    public async Task PerGameIgnoreRuleOverridesGlobalRule()
+    {
+        string directory = Path.Combine(
+            Path.GetTempPath(),
+            "GameShift.SavedRuleGameSessionTests",
+            Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(directory);
+        RenamedHarnessFixture background =
+            await RenamedHarnessFixture.StartAsync(directory);
+        SqliteUserDataStore store =
+            new(Path.Combine(directory, "user.db"));
+        AppendOnlyRecoveryJournal journal =
+            new(Path.Combine(directory, "recovery.jsonl"));
+        LocalGameSessionOrchestrator orchestrator = new(
+            store,
+            store,
+            journal,
+            monitorInterval: TimeSpan.FromMilliseconds(50),
+            frameRateProvider: new TrackingFrameRateProvider(),
+            optimizationPreferences: store,
+            globalBackgroundRules: store);
+
+        try
+        {
+            ManualGameProfile profile =
+                await new ManualGameProfileFactory().CreateAsync(
+                    "Ignore-override game",
+                    ProcessHarnessFixture.FindHarnessExecutable(),
+                    ["--ready-file", Path.Combine(directory, "unused.ready")],
+                    OptimizationPreset.Safe,
+                    CancellationToken.None);
+            await store.UpsertAsync(profile, CancellationToken.None);
+            await store.SaveOptimizationPreferencesAsync(
+                new(
+                    profile.ProfileId,
+                    SavedGamePriorityMode.Normal,
+                    [
+                        new(
+                            background.ExecutablePath,
+                            SavedBackgroundActionMode.Ignore),
+                    ],
+                    DateTimeOffset.UtcNow),
+                CancellationToken.None);
+            await store.SaveGlobalBackgroundRulesAsync(
+                [
+                    new(
+                        background.ExecutablePath,
+                        SavedBackgroundActionMode.LowerPriority),
+                ],
+                CancellationToken.None);
+            await orchestrator.InitializeAsync(CancellationToken.None);
+
+            SessionPlanPreview plan = await orchestrator.PrepareAsync(
+                profile.ProfileId,
+                backgroundApplications: [],
+                desiredGamePriority: null,
+                CancellationToken.None,
+                useSavedBackgroundRules: true);
+
+            Assert.IsFalse(
+                plan.Items.Any(item =>
+                    item.Code == "LOWER_BACKGROUND_PRIORITY"),
+                "„Ignoruj” zapisane dla gry ma wylaczac regule globalna.");
+        }
+        finally
+        {
+            await orchestrator.DisposeAsync();
+            journal.Dispose();
+            store.Dispose();
+            await background.DisposeAsync();
+            await DeleteDirectorySafelyAsync(directory);
+        }
+    }
+
     private static async Task DeleteDirectorySafelyAsync(string directory)
     {
         for (int i = 0; i < 20; i++)

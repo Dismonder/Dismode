@@ -273,6 +273,16 @@ zakończyła się kodem 0: build Release bez ostrzeżeń, format bez zmian i
     czy profil jest w bibliotece i czy PID nadal należy do tego samego
     procesu (czas startu). Baner mówi wprost, gdy automat pomija
     egzemplarz.
+  - Reguły dla wszystkich gier (16.09): `IGlobalBackgroundRuleRepository`
+    + tabela `GlobalBackgroundProcessRules` (schemat 14), scalanie
+    w `GameOptimizationPreferences.WithGlobalRules` (reguła gry, także
+    „Ignoruj", wygrywa; limit 128), host scala je w `PrepareAsync` przy
+    `use_saved_background_rules`, więc automat z zasobnika zamyka lub
+    ogranicza te same aplikacje przy każdej wykrytej grze. UI: pole „także
+    dla wszystkich innych gier" na stronie planu (gaśnie po zapisie),
+    licznik i „Wyczyść" w ustawieniach. Testy: scalanie (Core), baza,
+    sesja z regułą globalną na prawdziwym procesie i nadpisanie przez
+    „Ignoruj".
   - Wzorce przeniesione z projektów otwartoźródłowych (16.09):
     `ForegroundWindowChangeListener` — hak `SetWinEventHook(EVENT_SYSTEM_FOREGROUND)`
     obok zapasowego taktu, z odbiciem 1 s, jak `ProcessManager` w

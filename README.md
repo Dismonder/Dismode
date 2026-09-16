@@ -17,7 +17,10 @@ game's saved rules on its own. The automatic path only ever attaches to a
 running game and never launches one; an instance whose session the user ended
 by hand is left alone until the game is started again. The switch for this
 lives in the settings page and in the tray icon menu; a single game can be
-excluded on the plan page. Detection reacts to a new foreground window
+excluded on the plan page. Background-process rules can also be saved once
+for every game from the plan page, so the automatic path closes or
+restrains the same applications for any detected game; a rule saved for a
+specific game, including an explicit ignore, wins over the global one. Detection reacts to a new foreground window
 right away and falls back to a periodic scan, and the tray tooltip names
 the game of the active session.
 Known launchers, anti-cheat components, Windows processes, and helpers from

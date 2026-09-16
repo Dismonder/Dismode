@@ -17,9 +17,11 @@ public sealed class SqliteUserDataStore :
     ISessionHistoryRepository,
     IUpdatePreferencesRepository,
     IGameDetectionPreferencesRepository,
+    IGlobalBackgroundRuleRepository,
     IDisposable
 {
-    private const int CurrentSchemaVersion = 13;
+    private const int CurrentSchemaVersion = 14;
+    private const int MaximumGlobalRuleCount = 128;
     private const int MaximumHistoryPageSize = 1000;
 
     private readonly string _databasePath;
@@ -465,6 +467,105 @@ public sealed class SqliteUserDataStore :
             autoOptimizeWhenDetected ? 1 : 0);
         await command.ExecuteNonQueryAsync(cancellationToken)
             .ConfigureAwait(false);
+    }
+
+    public async ValueTask<IReadOnlyList<SavedBackgroundProcessRule>>
+        LoadGlobalBackgroundRulesAsync(CancellationToken cancellationToken)
+    {
+        await InitializeAsync(cancellationToken).ConfigureAwait(false);
+        await using SqliteConnection connection = CreateConnection();
+        await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
+        await ConfigureConnectionAsync(connection, cancellationToken)
+            .ConfigureAwait(false);
+
+        await using SqliteCommand command = connection.CreateCommand();
+        command.CommandText =
+            """
+            SELECT ExecutablePath, ActionMode
+            FROM GlobalBackgroundProcessRules
+            ORDER BY ExecutablePath COLLATE NOCASE;
+            """;
+        List<SavedBackgroundProcessRule> rules = [];
+        await using SqliteDataReader reader =
+            await command.ExecuteReaderAsync(cancellationToken)
+                .ConfigureAwait(false);
+        while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+        {
+            rules.Add(
+                new(
+                    reader.GetString(0),
+                    (SavedBackgroundActionMode)reader.GetInt32(1)));
+        }
+
+        return rules;
+    }
+
+    public async ValueTask SaveGlobalBackgroundRulesAsync(
+        IReadOnlyList<SavedBackgroundProcessRule> rules,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(rules);
+        if (rules.Count > MaximumGlobalRuleCount)
+        {
+            throw new ArgumentException(
+                $"No more than {MaximumGlobalRuleCount} global rules can be saved.",
+                nameof(rules));
+        }
+
+        if (rules
+            .GroupBy(
+                rule => rule.ExecutablePath,
+                StringComparer.OrdinalIgnoreCase)
+            .Any(group => group.Count() > 1))
+        {
+            throw new ArgumentException(
+                "Global rules cannot contain the same executable twice.",
+                nameof(rules));
+        }
+
+        await InitializeAsync(cancellationToken).ConfigureAwait(false);
+        await using SqliteConnection connection = CreateConnection();
+        await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
+        await ConfigureConnectionAsync(connection, cancellationToken)
+            .ConfigureAwait(false);
+
+        await using SqliteTransaction transaction =
+            (SqliteTransaction)await connection
+                .BeginTransactionAsync(
+                    IsolationLevel.Serializable,
+                    cancellationToken)
+                .ConfigureAwait(false);
+        string updatedAtUtc = FormatTimestamp(DateTimeOffset.UtcNow);
+        await using (SqliteCommand clear = connection.CreateCommand())
+        {
+            clear.Transaction = transaction;
+            clear.CommandText = "DELETE FROM GlobalBackgroundProcessRules;";
+            await clear.ExecuteNonQueryAsync(cancellationToken)
+                .ConfigureAwait(false);
+        }
+
+        foreach (SavedBackgroundProcessRule rule in rules)
+        {
+            await using SqliteCommand insert = connection.CreateCommand();
+            insert.Transaction = transaction;
+            insert.CommandText =
+                """
+                INSERT INTO GlobalBackgroundProcessRules (
+                    ExecutablePath, ActionMode, UpdatedAtUtc)
+                VALUES ($executablePath, $actionMode, $updatedAtUtc);
+                """;
+            insert.Parameters.AddWithValue(
+                "$executablePath",
+                rule.ExecutablePath);
+            insert.Parameters.AddWithValue(
+                "$actionMode",
+                (int)rule.ActionMode);
+            insert.Parameters.AddWithValue("$updatedAtUtc", updatedAtUtc);
+            await insert.ExecuteNonQueryAsync(cancellationToken)
+                .ConfigureAwait(false);
+        }
+
+        await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
     }
 
     public async ValueTask<IReadOnlyCollection<GameProfileId>>
@@ -1654,6 +1755,38 @@ public sealed class SqliteUserDataStore :
                 .ConfigureAwait(false);
             existingVersion = 13;
         }
+
+        if (existingVersion < 14)
+        {
+            await using SqliteTransaction transaction =
+                (SqliteTransaction)await connection
+                    .BeginTransactionAsync(
+                        IsolationLevel.Serializable,
+                        cancellationToken)
+                    .ConfigureAwait(false);
+            await using SqliteCommand schema = connection.CreateCommand();
+            schema.Transaction = transaction;
+            schema.CommandText =
+                """
+                CREATE TABLE GlobalBackgroundProcessRules (
+                    ExecutablePath TEXT NOT NULL PRIMARY KEY COLLATE NOCASE,
+                    ActionMode INTEGER NOT NULL
+                        CHECK (ActionMode IN (1, 2, 3, 4, 5)),
+                    UpdatedAtUtc TEXT NOT NULL
+                );
+
+                INSERT INTO SchemaMigrations (Version, AppliedAtUtc)
+                VALUES (14, $appliedAtUtc);
+                """;
+            schema.Parameters.AddWithValue(
+                "$appliedAtUtc",
+                FormatTimestamp(DateTimeOffset.UtcNow));
+            await schema.ExecuteNonQueryAsync(cancellationToken)
+                .ConfigureAwait(false);
+            await transaction.CommitAsync(cancellationToken)
+                .ConfigureAwait(false);
+            existingVersion = 14;
+        }
     }
 
     private static async ValueTask VerifyRequiredSchemaAsync(
@@ -1676,7 +1809,8 @@ public sealed class SqliteUserDataStore :
                            'PerformanceOverlayPreferences',
                            'UpdatePreferences',
                            'GameMetadata',
-                           'GameDetectionPreferences'))
+                           'GameDetectionPreferences',
+                           'GlobalBackgroundProcessRules'))
                    OR (type = 'index' AND name IN (
                            'IX_GameProfiles_ExecutablePath',
                            'IX_SessionSummaries_EndedAtUtc',
@@ -1689,7 +1823,7 @@ public sealed class SqliteUserDataStore :
             int objectCount = Convert.ToInt32(
                 countResult,
                 CultureInfo.InvariantCulture);
-            if (objectCount != 13)
+            if (objectCount != 14)
             {
                 throw new InvalidDataException(
                     "The user database schema is incomplete.");
@@ -1748,6 +1882,10 @@ public sealed class SqliteUserDataStore :
 
                 SELECT SettingsKey, AutoOptimizeDetectedGames, UpdatedAtUtc
                 FROM GameDetectionPreferences
+                LIMIT 0;
+
+                SELECT ExecutablePath, ActionMode, UpdatedAtUtc
+                FROM GlobalBackgroundProcessRules
                 LIMIT 0;
                 """;
             await columns.ExecuteNonQueryAsync(cancellationToken)
