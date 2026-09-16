@@ -37,77 +37,63 @@ internal static class StartupGate
     {
         ArgumentNullException.ThrowIfNull(launchOptions);
         string userSid = CurrentWindowsIdentity.GetUserSid().Value;
-
-        _instanceLock = SingleInstanceLock.TryAcquire(
-            SingleInstanceLock.BuildName("UI", userSid));
-        if (_instanceLock is null)
-        {
-            HandOverToRunningInstance(userSid, launchOptions);
-            return 0;
-        }
-
         string baseDirectory = TrimSeparator(
             Path.GetFullPath(AppContext.BaseDirectory));
         string hostPath = Path.Combine(baseDirectory, SessionHostExecutableName);
-        if (!File.Exists(hostPath))
+
+        _instanceLock = SingleInstanceLock.TryAcquire(
+            SingleInstanceLock.BuildName("UI", userSid));
+        StartupDecision decision = StartupPolicy.Decide(new(
+            InstanceLockAcquired: _instanceLock is not null,
+            HostExecutableExists: File.Exists(hostPath),
+            ForeignHostDirectory: _instanceLock is null
+                ? null
+                : FindSessionHostDirectory(exceptDirectory: baseDirectory),
+            OwnHostRunning: _instanceLock is not null
+                && FindSessionHostDirectory(onlyDirectory: baseDirectory)
+                    is not null));
+
+        switch (decision.Kind)
         {
-            ShowError(
-                "Brakuje składnika GameShift.SessionHost.exe obok "
-                + "GameShift.UI.exe. Zainstaluj GameShift ponownie.");
-            return 2;
+            case StartupDecisionKind.HandOver:
+                HandOverToRunningInstance(userSid, launchOptions);
+                return decision.ExitCode;
+            case StartupDecisionKind.Continue:
+                return null;
+            case StartupDecisionKind.StartHost:
+                break;
+            default:
+                ShowError(decision.Message ?? string.Empty);
+                return decision.ExitCode;
         }
 
-        string? foreignHostDirectory = FindSessionHostDirectory(
-            exceptDirectory: baseDirectory);
-        if (foreignHostDirectory is not null)
+        try
         {
-            ShowError(
-                "Działa już GameShift z innej lokalizacji:"
-                + Environment.NewLine
-                + foreignHostDirectory
-                + Environment.NewLine
-                + Environment.NewLine
-                + "Dwa egzemplarze psułyby sobie nawzajem sesje. Zamknij "
-                + "tamten GameShift (ikona w zasobniku → Wyłącz GameShift) "
-                + "i uruchom ponownie.");
-            return 3;
+            StartElevated(hostPath, baseDirectory);
+        }
+        catch (Win32Exception exception)
+            when (exception.NativeErrorCode == ErrorCancelled)
+        {
+            StartupDecision declined = StartupPolicy.ElevationDeclined();
+            ShowError(declined.Message ?? string.Empty);
+            return declined.ExitCode;
+        }
+        catch (Exception exception) when (
+            exception is
+                Win32Exception
+                or InvalidOperationException
+                or IOException
+                or UnauthorizedAccessException)
+        {
+            StartupDecision failed = StartupPolicy.HostStartFailed(
+                exception.Message);
+            ShowError(failed.Message ?? string.Empty);
+            return failed.ExitCode;
         }
 
-        if (FindSessionHostDirectory(onlyDirectory: baseDirectory) is null)
-        {
-            try
-            {
-                StartElevated(hostPath, baseDirectory);
-            }
-            catch (Win32Exception exception)
-                when (exception.NativeErrorCode == ErrorCancelled)
-            {
-                ShowError(
-                    "GameShift potrzebuje uprawnień administratora, żeby "
-                    + "uruchomić usługę sesji (GameShift.SessionHost). Bez "
-                    + "niej nie optymalizuje gier, więc nie uruchamia się "
-                    + "w ogóle." + Environment.NewLine + Environment.NewLine
-                    + "Uruchom GameShift ponownie i zatwierdź monit UAC.");
-                return 4;
-            }
-            catch (Exception exception) when (
-                exception is
-                    Win32Exception
-                    or InvalidOperationException
-                    or IOException
-                    or UnauthorizedAccessException)
-            {
-                ShowError(
-                    "Nie udało się uruchomić GameShift.SessionHost: "
-                    + exception.Message);
-                return 5;
-            }
-
-            // Host rejestruje rure w ulamku sekundy, ale okno pokazane
-            // wczesniej zaczeloby od komunikatu „usluga niedostepna".
-            WaitForPipe(PipeNames.ForUser(userSid), PipeWait);
-        }
-
+        // Host rejestruje rure w ulamku sekundy, ale okno pokazane
+        // wczesniej zaczeloby od komunikatu „usluga niedostepna".
+        WaitForPipe(PipeNames.ForUser(userSid), PipeWait);
         return null;
     }
 
@@ -115,29 +101,16 @@ internal static class StartupGate
         string userSid,
         GameShiftLaunchOptions launchOptions)
     {
-        if (launchOptions.GameExecutablePath is null
-            && launchOptions.StartInBackground)
+        if (StartupPolicy.HandsOverSilently(launchOptions))
         {
-            // Start „w tle" bez gry niczego od dzialajacego okna nie chce;
-            // wyciaganie go na wierzch byloby odwrotnoscia prosby.
             return;
         }
 
-        UiActivationRequest request = launchOptions.GameExecutablePath is string game
-            ? new(
-                UiActivationProtocol.CurrentSchemaVersion,
-                Guid.NewGuid(),
-                DateTimeOffset.UtcNow,
-                game,
-                launchOptions.StartInBackground)
-            : new(
-                UiActivationProtocol.CurrentSchemaVersion,
-                Guid.NewGuid(),
-                DateTimeOffset.UtcNow,
-                Environment.ProcessPath
-                    ?? Path.Combine(AppContext.BaseDirectory, "GameShift.UI.exe"),
-                KeepWindowHidden: false,
-                ShowOnly: true);
+        UiActivationRequest request = StartupPolicy.BuildHandOverRequest(
+            launchOptions,
+            Environment.ProcessPath
+                ?? Path.Combine(AppContext.BaseDirectory, "GameShift.UI.exe"),
+            DateTimeOffset.UtcNow);
         if (UiActivationClient.TrySend(
                 userSid,
                 request,
