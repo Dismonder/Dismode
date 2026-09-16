@@ -1,7 +1,9 @@
 using System.Net;
+using System.Runtime.InteropServices.WindowsRuntime;
 using System.Text;
 using System.Text.Json;
 using GameShift.Windows.Profiles;
+using Windows.Foundation;
 using Windows.Graphics.Imaging;
 using Windows.Storage.Streams;
 
@@ -1198,6 +1200,33 @@ public sealed class LocalGameArtworkResolverTests
 
         public override void Write(byte[] buffer, int offset, int count) =>
             throw new NotSupportedException();
+    }
+
+    [TestMethod]
+    public async Task DecoderWaitIsBoundedAndCompletedOperationsPassThrough()
+    {
+        // PNG z poprawnym naglowkiem i uszkodzonymi pikselami zawiesil
+        // GetPixelDataAsync w WIC na zawsze (16.09.2026, 35 min przy 7 s
+        // CPU). Limit ma zamienic takie zawieszenie w odrzucony obraz.
+        TaskCompletionSource<int> never = new();
+        IAsyncOperation<int> stuck = AsyncInfo.Run<int>(cancellation =>
+        {
+            _ = cancellation.Register(() => never.TrySetCanceled(cancellation));
+            return never.Task;
+        });
+
+        TimeoutException timeout = await Task.Run(() =>
+            Assert.ThrowsExactly<TimeoutException>(() =>
+                LocalGameArtworkResolver.WaitBounded(
+                    stuck,
+                    TimeSpan.FromMilliseconds(200))));
+        Assert.Contains("limicie", timeout.Message);
+
+        int value = await Task.Run(() =>
+            LocalGameArtworkResolver.WaitBounded(
+                AsyncInfo.Run<int>(_ => Task.FromResult(42)),
+                TimeSpan.FromSeconds(5)));
+        Assert.AreEqual(42, value);
     }
 
     private sealed class ArtworkTestContext : IDisposable

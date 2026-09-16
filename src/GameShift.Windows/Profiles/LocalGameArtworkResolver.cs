@@ -6,6 +6,7 @@ using System.Text;
 using System.Text.Json;
 using System.Xml.Linq;
 using Microsoft.Win32;
+using Windows.Foundation;
 using Windows.Graphics.Imaging;
 using Windows.Storage;
 using Windows.Storage.FileProperties;
@@ -1382,18 +1383,15 @@ public sealed class LocalGameArtworkResolver
         height = 0;
         try
         {
-            StorageFile file = StorageFile.GetFileFromPathAsync(path)
-                .AsTask()
-                .GetAwaiter()
-                .GetResult();
-            using IRandomAccessStream stream = file.OpenReadAsync()
-                .AsTask()
-                .GetAwaiter()
-                .GetResult();
-            BitmapDecoder decoder = BitmapDecoder.CreateAsync(stream)
-                .AsTask()
-                .GetAwaiter()
-                .GetResult();
+            StorageFile file = WaitBounded(
+                StorageFile.GetFileFromPathAsync(path),
+                FileAccessTimeout);
+            using IRandomAccessStream stream = WaitBounded(
+                file.OpenReadAsync(),
+                FileAccessTimeout);
+            BitmapDecoder decoder = WaitBounded(
+                BitmapDecoder.CreateAsync(stream),
+                DecodeTimeout);
             width = checked((int)decoder.PixelWidth);
             height = checked((int)decoder.PixelHeight);
             if (width <= 0 || height <= 0
@@ -1407,15 +1405,14 @@ public sealed class LocalGameArtworkResolver
                 ScaledWidth = checked((uint)width),
                 ScaledHeight = checked((uint)height),
             };
-            PixelDataProvider pixels = decoder.GetPixelDataAsync(
+            PixelDataProvider pixels = WaitBounded(
+                decoder.GetPixelDataAsync(
                     BitmapPixelFormat.Rgba8,
                     BitmapAlphaMode.Ignore,
                     transform,
                     ExifOrientationMode.IgnoreExifOrientation,
-                    ColorManagementMode.DoNotColorManage)
-                .AsTask()
-                .GetAwaiter()
-                .GetResult();
+                    ColorManagementMode.DoNotColorManage),
+                DecodeTimeout);
             byte[] pixelData = pixels.DetachPixelData();
             return pixelData.LongLength == (long)width * height * 4
                 && HasValidPngPixelPayload(path, width, height);
@@ -1424,7 +1421,8 @@ public sealed class LocalGameArtworkResolver
             exception is IOException
                 or UnauthorizedAccessException
                 or ArgumentException
-                or NotSupportedException)
+                or NotSupportedException
+                or TimeoutException)
         {
         }
         catch (COMException)
@@ -1432,6 +1430,52 @@ public sealed class LocalGameArtworkResolver
         }
 
         return false;
+    }
+
+    /// <summary>
+    /// Jak dlugo wolno czekac na dekoder systemowy. PNG z poprawnym
+    /// naglowkiem i uszkodzonymi danymi pikseli potrafi zawiesic
+    /// GetPixelDataAsync w WIC na zawsze (zaobserwowane 2026-09-16: host
+    /// testow stal 35 minut przy 7 s CPU). Bez limitu synchronizacja
+    /// biblioteki nigdy by sie nie skonczyla; z limitem obraz jest
+    /// odrzucany, a resolver idzie dalej po nastepne zrodlo.
+    /// </summary>
+    private static readonly TimeSpan DecodeTimeout = TimeSpan.FromSeconds(10);
+
+    private static readonly TimeSpan FileAccessTimeout = TimeSpan.FromSeconds(5);
+
+    /// <summary>
+    /// Czeka na operacje WinRT najwyzej <paramref name="timeout"/>; po
+    /// przekroczeniu prosi o anulowanie i rzuca <see cref="TimeoutException"/>.
+    /// Zawieszona operacja moze zostac w tle — to i tak lepsze niz
+    /// zawieszony watek, ktory nikomu juz nie odda sterowania.
+    /// </summary>
+    internal static T WaitBounded<T>(
+        IAsyncOperation<T> operation,
+        TimeSpan timeout)
+    {
+        ArgumentNullException.ThrowIfNull(operation);
+        Task<T> task = operation.AsTask();
+        Task completed = Task.WhenAny(task, Task.Delay(timeout))
+            .GetAwaiter()
+            .GetResult();
+        if (!ReferenceEquals(completed, task))
+        {
+            try
+            {
+                operation.Cancel();
+            }
+            catch (Exception exception) when (
+                exception is InvalidOperationException or COMException)
+            {
+            }
+
+            throw new TimeoutException(
+                "Operacja obrazu nie zakończyła się w limicie "
+                + $"{timeout.TotalSeconds:0} s.");
+        }
+
+        return task.GetAwaiter().GetResult();
     }
 
     private static bool HasValidPngPixelPayload(
