@@ -8,7 +8,10 @@ namespace GameShift.Core.Activation;
 /// <param name="ShowOnly">
 /// Bring the running window to the front and nothing else. The executable
 /// path is still required and validated (the sender passes its own), so an
-/// old client that never sends this member keeps its meaning: false.
+/// old client that never sends this member keeps its meaning: false. The
+/// member is left out of the payload when false, because an older window
+/// rejects members it does not know, and a plain game launch must keep
+/// working across a mixed set of components.
 /// </param>
 public sealed record UiActivationRequest(
     int SchemaVersion,
@@ -16,6 +19,7 @@ public sealed record UiActivationRequest(
     DateTimeOffset RequestedAtUtc,
     string GameExecutablePath,
     bool KeepWindowHidden,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
     bool ShowOnly = false);
 
 public static class UiActivationProtocol
