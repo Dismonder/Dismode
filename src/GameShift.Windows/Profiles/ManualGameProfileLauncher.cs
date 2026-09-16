@@ -159,9 +159,12 @@ public sealed class ManualGameProfileLauncher
         }
 
         cancellationToken.ThrowIfCancellationRequested();
-        using Process process = Process.Start(startInfo)
-            ?? throw new InvalidOperationException(
-                "Windows did not start the selected game executable.");
+        // Host dziala podniesiony, a gra ma dostac token uzytkownika pulpitu:
+        // zapisy z jego uprawnieniami, nakladki i aktualizatory sklepow,
+        // przeciaganie z Eksploratora - wszystko, co psuje sie pod
+        // administratorem.
+        using StartedProcess process =
+            DesktopUserProcessStarter.Start(startInfo);
 
         using CancellationTokenSource timeout =
             new(IdentityObservationTimeout);

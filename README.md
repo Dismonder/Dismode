@@ -160,10 +160,15 @@ directory.
 
 ## Architecture
 
-- `GameShift.Launcher`: one-click, unprivileged launcher for the fixed local components.
+- `GameShift.Launcher`: one-click launcher for the fixed local components; it
+  elevates once so the SessionHost starts without a second prompt, and starts
+  the UI with the desktop user's ordinary token.
 - `GameShift.UI`: unprivileged WinUI 3 user interface.
 - `GameShift.SessionHost`: UAC-elevated process in the interactive user session;
-  owns game-session actions and the PresentMon child process.
+  owns game-session actions and the PresentMon child process. Games it
+  launches and background applications it restarts after a session are
+  created as children of the desktop shell, so they run with the user's
+  ordinary token instead of inheriting the host's elevation.
 - `GameShift.SystemAgent`: read-only service classifier and future privileged
   recovery owner.
 - `GameShift.Core`: platform-independent domain and safety rules.

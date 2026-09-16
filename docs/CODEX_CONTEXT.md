@@ -122,10 +122,12 @@ Ostatnia aktualizacja: 2026-09-05
 
 ## Mapa modułów
 
-- `src/GameShift.Launcher`: niepodwyższony `GameShift.exe`; uruchamia lub
-  odnajduje SessionHost i UI, lecz nie uruchamia SystemAgent, który jest
-  zarządzany przez SCM jako usługa. Maksymalizuje istniejące okno zamiast
-  dublować procesy.
+- `src/GameShift.Launcher`: `GameShift.exe` z manifestem `requireAdministrator`
+  (od 0.3.0: jeden monit UAC dla hosta); uruchamia lub odnajduje SessionHost
+  i UI, lecz nie uruchamia SystemAgent, który jest zarządzany przez SCM jako
+  usługa. UI startuje przez `DesktopUserProcessStarter` z tokenem pulpitu,
+  nie z tokenem podniesionego launchera. Maksymalizuje istniejące okno
+  zamiast dublować procesy.
 - `src/GameShift.UI`: niepodwyższone, unpackaged WinUI 3 x64; automatyczna
   biblioteka gier, Tryb gry, trwałe reguły per gra, historia, diagnostyka
   oraz FPS/czas klatki ze stanem źródła PresentMon. Osobne natywne okno
@@ -251,6 +253,38 @@ zakończyła się kodem 0: build Release bez ostrzeżeń, format bez zmian i
 
 ## Ostatnio zmieniane pliki
 
+- Token pulpitu dla procesów startowanych z podniesionych komponentów
+  (2026-09-16):
+  - Wada: `Process.Start` dziedziczy token wywołującego, więc gra
+    uruchomiona przez podniesiony SessionHost, aplikacja przywracana po
+    sesji (`GracefulCloseApplicationAction`, np. Discord) i UI startowane
+    z launchera `requireAdministrator` działały jako administrator: zapisy
+    gry z cudzymi uprawnieniami, przeciąganie z Eksploratora blokowane
+    przez UIPI, nakładki i aktualizatory sklepów odmawiające pracy,
+    pełne prawa bez potrzeby.
+  - `DesktopUserProcessStarter` (GameShift.Windows/Processes): gdy
+    wywołujący jest podniesiony, tworzy proces przez `CreateProcessW` z
+    atrybutem `PROC_THREAD_ATTRIBUTE_PARENT_PROCESS` wskazującym powłokę
+    pulpitu (`GetShellWindow`, awaryjnie najstarszy `explorer.exe` sesji);
+    dziecko dziedziczy token, priorytet i powinowactwo powłoki. Brak
+    powłoki albo błąd Win32 = zwykły start jak dotąd, powód w
+    `StartedProcess.FallbackReason`. Proces niepodniesiony startuje
+    zwyczajnie. `StartAsChildOf(startInfo, pid)` bez awaryjnego startu
+    (testy). `StartedProcess`: `Id`, `HasExited` (uchwyt procesu),
+    `InheritsParentToken`. `WindowsCommandLine.Build`: cytowanie jak
+    `CommandLineToArgvW`/`ArgumentList`.
+  - Użycie: `ManualGameProfileLauncher` (start gry),
+    `GracefulCloseApplicationAction` (przywracanie), `GameShift.Launcher`
+    (`TryStart` bez elewacji; trzy pliki dołączone jako `<Compile Link>`,
+    bo launcher zależy tylko od Core). Instalator aktualizacji i PresentMon
+    zostają podniesione celowo.
+  - Testy (`tests/GameShift.IntegrationTests/Processes`): dziecko
+    wskazanego rodzica ma jego PID rodzica i odziedziczone powinowactwo,
+    `HasExited` po zabiciu, katalog roboczy i argumenty docierają do
+    `cmd.exe`, brak programu = `Win32Exception` 2, ścieżka względna i
+    `UseShellExecute` odrzucane; round-trip cytowania przez
+    `CommandLineToArgvW`. Gałąź „podniesiony → powłoka" sprawdza się sama
+    tylko przy uruchomieniu testów jako administrator.
 - Automatyczna optymalizacja wykrytej gry (2026-09-12):
   - `GameDetectionPreferences` (Core) i tabela `GameDetectionPreferences`
     (schemat 12) w `SqliteUserDataStore`: jedno ustawienie „automatycznie
