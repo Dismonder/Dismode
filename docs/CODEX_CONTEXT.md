@@ -266,7 +266,13 @@ zakończyła się kodem 0: build Release bez ostrzeżeń, format bez zmian i
     (`QueryFullProcessImageName`), więc widzi też gry pod DRM, a przy dwóch
     egzemplarzach tej samej gry automat nie próbuje. Stara odpowiedź
     odpytywania hosta nie nadpisuje stanu sesji zmienionego w międzyczasie;
-    automat stoi, gdy czeka start zlecony z zewnątrz.
+    automat stoi, gdy czeka start zlecony z zewnątrz albo gdy użytkownik
+    siedzi na stronie planu z wynikiem analizy aplikacji w tle. Rejestr
+    pomijanych egzemplarzy to `AutomaticOptimizationSkipList` (Core,
+    testy jednostkowe); tuż przed dołączeniem automat sprawdza jeszcze,
+    czy profil jest w bibliotece i czy PID nadal należy do tego samego
+    procesu (czas startu). Baner mówi wprost, gdy automat pomija
+    egzemplarz.
   - `TrayIconService`: pozycja menu z zaznaczeniem „Automatycznie optymalizuj
     wykryte gry", podpowiedź ikony mówi, czy automat czuwa.
   - `StartSessionRequest.attach_only` → `LocalGameSessionOrchestrator` →
