@@ -418,12 +418,18 @@ public sealed class LocalGameSessionOrchestrator : IAsyncDisposable
         }
     }
 
+    /// <param name="attachOnly">
+    /// Sesja ma dolaczyc do juz dzialajacej gry i nigdy jej nie uruchamiac.
+    /// Ustawia to automat optymalizujacy wykryta gre; brak egzemplarza
+    /// konczy start bledem i pelnym odtworzeniem, jak kazdy nieudany launch.
+    /// </param>
     public async ValueTask<GameSessionSnapshot> StartAsync(
         Guid planId,
         SessionId sessionId,
         CancellationToken cancellationToken,
         bool enableFrameRateTracking = true,
-        bool? enableProBalance = null)
+        bool? enableProBalance = null,
+        bool attachOnly = false)
     {
         EnsureReady();
         await _gate.WaitAsync(cancellationToken).ConfigureAwait(false);
@@ -457,18 +463,39 @@ public sealed class LocalGameSessionOrchestrator : IAsyncDisposable
                     "The approved session plan expired.");
             }
 
-            ManualGameProfile currentProfile =
-                await _profiles
-                    .FindAsync(plan.Profile.ProfileId, cancellationToken)
-                    .ConfigureAwait(false)
-                ?? throw new InvalidOperationException(
-                    "The selected game profile was removed.");
-            EnsureProfileStillMatches(plan, currentProfile);
-            string currentHash =
-                await ExecutableFileHasher.ComputeSha256Async(
-                        currentProfile.ExecutablePath,
-                        cancellationToken)
-                    .ConfigureAwait(false);
+            ManualGameProfile currentProfile;
+            string currentHash;
+            try
+            {
+                currentProfile =
+                    await _profiles
+                        .FindAsync(plan.Profile.ProfileId, cancellationToken)
+                        .ConfigureAwait(false)
+                    ?? throw new InvalidOperationException(
+                        "The selected game profile was removed.");
+                EnsureProfileStillMatches(plan, currentProfile);
+                currentHash =
+                    await ExecutableFileHasher.ComputeSha256Async(
+                            currentProfile.ExecutablePath,
+                            cancellationToken)
+                        .ConfigureAwait(false);
+            }
+            catch (Exception exception) when (
+                exception is
+                    IOException
+                    or InvalidOperationException
+                    or UnauthorizedAccessException
+                    or OperationCanceledException)
+            {
+                // Plan, ktorego nie da sie uruchomic (profil usuniety albo
+                // zmieniony, plik EXE nieczytelny), nie ma prawa zostac:
+                // blokowalby wylaczenie hosta do wygasniecia, a uzytkownik
+                // i tak musi przygotowac nowy. Automat dolaczajacy do
+                // wykrytej gry trafia tu czesciej niz reka.
+                _pendingPlan = null;
+                throw;
+            }
+
             if (!StringComparer.OrdinalIgnoreCase.Equals(
                     currentHash,
                     plan.ExecutableHash))
@@ -522,6 +549,7 @@ public sealed class LocalGameSessionOrchestrator : IAsyncDisposable
                     await _launcher.LaunchOrAttachAfterVerificationAsync(
                             currentProfile,
                             currentHash,
+                            attachOnly,
                             _lifetime.Token)
                         .ConfigureAwait(false);
                 metadata = metadata with

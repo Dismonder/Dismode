@@ -3181,6 +3181,42 @@
                             Toggled="OnProBalanceSettingChanged" />
                       </Grid>
                     </StackPanel>
+
+                    <!-- Gra uruchomiona poza GameShiftem: ten sam
+                         „Optymalizuj w locie" co na banerze pulpitu, tylko
+                         bez klikania i także wtedy, gdy okno siedzi
+                         w zasobniku. Ta sama pozycja jest w menu ikony. -->
+                    <StackPanel Spacing="10" Margin="0,18,0,0">
+                      <TextBlock
+                          FontWeight="SemiBold"
+                          FontSize="13"
+                          Text="Wykrywanie gier" />
+
+                      <Grid ColumnSpacing="12">
+                        <Grid.ColumnDefinitions>
+                          <ColumnDefinition Width="*" />
+                          <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+                        <StackPanel VerticalAlignment="Center" Spacing="2">
+                          <TextBlock
+                              FontSize="13"
+                              Text="Automatycznie optymalizuj wykrytą grę" />
+                          <TextBlock
+                              Foreground="{ThemeResource GameShiftMutedTextBrush}"
+                              FontSize="11"
+                              Text="Gdy gra z biblioteki wystartuje poza GameShiftem, GameShift sam do niej dołączy i zastosuje jej zapisane reguły — także gdy okno jest schowane w zasobniku. Nigdy nie uruchamia gry samodzielnie. Sesję zakończoną ręcznie zostawia w spokoju do następnego uruchomienia tej gry. Ten sam przełącznik jest w menu ikony zasobnika."
+                              TextWrapping="Wrap" />
+                        </StackPanel>
+                        <ToggleSwitch
+                            x:Name="AutoOptimizeDetectedGamesToggleSwitch"
+                            Grid.Column="1"
+                            AutomationProperties.Name="Automatycznie optymalizuj wykrytą grę"
+                            IsOn="True"
+                            OffContent="WYŁ."
+                            OnContent="WŁ."
+                            Toggled="OnAutoOptimizeDetectedGamesSettingChanged" />
+                      </Grid>
+                    </StackPanel>
                   </StackPanel>
                 </Border>
 

@@ -164,7 +164,8 @@ public sealed class SessionClientService : IDisposable
         Guid sessionId,
         CancellationToken cancellationToken,
         bool enableFrameRateTracking = true,
-        bool enableProBalance = false)
+        bool enableProBalance = false,
+        bool attachOnly = false)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
         StartSessionRequest request = new()
@@ -175,6 +176,7 @@ public sealed class SessionClientService : IDisposable
             PlanId = RequireGuid(planId, nameof(planId)).ToString("D"),
             EnableFrameRateTracking = enableFrameRateTracking,
             EnableProBalance = enableProBalance,
+            AttachOnly = attachOnly,
         };
         SessionStateReply reply = await ExecuteAsync(
             token => _client.StartSessionAsync(

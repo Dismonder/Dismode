@@ -152,7 +152,8 @@ public sealed class GameShiftSessionGrpcService :
                         : true,
                     request.HasEnableProBalance
                         ? request.EnableProBalance
-                        : null);
+                        : null,
+                    attachOnly: request.HasAttachOnly && request.AttachOnly);
             return ToReply(snapshot);
         }
         catch (Exception exception) when (IsExpectedSessionFailure(exception))
