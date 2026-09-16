@@ -10,6 +10,7 @@ using GameShift.Core.Cpu;
 using GameShift.Core.OptiScaler;
 using GameShift.Core.Product;
 using GameShift.Core.Profiles;
+using GameShift.Core.Sessions;
 using GameShift.Core.Updates;
 using GameShift.Data.Journal;
 using GameShift.Data.Storage;
@@ -172,12 +173,20 @@ public sealed partial class MainWindow : Window, IDisposable
     /// <summary>
     /// Egzemplarze gier, ktorych automat ma nie ruszac: te, ktorym
     /// uzytkownik (albo odtwarzanie) zakonczyl sesje, i te, dla ktorych
-    /// start sie nie udal. Klucz to PID, wartosc to czas startu procesu, bo
-    /// Windows oddaje numery PID nowym procesom; wpis znika, gdy proces
-    /// zniknie. Nowe uruchomienie gry znow sie kwalifikuje.
+    /// start sie nie udal. Wpis znika, gdy proces zniknie; nowe
+    /// uruchomienie gry znow sie kwalifikuje.
     /// </summary>
-    private readonly Dictionary<int, DateTime?>
-        _automaticOptimizationSkippedProcesses = [];
+    private readonly AutomaticOptimizationSkipList
+        _automaticOptimizationSkipList = new();
+
+    /// <summary>
+    /// Luz dla odstepu skanu. Takt schowanego okna trwa tyle samo, co
+    /// odstep, a licznik potrafi wypasc o kilka milisekund wczesniej —
+    /// bez luzu co drugi takt uznawalby, ze jeszcze za wczesnie, i gra
+    /// czekalaby 12 s zamiast 6.
+    /// </summary>
+    private static readonly TimeSpan UnoptimizedGameScanTolerance =
+        TimeSpan.FromMilliseconds(250);
 
     /// <summary>
     /// Sesja Windows tego okna. Host dolacza tylko do procesow z tej samej
@@ -4351,7 +4360,8 @@ public sealed partial class MainWindow : Window, IDisposable
         }
 
         DateTimeOffset now = DateTimeOffset.UtcNow;
-        if (now - _lastUnoptimizedGameScanUtc < UnoptimizedGameScanInterval)
+        if (now - _lastUnoptimizedGameScanUtc
+            < UnoptimizedGameScanInterval - UnoptimizedGameScanTolerance)
         {
             return;
         }
@@ -4466,7 +4476,12 @@ public sealed partial class MainWindow : Window, IDisposable
                 }
             }, cancellationToken);
 
-            ForgetExitedSkippedProcesses(scan.LiveProcessIds);
+            if (scan.LiveProcessIds is not null)
+            {
+                _ = _automaticOptimizationSkipList.ForgetExited(
+                    scan.LiveProcessIds);
+            }
+
             ProfileListItem? matched = scan.Game;
             int pid = scan.ProcessId;
             _detectedRunningUnoptimizedGame = matched;
@@ -4478,19 +4493,26 @@ public sealed partial class MainWindow : Window, IDisposable
             {
                 if (matched is not null && _activeSession is null)
                 {
+                    bool skippedByAutomaticOptimization =
+                        _automaticOptimizationSkipList.IsSkipped(
+                            pid,
+                            scan.StartTime);
                     bool automaticAttachPending =
                         IsAutomaticOptimizationEnabled
                         && scan.PathVerified
-                        && !IsSkippedByAutomaticOptimization(
-                            pid,
-                            scan.StartTime)
+                        && !skippedByAutomaticOptimization
                         && (_pendingPlan is null
                             || _pendingPlan.ExpiresAtUtc
                                 < DateTimeOffset.UtcNow);
                     UnoptimizedGameNameText.Text = $"„{matched.DisplayName}” (PID: {pid})";
+                    // Baner mowi, co automat zrobi albo dlaczego nie robi
+                    // nic: pominiety egzemplarz to najczestszy powod, dla
+                    // ktorego „wlaczony automat" niczego nie uruchamia.
                     UnoptimizedGameDetailsText.Text = automaticAttachPending
                         ? $"Gra {matched.DisplayName} działa. GameShift zaraz dołączy do niej automatycznie i zastosuje zapisane reguły."
-                        : $"Gra {matched.DisplayName} działa w systemie Windows. Możesz włączyć profil optymalizacji w locie bez jej restartowania.";
+                        : IsAutomaticOptimizationEnabled && skippedByAutomaticOptimization
+                            ? $"Gra {matched.DisplayName} działa. Automat pomija ten egzemplarz, bo jego sesję zakończono ręcznie albo start się nie udał; następne uruchomienie gry znów dostanie sesję. Możesz włączyć optymalizację ręcznie."
+                            : $"Gra {matched.DisplayName} działa w systemie Windows. Możesz włączyć profil optymalizacji w locie bez jej restartowania.";
                     UnoptimizedGameBanner.Visibility = Visibility.Visible;
                 }
                 else
@@ -4610,11 +4632,14 @@ public sealed partial class MainWindow : Window, IDisposable
             return;
         }
 
-        if (!IsProcessAlive(processId))
+        bool profileStillInLibrary = _profiles.Any(item =>
+            item.Profile.ProfileId == target.Profile.ProfileId);
+        if (!profileStillInLibrary || !IsSameProcessAlive(processId, startTime))
         {
-            // Wynik skanu ma do 6 s; gra mogla zdazyc sie zakonczyc. Host
-            // i tak by odmowil (tryb „tylko dolacz"), ale po co meldowac
-            // blad o czyms, co bledem nie jest.
+            // Wynik skanu ma do 6 s: gra mogla sie zakonczyc, PID mogl
+            // przejsc na inny proces, a profil mogl zostac usuniety
+            // z biblioteki. Host i tak by odmowil, ale po co meldowac blad
+            // o czyms, co bledem nie jest.
             _detectedRunningUnoptimizedGame = null;
             _detectedRunningProcessId = 0;
             _detectedRunningProcessStartTime = null;
@@ -4703,7 +4728,7 @@ public sealed partial class MainWindow : Window, IDisposable
                 // Ten egzemplarz gry dostaje spokoj: ponawianie co 6 s
                 // dawaloby ten sam blad i to samo powiadomienie. Baner
                 // zostaje, wiec reczna proba jest o jedno klikniecie.
-                SkipAutomaticOptimizationFor(processId, startTime);
+                _automaticOptimizationSkipList.Skip(processId, startTime);
             }
 
             ShowInfo(
@@ -4744,50 +4769,39 @@ public sealed partial class MainWindow : Window, IDisposable
         // trwa: to on ma dostac jedyna sesje hosta, nie automat.
         && _externalLaunchGate.CurrentCount > 0
         && _pendingActivationRequests.Count == 0
+        // Uzytkownik siedzi na stronie planu z wynikiem analizy aplikacji
+        // w tle: jest w trakcie wlasnej decyzji, a sesja z zapisanymi
+        // regulami wyrzucilaby jego wybor.
+        && !IsUserConfiguringPlan
         && _detectedRunningGamePathVerified
         && processId > 0
-        && !IsSkippedByAutomaticOptimization(processId, startTime)
+        && !_automaticOptimizationSkipList.IsSkipped(processId, startTime)
         && !_lifetime.IsCancellationRequested;
 
-    private bool IsSkippedByAutomaticOptimization(
-        int processId,
-        DateTime? startTime) =>
-        _automaticOptimizationSkippedProcesses.TryGetValue(
-            processId,
-            out DateTime? skippedStartTime)
-        // Bez czasu startu po ktorejs stronie nie da sie odroznic nowego
-        // procesu pod starym PID; pomijanie ma byc ostrozne, nie dokladne.
-        && (skippedStartTime is null
-            || startTime is null
-            || skippedStartTime == startTime);
+    private bool IsUserConfiguringPlan =>
+        !_hiddenInTray
+        && PlanPage.Visibility == Visibility.Visible
+        && _backgroundApplications.Count > 0;
 
-    private void SkipAutomaticOptimizationFor(
-        int processId,
-        DateTime? startTime) =>
-        _automaticOptimizationSkippedProcesses[processId] = startTime;
-
-    private void ForgetExitedSkippedProcesses(
-        IReadOnlySet<int> liveProcessIds)
-    {
-        if (_automaticOptimizationSkippedProcesses.Count == 0)
-        {
-            return;
-        }
-
-        foreach (int processId in _automaticOptimizationSkippedProcesses.Keys
-                     .Where(processId => !liveProcessIds.Contains(processId))
-                     .ToList())
-        {
-            _ = _automaticOptimizationSkippedProcesses.Remove(processId);
-        }
-    }
-
-    private static bool IsProcessAlive(int processId)
+    /// <summary>
+    /// Czy proces o tym PID nadal dziala i jest tym samym procesem, ktory
+    /// widzial skan: PID po zamknietej grze moze w ciagu tych kilku sekund
+    /// dostac zupelnie inny program.
+    /// </summary>
+    private static bool IsSameProcessAlive(int processId, DateTime? startTime)
     {
         try
         {
             using Process process = Process.GetProcessById(processId);
-            return !process.HasExited;
+            if (process.HasExited)
+            {
+                return false;
+            }
+
+            DateTime? currentStartTime = TryReadStartTime(process);
+            return startTime is null
+                || currentStartTime is null
+                || currentStartTime.Value == startTime.Value;
         }
         catch (Exception exception) when (
             exception is
@@ -4857,7 +4871,7 @@ public sealed partial class MainWindow : Window, IDisposable
 
         foreach ((int processId, DateTime? startTime) in instances)
         {
-            SkipAutomaticOptimizationFor(processId, startTime);
+            _automaticOptimizationSkipList.Skip(processId, startTime);
         }
 
         // Baner ma pokazac te gre od razu, wiec najblizszy takt skanuje
@@ -4906,15 +4920,20 @@ public sealed partial class MainWindow : Window, IDisposable
         return found;
     }
 
+    /// <param name="LiveProcessIds">
+    /// Pelna lista procesow z tego skanu albo null, gdy skan sie nie odbyl
+    /// (brak wlaczonych profili). Tylko pelna lista ma prawo czyscic
+    /// rejestr pominietych; pusta udawalaby, ze wszystko juz zniknelo.
+    /// </param>
     private sealed record RunningGameScanResult(
         ProfileListItem? Game,
         int ProcessId,
         DateTime? StartTime,
         bool PathVerified,
-        IReadOnlySet<int> LiveProcessIds)
+        IReadOnlySet<int>? LiveProcessIds)
     {
         public static readonly RunningGameScanResult Empty =
-            new(null, 0, null, false, new HashSet<int>());
+            new(null, 0, null, false, LiveProcessIds: null);
     }
 
     private async Task LoadGameDetectionPreferencesAsync(
