@@ -96,10 +96,20 @@ public sealed class ActivationProtocolTests
             KeepWindowHidden: false,
             ShowOnly: true);
 
+        byte[] showOnlyPayload = UiActivationProtocol.Serialize(showOnly);
         UiActivationRequest actual = UiActivationProtocol.DeserializeAndValidate(
-            UiActivationProtocol.Serialize(showOnly),
+            showOnlyPayload,
             now);
         Assert.IsTrue(actual.ShowOnly);
+        Assert.Contains(
+            "showOnly",
+            Encoding.UTF8.GetString(showOnlyPayload));
+
+        // Zwykly start gry nie niesie nowego pola: starsze okno odrzuca
+        // nieznane skladowe, a start gry ma dzialac miedzy wersjami.
+        string plainPayload = Encoding.UTF8.GetString(
+            UiActivationProtocol.Serialize(showOnly with { ShowOnly = false }));
+        Assert.DoesNotContain("showOnly", plainPayload);
 
         // Launcher sprzed tej wersji nie wysyla tego pola: znaczenie zostaje
         // takie, jakie mial zawsze — uruchom gre.
