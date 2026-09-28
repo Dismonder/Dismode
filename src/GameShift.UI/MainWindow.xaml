@@ -1269,11 +1269,7 @@
 
             <!-- Bento Header & Action Bar -->
             <Border
-                Padding="24,18"
-                Background="{ThemeResource GameShiftHeroBrush}"
-                BorderBrush="{ThemeResource GameShiftCardBorderBrush}"
-                BorderThickness="1"
-                CornerRadius="14">
+                Style="{StaticResource GameShiftDeckHeaderStyle}">
               <Grid x:Name="ProfilesHeaderGrid" ColumnSpacing="20" RowSpacing="12">
                 <Grid.ColumnDefinitions>
                   <ColumnDefinition Width="*" />
@@ -1385,14 +1381,14 @@
                 Grid.Row="1"
                 Height="208"
                 Margin="0,14,0,0"
-                BorderBrush="{ThemeResource GameShiftCardBorderBrush}"
+                BorderBrush="{ThemeResource GameShiftCardEdgeBrush}"
                 BorderThickness="1"
-                CornerRadius="16">
+                CornerRadius="11">
               <Grid>
                 <Border
                     Width="420"
                     HorizontalAlignment="Right"
-                    CornerRadius="0,16,16,0">
+                    CornerRadius="0,11,11,0">
                   <Border.Clip>
                     <RectangleGeometry Rect="0,0,420,208" />
                   </Border.Clip>
@@ -1544,10 +1540,8 @@
                         Width="264"
                         Height="382"
                         Margin="0,0,16,16"
-                        Background="{ThemeResource GameShiftCardBrush}"
-                        BorderBrush="{ThemeResource GameShiftCardBorderBrush}"
-                        BorderThickness="1"
-                        CornerRadius="14">
+                        Style="{StaticResource GameShiftDeckCardStyle}"
+                        Padding="0">
                       <Grid>
                         <Grid.RowDefinitions>
                           <RowDefinition Height="238" />
@@ -1617,7 +1611,7 @@
                             Margin="12,8,12,0"
                             Spacing="3">
                           <TextBlock
-                              Foreground="White"
+                              Foreground="{ThemeResource GameShiftPrimaryTextBrush}"
                               FontFamily="Segoe UI Variable Display"
                               FontSize="14"
                               FontWeight="SemiBold"
@@ -1725,11 +1719,7 @@
 
               <!-- Bento Header Card -->
               <Border
-                  Padding="24,18"
-                  Background="{ThemeResource GameShiftHeroBrush}"
-                  BorderBrush="{ThemeResource GameShiftCardBorderBrush}"
-                  BorderThickness="1"
-                  CornerRadius="14">
+                  Style="{StaticResource GameShiftDeckHeaderStyle}">
                 <Grid x:Name="PlanHeaderGrid" ColumnSpacing="20" RowSpacing="12">
                   <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="*" />
@@ -1796,11 +1786,7 @@
                 <StackPanel Grid.Column="0" Spacing="14">
                   <!-- Game Profile Card -->
                   <Border
-                      Padding="20"
-                      Background="{ThemeResource GameShiftCardBrush}"
-                      BorderBrush="{ThemeResource GameShiftCardBorderBrush}"
-                      BorderThickness="1"
-                      CornerRadius="14">
+                      Style="{StaticResource GameShiftDeckCardStyle}">
                     <StackPanel Spacing="12">
                       <TextBlock FontSize="17" FontWeight="SemiBold" Text="1. Profil gry i priorytet" />
                       <ComboBox
@@ -1887,11 +1873,7 @@
 
                   <!-- HUD Overlay Card -->
                   <Border
-                      Padding="20"
-                      Background="{ThemeResource GameShiftCardBrush}"
-                      BorderBrush="{ThemeResource GameShiftCardBorderBrush}"
-                      BorderThickness="1"
-                      CornerRadius="14">
+                      Style="{StaticResource GameShiftDeckCardStyle}">
                     <StackPanel Spacing="12">
                       <Grid ColumnSpacing="16">
                         <Grid.ColumnDefinitions>
@@ -2004,10 +1986,7 @@
                     </Grid.ColumnDefinitions>
                     <Border
                         Padding="16"
-                        Background="{ThemeResource GameShiftCardBrush}"
-                        BorderBrush="{ThemeResource GameShiftCardBorderBrush}"
-                        BorderThickness="1"
-                        CornerRadius="14">
+                        Style="{StaticResource GameShiftDeckCardStyle}">
                       <StackPanel Spacing="2">
                         <TextBlock Foreground="{ThemeResource GameShiftMutedTextBrush}" FontSize="12" Text="Wykryte aplikacje" />
                         <TextBlock x:Name="SelectedAppsCountText" FontSize="26" FontWeight="SemiBold" Text="0" />
@@ -2016,10 +1995,7 @@
                     <Border
                         Grid.Column="1"
                         Padding="16"
-                        Background="{ThemeResource GameShiftCardBrush}"
-                        BorderBrush="{ThemeResource GameShiftCardBorderBrush}"
-                        BorderThickness="1"
-                        CornerRadius="14">
+                        Style="{StaticResource GameShiftDeckCardStyle}">
                       <StackPanel Spacing="2">
                         <TextBlock Foreground="{ThemeResource GameShiftMutedTextBrush}" FontSize="12" Text="Szacowany odzysk RAM" />
                         <TextBlock x:Name="SelectedAppsMemoryText" Foreground="{ThemeResource GameShiftSuccessBrush}" FontSize="26" FontWeight="SemiBold" Text="0 MB" />
@@ -2030,11 +2006,7 @@
                   <!-- Background Applications List Card -->
                   <Border
                       MinHeight="300"
-                      Padding="20"
-                      Background="{ThemeResource GameShiftCardBrush}"
-                      BorderBrush="{ThemeResource GameShiftCardBorderBrush}"
-                      BorderThickness="1"
-                      CornerRadius="14">
+                      Style="{StaticResource GameShiftDeckCardStyle}">
                     <StackPanel Spacing="12">
                       <Grid>
                         <Grid.ColumnDefinitions>
@@ -2090,10 +2062,7 @@
                               <Border
                                   Margin="0,0,0,8"
                                   Padding="12"
-                                  Background="{ThemeResource GameShiftCardBrush}"
-                                  BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
-                                  BorderThickness="1"
-                                  CornerRadius="14">
+                                  Style="{StaticResource GameShiftDeckCardStyle}">
                                 <Grid ColumnSpacing="12">
                                   <Grid.ColumnDefinitions>
                                     <ColumnDefinition Width="Auto" />
@@ -2169,10 +2138,7 @@
                   <!-- Session Execution Bento Card -->
                   <Border
                       Padding="20"
-                      Background="{ThemeResource GameShiftHeroBrush}"
-                      BorderBrush="{ThemeResource GameShiftCardBorderBrush}"
-                      BorderThickness="1"
-                      CornerRadius="14">
+                      Style="{StaticResource GameShiftDeckHeaderStyle}">
                     <StackPanel Spacing="10">
                       <TextBlock
                           x:Name="PlanStateTitleText"
@@ -2273,11 +2239,7 @@
 
             <!-- Bento Header -->
             <Border
-                Padding="24,18"
-                Background="{ThemeResource GameShiftHeroBrush}"
-                BorderBrush="{ThemeResource GameShiftCardBorderBrush}"
-                BorderThickness="1"
-                CornerRadius="14">
+                Style="{StaticResource GameShiftDeckHeaderStyle}">
               <Grid x:Name="HistoryHeaderGrid" ColumnSpacing="20" RowSpacing="12">
                 <Grid.ColumnDefinitions>
                   <ColumnDefinition Width="*" />
@@ -2412,10 +2374,7 @@
                     <Border
                         Margin="0,0,0,10"
                         Padding="18,16"
-                        Background="{ThemeResource GameShiftCardBrush}"
-                        BorderBrush="{ThemeResource GameShiftCardBorderBrush}"
-                        BorderThickness="1"
-                        CornerRadius="14">
+                        Style="{StaticResource GameShiftDeckCardStyle}">
                       <Grid ColumnSpacing="18">
                         <Grid.ColumnDefinitions>
                           <ColumnDefinition Width="Auto" />
@@ -2428,10 +2387,10 @@
                             Width="44"
                             Height="44"
                             VerticalAlignment="Center"
-                            Background="#1F1ED5DB"
+                            Background="{ThemeResource GameShiftAccentSoftBrush}"
                             BorderBrush="{ThemeResource GameShiftCardBorderBrush}"
                             BorderThickness="1"
-                            CornerRadius="14">
+                            CornerRadius="11">
                           <FontIcon
                               HorizontalAlignment="Center"
                               VerticalAlignment="Center"
@@ -2534,11 +2493,7 @@
 
               <!-- Bento Header -->
               <Border
-                  Padding="24,18"
-                  Background="{ThemeResource GameShiftHeroBrush}"
-                  BorderBrush="{ThemeResource GameShiftCardBorderBrush}"
-                  BorderThickness="1"
-                  CornerRadius="14">
+                  Style="{StaticResource GameShiftDeckHeaderStyle}">
                 <Grid x:Name="UpdatesHeaderGrid" ColumnSpacing="20" RowSpacing="12">
                   <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="*" />
@@ -2595,11 +2550,7 @@
 
                 <!-- Current Build Card -->
                 <Border
-                    Padding="22"
-                    Background="{ThemeResource GameShiftCardBrush}"
-                    BorderBrush="{ThemeResource GameShiftCardBorderBrush}"
-                    BorderThickness="1"
-                    CornerRadius="14">
+                    Style="{StaticResource GameShiftDeckCardStyle}">
                   <StackPanel Spacing="10">
                     <TextBlock
                         Style="{StaticResource GameShiftEyebrowStyle}"
@@ -2629,11 +2580,7 @@
                 <Border
                     x:Name="UpdatesSettingsCard"
                     Grid.Column="1"
-                    Padding="22"
-                    Background="{ThemeResource GameShiftCardBrush}"
-                    BorderBrush="{ThemeResource GameShiftCardBorderBrush}"
-                    BorderThickness="1"
-                    CornerRadius="14">
+                    Style="{StaticResource GameShiftDeckCardStyle}">
                   <StackPanel Spacing="12">
                     <TextBlock
                         FontSize="17"
@@ -2660,11 +2607,7 @@
                 <Border
                     x:Name="AvailableUpdateCard"
                     Grid.Row="1"
-                    Padding="22"
-                    Background="{ThemeResource GameShiftCardBrush}"
-                    BorderBrush="{ThemeResource GameShiftCardBorderBrush}"
-                    BorderThickness="1"
-                    CornerRadius="14">
+                    Style="{StaticResource GameShiftDeckCardStyle}">
                   <StackPanel Spacing="14">
                     <Grid>
                       <Grid.ColumnDefinitions>
@@ -2694,7 +2637,7 @@
                     <StackPanel Orientation="Horizontal" Spacing="6">
                       <Border
                           x:Name="UpdateStep1Badge"
-                          Background="#2200D7E2"
+                          Background="{ThemeResource GameShiftAccentSoftBrush}"
                           BorderBrush="{ThemeResource GameShiftAccentBrush}"
                           BorderThickness="1"
                           CornerRadius="6"
@@ -2708,11 +2651,7 @@
                       <FontIcon Foreground="{ThemeResource GameShiftMutedTextBrush}" FontSize="10" Glyph="&#xE76C;" />
                       <Border
                           x:Name="UpdateStep2Badge"
-                          Background="#16FFFFFF"
-                          BorderBrush="#33FFFFFF"
-                          BorderThickness="1"
-                          CornerRadius="6"
-                          Padding="8,4">
+                          Style="{StaticResource GameShiftChipStyle}">
                         <TextBlock
                             FontSize="11"
                             FontWeight="SemiBold"
@@ -2722,11 +2661,7 @@
                       <FontIcon Foreground="{ThemeResource GameShiftMutedTextBrush}" FontSize="10" Glyph="&#xE76C;" />
                       <Border
                           x:Name="UpdateStep3Badge"
-                          Background="#16FFFFFF"
-                          BorderBrush="#33FFFFFF"
-                          BorderThickness="1"
-                          CornerRadius="6"
-                          Padding="8,4">
+                          Style="{StaticResource GameShiftChipStyle}">
                         <TextBlock
                             FontSize="11"
                             FontWeight="SemiBold"
@@ -2736,11 +2671,7 @@
                       <FontIcon Foreground="{ThemeResource GameShiftMutedTextBrush}" FontSize="10" Glyph="&#xE76C;" />
                       <Border
                           x:Name="UpdateStep4Badge"
-                          Background="#16FFFFFF"
-                          BorderBrush="#33FFFFFF"
-                          BorderThickness="1"
-                          CornerRadius="6"
-                          Padding="8,4">
+                          Style="{StaticResource GameShiftChipStyle}">
                         <TextBlock
                             FontSize="11"
                             FontWeight="SemiBold"
@@ -2812,11 +2743,7 @@
                     x:Name="UpdatesTrustCard"
                     Grid.Row="1"
                     Grid.Column="1"
-                    Padding="22"
-                    Background="{ThemeResource GameShiftCardBrush}"
-                    BorderBrush="{ThemeResource GameShiftCardBorderBrush}"
-                    BorderThickness="1"
-                    CornerRadius="14">
+                    Style="{StaticResource GameShiftDeckCardStyle}">
                   <StackPanel Spacing="10">
                     <TextBlock
                         FontSize="17"
@@ -2860,11 +2787,7 @@
 
               <!-- Bento Header -->
               <Border
-                  Padding="24,18"
-                  Background="{ThemeResource GameShiftHeroBrush}"
-                  BorderBrush="{ThemeResource GameShiftCardBorderBrush}"
-                  BorderThickness="1"
-                  CornerRadius="14">
+                  Style="{StaticResource GameShiftDeckHeaderStyle}">
                 <Grid x:Name="DiagnosticsHeaderGrid" ColumnSpacing="20" RowSpacing="12">
                   <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="*" />
@@ -2917,11 +2840,7 @@
                 <Border
                     x:Name="DiagnosticsGamingCard"
                     VerticalAlignment="Top"
-                    Padding="22"
-                    Background="{ThemeResource GameShiftCardBrush}"
-                    BorderBrush="{ThemeResource GameShiftCardBorderBrush}"
-                    BorderThickness="1"
-                    CornerRadius="14">
+                    Style="{StaticResource GameShiftDeckCardStyle}">
                   <StackPanel Spacing="12">
                     <StackPanel Orientation="Horizontal" Spacing="8">
                       <FontIcon Foreground="{ThemeResource GameShiftAccentBrush}" FontSize="18" Glyph="&#xE790;" />
@@ -2953,11 +2872,7 @@
                     x:Name="DiagnosticsStatusCard"
                     Grid.Column="1"
                     VerticalAlignment="Top"
-                    Padding="22"
-                    Background="{ThemeResource GameShiftCardBrush}"
-                    BorderBrush="{ThemeResource GameShiftCardBorderBrush}"
-                    BorderThickness="1"
-                    CornerRadius="14">
+                    Style="{StaticResource GameShiftDeckCardStyle}">
                   <StackPanel Spacing="12">
                     <TextBlock
                         FontSize="18"
@@ -3015,11 +2930,7 @@
                     x:Name="SettingsAppearanceCard"
                     Grid.Row="1"
                     VerticalAlignment="Top"
-                    Padding="22"
-                    Background="{ThemeResource GameShiftCardBrush}"
-                    BorderBrush="{ThemeResource GameShiftCardBorderBrush}"
-                    BorderThickness="1"
-                    CornerRadius="14">
+                    Style="{StaticResource GameShiftDeckCardStyle}">
                   <StackPanel Spacing="12">
                     <TextBlock
                         FontSize="18"
@@ -3095,11 +3006,7 @@
                     Grid.Row="1"
                     Grid.Column="1"
                     VerticalAlignment="Top"
-                    Padding="22"
-                    Background="{ThemeResource GameShiftCardBrush}"
-                    BorderBrush="{ThemeResource GameShiftCardBorderBrush}"
-                    BorderThickness="1"
-                    CornerRadius="14">
+                    Style="{StaticResource GameShiftDeckCardStyle}">
                   <StackPanel Spacing="12">
                     <!-- FPS tracking and overlay can be disabled independently. -->
                     <StackPanel Spacing="10" Margin="0,10,0,0">
@@ -3270,11 +3177,7 @@
                     Grid.Row="2"
                     Grid.ColumnSpan="2"
                     VerticalAlignment="Top"
-                    Padding="22"
-                    Background="{ThemeResource GameShiftCardBrush}"
-                    BorderBrush="{ThemeResource GameShiftCardBorderBrush}"
-                    BorderThickness="1"
-                    CornerRadius="14">
+                    Style="{StaticResource GameShiftDeckCardStyle}">
                   <StackPanel Spacing="12">
                     <!-- Updates & Version in Settings -->
                     <StackPanel Spacing="10" Margin="0,10,0,0">
@@ -3319,11 +3222,7 @@
                     x:Name="MemoryOptimizerCard"
                     Grid.Row="3"
                     Grid.ColumnSpan="2"
-                    Padding="22"
-                    Background="{ThemeResource GameShiftCardBrush}"
-                    BorderBrush="{ThemeResource GameShiftCardBorderBrush}"
-                    BorderThickness="1"
-                    CornerRadius="14">
+                    Style="{StaticResource GameShiftDeckCardStyle}">
                   <Grid ColumnSpacing="18">
                     <Grid.ColumnDefinitions>
                       <ColumnDefinition Width="Auto" />
@@ -3352,11 +3251,7 @@
                     x:Name="SystemOptimizerCard"
                     Grid.Row="4"
                     Grid.ColumnSpan="2"
-                    Padding="22"
-                    Background="{ThemeResource GameShiftCardBrush}"
-                    BorderBrush="{ThemeResource GameShiftCardBorderBrush}"
-                    BorderThickness="1"
-                    CornerRadius="14">
+                    Style="{StaticResource GameShiftDeckCardStyle}">
                   <Grid ColumnSpacing="18">
                     <Grid.ColumnDefinitions>
                       <ColumnDefinition Width="Auto" />
