@@ -112,4 +112,51 @@ public sealed record ProBalanceSettings
     /// </para>
     /// </summary>
     public bool LowerBackgroundIoPriority { get; init; } = true;
+
+    /// <summary>
+    /// Czy ograniczanemu procesowi wlaczac takze EcoQoS: Windows obniza mu
+    /// taktowanie, a na procesorze hybrydowym kieruje go na rdzenie
+    /// energooszczedne. Dziennikowane i cofane jak pozostale dzwignie.
+    /// </summary>
+    public bool ApplyEcoQos { get; init; }
+
+    /// <summary>
+    /// Odstep miedzy probkami, gdy tlo jest ponizej bramki i nic nie jest
+    /// ograniczone.
+    /// </summary>
+    public TimeSpan CalmInterval { get; init; } = TimeSpan.FromSeconds(1);
+
+    /// <summary>
+    /// Odstep miedzy probkami, gdy tlo przekracza bramke albo cos jest
+    /// ograniczone. Krotszy odstep lapie proces szybciej przy tej samej
+    /// liczbie probek, a pelne przejscie kosztuje okolo 4,3 ms.
+    /// </summary>
+    public TimeSpan BusyInterval { get; init; } = TimeSpan.FromSeconds(1);
+
+    /// <summary>
+    /// Ustawienia nastawione na najwyzsza wydajnosc gry, wybrane przez
+    /// uzytkownika zamiast ostroznych wartosci domyslnych. Wszystkie dzwignie
+    /// od pierwszego zlapania (priorytet, maska, EcoQoS, wejscie-wyjscie),
+    /// nizszy prog, dwie probki zamiast trzech, gestsze probkowanie pod
+    /// obciazeniem i wiecej procesow naraz. Progi nie sa zmierzone na czasie
+    /// klatki; odwracalnosc i dziennik zostaja bez zmian.
+    /// </summary>
+    public static ProBalanceSettings Aggressive { get; } = new()
+    {
+        // Rowne z progiem procesu z tego samego powodu co w wartosciach
+        // domyslnych: kazdy proces warty zlapania sam przechodzi bramke.
+        BackgroundLoadCores = 0.5,
+        RestrainAboveCores = 0.5,
+        ReleaseBelowCores = 0.2,
+        SustainedSamples = 2,
+        CalmSamples = 5,
+        MinimumRestraint = TimeSpan.FromSeconds(10),
+        MaximumRestraint = TimeSpan.FromMinutes(10),
+        Cooldown = TimeSpan.FromSeconds(10),
+        MaximumRestrained = 8,
+        LowerBackgroundIoPriority = true,
+        ApplyEcoQos = true,
+        CalmInterval = TimeSpan.FromSeconds(1),
+        BusyInterval = TimeSpan.FromMilliseconds(500),
+    };
 }

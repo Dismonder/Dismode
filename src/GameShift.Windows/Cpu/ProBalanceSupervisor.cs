@@ -38,8 +38,14 @@ public sealed class ProBalanceSupervisor : IAsyncDisposable
     private readonly Dictionary<ProcessRuntimeKey, CpuReading> _previous = [];
     private readonly Func<IReadOnlySet<int>> _gameProcessIds;
     private readonly TimeProvider _timeProvider;
-    private readonly TimeSpan _interval;
+    private readonly ProBalanceSettings _settings;
+
+    // Jawnie podany odstep jest staly (testy, wlasny rytm wolajacego).
+    // Bez niego rytm wybiera ProBalanceCadence z ustawien.
+    private readonly TimeSpan? _fixedInterval;
     private readonly SemaphoreSlim _gate = new(1, 1);
+    private double _lastBackgroundCores;
+    private int _lastRestrainedCount;
 
     private CancellationTokenSource? _loop;
     private Task? _worker;
@@ -58,9 +64,21 @@ public sealed class ProBalanceSupervisor : IAsyncDisposable
         _processes = processes;
         _actuator = actuator;
         _gameProcessIds = gameProcessIds;
-        _engine = new(settings);
+        _settings = settings ?? new ProBalanceSettings();
+        if (interval is null
+            && (_settings.CalmInterval <= TimeSpan.Zero
+                || _settings.BusyInterval <= TimeSpan.Zero))
+        {
+            // Sprawdzone tutaj, bo w petli wyjatek z wyboru odstepu
+            // zatrzymalby nadzorce na reszte sesji.
+            throw new ArgumentOutOfRangeException(
+                nameof(settings),
+                "Odstępy próbkowania muszą być dodatnie.");
+        }
+
+        _engine = new(_settings);
         _timeProvider = timeProvider ?? TimeProvider.System;
-        _interval = interval ?? DefaultInterval;
+        _fixedInterval = interval;
     }
 
     /// <summary>
@@ -186,6 +204,7 @@ public sealed class ProBalanceSupervisor : IAsyncDisposable
             .Where(observation =>
                 !observation.BelongsToGame && !observation.IsProtected)
             .Sum(observation => observation.CpuCores);
+        _lastBackgroundCores = backgroundCores;
 
         IReadOnlyList<ProBalanceDecision> decisions = _engine.Evaluate(
             observations,
@@ -196,6 +215,9 @@ public sealed class ProBalanceSupervisor : IAsyncDisposable
             await CarryOutAsync(decision).ConfigureAwait(false);
         }
 
+        // Zapis pod bramka; petla czyta to po jej zwolnieniu, zeby wybrac
+        // odstep do nastepnej probki.
+        _lastRestrainedCount = _engine.Restrained.Count;
         return decisions;
     }
 
@@ -267,9 +289,14 @@ public sealed class ProBalanceSupervisor : IAsyncDisposable
                 _gate.Release();
             }
 
+            TimeSpan delay = _fixedInterval
+                ?? ProBalanceCadence.NextInterval(
+                    _settings,
+                    _lastBackgroundCores,
+                    _lastRestrainedCount);
             try
             {
-                await Task.Delay(_interval, _timeProvider, cancellationToken)
+                await Task.Delay(delay, _timeProvider, cancellationToken)
                     .ConfigureAwait(false);
             }
             catch (OperationCanceledException)

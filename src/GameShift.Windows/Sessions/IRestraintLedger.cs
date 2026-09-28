@@ -37,7 +37,11 @@ public sealed record RestrainedProcessRecord(
     // Zbiory nie sa dziennikowane, bo nie ograniczaja, tylko podpowiadaja —
     // ale po awarii hosta zostalyby na procesie do jego konca, wiec
     // odtwarzanie ma je wyczyscic.
-    bool SteeredCpuSets = false);
+    bool SteeredCpuSets = false,
+    // EcoQoS nalozony przez petle reaktywna (preset agresywny). Odtwarzanie
+    // po awarii cofa go ta sama sciezka co EcoQoS aplikacji z planu.
+    ActionId? EcoQosActionId = null,
+    IdempotencyKey? EcoQosIdempotencyKey = null);
 
 /// <summary>
 /// Where the reactive restraint loop reports what it has restrained and
