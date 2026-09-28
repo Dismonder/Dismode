@@ -1349,7 +1349,8 @@ public sealed class LocalGameSessionOrchestrator : IAsyncDisposable
                     ResolveBackgroundCpuSetIds(),
                     runtime.BackgroundAffinityMask,
                     _proBalanceSettings?.LowerBackgroundIoPriority
-                        ?? new ProBalanceSettings().LowerBackgroundIoPriority);
+                        ?? new ProBalanceSettings().LowerBackgroundIoPriority,
+                    _proBalanceSettings?.ApplyEcoQos ?? false);
 
             // Kazde ograniczenie, ktore petla nalozy, trafia do punktu
             // kontrolnego sesji. Bez tego wpisy w dzienniku sa, ale po
@@ -2013,9 +2014,11 @@ public sealed class LocalGameSessionOrchestrator : IAsyncDisposable
             record.PriorityIdempotencyKey,
             record.DisplayName,
             record.Identity,
-            BackgroundProcessActionMode.LowerPriority,
-            EcoQosActionId: null,
-            EcoQosIdempotencyKey: null,
+            record.EcoQosActionId is null
+                ? BackgroundProcessActionMode.LowerPriority
+                : BackgroundProcessActionMode.LowerPriorityAndEcoQos,
+            record.EcoQosActionId,
+            record.EcoQosIdempotencyKey,
             record.AffinityActionId,
             record.AffinityIdempotencyKey,
             record.IoPriorityActionId,
