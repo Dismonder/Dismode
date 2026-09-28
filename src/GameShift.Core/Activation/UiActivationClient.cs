@@ -37,9 +37,10 @@ public static class UiActivationClient
             byte[] payload = UiActivationProtocol.Serialize(request);
             Span<byte> length = stackalloc byte[sizeof(int)];
             BinaryPrimitives.WriteInt32LittleEndian(length, payload.Length);
+            // Bez Flush: zapis do rury jest niebuforowany, a Flush to
+            // FlushFileBuffers, ktore czeka na odczyt po drugiej stronie.
             pipe.Write(length);
             pipe.Write(payload);
-            pipe.Flush();
             if (pipe.ReadByte() == 1)
             {
                 return true;

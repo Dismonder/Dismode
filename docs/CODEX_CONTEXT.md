@@ -253,6 +253,31 @@ zakończyła się kodem 0: build Release bez ostrzeżeń, format bez zmian i
 
 ## Ostatnio zmieniane pliki
 
+- Ikona zasobnika po restarcie Eksploratora i rura aktywacji bez zawieszeń
+  (2026-09-18):
+  - `TrayIconService`: rejestruje komunikat `TaskbarCreated`
+    (`RegisterWindowMessage`, `ChangeWindowMessageFilterEx` = MSGFLT_ALLOW,
+    gdyby UI szło jako administrator) i po nim dodaje ikonę od nowa
+    (`NIM_ADD`, awaryjnie `NIM_MODIFY`, `NIM_SETVERSION`). Dotąd po
+    restarcie Eksploratora ikona znikała, a schowane okno traciło jedyne
+    wejście.
+  - `UiActivationServer` przeniesiony z `GameShift.UI/Services` do
+    `GameShift.Core/Activation` (testowalny): rura tworzona wewnątrz
+    pętli (zajęta nazwa = ponowna próba co 1 s, nie cicha śmierć zadania),
+    limit czasu na obsługę połączenia (`connectionDeadline`, domyślnie
+    10 s), szerszy filtr wyjątków. Usunięte `Flush` po zapisie do rury po
+    obu stronach (`UiActivationClient`, serwer): `PipeStream.Flush` to
+    `FlushFileBuffers`, które czeka, aż druga strona odczyta dane; klient,
+    który się połączył i zamilkł, wieszał serwer na zawsze w `TryReject`.
+    Zapis do rury jest niebuforowany, więc `Flush` nic nie wnosił.
+  - `GameShift.Launcher`: własny klient rury zastąpiony
+    `UiActivationClient.TrySend`; SessionHost startuje z
+    `requireElevation: true` (launcher jest podniesiony, więc `runas` nie
+    pyta), zamiast najpierw próbować tokenu pulpitu, który host odrzuca
+    błędem 740.
+  - Testy `UiActivationServerTests` (unit): milczący klient nie blokuje
+    następnego żądania, śmieci i za duża ramka = odmowa i dalsza obsługa,
+    powtórzony `RequestId` odrzucony, `Dispose` przestaje nasłuchiwać.
 - Token pulpitu dla procesów startowanych z podniesionych komponentów
   (2026-09-16):
   - Wada: `Process.Start` dziedziczy token wywołującego, więc gra

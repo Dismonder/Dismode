@@ -14,6 +14,7 @@ public sealed class TrayIconService : IDisposable
     private readonly nint _windowHandle;
     private readonly nint _iconHandle;
     private readonly WindowSubclassProcedure _subclassProcedure;
+    private readonly uint _taskbarCreatedMessage;
     private NotifyIconData _iconData;
     private bool _automaticOptimizationEnabled;
     private string? _activeGameDisplayName;
@@ -37,6 +38,20 @@ public sealed class TrayIconService : IDisposable
         }
 
         _windowHandle = windowHandle;
+        // Po restarcie Eksploratora pasek zadan powstaje od nowa i rozglasza
+        // TaskbarCreated; bez ponownego dodania ikona znika, a schowane okno
+        // traci jedyne wejscie. Filtr komunikatow: rozgloszenie z powloki ma
+        // dojsc takze wtedy, gdy ktos uruchomi UI jako administrator.
+        _taskbarCreatedMessage = RegisterWindowMessage("TaskbarCreated");
+        if (_taskbarCreatedMessage != 0)
+        {
+            _ = ChangeWindowMessageFilterEx(
+                _windowHandle,
+                _taskbarCreatedMessage,
+                MessageFilterAllow,
+                nint.Zero);
+        }
+
         _iconHandle = LoadImage(
             nint.Zero,
             iconPath,
@@ -168,7 +183,11 @@ public sealed class TrayIconService : IDisposable
         nuint subclassId,
         nint referenceData)
     {
-        if (message == CallbackMessage)
+        if (_taskbarCreatedMessage != 0 && message == _taskbarCreatedMessage)
+        {
+            RestoreIcon();
+        }
+        else if (message == CallbackMessage)
         {
             uint mouseMessage = unchecked((uint)(long)lParam) & 0xFFFF;
             if (mouseMessage == WmLeftButtonDoubleClick)
@@ -185,6 +204,31 @@ public sealed class TrayIconService : IDisposable
         }
 
         return DefSubclassProc(windowHandle, message, wParam, lParam);
+    }
+
+    /// <summary>
+    /// Nowy pasek zadan nie zna naszej ikony: dodaje ja od nowa z biezaca
+    /// podpowiedzia i wersja zachowania, tak jak przy starcie.
+    /// </summary>
+    private void RestoreIcon()
+    {
+        if (_disposed)
+        {
+            return;
+        }
+
+        _iconData.Tip = Truncate(
+            DescribeTooltip(
+                _automaticOptimizationEnabled,
+                _activeGameDisplayName),
+            127);
+        if (!ShellNotifyIcon(NotifyIconAdd, ref _iconData))
+        {
+            _ = ShellNotifyIcon(NotifyIconModify, ref _iconData);
+        }
+
+        _iconData.TimeoutOrVersion = NotifyIconVersion4;
+        _ = ShellNotifyIcon(NotifyIconSetVersion, ref _iconData);
     }
 
     private void ShowContextMenu()
@@ -415,6 +459,21 @@ public sealed class TrayIconService : IDisposable
         nuint wParam,
         nint lParam);
 
+    [DllImport(
+        "user32.dll",
+        EntryPoint = "RegisterWindowMessageW",
+        CharSet = CharSet.Unicode,
+        SetLastError = true)]
+    private static extern uint RegisterWindowMessage(string message);
+
+    [DllImport("user32.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool ChangeWindowMessageFilterEx(
+        nint windowHandle,
+        uint message,
+        uint action,
+        nint changeFilterStruct);
+
     [DllImport("user32.dll", SetLastError = true)]
     private static extern nint CreatePopupMenu();
 
@@ -480,6 +539,7 @@ public sealed class TrayIconService : IDisposable
     private const uint NotifyIconShowTip = 0x00000080;
     private const uint NotifyInfoInformation = 0x00000001;
     private const uint NotifyIconVersion4 = 4;
+    private const uint MessageFilterAllow = 1;
     private const uint MenuString = 0x00000000;
     private const uint MenuUnchecked = 0x00000000;
     private const uint MenuChecked = 0x00000008;

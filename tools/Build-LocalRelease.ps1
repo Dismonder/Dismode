@@ -7,7 +7,9 @@ param(
     [ValidatePattern("^[A-Fa-f0-9]{40}$")]
     [string]$CodeSigningCertificateThumbprint,
     [string]$CodeSigningTimestampUrl = "http://timestamp.digicert.com",
-    [switch]$AllowTestCodeSigningCertificate
+    [switch]$AllowTestCodeSigningCertificate,
+    [ValidateRange(1, 100)]
+    [int]$BackupRetentionCount = 3
 )
 
 $ErrorActionPreference = "Stop"
@@ -535,16 +537,36 @@ try {
     }
 
     $certificateSubject = "CN=GameShift Development"
-    $signingCertificate = Get-ChildItem Cert:\CurrentUser\My |
+    # Nowy certyfikat powstaje tylko wtedy, gdy w magazynie nie ma żadnego
+    # zdatnego do podpisywania. Filtr pytał kiedyś o właściwość .Value tej
+    # listy, której ten typ nie ma, więc nie trafiał nigdy i każde
+    # budowanie zostawiało kolejny certyfikat. Wybór jest teraz widoczny
+    # w logu, żeby nawrót tej usterki było widać od razu.
+    $developmentCertificates = @(
+        Get-ChildItem Cert:\CurrentUser\My |
+            Where-Object { $_.Subject -eq $certificateSubject })
+    $signingCertificate = $developmentCertificates |
         Where-Object {
-            $_.Subject -eq $certificateSubject -and
             $_.HasPrivateKey -and
             $_.NotAfter -gt (Get-Date).AddDays(30) -and
             $_.EnhancedKeyUsageList.ObjectId -contains $codeSigningOid
         } |
-        Sort-Object NotAfter -Descending |
+        Sort-Object NotAfter, Thumbprint -Descending |
         Select-Object -First 1
-    if (-not $signingCertificate) {
+    if ($signingCertificate) {
+        Write-Output ("Certyfikat deweloperski z magazynu: " +
+            "$($signingCertificate.Thumbprint), ważny do " +
+            "$($signingCertificate.NotAfter.ToString('yyyy-MM-dd')).")
+    }
+    else {
+        if ($developmentCertificates.Count -gt 0) {
+            Write-Warning ("W magazynie jest " +
+                "$($developmentCertificates.Count) certyfikatów " +
+                "$certificateSubject, ale żaden nie nadaje się do " +
+                "podpisywania. Powstanie kolejny; stare sprząta " +
+                "tools\Remove-BuildLeftovers.ps1.")
+        }
+
         $signingCertificate = New-SelfSignedCertificate `
             -Type CodeSigningCert `
             -Subject $certificateSubject `
@@ -553,6 +575,8 @@ try {
             -KeyLength 3072 `
             -HashAlgorithm SHA256 `
             -NotAfter (Get-Date).AddYears(5)
+        Write-Output ("Nowy certyfikat deweloperski: " +
+            "$($signingCertificate.Thumbprint).")
     }
     if (-not $signingCertificate -or
         $signingCertificate.Subject -ne $certificateSubject -or
@@ -644,6 +668,28 @@ try {
         }
 
         throw
+    }
+
+    # Każde budowanie zostawiało kopię .backup-<czas> i nic ich nie
+    # kasowało. Sprzątamy dopiero po udanej podmianie katalogu, żeby
+    # przerwane budowanie nie zabrało punktu powrotu.
+    $backupPattern = "^" +
+        [regex]::Escape([IO.Path]::GetFileName($outputPath)) +
+        "\.backup-\d{8}-\d{6}$"
+    $staleBackups = Get-ChildItem -LiteralPath (
+            Split-Path -Parent $outputPath) -Directory |
+        Where-Object { $_.Name -match $backupPattern } |
+        Sort-Object Name -Descending |
+        Select-Object -Skip $BackupRetentionCount
+    foreach ($staleBackup in $staleBackups) {
+        try {
+            Remove-Item -LiteralPath $staleBackup.FullName -Recurse -Force
+            Write-Output "Usunięta stara kopia: $($staleBackup.Name)"
+        }
+        catch {
+            Write-Warning ("Nie udało się usunąć kopii " +
+                "$($staleBackup.Name): $($_.Exception.Message)")
+        }
     }
 
     if ($CreateDesktopShortcut) {

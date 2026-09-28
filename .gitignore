@@ -10,6 +10,9 @@ artifacts/
 *.userosscache
 *.sln.docstates
 
+# Claude
+.claude/
+
 # Test output
 TestResults/
 coverage/

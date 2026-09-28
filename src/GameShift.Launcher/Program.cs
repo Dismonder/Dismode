@@ -1,7 +1,5 @@
-using System.Buffers.Binary;
 using System.ComponentModel;
 using System.Diagnostics;
-using System.IO.Pipes;
 using System.Runtime.InteropServices;
 using System.Security.Principal;
 using GameShift.Core.Activation;
@@ -86,11 +84,14 @@ internal static partial class Program
             return;
         }
 
+        // Host jest komponentem podniesionym z definicji; start przez
+        // powloke (runas) nie pyta o UAC, bo launcher juz jest podniesiony,
+        // a nie probuje najpierw tokenu pulpitu, ktory host by odrzucil.
         _ = TryStart(
             executablePath,
             applicationDirectory,
             createNoWindow: true,
-            requireElevation: false,
+            requireElevation: true,
             arguments: [],
             failures);
     }
@@ -164,52 +165,38 @@ internal static partial class Program
         bool keepWindowHidden,
         List<string> failures)
     {
+        string userSid;
         try
         {
-            string userSid = WindowsIdentity.GetCurrent().User?.Value
+            userSid = WindowsIdentity.GetCurrent().User?.Value
                 ?? throw new InvalidOperationException(
                     "Windows nie zwrócił SID bieżącego użytkownika.");
-            string pipeName = UiActivationProtocol.GetPipeName(userSid);
-            using NamedPipeClientStream pipe = new(
-                ".",
-                pipeName,
-                PipeDirection.InOut,
-                PipeOptions.None,
-                TokenImpersonationLevel.Identification);
-            pipe.Connect(timeout: 5000);
-
-            UiActivationRequest request = new(
-                UiActivationProtocol.CurrentSchemaVersion,
-                Guid.NewGuid(),
-                DateTimeOffset.UtcNow,
-                executablePath,
-                keepWindowHidden);
-            byte[] payload = UiActivationProtocol.Serialize(request);
-            Span<byte> length = stackalloc byte[sizeof(int)];
-            BinaryPrimitives.WriteInt32LittleEndian(length, payload.Length);
-            pipe.Write(length);
-            pipe.Write(payload);
-            pipe.Flush();
-            int response = pipe.ReadByte();
-            if (response == 1)
-            {
-                return true;
-            }
-
-            failures.Add(
-                "Uruchomione UI odrzuciło żądanie startu gry.");
         }
-        catch (Exception exception) when (
-            exception is IOException
-                or TimeoutException
-                or InvalidOperationException
-                or UnauthorizedAccessException)
+        catch (InvalidOperationException exception)
         {
             failures.Add(
                 "Nie przekazano gry do uruchomionego GameShift: "
                 + exception.Message);
+            return false;
         }
 
+        UiActivationRequest request = new(
+            UiActivationProtocol.CurrentSchemaVersion,
+            Guid.NewGuid(),
+            DateTimeOffset.UtcNow,
+            executablePath,
+            keepWindowHidden);
+        if (UiActivationClient.TrySend(
+                userSid,
+                request,
+                TimeSpan.FromSeconds(5),
+                out string? failure))
+        {
+            return true;
+        }
+
+        failures.Add(
+            "Nie przekazano gry do uruchomionego GameShift: " + failure);
         return false;
     }
 
