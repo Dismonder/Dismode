@@ -8,7 +8,9 @@ param(
     [string]$CodeSigningCertificateThumbprint =
         $env:GAMESHIFT_RELEASE_SIGNING_THUMBPRINT,
     [string]$CodeSigningTimestampUrl = "http://timestamp.digicert.com",
-    [switch]$AllowTestCodeSigningCertificate
+    [switch]$AllowTestCodeSigningCertificate,
+    [ValidateRange(1, 100)]
+    [int]$BackupRetentionCount = 3
 )
 
 $ErrorActionPreference = "Stop"
@@ -98,6 +100,7 @@ $releaseArguments = @{
     CodeSigningTimestampUrl = $CodeSigningTimestampUrl
     AllowTestCodeSigningCertificate =
         $AllowTestCodeSigningCertificate
+    BackupRetentionCount = $BackupRetentionCount
 }
 if ($SkipTests) {
     $releaseArguments.SkipTests = $true
@@ -120,6 +123,7 @@ if ($SkipTests) {
 }
 $memoryOptimizerArguments.AllowTestCodeSigningCertificate =
     $AllowTestCodeSigningCertificate
+$memoryOptimizerArguments.BackupRetentionCount = $BackupRetentionCount
 & $memoryOptimizerBuildScript @memoryOptimizerArguments
 if ($LASTEXITCODE -ne 0) {
     throw "Budowa Memory Optimizer zakończyła się kodem $LASTEXITCODE."

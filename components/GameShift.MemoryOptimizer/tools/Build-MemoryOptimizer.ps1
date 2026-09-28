@@ -6,7 +6,9 @@ param(
     [ValidatePattern("^[A-Fa-f0-9]{40}$")]
     [string]$CodeSigningCertificateThumbprint,
     [string]$CodeSigningTimestampUrl = "http://timestamp.digicert.com",
-    [switch]$AllowTestCodeSigningCertificate
+    [switch]$AllowTestCodeSigningCertificate,
+    [ValidateRange(1, 100)]
+    [int]$BackupRetentionCount = 3
 )
 
 $ErrorActionPreference = "Stop"
@@ -387,6 +389,28 @@ try {
         }
 
         throw
+    }
+
+    # Every build left a .backup-<timestamp> copy behind and nothing ever
+    # removed them. Prune only after the swap succeeded, so an interrupted
+    # build keeps its rollback point.
+    $backupPattern = "^" +
+        [regex]::Escape([IO.Path]::GetFileName($outputPath)) +
+        "\.backup-\d{8}-\d{6}$"
+    $staleBackups = Get-ChildItem -LiteralPath (
+            Split-Path -Parent $outputPath) -Directory |
+        Where-Object { $_.Name -match $backupPattern } |
+        Sort-Object Name -Descending |
+        Select-Object -Skip $BackupRetentionCount
+    foreach ($staleBackup in $staleBackups) {
+        try {
+            Remove-Item -LiteralPath $staleBackup.FullName -Recurse -Force
+            Write-Output "Removed stale backup: $($staleBackup.Name)"
+        }
+        catch {
+            Write-Warning ("Could not remove backup " +
+                "$($staleBackup.Name): $($_.Exception.Message)")
+        }
     }
 
     Write-Output "Memory Optimizer release ready: $outputPath"
