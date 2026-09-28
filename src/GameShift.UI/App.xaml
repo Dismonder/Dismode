@@ -54,6 +54,29 @@
             <GradientStop Offset="0" Color="#5030EFF4" />
             <GradientStop Offset="1" Color="#2820A9B3" />
           </LinearGradientBrush>
+          <!-- Tactical Deck poza menu glownym: te same powierzchnie, krawedz
+               lapiaca swiatlo od gory i cyjanowa poswiata po prawej, jak
+               w kaflu hero. -->
+          <LinearGradientBrush x:Key="GameShiftDeckHeaderBrush" StartPoint="0,0" EndPoint="1,0">
+            <GradientStop Offset="0" Color="#F50C1217" />
+            <GradientStop Offset="0.52" Color="#F20D141A" />
+            <GradientStop Offset="1" Color="#4A1FB9C2" />
+          </LinearGradientBrush>
+          <LinearGradientBrush x:Key="GameShiftDeckHeaderEdgeBrush" StartPoint="0,0" EndPoint="1,1">
+            <GradientStop Offset="0" Color="#B300D7E2" />
+            <GradientStop Offset="0.22" Color="#FF2A3339" />
+            <GradientStop Offset="1" Color="#FF1C2126" />
+          </LinearGradientBrush>
+          <LinearGradientBrush x:Key="GameShiftCardEdgeBrush" StartPoint="0,0" EndPoint="0,1">
+            <GradientStop Offset="0" Color="#FF323C43" />
+            <GradientStop Offset="0.4" Color="#FF24292E" />
+            <GradientStop Offset="1" Color="#FF1D2227" />
+          </LinearGradientBrush>
+          <SolidColorBrush x:Key="GameShiftPillBrush" Color="#B51B2329" />
+          <SolidColorBrush x:Key="GameShiftPillBorderBrush" Color="#46535D63" />
+          <SolidColorBrush x:Key="GameShiftOverlayBrush" Color="#16FFFFFF" />
+          <SolidColorBrush x:Key="GameShiftSuccessSoftBrush" Color="#283DCB70" />
+          <SolidColorBrush x:Key="GameShiftOverlayBorderBrush" Color="#33FFFFFF" />
         </ResourceDictionary>
 
         <ResourceDictionary x:Key="Dark">
@@ -101,6 +124,29 @@
             <GradientStop Offset="0" Color="#5030EFF4" />
             <GradientStop Offset="1" Color="#2820A9B3" />
           </LinearGradientBrush>
+          <!-- Tactical Deck poza menu glownym: te same powierzchnie, krawedz
+               lapiaca swiatlo od gory i cyjanowa poswiata po prawej, jak
+               w kaflu hero. -->
+          <LinearGradientBrush x:Key="GameShiftDeckHeaderBrush" StartPoint="0,0" EndPoint="1,0">
+            <GradientStop Offset="0" Color="#F50C1217" />
+            <GradientStop Offset="0.52" Color="#F20D141A" />
+            <GradientStop Offset="1" Color="#4A1FB9C2" />
+          </LinearGradientBrush>
+          <LinearGradientBrush x:Key="GameShiftDeckHeaderEdgeBrush" StartPoint="0,0" EndPoint="1,1">
+            <GradientStop Offset="0" Color="#B300D7E2" />
+            <GradientStop Offset="0.22" Color="#FF2A3339" />
+            <GradientStop Offset="1" Color="#FF1C2126" />
+          </LinearGradientBrush>
+          <LinearGradientBrush x:Key="GameShiftCardEdgeBrush" StartPoint="0,0" EndPoint="0,1">
+            <GradientStop Offset="0" Color="#FF323C43" />
+            <GradientStop Offset="0.4" Color="#FF24292E" />
+            <GradientStop Offset="1" Color="#FF1D2227" />
+          </LinearGradientBrush>
+          <SolidColorBrush x:Key="GameShiftPillBrush" Color="#B51B2329" />
+          <SolidColorBrush x:Key="GameShiftPillBorderBrush" Color="#46535D63" />
+          <SolidColorBrush x:Key="GameShiftOverlayBrush" Color="#16FFFFFF" />
+          <SolidColorBrush x:Key="GameShiftSuccessSoftBrush" Color="#283DCB70" />
+          <SolidColorBrush x:Key="GameShiftOverlayBorderBrush" Color="#33FFFFFF" />
         </ResourceDictionary>
 
         <ResourceDictionary x:Key="Light">
@@ -145,6 +191,25 @@
             <GradientStop Offset="0" Color="#4020B2BA" />
             <GradientStop Offset="1" Color="#20158188" />
           </LinearGradientBrush>
+          <LinearGradientBrush x:Key="GameShiftDeckHeaderBrush" StartPoint="0,0" EndPoint="1,0">
+            <GradientStop Offset="0" Color="#FFFFFFFF" />
+            <GradientStop Offset="0.52" Color="#FAF7FBFC" />
+            <GradientStop Offset="1" Color="#FFD4EEF1" />
+          </LinearGradientBrush>
+          <LinearGradientBrush x:Key="GameShiftDeckHeaderEdgeBrush" StartPoint="0,0" EndPoint="1,1">
+            <GradientStop Offset="0" Color="#99087E86" />
+            <GradientStop Offset="0.22" Color="#40576C74" />
+            <GradientStop Offset="1" Color="#33576C74" />
+          </LinearGradientBrush>
+          <LinearGradientBrush x:Key="GameShiftCardEdgeBrush" StartPoint="0,0" EndPoint="0,1">
+            <GradientStop Offset="0" Color="#26576C74" />
+            <GradientStop Offset="1" Color="#40576C74" />
+          </LinearGradientBrush>
+          <SolidColorBrush x:Key="GameShiftPillBrush" Color="#E6EEF3F5" />
+          <SolidColorBrush x:Key="GameShiftPillBorderBrush" Color="#33576C74" />
+          <SolidColorBrush x:Key="GameShiftOverlayBrush" Color="#0D1A2126" />
+          <SolidColorBrush x:Key="GameShiftSuccessSoftBrush" Color="#2408784D" />
+          <SolidColorBrush x:Key="GameShiftOverlayBorderBrush" Color="#26576C74" />
         </ResourceDictionary>
 
         <ResourceDictionary x:Key="HighContrast">
@@ -174,6 +239,14 @@
           <SolidColorBrush x:Key="GameShiftHeroBrush" Color="Black" />
           <SolidColorBrush x:Key="GameShiftHeroScrimBrush" Color="Black" />
           <SolidColorBrush x:Key="GameShiftLogoTileBrush" Color="Black" />
+          <SolidColorBrush x:Key="GameShiftDeckHeaderBrush" Color="Black" />
+          <SolidColorBrush x:Key="GameShiftDeckHeaderEdgeBrush" Color="White" />
+          <SolidColorBrush x:Key="GameShiftCardEdgeBrush" Color="White" />
+          <SolidColorBrush x:Key="GameShiftPillBrush" Color="Black" />
+          <SolidColorBrush x:Key="GameShiftPillBorderBrush" Color="White" />
+          <SolidColorBrush x:Key="GameShiftOverlayBrush" Color="Black" />
+          <SolidColorBrush x:Key="GameShiftSuccessSoftBrush" Color="Black" />
+          <SolidColorBrush x:Key="GameShiftOverlayBorderBrush" Color="White" />
         </ResourceDictionary>
       </ResourceDictionary.ThemeDictionaries>
 
@@ -231,9 +304,54 @@
           TargetType="Border">
         <Setter Property="Padding" Value="18" />
         <Setter Property="Background" Value="{ThemeResource GameShiftCardBrush}" />
-        <Setter Property="BorderBrush" Value="{ThemeResource GameShiftCardBorderBrush}" />
+        <Setter Property="BorderBrush" Value="{ThemeResource GameShiftCardEdgeBrush}" />
         <Setter Property="BorderThickness" Value="1" />
-        <Setter Property="CornerRadius" Value="12" />
+        <Setter Property="CornerRadius" Value="11" />
+      </Style>
+
+      <!-- Anatomia kart menu glownego dla pozostalych stron: promien 11,
+           zwarty odstep 22,17 i krawedz lapiaca swiatlo od gory. -->
+      <Style
+          x:Key="GameShiftDeckCardStyle"
+          TargetType="Border">
+        <Setter Property="Padding" Value="22,17" />
+        <Setter Property="Background" Value="{ThemeResource GameShiftCardBrush}" />
+        <Setter Property="BorderBrush" Value="{ThemeResource GameShiftCardEdgeBrush}" />
+        <Setter Property="BorderThickness" Value="1" />
+        <Setter Property="CornerRadius" Value="11" />
+      </Style>
+
+      <!-- Naglowek strony skomponowany jak kafel hero: ciemny poklad pod
+           tekstem po lewej, poswiata akcentu po prawej, akcentowy naroznik. -->
+      <Style
+          x:Key="GameShiftDeckHeaderStyle"
+          TargetType="Border">
+        <Setter Property="Padding" Value="24,18" />
+        <Setter Property="Background" Value="{ThemeResource GameShiftDeckHeaderBrush}" />
+        <Setter Property="BorderBrush" Value="{ThemeResource GameShiftDeckHeaderEdgeBrush}" />
+        <Setter Property="BorderThickness" Value="1" />
+        <Setter Property="CornerRadius" Value="11" />
+      </Style>
+
+      <Style
+          x:Key="GameShiftStatusPillStyle"
+          TargetType="Border">
+        <Setter Property="Height" Value="32" />
+        <Setter Property="Padding" Value="13,0" />
+        <Setter Property="Background" Value="{ThemeResource GameShiftPillBrush}" />
+        <Setter Property="BorderBrush" Value="{ThemeResource GameShiftPillBorderBrush}" />
+        <Setter Property="BorderThickness" Value="1" />
+        <Setter Property="CornerRadius" Value="16" />
+      </Style>
+
+      <Style
+          x:Key="GameShiftChipStyle"
+          TargetType="Border">
+        <Setter Property="Padding" Value="8,4" />
+        <Setter Property="Background" Value="{ThemeResource GameShiftOverlayBrush}" />
+        <Setter Property="BorderBrush" Value="{ThemeResource GameShiftOverlayBorderBrush}" />
+        <Setter Property="BorderThickness" Value="1" />
+        <Setter Property="CornerRadius" Value="6" />
       </Style>
 
       <Style

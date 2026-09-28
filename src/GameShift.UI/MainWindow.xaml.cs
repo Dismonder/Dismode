@@ -293,6 +293,7 @@ public sealed partial class MainWindow : Window, IDisposable
         InitializeComponent();
         _dashboardFallbackArtwork = DashboardHeroImage.Source;
         NavigateToPage("dashboard");
+        ConfigurePageEntranceAnimations();
         ExtendsContentIntoTitleBar = true;
         SetTitleBar(AppTitleBarDragRegion);
         SystemBackdrop = new MicaBackdrop();
@@ -1240,6 +1241,7 @@ public sealed partial class MainWindow : Window, IDisposable
         RoutedEventArgs args)
     {
         TacticalVfxService.Instance.IsEnabled = VfxToggleSwitch.IsOn;
+        ConfigurePageEntranceAnimations();
         if (VfxToggleSwitch.IsOn)
         {
             TacticalVfxService.Instance.AnimatePulse(VfxToggleSwitch);
@@ -1295,6 +1297,17 @@ public sealed partial class MainWindow : Window, IDisposable
             ? 1
             : 0;
     }
+
+    private void ConfigurePageEntranceAnimations() =>
+        TacticalVfxService.Instance.ConfigurePageEntrance(
+        [
+            DashboardPage,
+            ProfilesPage,
+            PlanPage,
+            HistoryPage,
+            UpdatesPage,
+            DiagnosticsPage,
+        ]);
 
     private void ApplyPageVisibility(string selectedTag)
     {
@@ -4000,12 +4013,14 @@ public sealed partial class MainWindow : Window, IDisposable
             return;
         }
 
-        SolidColorBrush accentBg = new(WindowsColor.FromArgb(40, 0, 215, 226));
-        SolidColorBrush accentBorder = new(WindowsColor.FromArgb(255, 0, 215, 226));
-        SolidColorBrush successBg = new(WindowsColor.FromArgb(40, 61, 203, 112));
-        SolidColorBrush successBorder = new(WindowsColor.FromArgb(255, 61, 203, 112));
-        SolidColorBrush idleBg = new(WindowsColor.FromArgb(20, 255, 255, 255));
-        SolidColorBrush idleBorder = new(WindowsColor.FromArgb(40, 255, 255, 255));
+        // Pedzle motywu zamiast bialej alfy: w jasnym motywie biale tlo
+        // nieaktywnego kroku znikalo na bialej karcie.
+        Brush accentBg = (Brush)Application.Current.Resources["GameShiftAccentSoftBrush"];
+        Brush accentBorder = (Brush)Application.Current.Resources["GameShiftAccentBrush"];
+        Brush successBg = (Brush)Application.Current.Resources["GameShiftSuccessSoftBrush"];
+        Brush successBorder = (Brush)Application.Current.Resources["GameShiftSuccessBrush"];
+        Brush idleBg = (Brush)Application.Current.Resources["GameShiftOverlayBrush"];
+        Brush idleBorder = (Brush)Application.Current.Resources["GameShiftOverlayBorderBrush"];
 
         UpdateStep1Badge.Background = activeStep >= 1 ? accentBg : idleBg;
         UpdateStep1Badge.BorderBrush = activeStep >= 1 ? accentBorder : idleBorder;
