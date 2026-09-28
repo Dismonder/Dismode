@@ -80,11 +80,15 @@ zostaną domknięte, każda liczba w tym planie jest wstępna.
 Obniżenie priorytetu to najsłabsza z dostępnych dźwigni. Windows daje mocniejsze
 i GameShift już ich używa gdzie indziej.
 
-7. Ograniczanie stopniowane: priorytet → ECO QoS → mocniejsze odsunięcie.
-   Dziś priorytet i odsunięcie nakładają się razem, przy pierwszym złapaniu.
-   Eskalacja ma dawać słabszy środek najpierw i sięgać po mocniejszy dopiero,
-   gdy przez kilka próbek nie pomógł — proces jednorazowo ożywiony nie
-   powinien od razu dostawać wszystkiego.
+7. ~~Ograniczanie stopniowane~~ — **zastąpione 2026-09-28 decyzją
+   użytkownika** (najwyższa wydajność zamiast ostrożności). Produkcja używa
+   `ProBalanceSettings.Aggressive`: pełny pakiet od pierwszego złapania
+   (priorytet, zbiory, maska, I/O) plus EcoQoS, dziennikowany i cofany jak
+   pozostałe dźwignie (`JournaledProBalanceActuator`, księga
+   `EcoQosActionId`, odtwarzanie jako `LowerPriorityAndEcoQos`). Próg 0,5
+   rdzenia, 2 próbki, do 8 procesów, przytrzymanie do 10 min. Progi i wpływ
+   EcoQoS na czas klatki są **niezmierzone**. Domyślne `ProBalanceSettings`
+   pozostają ostrożne i są podstawą istniejących testów.
 8. ~~Odsuwanie tła od rdzeni gry~~ — zrobione przez domyślne zbiory
    procesorów, sprawdzone na żywym procesie.
 9. ~~Priorytet pamięci i wejścia-wyjścia dla procesów ograniczonych~~ —
@@ -107,9 +111,11 @@ Nadzorca ma pilnować płynności, więc sam nie może jej psuć. Zmierzone: pe�
 przejście mieści się w interwale z zapasem, ale to pomiar na bezczynnej maszynie
 i przy pustym aktuatorze.
 
-11. Zmienny interwał: rzadziej, gdy maszyna jest spokojna, gęściej pod
-    obciążeniem. Stała częstotliwość płaci pełny koszt wtedy, gdy nic się nie
-    dzieje.
+11. ~~Zmienny interwał~~ — **wdrożone 2026-09-28** (`ProBalanceCadence`,
+    `CalmInterval`/`BusyInterval`): gęściej, gdy tło przekracza bramkę albo
+    coś jest ograniczone. Preset agresywny: 1 s w spokoju, 0,5 s pod
+    obciążeniem; ustawienia domyślne zostają przy stałej 1 s. Jawny
+    `interval` nadzorcy nadal wymusza stały rytm.
 12. Ograniczyć inwentaryzację do procesów, które mogą być kandydatami —
     pełne wyliczenie wszystkich procesów co dwie sekundy jest pracą wykonywaną
     w trakcie gry.
@@ -118,7 +124,9 @@ i przy pustym aktuatorze.
 14. Ograniczyć zużycie zasobów przez sam GameShift w trakcie sesji. Narzędzie
     pilnujące płynności, które samo zjada rdzeń, jest gorsze niż jego brak.
 15. Bramka na przełączanie planu zasilania, żeby krótka zmiana obciążenia nie
-    powodowała migotania między planami.
+    powodowała migotania między planami. **Nie dotyczy w 0.6.9**: sesja nie
+    przełącza planu zależnie od obciążenia (wpisy `power.*` w katalogu mają
+    status `Unsupported`), więc nie ma czego bramkować.
 16. Żądania zasilania na czas sesji, blokujące dławienie i usypianie —
     `PowerSetRequest` z `PowerRequestExecutionRequired`.
 

@@ -70,6 +70,11 @@ public sealed class JournaledProBalanceActuator :
     /// </para>
     /// </summary>
     private readonly bool _lowerBackgroundIoPriority;
+
+    /// <summary>
+    /// Czy ograniczanemu procesowi wlaczac EcoQoS (preset agresywny).
+    /// </summary>
+    private readonly bool _applyEcoQos;
     private readonly Dictionary<ProcessRuntimeKey, RestraintRecord> _applied =
         [];
 
@@ -91,7 +96,8 @@ public sealed class JournaledProBalanceActuator :
         TimeProvider? timeProvider = null,
         IReadOnlyList<uint>? backgroundCpuSetIds = null,
         ulong backgroundAffinityMask = 0,
-        bool lowerBackgroundIoPriority = true)
+        bool lowerBackgroundIoPriority = true,
+        bool applyEcoQos = false)
     {
         ArgumentNullException.ThrowIfNull(journal);
         _journal = journal;
@@ -102,6 +108,7 @@ public sealed class JournaledProBalanceActuator :
         _backgroundCpuSetIds = backgroundCpuSetIds ?? [];
         _backgroundAffinityMask = backgroundAffinityMask;
         _lowerBackgroundIoPriority = lowerBackgroundIoPriority;
+        _applyEcoQos = applyEcoQos;
     }
 
     public void AttachLedger(IRestraintLedger ledger)
@@ -138,6 +145,9 @@ public sealed class JournaledProBalanceActuator :
         LoweredIo? plannedIo = _lowerBackgroundIoPriority
             ? new(new(Guid.NewGuid()), IdempotencyKey.Create())
             : null;
+        ThrottledEcoQos? plannedEcoQos = _applyEcoQos
+            ? new(new(Guid.NewGuid()), IdempotencyKey.Create())
+            : null;
         bool plannedSteer = _backgroundCpuSetIds.Count > 0;
         DateTimeOffset restrainedAtUtc = _timeProvider.GetUtcNow();
 
@@ -159,6 +169,7 @@ public sealed class JournaledProBalanceActuator :
                 idempotencyKey,
                 plannedPin,
                 plannedIo,
+                plannedEcoQos,
                 steeredCpuSets: false,
                 restrainedAtUtc)
             .ConfigureAwait(false))
@@ -206,6 +217,7 @@ public sealed class JournaledProBalanceActuator :
                 idempotencyKey,
                 plannedPin,
                 plannedIo,
+                plannedEcoQos,
                 restrainedAtUtc);
             return true;
         }
@@ -233,6 +245,7 @@ public sealed class JournaledProBalanceActuator :
                     idempotencyKey,
                     plannedPin,
                     plannedIo,
+                    plannedEcoQos,
                     restrainedAtUtc);
                 return true;
         }
@@ -246,6 +259,7 @@ public sealed class JournaledProBalanceActuator :
         // — albo moglo sie nalozyc, bo niepewnosc tez trzeba pamietac.
         bool steered = false;
         PinnedAffinity? pinned = null;
+        ThrottledEcoQos? ecoQos = null;
         LoweredIo? loweredIo = null;
         try
         {
@@ -254,6 +268,8 @@ public sealed class JournaledProBalanceActuator :
             // sterowanie zbiorami przeslonilo udane obnizenie priorytetu.
             steered = plannedSteer && TrySteerAway(runtimeKey);
             pinned = await TryPinAsync(identity, plannedPin)
+                .ConfigureAwait(false);
+            ecoQos = await TryApplyEcoQosAsync(identity, plannedEcoQos)
                 .ConfigureAwait(false);
             // Na koncu, bo z trzech ograniczen to najmniej sprawdzone.
             // Niepowodzenie nie moze przeslonic udanej maski.
@@ -269,7 +285,8 @@ public sealed class JournaledProBalanceActuator :
                 steered,
                 pinned,
                 loweredIo,
-                restrainedAtUtc);
+                restrainedAtUtc,
+                ecoQos);
         }
 
         // Drugi meldunek, z tym, co realnie sie nalozylo. Pierwszy szedl
@@ -283,6 +300,7 @@ public sealed class JournaledProBalanceActuator :
                 idempotencyKey,
                 pinned,
                 loweredIo,
+                ecoQos,
                 steered,
                 restrainedAtUtc)
             .ConfigureAwait(false);
@@ -303,6 +321,7 @@ public sealed class JournaledProBalanceActuator :
         IdempotencyKey idempotencyKey,
         PinnedAffinity? plannedPin,
         LoweredIo? plannedIo,
+        ThrottledEcoQos? plannedEcoQos,
         DateTimeOffset restrainedAtUtc) =>
         _applied[runtimeKey] = new(
             identity,
@@ -311,7 +330,8 @@ public sealed class JournaledProBalanceActuator :
             Steered: false,
             plannedPin,
             plannedIo,
-            restrainedAtUtc);
+            restrainedAtUtc,
+            plannedEcoQos);
 
     /// <summary>
     /// Zdejmuje ograniczenia z procesu.
@@ -354,6 +374,9 @@ public sealed class JournaledProBalanceActuator :
         bool ioRestored = record.LoweredIo is not { } loweredIo
             || await RestoreIoAsync(record.Identity, loweredIo)
                 .ConfigureAwait(false);
+        bool ecoQosRestored = record.EcoQos is not { } ecoQos
+            || await RestoreEcoQosAsync(record.Identity, ecoQos)
+                .ConfigureAwait(false);
         bool pinRestored = record.Pinned is not { } pinned
             || await RestorePinAsync(record.Identity, pinned)
                 .ConfigureAwait(false);
@@ -391,6 +414,7 @@ public sealed class JournaledProBalanceActuator :
         // zostalo zdjete — ksiega sesji ponowi probe przy jej zamknieciu.
         bool restored = setsCleared
             && ioRestored
+            && ecoQosRestored
             && pinRestored
             && priorityRestored
             && descendantsRestored;
@@ -620,6 +644,7 @@ public sealed class JournaledProBalanceActuator :
         IdempotencyKey priorityIdempotencyKey,
         PinnedAffinity? pinned,
         LoweredIo? loweredIo,
+        ThrottledEcoQos? ecoQos,
         bool steeredCpuSets,
         DateTimeOffset restrainedAtUtc)
     {
@@ -646,7 +671,9 @@ public sealed class JournaledProBalanceActuator :
                         null,
                         null,
                         restrainedAtUtc,
-                        steeredCpuSets),
+                        steeredCpuSets,
+                        ecoQos?.ActionId,
+                        ecoQos?.IdempotencyKey),
                     CancellationToken.None)
                 .ConfigureAwait(false);
             return true;
@@ -671,6 +698,73 @@ public sealed class JournaledProBalanceActuator :
         }
         catch (Exception exception) when (IsExpected(exception))
         {
+        }
+    }
+
+    private async ValueTask<ThrottledEcoQos?> TryApplyEcoQosAsync(
+        ProcessIdentity identity,
+        ThrottledEcoQos? planned)
+    {
+        if (planned is null)
+        {
+            return null;
+        }
+
+        RuntimeProcessEcoQosAction action = new(
+            planned.ActionId,
+            identity,
+            identityProvider: _identityProvider);
+        ActionExecutionContext context = new(
+            _sessionId,
+            planned.ActionId,
+            planned.IdempotencyKey,
+            _timeProvider.GetUtcNow());
+
+        try
+        {
+            ActionExecutionResult result =
+                await new TransactionCoordinator<RuntimeProcessEcoQosState>(
+                        _journal)
+                    .ExecuteAsync(action, context, CancellationToken.None)
+                    .ConfigureAwait(false);
+            // Jak przy wejsciu-wyjsciu: tylko odmowa walidacji znaczy, ze nic
+            // nie nalozono. Reszta zostawia identyfikatory w rekordzie.
+            return result.Status == ActionExecutionStatus.Blocked
+                ? null
+                : planned;
+        }
+        catch (Exception exception) when (IsExpected(exception))
+        {
+            return planned;
+        }
+    }
+
+    private async ValueTask<bool> RestoreEcoQosAsync(
+        ProcessIdentity identity,
+        ThrottledEcoQos ecoQos)
+    {
+        RuntimeProcessEcoQosAction action = new(
+            ecoQos.ActionId,
+            identity,
+            identityProvider: _identityProvider);
+        ActionExecutionContext context = new(
+            _sessionId,
+            ecoQos.ActionId,
+            ecoQos.IdempotencyKey,
+            _timeProvider.GetUtcNow());
+
+        try
+        {
+            ActionRecoveryResult result =
+                await new ActionRecoveryCoordinator<RuntimeProcessEcoQosState>(
+                        _journal)
+                    .RecoverAsync(action, context, CancellationToken.None)
+                    .ConfigureAwait(false);
+            return IsRestored(result.Status);
+        }
+        catch (Exception exception) when (IsExpected(exception))
+        {
+            return false;
         }
     }
 
@@ -781,6 +875,10 @@ public sealed class JournaledProBalanceActuator :
         ActionId ActionId,
         IdempotencyKey IdempotencyKey);
 
+    private sealed record ThrottledEcoQos(
+        ActionId ActionId,
+        IdempotencyKey IdempotencyKey);
+
     private sealed record RestraintRecord(
         ProcessIdentity Identity,
         ActionId ActionId,
@@ -788,5 +886,6 @@ public sealed class JournaledProBalanceActuator :
         bool Steered,
         PinnedAffinity? Pinned,
         LoweredIo? LoweredIo,
-        DateTimeOffset RestrainedAtUtc);
+        DateTimeOffset RestrainedAtUtc,
+        ThrottledEcoQos? EcoQos = null);
 }
