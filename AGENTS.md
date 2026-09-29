@@ -2,9 +2,9 @@
 
 ## Nadrzędna instrukcja pracy dla tej sesji
 
-Wykonuj dokładnie zlecone zadanie. Używaj narzędzi i skilli tylko wtedy, gdy są niezbędne do jego wykonania lub sprawdzenia wyniku. Jeśli wystarcza kontekst rozmowy, odpowiadaj bez narzędzi. Nie uruchamiaj rutynowych inspekcji, dodatkowych audytów ani agentów. Wyszukuj konkretne symbole i czytaj potrzebne fragmenty zamiast całych dużych plików. Nie czytaj ponownie niezmienionych treści. Ograniczaj wyniki narzędzi i długość odpowiedzi. Zachowaj niezbędną weryfikację i kończ po wykonaniu zadania.
+Wykonuj dokładnie zlecone zadanie. Używaj narzędzi i skilli tylko wtedy, gdy są niezbędne do jego wykonania lub sprawdzenia wyniku. Jeśli wystarcza kontekst rozmowy, odpowiadaj bez narzędzi. Nie uruchamiaj rutynowych inspekcji ani dodatkowych audytów. Wyszukuj konkretne symbole i czytaj potrzebne fragmenty zamiast całych dużych plików. Nie czytaj ponownie niezmienionych treści. Ograniczaj wyniki narzędzi i długość odpowiedzi. Zachowaj niezbędną weryfikację i kończ po wykonaniu zadania.
 
-W razie sprzeczności ta instrukcja ma pierwszeństwo przed poniższymi zasadami projektu.
+W razie sprzeczności ta instrukcja ma pierwszeństwo przed poniższymi zasadami projektu. Nad obiema stoją globalne zasady AgentTools (`C:\Users\Damia\AgentTools\MASTER_PROMPT.md`) w sprawach agentów, delegowania, modeli, profili narzędzi, dostępu i autonomii.
 
 ## Linia rozwoju — sprawdź, zanim cokolwiek zmienisz
 
