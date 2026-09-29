@@ -66,14 +66,14 @@ public sealed class ProBalanceSupervisor : IAsyncDisposable
         _gameProcessIds = gameProcessIds;
         _settings = settings ?? new ProBalanceSettings();
         if (interval is null
-            && (_settings.CalmInterval <= TimeSpan.Zero
-                || _settings.BusyInterval <= TimeSpan.Zero))
+            && (!ProBalanceCadence.IsSupported(_settings.CalmInterval)
+                || !ProBalanceCadence.IsSupported(_settings.BusyInterval)))
         {
             // Sprawdzone tutaj, bo w petli wyjatek z wyboru odstepu
             // zatrzymalby nadzorce na reszte sesji.
             throw new ArgumentOutOfRangeException(
                 nameof(settings),
-                "Odstępy próbkowania muszą być dodatnie.");
+                "Odstępy próbkowania muszą mieścić się w zakresie timera.");
         }
 
         _engine = new(_settings);
