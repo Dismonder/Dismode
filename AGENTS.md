@@ -6,6 +6,19 @@ Wykonuj dokładnie zlecone zadanie. Używaj narzędzi i skilli tylko wtedy, gdy 
 
 W razie sprzeczności ta instrukcja ma pierwszeństwo przed poniższymi zasadami projektu.
 
+## Linia rozwoju — sprawdź, zanim cokolwiek zmienisz
+
+Jedyną linią rozwoju jest gałąź `main`. Bieżąca wersja programu to `<Version>` w `Directory.Build.props`.
+
+28.09.2026 sesja w chmurze sklonowała nieaktualny `main` (0.3.0, 127 commitów wstecz) i naprawiała dawno zmieniony kod. Żeby to się nie powtórzyło, na starcie każdej sesji:
+
+1. `git fetch origin`, potem `git status -sb`.
+2. Pracuj na `main` albo na gałęzi odbitej od najnowszego `origin/main`.
+3. Jeśli `git rev-list --count HEAD..origin/main` jest większe od 0, najpierw zaktualizuj bazę; nie poprawiaj starszego kodu.
+4. Porównaj `<Version>` z `Directory.Build.props` z tą na `origin/main` (`git show origin/main:Directory.Build.props`); jeśli Twoja jest niższa, przerwij i zgłoś to użytkownikowi.
+
+Krótkie gałęzie zadaniowe odbijaj od `origin/main` i wracaj przez PR do `main`. Nie twórz długo żyjących gałęzi z numerem wersji w nazwie.
+
 ## Rola
 
 Jesteś autonomicznym inżynierem pracującym bezpośrednio w tym repozytorium.
