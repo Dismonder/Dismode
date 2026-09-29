@@ -123,4 +123,22 @@ public sealed class ProBalanceAggressiveTests
         Assert.ThrowsExactly<ArgumentOutOfRangeException>(() =>
             ProBalanceCadence.NextInterval(broken, 5.0, 0));
     }
+
+    [TestMethod]
+    public void CadenceRejectsIntervalsOutsideTimerRange()
+    {
+        ProBalanceSettings subMillisecond =
+            new() { CalmInterval = TimeSpan.FromTicks(1) };
+        ProBalanceSettings beyondTimer =
+            new() { BusyInterval = TimeSpan.MaxValue };
+
+        Assert.ThrowsExactly<ArgumentOutOfRangeException>(() =>
+            ProBalanceCadence.NextInterval(subMillisecond, 0.0, 0));
+        Assert.ThrowsExactly<ArgumentOutOfRangeException>(() =>
+            ProBalanceCadence.NextInterval(beyondTimer, 5.0, 0));
+        Assert.IsTrue(
+            ProBalanceCadence.IsSupported(ProBalanceCadence.MinimumInterval));
+        Assert.IsTrue(
+            ProBalanceCadence.IsSupported(ProBalanceCadence.MaximumInterval));
+    }
 }
