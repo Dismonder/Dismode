@@ -750,12 +750,14 @@ public sealed class UiResourceReferenceTests
     private static string LoadUiSource(string fileName)
     {
         string repositoryRoot = FindRepositoryRoot();
+        // Wzorce w testach maja LF; checkout z core.autocrlf=true daje CRLF.
         return File.ReadAllText(
             Path.Combine(
                 repositoryRoot,
                 "src",
                 "GameShift.UI",
-                fileName));
+                fileName))
+            .ReplaceLineEndings("\n");
     }
 
     private static string? FindSetterValue(
