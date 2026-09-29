@@ -8,6 +8,16 @@ namespace GameShift.Core.Cpu;
 /// </summary>
 public static class ProBalanceCadence
 {
+    // Task.Delay obcina do pelnych milisekund, wiec krotszy odstep daje
+    // petle bez przerwy; dluzszego niz limit timera nie przyjmuje wcale.
+    public static readonly TimeSpan MinimumInterval =
+        TimeSpan.FromMilliseconds(1);
+    public static readonly TimeSpan MaximumInterval =
+        TimeSpan.FromMilliseconds(uint.MaxValue - 1);
+
+    public static bool IsSupported(TimeSpan interval) =>
+        interval >= MinimumInterval && interval <= MaximumInterval;
+
     public static TimeSpan NextInterval(
         ProBalanceSettings settings,
         double backgroundCores,
@@ -21,12 +31,12 @@ public static class ProBalanceCadence
                 || backgroundCores >= settings.BackgroundLoadCores
                 ? settings.BusyInterval
                 : settings.CalmInterval;
-        if (interval <= TimeSpan.Zero)
+        if (!IsSupported(interval))
         {
             throw new ArgumentOutOfRangeException(
                 nameof(settings),
                 interval,
-                "Odstęp próbkowania musi być dodatni.");
+                "Odstęp próbkowania musi mieścić się w zakresie timera.");
         }
 
         return interval;
