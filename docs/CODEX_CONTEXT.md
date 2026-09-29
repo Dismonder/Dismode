@@ -361,9 +361,21 @@ zakończyła się kodem 0: build Release bez ostrzeżeń, format bez zmian i
     `GameOptimizationPreferences.AutoOptimizeWhenDetected` (schemat 13,
     pole na stronie planu, zapis od razu) jak czarna lista Feral GameMode
     i wyłączenie wstrzykiwania per gra w Special K; podpowiedź ikony
-    z nazwą gry aktywnej sesji. Kandydat nie wdrożony: porównywanie
-    ścieżek po rozwiązaniu junctionów/symlinków (Playnite #913,
-    `GetFinalPathNameByHandle`) — dotyka tożsamości procesu w hoście.
+    z nazwą gry aktywnej sesji.
+  - Ścieżki kanoniczne (29.09, Playnite #913): `ExecutablePathIdentity`
+    (`GameShift.Windows/Processes`) porównuje ścieżkę z biblioteki ze
+    ścieżką, którą dla procesu podaje jądro — najpierw tekstem, a dopiero
+    gdy ten się różni, przez `GetFinalPathNameByHandle` na uchwycie bez
+    żadnego dostępu (działa na otwartym pliku gry). Biblioteka Steam
+    przeniesiona junctionem zapisuje ścieżkę przed dowiązaniem, a
+    `QueryFullProcessImageName` podaje ścieżkę za nim, więc samo porównanie
+    tekstu mówiło „to nie ta gra". Podpięte w `ProcessClassificationService`
+    (główny proces gry i składniki z katalogu instalacyjnego — bez tego
+    trafiały między aplikacje tła), `BackgroundApplicationGuard`,
+    `ManualGameProfileLauncher` (dołączanie i `EnsureMatchesProfile`;
+    o treści pliku i tak rozstrzyga SHA-256) oraz w skanie automatu i
+    liście pomijanych egzemplarzy w `MainWindow`. Koszt: jedno otwarcie
+    pliku i tylko wtedy, gdy porównanie tekstu zawiodło.
   - `TrayIconService`: pozycja menu z zaznaczeniem „Automatycznie optymalizuj
     wykryte gry", podpowiedź ikony mówi, czy automat czuwa.
   - `StartSessionRequest.attach_only` → `LocalGameSessionOrchestrator` →
