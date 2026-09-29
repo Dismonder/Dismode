@@ -80,15 +80,15 @@ zostaną domknięte, każda liczba w tym planie jest wstępna.
 Obniżenie priorytetu to najsłabsza z dostępnych dźwigni. Windows daje mocniejsze
 i GameShift już ich używa gdzie indziej.
 
-7. ~~Ograniczanie stopniowane~~ — **zastąpione 2026-09-28 decyzją
-   użytkownika** (najwyższa wydajność zamiast ostrożności). Produkcja używa
-   `ProBalanceSettings.Aggressive`: pełny pakiet od pierwszego złapania
+7. Ograniczanie stopniowane — **alternatywa gotowa, niewłączona**. Preset
+   `ProBalanceSettings.Aggressive` (2026-09-28) daje pełny pakiet od pierwszego złapania
    (priorytet, zbiory, maska, I/O) plus EcoQoS, dziennikowany i cofany jak
    pozostałe dźwignie (`JournaledProBalanceActuator`, księga
    `EcoQosActionId`, odtwarzanie jako `LowerPriorityAndEcoQos`). Próg 0,5
    rdzenia, 2 próbki, do 8 procesów, przytrzymanie do 10 min. Progi i wpływ
-   EcoQoS na czas klatki są **niezmierzone**. Domyślne `ProBalanceSettings`
-   pozostają ostrożne i są podstawą istniejących testów.
+   EcoQoS na czas klatki są **niezmierzone**, więc SessionHost używa
+   ostrożnych `ProBalanceSettings` (decyzja użytkownika 2026-09-29).
+   Włączyć preset dopiero po pomiarze p99 na żywej grze.
 8. ~~Odsuwanie tła od rdzeni gry~~ — zrobione przez domyślne zbiory
    procesorów, sprawdzone na żywym procesie.
 9. ~~Priorytet pamięci i wejścia-wyjścia dla procesów ograniczonych~~ —

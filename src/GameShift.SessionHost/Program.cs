@@ -3,7 +3,6 @@ using System.Text.Json;
 using GameShift.Contracts.Diagnostics;
 using GameShift.Contracts.Protocol;
 using GameShift.Core.Activation;
-using GameShift.Core.Cpu;
 using GameShift.Core.Ipc;
 using GameShift.Core.Product;
 using GameShift.Data.Journal;
@@ -125,10 +124,7 @@ await using LocalGameSessionOrchestrator sessionOrchestrator = new(
     recoveryJournal,
     optimizationPreferences: userDataStore,
     systemProfileCoordinator: systemProfileCoordinator,
-    globalBackgroundRules: userDataStore,
-    // Petla reaktywna nastawiona na najwyzsza wydajnosc gry (decyzja
-    // uzytkownika): wszystkie dzwignie od razu, w tym EcoQoS.
-    proBalanceSettings: ProBalanceSettings.Aggressive);
+    globalBackgroundRules: userDataStore);
 await sessionOrchestrator.InitializeAsync(CancellationToken.None);
 GameShiftSessionGrpcService sessionService = new(
     validationPolicy,
