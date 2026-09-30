@@ -11,14 +11,14 @@
 # (non-fast-forward) oraz usunięcie gałęzi.
 #
 # Świadome obejście — na przykład prawdziwy merge PR-a z linii poleceń:
-#   GAMESHIFT_ALLOW_MAIN_PUSH=1 git push origin main
+#   DISMODE_ALLOW_MAIN_PUSH=1 git push origin main
 
 protected_branch="main"
 zero="0000000000000000000000000000000000000000"
 status=0
 pushing=0
 
-if [ "${GAMESHIFT_ALLOW_MAIN_PUSH}" = "1" ]; then
+if [ "${DISMODE_ALLOW_MAIN_PUSH}" = "1" ]; then
     exit 0
 fi
 
@@ -47,7 +47,7 @@ while read -r local_ref local_sha remote_ref remote_sha; do
 
     echo "pre-push: odmowa bezpośredniego pushu do ${protected_branch}." >&2
     echo "  Zmiany na main wchodzą przez pull requesta." >&2
-    echo "  Świadome obejście: GAMESHIFT_ALLOW_MAIN_PUSH=1 git push …" >&2
+    echo "  Świadome obejście: DISMODE_ALLOW_MAIN_PUSH=1 git push …" >&2
     status=1
 done
 
@@ -60,9 +60,9 @@ done
 # "chroniony main" nie znaczy nic, bo przy jednym autorze PR nie ma recenzenta.
 #
 # Pominięcie, gdy push jest pilny albo maszyna zajęta:
-#   GAMESHIFT_SKIP_VERIFY=1 git push …
+#   DISMODE_SKIP_VERIFY=1 git push …
 
-if [ "${GAMESHIFT_SKIP_VERIFY}" = "1" ]; then
+if [ "${DISMODE_SKIP_VERIFY}" = "1" ]; then
     echo "pre-push: weryfikacja pominięta na żądanie." >&2
     exit 0
 fi
@@ -73,7 +73,7 @@ if ! command -v dotnet >/dev/null 2>&1; then
 fi
 
 root=$(git rev-parse --show-toplevel)
-log="${TMPDIR:-/tmp}/gameshift-pre-push.log"
+log="${TMPDIR:-/tmp}/dismode-pre-push.log"
 
 # Wyjscie idzie do pliku, a nie do /dev/null. Przy bledzie pokazujemy ogon,
 # a przy zawisie mozna do niego zajrzec z drugiego okna — inaczej hook milczy
@@ -92,8 +92,8 @@ run() {
 }
 
 echo "pre-push: postep na biezaco: tail -f ${log}" >&2
-run "build Release"     dotnet build "${root}/GameShift.sln" -c Release -v quiet --nologo || exit 1
-run "testy (bez kategorii Live)"     dotnet test "${root}/GameShift.sln" -c Release --no-build         --filter "TestCategory!=Live" --nologo || exit 1
+run "build Release"     dotnet build "${root}/Dismode.sln" -c Release -v quiet --nologo || exit 1
+run "testy (bez kategorii Live)"     dotnet test "${root}/Dismode.sln" -c Release --no-build         --filter "TestCategory!=Live" --nologo || exit 1
 
 echo "pre-push: zielono." >&2
 exit 0

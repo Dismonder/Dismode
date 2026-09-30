@@ -11,7 +11,7 @@ danych i bez przedstawiania pojedynczego odczytu jako wyniku całej sesji.
 
 ## Implementacja
 
-- walidowany model statystyk interwałowych w `GameShift.Core`;
+- walidowany model statystyk interwałowych w `Dismode.Core`;
 - lekki akumulator próbek już pobieranych przez SessionHost, bez drugiego
   źródła telemetrii;
 - liczba próbek, średni FPS, średni frametime, najniższa próbka FPS i
@@ -43,5 +43,5 @@ danych i bez przedstawiania pojedynczego odczytu jako wyniku całej sesji.
 - migracja v4→v5 zachowuje starszą historię bez dopisywania fałszywego FPS;
 - build Debug/Release: 0 ostrzeżeń, format bez zmian, pełna regresja 90/90;
 - po potwierdzeniu braku aktywnej sesji i czystego journalu wydanie
-  opublikowano do `artifacts/GameShift-App`; smoke potwierdził SQLite v5,
+  opublikowano do `artifacts/Dismode-App`; smoke potwierdził SQLite v5,
   SessionHost `Ready`, SystemAgent `ReadOnly` i zmaksymalizowane UI.

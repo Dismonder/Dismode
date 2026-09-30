@@ -7,13 +7,13 @@
 # 2. Duży plik binarny. To już się zdarzyło: w historii leży 77 MB kawałków
 #    instalatora 0.1.1 i nie da się ich stamtąd wyjąć inaczej niż force-pushem.
 #
-# Świadome obejście: GAMESHIFT_ALLOW_BIG_COMMIT=1 git commit …
+# Świadome obejście: DISMODE_ALLOW_BIG_COMMIT=1 git commit …
 
 protected_branch="main"
 max_bytes=5242880   # 5 MiB
 status=0
 
-if [ "${GAMESHIFT_ALLOW_BIG_COMMIT}" = "1" ]; then
+if [ "${DISMODE_ALLOW_BIG_COMMIT}" = "1" ]; then
     exit 0
 fi
 
@@ -39,7 +39,7 @@ if [ -n "${oversized}" ]; then
     echo "pre-commit: pliki za duze na repozytorium kodu:" >&2
     echo "${oversized}" >&2
     echo "  Artefakty budowania trzymamy w artifacts/, nie w gicie." >&2
-    echo "  Swiadome obejscie: GAMESHIFT_ALLOW_BIG_COMMIT=1 git commit …" >&2
+    echo "  Swiadome obejscie: DISMODE_ALLOW_BIG_COMMIT=1 git commit …" >&2
     status=1
 fi
 

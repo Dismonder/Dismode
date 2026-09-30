@@ -1,6 +1,6 @@
-# GameShift
+# Dismode
 
-GameShift is a native Windows 11 x64 application for desktop gaming PCs. It
+Dismode is a native Windows 11 x64 application for desktop gaming PCs. It
 prepares a transparent, reversible optimization plan for a game session and
 restores the previous system state afterwards.
 
@@ -11,7 +11,7 @@ BelowNormal plus EcoQoS to unrelated background processes, raise the game
 priority through the real Windows process API, attach to an already-running
 verified game instead of starting a duplicate, follow child processes after a
 launcher exits, and request a graceful game close.
-When a library game starts outside GameShift, the UI notices it within a few
+When a library game starts outside Dismode, the UI notices it within a few
 seconds, also while hidden in the tray, and attaches a session with that
 game's saved rules on its own. The automatic path only ever attaches to a
 running game and never launches one; an instance whose session the user ended
@@ -26,14 +26,14 @@ the game of the active session.
 Known launchers, anti-cheat components, Windows processes, and helpers from
 the selected game's installation directory are excluded from background
 optimization.
-GameShift bundles the standalone open-source PresentMon 2.5.1 collector and
+Dismode bundles the standalone open-source PresentMon 2.5.1 collector and
 starts it automatically only for the tracked game PIDs. FPS and frame time are
 calculated from real ETW present events. Missing or stale data is shown as
 unavailable and is never replaced with an estimate. The binary is pinned by
 size and SHA-256, and its MIT license and third-party notices ship beside it.
-Every production process action is journaled and reversible. GameShift 0.4.0
+Every production process action is journaled and reversible. Dismode 0.4.0
 also ships a separate System Optimizer UI backed by the delayed-auto
-`GameShiftSystemAgent` Windows service. Its A/B catalog is fail-closed: only
+`DismodeSystemAgent` Windows service. Its A/B catalog is fail-closed: only
 process priority, per-process Power Throttling and the fixed, independently
 verified hibernation adapter are executable; entries without a verified
 adapter remain visibly `Unsupported`, while security, anti-cheat, WHEA and BCD
@@ -57,7 +57,7 @@ or single-player use.
 - desktop PC; laptop battery profiles are outside the current target
 
 The installer build is self-contained and does not require a separate .NET or
-Windows App Runtime installation. Building GameShift from source requires:
+Windows App Runtime installation. Building Dismode from source requires:
 
 - .NET SDK 10.0.302
 - Windows SDK 10.0.26100
@@ -85,15 +85,15 @@ has a deliberate override:
 
 | Variable | Skips |
 |---|---|
-| `GAMESHIFT_ALLOW_BIG_COMMIT=1` | the `main` and file-size commit guards |
-| `GAMESHIFT_ALLOW_MAIN_PUSH=1` | every push guard, verification included |
-| `GAMESHIFT_SKIP_VERIFY=1` | the build and tests only |
+| `DISMODE_ALLOW_BIG_COMMIT=1` | the `main` and file-size commit guards |
+| `DISMODE_ALLOW_MAIN_PUSH=1` | every push guard, verification included |
+| `DISMODE_SKIP_VERIFY=1` | the build and tests only |
 
 ```powershell
-dotnet restore GameShift.sln
-dotnet build GameShift.sln --configuration Debug
-dotnet test GameShift.sln --configuration Debug --no-build
-dotnet format GameShift.sln --verify-no-changes
+dotnet restore Dismode.sln
+dotnet build Dismode.sln --configuration Debug
+dotnet test Dismode.sln --configuration Debug --no-build
+dotnet format Dismode.sln --verify-no-changes
 ```
 
 ## Run the application
@@ -101,15 +101,15 @@ dotnet format GameShift.sln --verify-no-changes
 The verified local release is assembled in:
 
 ```text
-artifacts\GameShift-App\GameShift.exe
+artifacts\Dismode-App\Dismode.exe
 ```
 
-On this workstation the desktop shortcut `GameShift` points to that launcher.
-`GameShift.exe` is the user-facing launcher. It requests UAC for the fixed
-`GameShift.SessionHost.exe` backend when Windows requires it, then opens the
-unprivileged `GameShift.UI.exe` maximized. `GameShift.SystemAgent.exe` is
+On this workstation the desktop shortcut `Dismode` points to that launcher.
+`Dismode.exe` is the user-facing launcher. It requests UAC for the fixed
+`Dismode.SessionHost.exe` backend when Windows requires it, then opens the
+unprivileged `Dismode.UI.exe` maximized. `Dismode.SystemAgent.exe` is
 installed and started separately as a LocalSystem Windows service; closing the
-gaming UI does not stop recovery supervision. Only one GameShift runs per
+gaming UI does not stop recovery supervision. Only one Dismode runs per
 user session, whichever directory it was started from: a second launch hands
 its request to the running window (or brings it to the front) and exits, and
 a second SessionHost backs off as well. The UI does not start without an
@@ -141,18 +141,18 @@ installer instead.
 The resulting files are:
 
 ```text
-artifacts\installer\GameShift-Setup-0.4.0-win-x64.exe
-artifacts\installer\GameShift-Setup-0.4.0-win-x64.exe.sha256
+artifacts\installer\Dismode-Setup-0.4.0-win-x64.exe
+artifacts\installer\Dismode-Setup-0.4.0-win-x64.exe.sha256
 ```
 
-The installer requires UAC once to write into `Program Files\GameShift`, adds a
+The installer requires UAC once to write into `Program Files\Dismode`, adds a
 Start menu shortcut and an optional desktop shortcut, and registers the normal
-Windows uninstaller. It refuses to update or uninstall while GameShift or its
+Windows uninstaller. It refuses to update or uninstall while Dismode or its
 FPS collector is running. Profiles, history, settings, and the recovery journal
-under `%LocalAppData%\GameShift` are intentionally preserved by uninstall.
+under `%LocalAppData%\Dismode` are intentionally preserved by uninstall.
 
 The 0.4.0 release pipeline fails closed unless a valid production Authenticode
-certificate is supplied through `GAMESHIFT_RELEASE_SIGNING_THUMBPRINT` (or the
+certificate is supplied through `DISMODE_RELEASE_SIGNING_THUMBPRINT` (or the
 matching command parameter). It signs all owned mutation clients and the final
 installer, verifies the signer allow-list, creates a SHA-256 checksum beside
 the installer and writes a per-file payload manifest inside the installed
@@ -160,22 +160,22 @@ directory.
 
 ## Architecture
 
-- `GameShift.Launcher`: one-click launcher for the fixed local components; it
+- `Dismode.Launcher`: one-click launcher for the fixed local components; it
   elevates once so the SessionHost starts without a second prompt, and starts
   the UI with the desktop user's ordinary token.
-- `GameShift.UI`: unprivileged WinUI 3 user interface.
-- `GameShift.SessionHost`: UAC-elevated process in the interactive user session;
+- `Dismode.UI`: unprivileged WinUI 3 user interface.
+- `Dismode.SessionHost`: UAC-elevated process in the interactive user session;
   owns game-session actions and the PresentMon child process. Games it
   launches and background applications it restarts after a session are
   created as children of the desktop shell, so they run with the user's
   ordinary token instead of inheriting the host's elevation.
-- `GameShift.SystemAgent`: read-only service classifier and future privileged
+- `Dismode.SystemAgent`: read-only service classifier and future privileged
   recovery owner.
-- `GameShift.Core`: platform-independent domain and safety rules.
-- `GameShift.Contracts`: versioned IPC contracts.
-- `GameShift.Data`: persistence and recovery journal.
-- `GameShift.Windows`: Windows observation and native adapters.
+- `Dismode.Core`: platform-independent domain and safety rules.
+- `Dismode.Contracts`: versioned IPC contracts.
+- `Dismode.Data`: persistence and recovery journal.
+- `Dismode.Windows`: Windows observation and native adapters.
 
 See `docs/CODEX_CONTEXT.md`, `docs/MVP_ACCEPTANCE.md`,
-`docs/OPERATIONS.md`, and `docs/exec-plans/active/gameshift-mvp.md`
+`docs/OPERATIONS.md`, and `docs/exec-plans/active/dismode-mvp.md`
 before making changes.

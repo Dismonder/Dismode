@@ -1,13 +1,13 @@
-GameShift — wydanie badawczo-rozwojowe
+Dismode — wydanie badawczo-rozwojowe
 
 Instalator:
 - instaluje aplikację dla Windows 11 x64 do chronionego katalogu Program Files;
 - zawiera wymagane środowisko .NET i Windows App Runtime;
 - tworzy wpis w menu Start oraz opcjonalny skrót na pulpicie;
 - dodaje standardowy deinstalator Windows;
-- instaluje GameShift System Optimizer oraz usługę GameShiftSystemAgent
+- instaluje Dismode System Optimizer oraz usługę DismodeSystemAgent
   działającą jako LocalSystem z opóźnionym startem;
-- domyślnie instaluje opcjonalny, niezależny GameShift Memory Optimizer
+- domyślnie instaluje opcjonalny, niezależny Dismode Memory Optimizer
   (GPL-3.0-only) jako zwykły tray i usługę LocalSystem;
 - nie usuwa profili, historii ani journalu odzyskiwania z LocalAppData.
 
@@ -15,7 +15,7 @@ Memory Optimizer pozostaje aktywny po zamknięciu części gamingowej. Można go
 odznaczyć na stronie wyboru składników. Jego licencja, pochodzenie, lista zmian
 i dokładne odpowiadające źródła są dołączone w katalogu komponentu.
 
-Przed instalacją lub aktualizacją zakończ aktywną sesję i zamknij GameShift.
+Przed instalacją lub aktualizacją zakończ aktywną sesję i zamknij Dismode.
 Instalator celowo nie zabija gry ani procesów odpowiedzialnych za recovery.
 
 Łańcuch wydania 0.4.0 odrzuca instalator bez poprawnego produkcyjnego podpisu
