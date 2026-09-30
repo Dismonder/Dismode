@@ -1,5 +1,7 @@
 # Dismode
 
+**Website (dev):** https://dismode-site-dev.dismonder.workers.dev
+
 Dismode is a native Windows 11 x64 application for desktop gaming PCs. It
 prepares a transparent, reversible optimization plan for a game session and
 restores the previous system state afterwards.
@@ -157,6 +159,17 @@ matching command parameter). It signs all owned mutation clients and the final
 installer, verifies the signer allow-list, creates a SHA-256 checksum beside
 the installer and writes a per-file payload manifest inside the installed
 directory.
+
+## Website
+
+The product page lives in `infrastructure/website` as plain static files
+(HTML, CSS, JS; no build step) served by the `dismode-site-dev` Cloudflare
+Worker. Deploy it with the Wrangler already installed for the update service:
+
+```powershell
+cd infrastructure\website
+..\update-service\node_modules\.bin\wrangler.cmd deploy
+```
 
 ## Architecture
 
