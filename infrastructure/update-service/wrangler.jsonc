@@ -1,6 +1,6 @@
 {
   "$schema": "./node_modules/wrangler/config-schema.json",
-  "name": "gameshift-update-service-dev",
+  "name": "dismode-update-service-dev",
   "main": "src/index.ts",
   "compatibility_date": "2026-08-01",
   "observability": {
@@ -14,6 +14,6 @@
   },
   "vars": {
     "ENVIRONMENT": "development",
-    "PRODUCT_NAME": "GameShift Gaming Edition"
+    "PRODUCT_NAME": "Dismode Gaming Edition"
   }
 }

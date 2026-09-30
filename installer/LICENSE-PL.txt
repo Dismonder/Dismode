@@ -1,16 +1,16 @@
-WARUNKI KORZYSTANIA Z GAMESHIFT GAMING EDITION
+WARUNKI KORZYSTANIA Z DISMODE GAMING EDITION
 
-1. GameShift jest eksperymentalnym projektem badawczo-rozwojowym. Program
+1. Dismode jest eksperymentalnym projektem badawczo-rozwojowym. Program
    jest udostępniany bez gwarancji wzrostu FPS, zgodności z każdą grą ani
    nieprzerwanego działania na każdej konfiguracji Windows.
 
-2. GameShift wykonuje wyłącznie działania pokazane w planie sesji. Zmiany
+2. Dismode wykonuje wyłącznie działania pokazane w planie sesji. Zmiany
    optymalizacyjne mają charakter tymczasowy i korzystają z lokalnego
    dziennika odzyskiwania. Operacje wysokiego ryzyka, zabezpieczenia Windows,
    sterowniki oraz anti-cheat pozostają chronione.
 
 3. Użytkownik odpowiada za zapisanie pracy w aplikacjach wybranych do
-   zamknięcia. GameShift nie obiecuje korzyści wydajnościowej bez rzeczywistego
+   zamknięcia. Dismode nie obiecuje korzyści wydajnościowej bez rzeczywistego
    pomiaru i może uczciwie zgłosić brak poprawy.
 
 4. Dane bibliotek gier, profili, procesów, usług, historii sesji oraz pomiarów

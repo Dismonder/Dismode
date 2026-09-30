@@ -62,16 +62,16 @@ Rozszerzyć istniejący przepływ sesji bez tworzenia równoległego systemu:
   z oknem i ogranicza pozostałe przez `BelowNormal + EcoQoS`.
 - Build Debug/Release: 0 ostrzeżeń. Wąskie testy: 3/3. Journal przed
   publikacją: czysty, 353 rekordy.
-- Wydanie opublikowano do `artifacts/GameShift-App`; kopia:
-  `artifacts/GameShift-App.backup-20260729-202043`.
+- Wydanie opublikowano do `artifacts/Dismode-App`; kopia:
+  `artifacts/Dismode-App.backup-20260729-202043`.
 - Po ręcznym zatwierdzeniu UAC końcowy smoke potwierdził jedno responsywne UI,
   jeden SessionHost i jeden SystemAgent. Oba pipe'y są gotowe: SessionHost
   `Ready` (protokół 4, 271 procesów), SystemAgent `ReadOnly` (protokół 4,
-  316 usług), bez aktywnej sesji i bez uruchomionego przez GameShift procesu
+  316 usług), bez aktywnej sesji i bez uruchomionego przez Dismode procesu
   `PresentMon-2.5.1-x64`.
-- Wydanie zawiera `PerformanceOverlayWindow.xbf`, a wdrożony `GameShift.UI.dll`
+- Wydanie zawiera `PerformanceOverlayWindow.xbf`, a wdrożony `Dismode.UI.dll`
   ma ten sam SHA-256 co wynik Release. Poprawka timeoutów UI ma kopię:
-  `artifacts/GameShift-App.hotfix-backup-20260729-202410`.
+  `artifacts/Dismode-App.hotfix-backup-20260729-202410`.
 - Roblox działał podczas publikacji, lecz przed końcowym odczytem został
   zamknięty poza wykonywanymi przez Codex poleceniami; nie użyto go do smoke
   testu i nie uruchamiano automatycznie Trybu gry.

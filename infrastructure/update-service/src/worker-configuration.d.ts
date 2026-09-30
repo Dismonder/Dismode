@@ -4,7 +4,7 @@
 interface __BaseEnv_Env {
 	ASSETS: Fetcher;
 	ENVIRONMENT: "development";
-	PRODUCT_NAME: "GameShift Gaming Edition";
+	PRODUCT_NAME: "Dismode Gaming Edition";
 }
 declare namespace Cloudflare {
 	interface GlobalProps {

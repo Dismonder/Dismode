@@ -5,7 +5,7 @@ Utworzono: 2026-07-29
 
 ## Cel
 
-Całkowicie usunąć zależność GameShift od poprzedniego, zewnętrznego miernika i
+Całkowicie usunąć zależność Dismode od poprzedniego, zewnętrznego miernika i
 zastąpić ją przypiętym, open-source'owym PresentMon. Pomiar ma dotyczyć
 wyłącznie zweryfikowanych PID aktywnej gry, nie wymagać bezpośredniej
 mutacji z UI i uczciwie raportować brak danych.
@@ -19,7 +19,7 @@ mutacji z UI i uczciwie raportować brak danych.
 3. Powiązać cykl życia procesu pomiarowego z SessionHost i aktywną sesją.
 4. Zachować obecny kontrakt FPS/ms, aby nie tworzyć równoległego systemu.
 5. Dołączyć wymagane informacje licencyjne MIT i third-party notices.
-6. Uruchamiać GameShift jako okno zmaksymalizowane.
+6. Uruchamiać Dismode jako okno zmaksymalizowane.
 
 ## Inwarianty
 
@@ -62,9 +62,9 @@ mutacji z UI i uczciwie raportować brak danych.
   procesu.
 - Przed publikacją SessionHost potwierdził brak aktywnej sesji, journal nie
   miał niedokończonych sesji i kończył się checkpointem recovery `10`.
-- Kandydat został opublikowany do `artifacts/GameShift-App`, a poprzednie
+- Kandydat został opublikowany do `artifacts/Dismode-App`, a poprzednie
   wydanie zachowano jako
-  `artifacts/GameShift-App.backup-20260729-195010`.
+  `artifacts/Dismode-App.backup-20260729-195010`.
 - Smoke opublikowanego wydania potwierdził jeden SessionHost z tokenem
   `Elevated`, jeden SystemAgent, jedno UI z tokenem `Standard` i stanem okna
   `Maximized`, gotowość obu pipe'ów, 288 procesów, 316 usług i brak aktywnej

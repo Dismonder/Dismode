@@ -1,0 +1,15 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <RootNamespace>Dismode.MemoryService</RootNamespace>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="System.ServiceProcess.ServiceController" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Dismode.MemoryOptimizer.Core\Dismode.MemoryOptimizer.Core.csproj" />
+  </ItemGroup>
+</Project>

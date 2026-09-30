@@ -2,11 +2,11 @@
 param()
 
 $ErrorActionPreference = "Stop"
-$serviceName = "GameShiftSystemAgent"
+$serviceName = "DismodeSystemAgent"
 $installationRoot = [IO.Path]::GetFullPath(
     (Join-Path $PSScriptRoot "..\.."))
 $executablePath = [IO.Path]::GetFullPath(
-    (Join-Path $installationRoot "GameShift.SystemAgent.exe"))
+    (Join-Path $installationRoot "Dismode.SystemAgent.exe"))
 $serviceController = Join-Path $env:SystemRoot "System32\sc.exe"
 
 if (-not (Test-Path -LiteralPath $executablePath -PathType Leaf)) {
@@ -19,7 +19,7 @@ if ($null -eq $service) {
         binPath= ('"' + $executablePath + '"') `
         start= delayed-auto `
         obj= LocalSystem `
-        DisplayName= "GameShift System Optimizer Agent"
+        DisplayName= "Dismode System Optimizer Agent"
     if ($LASTEXITCODE -ne 0) {
         throw "Nie udało się utworzyć usługi $serviceName ($LASTEXITCODE)."
     }
@@ -29,13 +29,13 @@ if ($null -eq $service) {
     binPath= ('"' + $executablePath + '"') `
     start= delayed-auto `
     obj= LocalSystem `
-    DisplayName= "GameShift System Optimizer Agent"
+    DisplayName= "Dismode System Optimizer Agent"
 if ($LASTEXITCODE -ne 0) {
     throw "Nie udało się skonfigurować usługi $serviceName ($LASTEXITCODE)."
 }
 
 & $serviceController description $serviceName `
-    "Pomiarowe optymalizacje GameShift, recovery i profile sesji gry."
+    "Pomiarowe optymalizacje Dismode, recovery i profile sesji gry."
 if ($LASTEXITCODE -ne 0) {
     throw "Nie udało się ustawić opisu usługi $serviceName ($LASTEXITCODE)."
 }

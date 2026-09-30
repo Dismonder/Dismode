@@ -45,5 +45,5 @@ tła dla tej konkretnej gry.
 - build Debug i Release zakończyły się bez ostrzeżeń, format jest czysty;
 - kontrolowany proces przeszedł rzeczywistą zmianę
   `Normal → BelowNormal → Normal`;
-- wydanie opublikowano do `artifacts/GameShift-App`, a smoke potwierdził
+- wydanie opublikowano do `artifacts/Dismode-App`, a smoke potwierdził
   gotowe pipe'y, zmaksymalizowane UI i brak aktywnej sesji.

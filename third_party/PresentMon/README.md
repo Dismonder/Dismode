@@ -1,6 +1,6 @@
 # PresentMon component
 
-GameShift bundles only the official standalone PresentMon console collector.
+Dismode bundles only the official standalone PresentMon console collector.
 The Intel GUI, service, installer, and Chromium Embedded Framework are not
 included.
 
@@ -14,7 +14,7 @@ included.
 
 The release script verifies the exact size and SHA-256 before copying this
 component into `Tools/PresentMon`. Runtime verification repeats the SHA-256
-check before every new GameShift host lifetime can start the collector.
+check before every new Dismode host lifetime can start the collector.
 
 To update the component, pin a reviewed upstream release, replace the binary
 and both notice files, then update the version, size, and SHA-256 constants in

@@ -9,7 +9,7 @@ async function fetchWorker(path: string, init?: RequestInit<IncomingRequestCfPro
   return worker.fetch(request, env);
 }
 
-describe("GameShift update service", () => {
+describe("Dismode update service", () => {
   afterEach(() => vi.restoreAllMocks());
 
   it("serves the staged channel manifest through the real asset binding", async () => {
@@ -40,7 +40,7 @@ describe("GameShift update service", () => {
 
   it.each([500, 503, 403, 302])("does not cache asset failure %s as an immutable package", async (status) => {
     vi.spyOn(env.ASSETS, "fetch").mockResolvedValueOnce(new Response("upstream failure", { status }));
-    const response = await fetchWorker("/v1/packages/0.4.0/GameShift-Setup-0.4.0-win-x64.part-0001.bin");
+    const response = await fetchWorker("/v1/packages/0.4.0/Dismode-Setup-0.4.0-win-x64.part-0001.bin");
     expect(response.status).toBe(502);
     expect(response.headers.get("cache-control")).toBe("no-store");
     expect(await response.json()).toEqual({ error: "asset_unavailable" });
@@ -48,7 +48,7 @@ describe("GameShift update service", () => {
 
   it.each([
     ["/v1/channels/preview/manifest.json", "public, max-age=300, must-revalidate"],
-    ["/v1/packages/0.4.0/GameShift-Setup-0.4.0-win-x64.part-0001.bin", "public, max-age=31536000, immutable"],
+    ["/v1/packages/0.4.0/Dismode-Setup-0.4.0-win-x64.part-0001.bin", "public, max-age=31536000, immutable"],
   ])("preserves successful assets and their cache policy: %s", async (path, cachePolicy) => {
     vi.spyOn(env.ASSETS, "fetch").mockResolvedValueOnce(new Response("verified-content", {
       headers: { ETag: '"release-hash"' },
@@ -62,7 +62,7 @@ describe("GameShift update service", () => {
   });
 
   it("preserves 304 and partial-content responses", async () => {
-    const path = "/v1/packages/0.4.0/GameShift-Setup-0.4.0-win-x64.part-0001.bin";
+    const path = "/v1/packages/0.4.0/Dismode-Setup-0.4.0-win-x64.part-0001.bin";
     vi.spyOn(env.ASSETS, "fetch")
       .mockResolvedValueOnce(new Response(null, { status: 304 }))
       .mockResolvedValueOnce(new Response("part", { status: 206, headers: { "Content-Range": "bytes 0-3/100" } }));
@@ -79,7 +79,7 @@ describe("GameShift update service", () => {
     vi.spyOn(env.ASSETS, "fetch").mockResolvedValueOnce(new Response(null, {
       status: 416, headers: { "Content-Range": "bytes */100" },
     }));
-    const response = await fetchWorker("/v1/packages/0.4.0/GameShift-Setup-0.4.0-win-x64.part-0001.bin");
+    const response = await fetchWorker("/v1/packages/0.4.0/Dismode-Setup-0.4.0-win-x64.part-0001.bin");
     expect(response.status).toBe(416);
     expect(response.headers.get("content-range")).toBe("bytes */100");
     expect(response.headers.get("cache-control")).toBe("no-store");
@@ -101,7 +101,7 @@ describe("GameShift update service", () => {
     expect(response.headers.get("cache-control")).toBe("no-store");
     expect(body).toEqual({
       status: "ok",
-      service: "gameshift-update-service",
+      service: "dismode-update-service",
       environment: "development",
       timestampUtc: expect.any(String),
     });
@@ -116,12 +116,12 @@ describe("GameShift update service", () => {
   it("allow-lists only version-matched installer chunks", () => {
     expect(
       isAllowedUpdateAssetPath(
-        "/v1/packages/0.1.1/GameShift-Setup-0.1.1-win-x64.part-0001.bin",
+        "/v1/packages/0.1.1/Dismode-Setup-0.1.1-win-x64.part-0001.bin",
       ),
     ).toBe(true);
     expect(
       isAllowedUpdateAssetPath(
-        "/v1/packages/0.1.1/GameShift-Setup-0.1.2-win-x64.part-0001.bin",
+        "/v1/packages/0.1.1/Dismode-Setup-0.1.2-win-x64.part-0001.bin",
       ),
     ).toBe(false);
     expect(isAllowedUpdateAssetPath("/v1/packages/0.1.1/tool.exe")).toBe(false);
