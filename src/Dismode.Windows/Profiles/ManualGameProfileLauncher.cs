@@ -265,8 +265,11 @@ public sealed class ManualGameProfileLauncher
                 ProcessIdentity? identity = null;
                 try
                 {
+                    // Sciezka z jadra ma junctiony rozwiazane, sciezka
+                    // z profilu nie. Bez porownania po pliku dolaczenie do
+                    // gry w przeniesionej bibliotece nigdy nie trafia.
                     if (process.SessionId != currentSessionId
-                        || !StringComparer.OrdinalIgnoreCase.Equals(
+                        || !ExecutablePathIdentity.AreSameExecutable(
                             ProcessImagePath.TryRead(process),
                             profile.ExecutablePath))
                     {
@@ -310,7 +313,11 @@ public sealed class ManualGameProfileLauncher
         ProcessIdentity identity)
     {
         string currentSid = CurrentWindowsIdentity.GetUserSid().Value;
-        if (!StringComparer.OrdinalIgnoreCase.Equals(
+
+        // Sciezka rozstrzyga o tozsamosci pliku, wiec junction po drodze nie
+        // moze jej uniewazniac; o tresci rozstrzyga i tak skrot SHA-256,
+        // ktory liczy sie z tych samych bajtow po obu stronach dowiazania.
+        if (!ExecutablePathIdentity.AreSameExecutable(
                 identity.ExecutablePath,
                 profile.ExecutablePath)
             || !StringComparer.OrdinalIgnoreCase.Equals(

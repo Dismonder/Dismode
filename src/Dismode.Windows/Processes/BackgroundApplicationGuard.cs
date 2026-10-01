@@ -409,7 +409,11 @@ public sealed class BackgroundApplicationGuard
                 "Wybrana aplikacja nie jest bezpośrednim plikiem EXE.");
         }
 
-        if (StringComparer.OrdinalIgnoreCase.Equals(
+        // Sciezka procesu jest juz rozwiazana przez jadro, sciezka gry
+        // pochodzi z biblioteki i moze prowadzic przez junction. Gdyby
+        // porownanie zostalo przy samym tekscie, gra w przeniesionej
+        // bibliotece dalaby sie wybrac jako aplikacja do zamkniecia.
+        if (ExecutablePathIdentity.AreSameExecutable(
                 executablePath,
                 Path.GetFullPath(gameExecutablePath)))
         {
