@@ -608,6 +608,16 @@ public sealed class LocalGameSessionOrchestrator : IAsyncDisposable
                         launched.Identity,
                         startedAtUtc,
                         enableProBalance ?? _proBalanceEnabled,
+                        async journaled =>
+                        {
+                            metadata = metadata with { GameAffinity = journaled };
+                            await RecordCheckpointAsync(
+                                    plan.SessionId,
+                                    SessionCheckpoint.GameLaunched,
+                                    metadata,
+                                    CancellationToken.None)
+                                .ConfigureAwait(false);
+                        },
                         CancellationToken.None)
                     .ConfigureAwait(false);
                 int affinityActionCount = gameAffinity.AppliedCount;
@@ -2125,6 +2135,7 @@ public sealed class LocalGameSessionOrchestrator : IAsyncDisposable
         ProcessIdentity gameIdentity,
         DateTimeOffset requestedAtUtc,
         bool enabled,
+        Func<GameAffinityRecoveryMetadata, ValueTask> recordBeforeApply,
         CancellationToken cancellationToken)
     {
         if (!enabled)
@@ -2174,6 +2185,12 @@ public sealed class LocalGameSessionOrchestrator : IAsyncDisposable
             actionId.Value,
             idempotencyKey.Value,
             gameIdentity);
+
+        // Identyfikatory ida do metadanych sesji, zanim maska dotknie gry:
+        // awaria hosta w tym oknie zostawilaby gre na masce, o ktorej
+        // odtwarzanie nie wie. Akcja bez wpisow w dzienniku to dla recovery
+        // „nic do cofniecia", wiec wczesniejszy zapis niczego nie psuje.
+        await recordBeforeApply(journaled).ConfigureAwait(false);
 
         try
         {

@@ -168,4 +168,19 @@ public sealed class StartupPolicyTests
                 StartInBackground: true,
                 GameExecutablePath: Path.GetFullPath("game.exe"))));
     }
+
+    [TestMethod]
+    public void AHostThatRefusedToServeIsReportedLikeBlockedMigration()
+    {
+        StartupDecision refused =
+            StartupPolicy.HostRefused(StartupPolicy.HostExitRefused);
+        StartupDecision crashed = StartupPolicy.HostRefused(1);
+
+        Assert.AreEqual(StartupPolicy.ExitLegacyDataUnavailable, refused.ExitCode);
+        Assert.IsNotNull(refused.Message);
+        Assert.Contains("GameShift", refused.Message);
+        Assert.AreEqual(StartupPolicy.ExitHostStartFailed, crashed.ExitCode);
+        Assert.IsNotNull(crashed.Message);
+        Assert.Contains("kodem 1", crashed.Message);
+    }
 }

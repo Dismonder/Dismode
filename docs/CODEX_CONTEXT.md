@@ -1,6 +1,6 @@
 # Dismode — kontekst roboczy repozytorium
 
-Ostatnia aktualizacja: 2026-10-01
+Ostatnia aktualizacja: 2026-10-01 (wydanie 0.8.0)
 
 ## Zasady prowadzenia sesji (od 2026-10-01)
 
@@ -9,8 +9,10 @@ Ostatnia aktualizacja: 2026-10-01
 - Większe pliki do przeczytania zleca się Antigravity CLI (Gemini Flash,
   `agent_call` model `flash`, profil `find`/`shell`), nie czyta się ich
   w kontekście sesji Claude.
-- Recenzja i cięższa praca wykonawcza: Codex CLI, model GPT sol
-  (`agent_call` model `sol`, `codex exec`).
+- Recenzja i cięższa praca wykonawcza: Codex CLI WYŁĄCZNIE z modelem
+  w wersji 6.1 (`codex exec -m gpt-6.1-sol`, effort `xhigh`); `agent_call`
+  z modelem `sol`/`astra` mapuje na stare gpt-6-* i nie jest używany
+  (decyzja Damiana 2026-10-01).
 
 ## Change log — gałąź `rename-dismode` (stan 2026-10-01, niezacommitowane)
 
@@ -75,10 +77,46 @@ Weryfikacja po poprawkach 2026-10-01: build 0/0, testy 565 zaliczone
 `git diff --check` czysto. PR #5 (`rename-dismode` → `main`) już istniał,
 więc jego opis został uzupełniony zamiast tworzenia nowego.
 
-Następne kroki: scalić PR #5 do `main`; po scaleniu podbić `<Version>`
-w `Directory.Build.props` do 0.8.0 (obecnie 0.7.0 = origin/main) osobnym
-commitem i dopisać tu wpis o wydaniu; pierwsza instalacja Dismode obok
-zainstalowanego GameShift to pierwszy żywy test migracji.
+Druga recenzja, Codex 6.1 (`gpt-6.1-sol`, xhigh, 2026-10-01), commitu
+555d703: werdykt „niegotowe", naprawione w kolejnym commicie:
+- `LegacyStorageMigration`: bez mutexu (timeout 30 s albo brak uchwytu)
+  migracja zwraca `BlocksStartup`, gdy są dane do przeniesienia; zestaw bazy
+  nie jest rozdzielany przy ponowieniu — `RenameLegacyDatabase` przerywa po
+  pierwszym nieudanym przeniesieniu sidecara (baza zostaje pod starą nazwą,
+  także w wariancie `.unmerged`), a sidecar pozostawiony w katalogu legacy
+  wstrzymuje rename bazy już przeniesionej (`SidecarLeftBehind`);
+  `LegacyMachineDataDirectory` wystawione publicznie. Test
+  `ALockedJournalKeepsTheDatabaseSetTogetherAcrossRestarts` (4 warianty).
+- `LocalGameSessionOrchestrator`: identyfikatory twardej maski affinity gry
+  trafiają do checkpointu `GameLaunched` PRZED `ExecuteAsync`
+  (`recordBeforeApply`); recovery bez wpisów akcji zwraca
+  `MissingPreparation` → 0/0/0, więc wcześniejszy zapis nic nie psuje.
+- `StartupGate`: `StartElevated` zwraca `Process`, `WaitForPipe` kończy się,
+  gdy host wyjdzie; kod wyjścia hosta ≠ 0 bez rury → `StartupPolicy.HostRefused`
+  (9 → kod 7 z komunikatem o GameShift/migracji, inne → kod 5). Stała
+  `StartupPolicy.HostExitRefused = 9` użyta w `SessionHost/Program.cs`;
+  komunikat kodu 7 mówi też o niepełnym przeniesieniu. Test w
+  `StartupPolicyTests`.
+- `SystemAgent`: nowy `Security/MachineDataAccessControl.cs` — po zapasowej
+  migracji danych maszyny (gdy katalog `ProgramData\GameShift` istniał)
+  dzieci `ProgramData\Dismode` tracą jawne ACE i dostają właściciela
+  Administrators (katalog `Shared` zachowuje swój wpis Users M). Semantyka
+  (`RemoveAccessRuleAll` + `SetAccessRuleProtection(false,false)` na
+  istniejącym `FileSystemSecurity`; świeży obiekt zapisałby null DACL)
+  sprawdzona w PowerShellu na katalogu tymczasowym.
+- Świadomie bez zmian: `SQLITE_BUSY` przy migracji schematu dłuższej niż
+  5 s timeoutu (transakcje chronią dane, drugi start wystarcza).
+
+Weryfikacja 2026-10-01 (po drugiej recenzji): build 0/0, testy 570
+zaliczone (7 pominięte; +4 Recovery, +1 Unit), `dotnet format
+--verify-no-changes` czysto, `git diff --check` czysto.
+
+Wydanie 0.8.0 (2026-10-01): `<Version>` w `Directory.Build.props` podbity
+do 0.8.0 w tym samym commicie, PR #5 scalony do `main`.
+
+Następne kroki: pierwsza instalacja Dismode obok zainstalowanego GameShift
+to pierwszy żywy test migracji (w tym ścieżki kodu 9 → komunikat UI);
+`wrangler deploy` nowego adresu update-service; podpisana paczka 0.8.0.
 
 ### Memory Optimizer — bieżąca poprawka panelu tray (2026-09-05)
 

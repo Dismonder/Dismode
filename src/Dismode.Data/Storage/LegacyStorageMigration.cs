@@ -74,12 +74,16 @@ public static class LegacyStorageMigration
                 LegacyDirectoryName),
             DismodeStoragePaths.UserDataDirectory);
 
+    /// <summary>Where releases named GameShift kept the machine data.</summary>
+    public static string LegacyMachineDataDirectory =>
+        Path.Combine(
+            Environment.GetFolderPath(
+                Environment.SpecialFolder.CommonApplicationData),
+            LegacyDirectoryName);
+
     public static LegacyStorageMigrationResult MigrateMachineData() =>
         Migrate(
-            Path.Combine(
-                Environment.GetFolderPath(
-                    Environment.SpecialFolder.CommonApplicationData),
-                LegacyDirectoryName),
+            LegacyMachineDataDirectory,
             DismodeStoragePaths.MachineDataDirectory);
 
     /// <summary>
@@ -107,12 +111,20 @@ public static class LegacyStorageMigration
         List<string> problems = [];
         using Mutex? mutex = TryOpenMutex(current);
         bool acquired = mutex is not null && AcquireMutex(mutex);
-        if (mutex is not null && !acquired)
+        if (!acquired
+            && (Directory.Exists(legacy) || HasLegacyDatabase(current)))
         {
+            // Two components moving the same set at once could leave the
+            // database and its log under different names. Whoever holds the
+            // lock finishes the work; this start is refused instead.
             problems.Add(
-                $"{current}: another Dismode component held the migration "
-                + $"lock for more than {LockTimeout.TotalSeconds:F0} s; "
-                + "continuing without it.");
+                mutex is null
+                    ? $"{current}: the migration lock could not be opened; "
+                        + "start Dismode again."
+                    : $"{current}: another Dismode component held the "
+                        + "migration lock for more than "
+                        + $"{LockTimeout.TotalSeconds:F0} s; start Dismode again.");
+            return new(problems, BlocksStartup: true);
         }
 
         try
@@ -148,6 +160,20 @@ public static class LegacyStorageMigration
                     MergeDirectory(legacy, current, problems);
                     TryDeleteIfEmpty(legacy);
                 }
+            }
+
+            if (SidecarLeftBehind(legacy)
+                && File.Exists(Path.Combine(current, LegacyDatabaseName)))
+            {
+                // The log or the index could not leave the old directory yet.
+                // Renaming the database now would send the two halves under
+                // different names on the next start, so the set waits whole.
+                problems.Add(
+                    $"{Path.Combine(current, LegacyDatabaseName)}: waits for "
+                    + $"its journal still held in {legacy}.");
+                return new(
+                    problems,
+                    BlocksStartup: LeavesCriticalDataBehind(legacy, current));
             }
 
             RenameLegacyDatabase(current, problems);
@@ -282,8 +308,14 @@ public static class LegacyStorageMigration
             if (unmergedBase is not null)
             {
                 string unmerged = unmergedBase + suffix;
-                if (TryMove(legacyPath, unmerged, problems, report: true)
-                    && !reportedCollision)
+                if (!TryMove(legacyPath, unmerged, problems, report: true))
+                {
+                    // The set stays whole under the old name until every
+                    // piece can go; the next start picks one name for all.
+                    return;
+                }
+
+                if (!reportedCollision)
                 {
                     reportedCollision = true;
                     problems.Add(
@@ -302,13 +334,17 @@ public static class LegacyStorageMigration
             {
                 // Only the journal or the index survived under both names:
                 // something opened the new database between two halves of
-                // a rename. The legacy piece is not thrown away.
+                // a rename. The legacy piece is not thrown away, and the
+                // database stays with it under the old name.
                 problems.Add(
                     $"{legacyPath}: {Path.GetFileName(currentPath)} already exists");
-                continue;
+                return;
             }
 
-            _ = TryMove(legacyPath, currentPath, problems, report: true);
+            if (!TryMove(legacyPath, currentPath, problems, report: true))
+            {
+                return;
+            }
         }
     }
 
@@ -316,6 +352,16 @@ public static class LegacyStorageMigration
         Directory.Exists(directory)
         && DatabaseSuffixes.Any(suffix => File.Exists(
             Path.Combine(directory, LegacyDatabaseName + suffix)));
+
+    /// <summary>
+    /// True when the write-ahead log or the shared-memory index of the legacy
+    /// database is still in the legacy directory.
+    /// </summary>
+    private static bool SidecarLeftBehind(string legacy) =>
+        DatabaseSuffixes
+            .Where(suffix => suffix.Length > 0)
+            .Any(suffix => File.Exists(
+                Path.Combine(legacy, LegacyDatabaseName + suffix)));
 
     /// <summary>
     /// True when a legacy database or journal is still where the new release
@@ -495,9 +541,9 @@ public static class LegacyStorageMigration
                 or IOException
                 or WaitHandleCannotBeOpenedException)
         {
-            // A name held by a process this token cannot open. The moves
-            // below are each safe on their own; only the ordering guarantee
-            // is lost, which the resume logic covers on the next start.
+            // A name held by a process this token cannot open. With legacy
+            // data still around the start is refused rather than migrated
+            // without the ordering guarantee; otherwise nothing is at stake.
             return null;
         }
     }

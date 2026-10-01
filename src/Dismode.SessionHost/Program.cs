@@ -34,7 +34,7 @@ if (LegacyProductProcesses.FindRunningInCurrentSession() is string legacyCompone
         "Działa jeszcze poprzednia wersja programu (GameShift): "
         + legacyComponent
         + ". Zamknij ją i uruchom Dismode ponownie.");
-    return 9;
+    return StartupPolicy.HostExitRefused;
 }
 
 // Dane z wydan pod stara nazwa (GameShift) musza byc na miejscu, zanim
@@ -53,7 +53,7 @@ if (migration.BlocksStartup)
         "Migracja danych GameShift: baza profili albo dziennik recovery "
         + "poprzedniej wersji są w użyciu. Zamknij programy, które je trzymają, "
         + "i uruchom Dismode ponownie.");
-    return 9;
+    return StartupPolicy.HostExitRefused;
 }
 
 if (args.Length == 1)

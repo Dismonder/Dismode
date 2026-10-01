@@ -55,6 +55,12 @@ public static class StartupPolicy
     public const int ExitLegacyDataUnavailable = 7;
 
     /// <summary>
+    /// What Dismode.SessionHost returns when it refuses to serve: the
+    /// previous release still runs, or its data could not be taken over.
+    /// </summary>
+    public const int HostExitRefused = 9;
+
+    /// <summary>
     /// A component of the release published as GameShift is still running in
     /// this session. It has the same job and, until the first Dismode start
     /// moves it, the same data directory; the two would fight over both.
@@ -88,7 +94,8 @@ public static class StartupPolicy
             StartupDecisionKind.HostMissing,
             ExitLegacyDataUnavailable,
             "Dismode nie mógł przenieść danych poprzedniej wersji (GameShift): "
-            + "baza profili albo dziennik recovery są w użyciu."
+            + "baza profili albo dziennik recovery są w użyciu albo nie dały "
+            + "się przenieść w całości."
             + Environment.NewLine
             + Environment.NewLine
             + string.Join(Environment.NewLine, problems.Take(5))
@@ -155,6 +162,26 @@ public static class StartupPolicy
             ExitHostStartFailed,
             "Nie udało się uruchomić Dismode.SessionHost: " + reason);
     }
+
+    /// <summary>
+    /// The host started, then quit with a code instead of opening its pipe.
+    /// Its own refusal (previous release running, migration blocked) is the
+    /// same situation the window reports before starting it.
+    /// </summary>
+    public static StartupDecision HostRefused(int exitCode) =>
+        exitCode == HostExitRefused
+            ? new(
+                StartupDecisionKind.StartHost,
+                ExitLegacyDataUnavailable,
+                "Dismode.SessionHost odmówił startu: działa jeszcze poprzednia "
+                + "wersja programu (GameShift) albo jej dane nie mogły zostać "
+                + "przeniesione w całości. Zamknij GameShift i programy, które "
+                + "trzymają jego pliki, i uruchom Dismode ponownie.")
+            : new(
+                StartupDecisionKind.StartHost,
+                ExitHostStartFailed,
+                $"Dismode.SessionHost zakończył się kodem {exitCode}, zanim "
+                + "otworzył połączenie.");
 
     /// <summary>
     /// A background start without a game asks nothing of the running window;

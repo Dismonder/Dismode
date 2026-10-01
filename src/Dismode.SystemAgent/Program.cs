@@ -35,9 +35,24 @@ if (args.Contains("--diagnostics", StringComparer.OrdinalIgnoreCase))
 
 // Instalator przenosi katalog maszyny przed startem uslugi; to jest zapas
 // na wypadek, gdyby tamten krok sie nie udal.
+bool legacyMachineDataPresent = Directory.Exists(
+    LegacyStorageMigration.LegacyMachineDataDirectory);
 foreach (string problem in LegacyStorageMigration.MigrateMachineData().Problems)
 {
     Console.Error.WriteLine($"Migracja danych GameShift: {problem}");
+}
+
+if (legacyMachineDataPresent)
+{
+    // Pliki przejete tutaj, a nie przez instalator, przynosza wlasciciela
+    // i jawne wpisy ACL sprzed zmiany nazwy, a instalator juz ich nie
+    // zresetuje. Shared zachowuje swoj wpis dla Users; dzieci dziedzicza.
+    foreach (string problem in MachineDataAccessControl.ResetChildrenToInherited(
+                 DismodeStoragePaths.MachineDataDirectory,
+                 Path.Combine(DismodeStoragePaths.MachineDataDirectory, "Shared")))
+    {
+        Console.Error.WriteLine($"Uprawnienia danych maszyny: {problem}");
+    }
 }
 
 WebApplicationBuilder builder = WebApplication.CreateBuilder(args);

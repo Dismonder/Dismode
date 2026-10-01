@@ -114,9 +114,10 @@ internal static class StartupGate
                 return decision.ExitCode;
         }
 
+        Process host;
         try
         {
-            StartElevated(hostPath, baseDirectory);
+            host = StartElevated(hostPath, baseDirectory);
         }
         catch (Win32Exception exception)
             when (exception.NativeErrorCode == ErrorCancelled)
@@ -140,7 +141,29 @@ internal static class StartupGate
 
         // Host rejestruje rure w ulamku sekundy, ale okno pokazane
         // wczesniej zaczeloby od komunikatu „usluga niedostepna".
-        WaitForPipe(PipeNames.ForUser(userSid), PipeWait);
+        using (host)
+        {
+            try
+            {
+                if (!WaitForPipe(PipeNames.ForUser(userSid), host, PipeWait)
+                    && host.HasExited
+                    && host.ExitCode != 0)
+                {
+                    // Host sprawdzil to samo co my, tylko pozniej: GameShift
+                    // mogl wystartowac w miedzyczasie albo migracja utknela.
+                    StartupDecision refused =
+                        StartupPolicy.HostRefused(host.ExitCode);
+                    ShowError(refused.Message ?? string.Empty);
+                    return refused.ExitCode;
+                }
+            }
+            catch (Exception exception) when (
+                exception is Win32Exception or InvalidOperationException)
+            {
+                // Uchwyt bez prawa odczytu stanu: okno rozstrzygnie po rurze.
+            }
+        }
+
         return null;
     }
 
@@ -264,7 +287,7 @@ internal static class StartupGate
         return null;
     }
 
-    private static void StartElevated(string hostPath, string workingDirectory)
+    private static Process StartElevated(string hostPath, string workingDirectory)
     {
         ProcessStartInfo startInfo = new()
         {
@@ -274,12 +297,19 @@ internal static class StartupGate
             Verb = "runas",
             WindowStyle = ProcessWindowStyle.Hidden,
         };
-        using Process started = Process.Start(startInfo)
+        return Process.Start(startInfo)
             ?? throw new InvalidOperationException(
                 "Windows nie uruchomił Dismode.SessionHost.");
     }
 
-    private static void WaitForPipe(string pipeName, TimeSpan timeout)
+    /// <summary>
+    /// True once the host's pipe exists; false when the host quit first or
+    /// the wait ran out.
+    /// </summary>
+    private static bool WaitForPipe(
+        string pipeName,
+        Process host,
+        TimeSpan timeout)
     {
         DateTimeOffset deadline = DateTimeOffset.UtcNow + timeout;
         string expected = @"\\.\pipe\" + pipeName;
@@ -290,7 +320,7 @@ internal static class StartupGate
                 if (Directory.GetFiles(@"\\.\pipe\").Any(pipe =>
                         StringComparer.OrdinalIgnoreCase.Equals(pipe, expected)))
                 {
-                    return;
+                    return true;
                 }
             }
             catch (Exception exception) when (
@@ -298,8 +328,15 @@ internal static class StartupGate
             {
             }
 
+            if (host.HasExited)
+            {
+                return false;
+            }
+
             Thread.Sleep(250);
         }
+
+        return false;
     }
 
     private static string TrimSeparator(string path) =>
