@@ -134,28 +134,43 @@ public static class ProcessClassificationService
         }
 
         if (!string.IsNullOrWhiteSpace(executablePath)
-            && !string.IsNullOrWhiteSpace(gameExecutablePath)
-            && StringComparer.OrdinalIgnoreCase.Equals(
-                Path.GetFullPath(executablePath),
-                Path.GetFullPath(gameExecutablePath)))
+            && !string.IsNullOrWhiteSpace(gameExecutablePath))
         {
-            return new(
-                ProcessSafetyClassification.GameInfrastructure,
-                "Główny proces wybranej gry.",
-                "Monitoruj; priorytet zmieniaj wyłącznie ręcznie");
-        }
+            string processFullPath = Path.GetFullPath(executablePath);
+            string gameFullPath = Path.GetFullPath(gameExecutablePath);
+            ProcessClassification? asGame =
+                ClassifyAgainstGame(processFullPath, gameFullPath);
+            if (asGame is null)
+            {
+                // Sciezka procesu przychodzi z jadra z rozwiazanymi
+                // junctionami, sciezka z biblioteki nie: przeniesiona
+                // biblioteka Steam zostawia te dwie postacie rozne.
+                // Otwarcie pliku gry kosztuje, wiec placimy za nie dopiero
+                // wtedy, gdy porownanie tekstu niczego nie rozstrzygnelo.
+                ResolvedGamePaths resolved = ResolveGamePaths(gameFullPath);
+                if (!StringComparer.OrdinalIgnoreCase.Equals(
+                        resolved.ExecutablePath,
+                        gameFullPath))
+                {
+                    asGame = ClassifyAgainstGame(
+                        processFullPath,
+                        resolved.ExecutablePath);
+                }
 
-        if (!string.IsNullOrWhiteSpace(executablePath)
-            && !string.IsNullOrWhiteSpace(gameExecutablePath)
-            && IsWithinDirectory(
-                Path.GetFullPath(executablePath),
-                GetGameInstallationRoot(gameExecutablePath)))
-        {
-            return new(
-                ProcessSafetyClassification.GameInfrastructure,
-                "Proces pochodzi z katalogu instalacyjnego wybranej gry "
-                + "i może być jej składnikiem pomocniczym.",
-                "Pozostaw podczas gry");
+                // Junction na samym katalogu gry: za nim znacznik biblioteki
+                // (steamapps\common) juz nie wystepuje, wiec root wyprowadzony
+                // z rozwiazanej sciezki EXE bylby za waski na helpery obok
+                // katalogu z EXE. Root z biblioteki, rozwiazany osobno, je
+                // obejmuje.
+                asGame ??= ClassifyWithinInstallation(
+                    processFullPath,
+                    resolved.InstallationRoot);
+            }
+
+            if (asGame is not null)
+            {
+                return asGame;
+            }
         }
 
         if (string.IsNullOrWhiteSpace(executablePath)
@@ -202,6 +217,97 @@ public static class ProcessClassificationService
             "Zwykły proces bieżącego użytkownika, niezależny od znanej "
             + "infrastruktury gry.",
             "Decyzja użytkownika");
+    }
+
+    /// <summary>
+    /// The verdict for a process that turns out to belong to the selected
+    /// game, or null when its path says nothing about it. Both paths have to
+    /// be in the same form — both as written down, or both resolved — or the
+    /// comparison is between a junction and what lies behind it.
+    /// </summary>
+    private static ProcessClassification? ClassifyAgainstGame(
+        string processFullPath,
+        string gameFullPath)
+    {
+        if (StringComparer.OrdinalIgnoreCase.Equals(
+                processFullPath,
+                gameFullPath))
+        {
+            return new(
+                ProcessSafetyClassification.GameInfrastructure,
+                "Główny proces wybranej gry.",
+                "Monitoruj; priorytet zmieniaj wyłącznie ręcznie");
+        }
+
+        return ClassifyWithinInstallation(
+            processFullPath,
+            GetGameInstallationRoot(gameFullPath));
+    }
+
+    private static ProcessClassification? ClassifyWithinInstallation(
+        string processFullPath,
+        string installationRoot) =>
+        IsWithinDirectory(processFullPath, installationRoot)
+            ? new(
+                ProcessSafetyClassification.GameInfrastructure,
+                "Proces pochodzi z katalogu instalacyjnego wybranej gry "
+                + "i może być jej składnikiem pomocniczym.",
+                "Pozostaw podczas gry")
+            : null;
+
+    private sealed record ResolvedGamePaths(
+        string ExecutablePath,
+        string InstallationRoot,
+        DateTimeOffset ResolvedAtUtc);
+
+    private static readonly TimeSpan ResolvedGamePathsLifetime =
+        TimeSpan.FromSeconds(30);
+
+    private const int ResolvedGamePathsCapacity = 16;
+
+    private static readonly Lock ResolvedGamePathsLock = new();
+
+    private static readonly Dictionary<string, ResolvedGamePaths>
+        ResolvedGamePathsCache = new(StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>
+    /// The library path of the game and its installation root with junctions
+    /// resolved. Resolving opens the file, and classification walks hundreds
+    /// of processes per scan, so one game is resolved once per half-minute
+    /// rather than once per process; on a disconnected share a single open
+    /// can wait for seconds, and without this every process would.
+    /// </summary>
+    private static ResolvedGamePaths ResolveGamePaths(string gameFullPath)
+    {
+        DateTimeOffset now = DateTimeOffset.UtcNow;
+        lock (ResolvedGamePathsLock)
+        {
+            if (ResolvedGamePathsCache.TryGetValue(
+                    gameFullPath,
+                    out ResolvedGamePaths? cached)
+                && now - cached.ResolvedAtUtc < ResolvedGamePathsLifetime)
+            {
+                return cached;
+            }
+        }
+
+        ResolvedGamePaths resolved = new(
+            ExecutablePathIdentity.ResolveFinalPathOrSelf(gameFullPath),
+            ExecutablePathIdentity.ResolveFinalPathOrSelf(
+                GetGameInstallationRoot(gameFullPath)),
+            now);
+        lock (ResolvedGamePathsLock)
+        {
+            if (ResolvedGamePathsCache.Count >= ResolvedGamePathsCapacity
+                && !ResolvedGamePathsCache.ContainsKey(gameFullPath))
+            {
+                ResolvedGamePathsCache.Clear();
+            }
+
+            ResolvedGamePathsCache[gameFullPath] = resolved;
+        }
+
+        return resolved;
     }
 
     private static bool IsWithinDirectory(

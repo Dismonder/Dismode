@@ -4495,13 +4495,16 @@ public sealed partial class MainWindow : Window, IDisposable
                             // Host dolacza po tej samej sciezce.
                             string? processExecutablePath =
                                 ProcessImagePath.TryRead(process);
+                            // Porownanie po pliku, nie po tekscie: biblioteka
+                            // przeniesiona junctionem zapisuje inna sciezke,
+                            // niz raportuje jadro, a bez potwierdzonej
+                            // sciezki automat nigdy nie dolaczy.
                             ProfileListItem? exact = processExecutablePath is null
                                 ? null
                                 : candidates.FirstOrDefault(candidate =>
-                                    string.Equals(
+                                    ExecutablePathIdentity.AreSameExecutable(
                                         processExecutablePath,
-                                        candidate.ExecutablePath,
-                                        StringComparison.OrdinalIgnoreCase));
+                                        candidate.ExecutablePath));
                             if (matched is null)
                             {
                                 matched = exact ?? candidates[0];
@@ -4987,10 +4990,9 @@ public sealed partial class MainWindow : Window, IDisposable
                     // pomijanie ma byc ostrozne, nie dokladne.
                     string? path = ProcessImagePath.TryRead(process);
                     if (path is not null
-                        && !string.Equals(
+                        && !ExecutablePathIdentity.AreSameExecutable(
                             path,
-                            executablePath,
-                            StringComparison.OrdinalIgnoreCase))
+                            executablePath))
                     {
                         continue;
                     }

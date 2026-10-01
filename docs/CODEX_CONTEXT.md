@@ -114,9 +114,48 @@ zaliczone (7 pominięte; +4 Recovery, +1 Unit), `dotnet format
 Wydanie 0.8.0 (2026-10-01): `<Version>` w `Directory.Build.props` podbity
 do 0.8.0 w tym samym commicie, PR #5 scalony do `main`.
 
-Następne kroki: pierwsza instalacja Dismode obok zainstalowanego GameShift
-to pierwszy żywy test migracji (w tym ścieżki kodu 9 → komunikat UI);
-`wrangler deploy` nowego adresu update-service; podpisana paczka 0.8.0.
+Walidacja wydania 0.8.0 (2026-10-01, `main` = 7c202e9):
+`tools/Build-LocalRelease.ps1 -SkipTests -AllowTestCodeSigningCertificate`
+z certyfikatem testowym „GameShift Development" (B78D…63A5) przeszła
+do końca: `artifacts/Dismode-App` (206 MB), `Dismode.exe`, `Dismode.UI.exe`,
+`Dismode.SessionHost.exe`, `Dismode.SystemAgent.exe` w wersji
+`0.8.0-gaming-edition+7c202e9…`, podpisy Authenticode `Valid`; sparse
+package `ShellIntegration/Dismode.Sparse.msix` podpisany nowym certyfikatem
+deweloperskim (E853…BEA3, status `UnknownError` = brak zaufanego łańcucha,
+oczekiwane poza instalacją produkcyjną). `Build-Installer.ps1` wymaga
+produkcyjnego odcisku (`DISMODE_RELEASE_SIGNING_THUMBPRINT`), więc paczka
+instalatora 0.8.0 czeka na certyfikat.
+
+PR #4 (`fix/canonical-executable-paths`, gra rozpoznawana po pliku, nie po
+tekście ścieżki) scalony z `main` po zmianie nazwy: cztery nowe pliki
+przeniesione do `src/Dismode.Windows/Processes` i
+`tests/Dismode.IntegrationTests/Processes`, przestrzenie nazw i nazwy
+produktu w nich zmienione na Dismode; pozostałe pliki scaliły się
+automatycznie. Weryfikacja: build 0/0, testy 582 zaliczone (7 pominięte;
++12 Integration z PR), `dotnet format --verify-no-changes` czysto.
+
+Recenzja Codex 6.1 PR #4 (2026-10-01) i poprawki:
+- naprawione: junction na samym katalogu gry (`steamapps\common\Gra` →
+  `D:\Gra`) gubił znacznik biblioteki, więc root wyprowadzony z rozwiązanej
+  ścieżki EXE obejmował tylko podkatalog `bin` — teraz root z biblioteki jest
+  rozwiązywany osobno (`ResolvedGamePaths.InstallationRoot`); rozwiązanie
+  ścieżki gry i rootu trzymane w pamięci podręcznej 30 s / 16 wpisów
+  (`ResolveGamePaths`), zamiast otwierać plik gry przy każdym nietrafionym
+  procesie skanu (na odłączonym udziale każde otwarcie czeka sekundy).
+  Test `AHelperBesideTheExecutableDirectoryIsRecognisedThroughAGameDirectoryJunction`.
+- świadomie bez zmian (zachowanie identyczne jak przed PR): nierozstrzygnięta
+  tożsamość (brak dostępu, wolumen bez litery) = brak dopasowania; hard-linki
+  do tego samego EXE w różnych katalogach; katalogi NTFS z rozróżnianiem
+  wielkości liter; alias-symlink o innej nazwie EXE odpada na filtrze nazwy
+  procesu.
+
+Weryfikacja PR #4 po poprawkach: build 0/0, testy 583 zaliczone
+(7 pominięte), `dotnet format --verify-no-changes` czysto.
+
+Następne kroki: pierwsza instalacja Dismode obok
+zainstalowanego GameShift to pierwszy żywy test migracji (w tym ścieżki
+kodu 9 → komunikat UI); `wrangler deploy` nowego adresu update-service;
+instalator 0.8.0 po podaniu produkcyjnego certyfikatu.
 
 ### Memory Optimizer — bieżąca poprawka panelu tray (2026-09-05)
 
@@ -477,9 +516,21 @@ zakończyła się kodem 0: build Release bez ostrzeżeń, format bez zmian i
     `GameOptimizationPreferences.AutoOptimizeWhenDetected` (schemat 13,
     pole na stronie planu, zapis od razu) jak czarna lista Feral GameMode
     i wyłączenie wstrzykiwania per gra w Special K; podpowiedź ikony
-    z nazwą gry aktywnej sesji. Kandydat nie wdrożony: porównywanie
-    ścieżek po rozwiązaniu junctionów/symlinków (Playnite #913,
-    `GetFinalPathNameByHandle`) — dotyka tożsamości procesu w hoście.
+    z nazwą gry aktywnej sesji.
+  - Ścieżki kanoniczne (29.09, Playnite #913): `ExecutablePathIdentity`
+    (`Dismode.Windows/Processes`) porównuje ścieżkę z biblioteki ze
+    ścieżką, którą dla procesu podaje jądro — najpierw tekstem, a dopiero
+    gdy ten się różni, przez `GetFinalPathNameByHandle` na uchwycie bez
+    żadnego dostępu (działa na otwartym pliku gry). Biblioteka Steam
+    przeniesiona junctionem zapisuje ścieżkę przed dowiązaniem, a
+    `QueryFullProcessImageName` podaje ścieżkę za nim, więc samo porównanie
+    tekstu mówiło „to nie ta gra". Podpięte w `ProcessClassificationService`
+    (główny proces gry i składniki z katalogu instalacyjnego — bez tego
+    trafiały między aplikacje tła), `BackgroundApplicationGuard`,
+    `ManualGameProfileLauncher` (dołączanie i `EnsureMatchesProfile`;
+    o treści pliku i tak rozstrzyga SHA-256) oraz w skanie automatu i
+    liście pomijanych egzemplarzy w `MainWindow`. Koszt: jedno otwarcie
+    pliku i tylko wtedy, gdy porównanie tekstu zawiodło.
   - `TrayIconService`: pozycja menu z zaznaczeniem „Automatycznie optymalizuj
     wykryte gry", podpowiedź ikony mówi, czy automat czuwa.
   - `StartSessionRequest.attach_only` → `LocalGameSessionOrchestrator` →
