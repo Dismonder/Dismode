@@ -22,6 +22,7 @@ public sealed class PresentMonFrameRateProvider : IFrameRateProvider
 
     private readonly string _executablePath;
     private readonly string _sessionName;
+    private readonly string _legacySessionName;
     private readonly bool _trackGpu;
     private readonly TimeProvider _timeProvider;
     private readonly SemaphoreSlim _lifecycleGate = new(1, 1);
@@ -48,8 +49,9 @@ public sealed class PresentMonFrameRateProvider : IFrameRateProvider
         _executablePath = Path.GetFullPath(
             executablePath
             ?? PresentMonComponent.ResolveDefaultExecutablePath());
-        _sessionName = CreateCaptureSessionName(
-            GetCurrentUserIdentityKey());
+        string identityKey = GetCurrentUserIdentityKey();
+        _sessionName = CreateCaptureSessionName(identityKey);
+        _legacySessionName = CreateLegacyCaptureSessionName(identityKey);
         _trackGpu = false;
         _timeProvider = timeProvider ?? TimeProvider.System;
     }
@@ -64,6 +66,8 @@ public sealed class PresentMonFrameRateProvider : IFrameRateProvider
             captureSessionIdentityKey);
         _executablePath = Path.GetFullPath(executablePath);
         _sessionName = CreateCaptureSessionName(
+            captureSessionIdentityKey);
+        _legacySessionName = CreateLegacyCaptureSessionName(
             captureSessionIdentityKey);
         _trackGpu = trackGpu;
         _timeProvider = timeProvider ?? TimeProvider.System;
@@ -424,8 +428,14 @@ public sealed class PresentMonFrameRateProvider : IFrameRateProvider
         // zatrzymywana przez nikogo i przezywala kazdy restart. Zmierzone
         // dzis: cztery kolejne pomiary zwrocily zero klatek, dopoki nie
         // zatrzymalem sesji recznie przez logman.
+        // Wydania sprzed zmiany nazwy budowaly te sama nazwe z prefiksem
+        // GameShift; ich sierota tak samo zjada klatki kazdemu pomiarowi.
         IReadOnlyList<string> stopped = EtwSessionCleanup.StopStaleSessions(
-            [.. EtwSessionCleanup.LegacySessionNames, _sessionName]);
+            [
+                .. EtwSessionCleanup.LegacySessionNames,
+                _legacySessionName,
+                _sessionName,
+            ]);
         if (stopped.Count > 0)
         {
             lock (_observationSync)
@@ -1156,12 +1166,25 @@ public sealed class PresentMonFrameRateProvider : IFrameRateProvider
     }
 
     internal static string CreateCaptureSessionName(
+        string userIdentityKey) =>
+        CreateCaptureSessionName("Dismode", userIdentityKey);
+
+    /// <summary>
+    /// The name releases published as GameShift gave the same user's
+    /// session. Stopped alongside the current name, never created.
+    /// </summary>
+    internal static string CreateLegacyCaptureSessionName(
+        string userIdentityKey) =>
+        CreateCaptureSessionName("GameShift", userIdentityKey);
+
+    private static string CreateCaptureSessionName(
+        string productPrefix,
         string userIdentityKey)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(userIdentityKey);
         byte[] hash = SHA256.HashData(
             Encoding.UTF8.GetBytes(userIdentityKey));
-        return $"Dismode-{Convert.ToHexString(hash.AsSpan(0, 8))}";
+        return $"{productPrefix}-{Convert.ToHexString(hash.AsSpan(0, 8))}";
     }
 
     private void ThrowIfDisposed() =>

@@ -1,3 +1,15 @@
+# Koncowki linii sa przypiete w repozytorium, a nie w ustawieniach gita na
+# danej maszynie. Bez tego core.autocrlf=true (domyslne w Git for Windows)
+# wystawia pliki z CRLF, a .editorconfig wymaga LF: dotnet format
+# --verify-no-changes zglasza wtedy kazda linie i zatrzymuje skrypty wydania.
+* text=auto eol=lf
+
 # Hooki musza miec koncowki LF, inaczej shebang nie zadziala po klonie
 # na Windows z core.autocrlf=true.
 .githooks/** text eol=lf
+
+# Pliki binarne; czesc z nich jest przypieta suma SHA-256 albo podpisem.
+*.png binary
+*.ico binary
+*.exe binary
+*.bin binary

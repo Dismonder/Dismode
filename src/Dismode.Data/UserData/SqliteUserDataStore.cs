@@ -20,7 +20,7 @@ public sealed class SqliteUserDataStore :
     IGlobalBackgroundRuleRepository,
     IDisposable
 {
-    private const int CurrentSchemaVersion = 14;
+    private const int CurrentSchemaVersion = 15;
     private const int MaximumGlobalRuleCount = 128;
     private const int MaximumHistoryPageSize = 1000;
 
@@ -34,11 +34,14 @@ public sealed class SqliteUserDataStore :
     {
         _databasePath = Path.GetFullPath(
             databasePath ?? DismodeStoragePaths.UserDatabasePath);
+        // Bez Cache=Shared: baza pracuje w trybie WAL, a wspolny cache daje
+        // w nim blokady na poziomie tabel miedzy polaczeniami jednego procesu
+        // (SQLITE_LOCKED) zamiast zwyklego czekania na zapis. SQLite opisuje
+        // ten tryb jako przestarzaly i odradza laczenie go z WAL.
         _connectionString = new SqliteConnectionStringBuilder
         {
             DataSource = _databasePath,
             Mode = SqliteOpenMode.ReadWriteCreate,
-            Cache = SqliteCacheMode.Shared,
             ForeignKeys = true,
             Pooling = false,
         }.ToString();
@@ -1184,30 +1187,72 @@ public sealed class SqliteUserDataStore :
                 .ConfigureAwait(false);
         }
 
-        int existingVersion;
-        await using (SqliteCommand versionQuery = connection.CreateCommand())
+        // Interfejs i SessionHost startuja razem i otwieraja te sama baze.
+        // Oba czytaja wersje przed swoja transakcja, wiec po aktualizacji
+        // programu oba moga zaczac ten sam krok; wygrywa jeden, a wiersz
+        // w SchemaMigrations (klucz glowny) cofa transakcje drugiego. Przegrany
+        // nie moze z tego powodu pasc przy starcie: czyta wersje od nowa
+        // i idzie dalej od miejsca, w ktorym baza juz jest.
+        while (true)
         {
-            versionQuery.CommandText =
-                "SELECT COALESCE(MAX(Version), 0) FROM SchemaMigrations;";
-            object? scalar = await versionQuery
-                .ExecuteScalarAsync(cancellationToken)
+            int existingVersion = await ReadSchemaVersionAsync(
+                    connection,
+                    cancellationToken)
                 .ConfigureAwait(false);
-            existingVersion = Convert.ToInt32(
-                scalar,
-                CultureInfo.InvariantCulture);
-        }
+            if (existingVersion > CurrentSchemaVersion)
+            {
+                throw new InvalidDataException(
+                    "The user database was created by a newer Dismode version.");
+            }
 
-        if (existingVersion > CurrentSchemaVersion)
-        {
-            throw new InvalidDataException(
-                "The user database was created by a newer Dismode version.");
-        }
+            if (existingVersion == CurrentSchemaVersion)
+            {
+                return;
+            }
 
-        if (existingVersion == CurrentSchemaVersion)
-        {
-            return;
+            try
+            {
+                await ApplyMigrationsAsync(
+                        connection,
+                        existingVersion,
+                        cancellationToken)
+                    .ConfigureAwait(false);
+                return;
+            }
+            catch (SqliteException)
+            {
+                // Ponawiamy tylko wtedy, gdy ktos inny posunal baze naprzod;
+                // blad przy niezmienionej wersji jest prawdziwym bledem.
+                int versionAfterFailure = await ReadSchemaVersionAsync(
+                        connection,
+                        cancellationToken)
+                    .ConfigureAwait(false);
+                if (versionAfterFailure <= existingVersion)
+                {
+                    throw;
+                }
+            }
         }
+    }
 
+    private static async ValueTask<int> ReadSchemaVersionAsync(
+        SqliteConnection connection,
+        CancellationToken cancellationToken)
+    {
+        await using SqliteCommand versionQuery = connection.CreateCommand();
+        versionQuery.CommandText =
+            "SELECT COALESCE(MAX(Version), 0) FROM SchemaMigrations;";
+        object? scalar = await versionQuery
+            .ExecuteScalarAsync(cancellationToken)
+            .ConfigureAwait(false);
+        return Convert.ToInt32(scalar, CultureInfo.InvariantCulture);
+    }
+
+    private static async ValueTask ApplyMigrationsAsync(
+        SqliteConnection connection,
+        int existingVersion,
+        CancellationToken cancellationToken)
+    {
         if (existingVersion < 1)
         {
             await using SqliteTransaction transaction =
@@ -1786,6 +1831,63 @@ public sealed class SqliteUserDataStore :
             await transaction.CommitAsync(cancellationToken)
                 .ConfigureAwait(false);
             existingVersion = 14;
+        }
+
+        if (existingVersion < 15)
+        {
+            // Migracja 3 dopuscila w regulach gry tryby 1–4. Pelny pakiet tla
+            // (5) doszedl pozniej w kodzie i w tabeli regul globalnych, ale
+            // nie tutaj, wiec zapis planu z tym trybem konczyl sie bledem
+            // CHECK i zadna regula tej gry nie trafiala do bazy. Reguly bez
+            // profilu (klucz obcy) nie sa przenoszone: i tak sa nieosiagalne,
+            // a jedna taka zatrzymalaby cala migracje.
+            await using SqliteTransaction transaction =
+                (SqliteTransaction)await connection
+                    .BeginTransactionAsync(
+                        IsolationLevel.Serializable,
+                        cancellationToken)
+                    .ConfigureAwait(false);
+            await using SqliteCommand schema = connection.CreateCommand();
+            schema.Transaction = transaction;
+            schema.CommandText =
+                """
+                CREATE TABLE BackgroundProcessRulesV15 (
+                    ProfileId TEXT NOT NULL,
+                    ExecutablePath TEXT NOT NULL COLLATE NOCASE,
+                    ActionMode INTEGER NOT NULL
+                        CHECK (ActionMode IN (1, 2, 3, 4, 5)),
+                    UpdatedAtUtc TEXT NOT NULL,
+                    PRIMARY KEY (ProfileId, ExecutablePath),
+                    FOREIGN KEY (ProfileId)
+                        REFERENCES GameProfiles(ProfileId)
+                        ON DELETE CASCADE
+                );
+
+                INSERT INTO BackgroundProcessRulesV15 (
+                    ProfileId, ExecutablePath, ActionMode, UpdatedAtUtc)
+                SELECT ProfileId, ExecutablePath, ActionMode, UpdatedAtUtc
+                FROM BackgroundProcessRules
+                WHERE ProfileId IN (SELECT ProfileId FROM GameProfiles);
+
+                DROP INDEX IX_BackgroundProcessRules_ProfileId;
+                DROP TABLE BackgroundProcessRules;
+                ALTER TABLE BackgroundProcessRulesV15
+                    RENAME TO BackgroundProcessRules;
+
+                CREATE INDEX IX_BackgroundProcessRules_ProfileId
+                    ON BackgroundProcessRules(ProfileId);
+
+                INSERT INTO SchemaMigrations (Version, AppliedAtUtc)
+                VALUES (15, $appliedAtUtc);
+                """;
+            schema.Parameters.AddWithValue(
+                "$appliedAtUtc",
+                FormatTimestamp(DateTimeOffset.UtcNow));
+            await schema.ExecuteNonQueryAsync(cancellationToken)
+                .ConfigureAwait(false);
+            await transaction.CommitAsync(cancellationToken)
+                .ConfigureAwait(false);
+            existingVersion = 15;
         }
     }
 

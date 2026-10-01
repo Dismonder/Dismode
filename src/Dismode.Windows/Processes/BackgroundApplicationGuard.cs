@@ -291,8 +291,37 @@ public sealed class BackgroundApplicationGuard
         !string.IsNullOrWhiteSpace(processName)
         && (ProtectedProcessNames.Contains(processName)
             || ProtectedLauncherNames.Contains(processName)
+            || IsOwnComponent(processName)
             || IsMeasurementComponent(processName)
             || LooksLikeAntiCheat(processName));
+
+    /// <summary>
+    /// Dismode's own components beyond the session ones listed above: the
+    /// Memory Optimizer tray and service and the System Optimizer window are
+    /// never restrained by the reactive loop or the sweep either. The same
+    /// names of releases published as GameShift stay here because their
+    /// service and tray keep running next to a fresh Dismode until the
+    /// installer replaces them. The process test harness is deliberately
+    /// absent: tests act on it as an ordinary process.
+    /// </summary>
+    private static readonly HashSet<string> OwnComponentNames =
+        new(StringComparer.OrdinalIgnoreCase)
+        {
+            "Dismode.MemoryOptimizer",
+            "Dismode.MemoryService",
+            "Dismode.SystemOptimizer",
+            "GameShift",
+            "GameShift.Launcher",
+            "GameShift.MemoryOptimizer",
+            "GameShift.MemoryService",
+            "GameShift.SessionHost",
+            "GameShift.SystemAgent",
+            "GameShift.SystemOptimizer",
+            "GameShift.UI",
+        };
+
+    private static bool IsOwnComponent(string processName) =>
+        OwnComponentNames.Contains(processName);
 
     /// <summary>
     /// Anti-cheat by fragment of name, for the components the fixed lists
@@ -348,7 +377,8 @@ public sealed class BackgroundApplicationGuard
 
     private static void EnsureNameAllowed(string processName)
     {
-        if (ProtectedProcessNames.Contains(processName))
+        if (ProtectedProcessNames.Contains(processName)
+            || IsOwnComponent(processName))
         {
             throw new InvalidOperationException(
                 $"Proces „{processName}” jest chronionym elementem Windows lub Dismode.");

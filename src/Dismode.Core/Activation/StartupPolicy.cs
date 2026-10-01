@@ -51,6 +51,53 @@ public static class StartupPolicy
     public const int ExitForeignHost = 3;
     public const int ExitElevationDeclined = 4;
     public const int ExitHostStartFailed = 5;
+    public const int ExitLegacyProductRunning = 6;
+    public const int ExitLegacyDataUnavailable = 7;
+
+    /// <summary>
+    /// A component of the release published as GameShift is still running in
+    /// this session. It has the same job and, until the first Dismode start
+    /// moves it, the same data directory; the two would fight over both.
+    /// </summary>
+    public static StartupDecision LegacyProductRunning(string executablePath)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(executablePath);
+        return new(
+            StartupDecisionKind.ForeignHostRunning,
+            ExitLegacyProductRunning,
+            "Działa jeszcze poprzednia wersja programu (GameShift):"
+            + Environment.NewLine
+            + executablePath
+            + Environment.NewLine
+            + Environment.NewLine
+            + "Dismode przejmie jej profile, historię i dziennik dopiero po "
+            + "jej zamknięciu. Zamknij GameShift (ikona w zasobniku → "
+            + "Wyłącz GameShift) i uruchom Dismode ponownie.");
+    }
+
+    /// <summary>
+    /// The user database or the recovery journal of the release published as
+    /// GameShift could not be moved, and Dismode has none of its own yet.
+    /// Starting anyway would show an empty program next to the real data.
+    /// </summary>
+    public static StartupDecision LegacyDataUnavailable(
+        IReadOnlyList<string> problems)
+    {
+        ArgumentNullException.ThrowIfNull(problems);
+        return new(
+            StartupDecisionKind.HostMissing,
+            ExitLegacyDataUnavailable,
+            "Dismode nie mógł przenieść danych poprzedniej wersji (GameShift): "
+            + "baza profili albo dziennik recovery są w użyciu."
+            + Environment.NewLine
+            + Environment.NewLine
+            + string.Join(Environment.NewLine, problems.Take(5))
+            + Environment.NewLine
+            + Environment.NewLine
+            + "Zamknij programy, które trzymają te pliki (także poprzednią "
+            + "wersję GameShift), i uruchom Dismode ponownie. Bez tego "
+            + "Dismode zaczynałby od pustej biblioteki.");
+    }
 
     public static StartupDecision Decide(StartupObservation observation)
     {

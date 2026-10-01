@@ -31,6 +31,35 @@ public sealed class SystemOptimizerReleaseContractTests
     }
 
     [TestMethod]
+    public void InstallerHardensTheMachineDataDirectoryBeforeStartingTheAgent()
+    {
+        // Usluga LocalSystem czyta z tego katalogu dziennik, baze i liste
+        // zaufanych podpisow. Odziedziczony ACL ProgramData pozwala kazdemu
+        // tworzyc tam pliki, wiec instalator musi go zastapic wlasnym, a
+        // Shared zostawic do zapisu dla interfejsu bez uprawnien.
+        string serviceInstaller = ReadRepositoryFile(
+            "installer",
+            "system-agent",
+            "Install-SystemAgent.ps1");
+
+        StringAssert.Contains(serviceInstaller, "/setowner \"*S-1-5-32-544\"");
+        StringAssert.Contains(serviceInstaller, "/inheritance:r");
+        StringAssert.Contains(serviceInstaller, "\"*S-1-5-18:(OI)(CI)F\"");
+        StringAssert.Contains(serviceInstaller, "\"*S-1-5-32-544:(OI)(CI)F\"");
+        StringAssert.Contains(serviceInstaller, "\"*S-1-5-32-545:(OI)(CI)RX\"");
+        StringAssert.Contains(serviceInstaller, "\"*S-1-5-32-545:(OI)(CI)M\"");
+        int hardening = serviceInstaller.IndexOf(
+            "/inheritance:r",
+            StringComparison.Ordinal);
+        int start = serviceInstaller.IndexOf(
+            "Start-Service -Name $serviceName",
+            StringComparison.Ordinal);
+        Assert.IsTrue(
+            hardening >= 0 && start > hardening,
+            "Uprawnienia musza byc ustawione, zanim usluga wystartuje.");
+    }
+
+    [TestMethod]
     public void InstallerFailsClosedWhenSystemAgentServiceScriptsFail()
     {
         string installer = ReadRepositoryFile("installer", "Dismode.iss");

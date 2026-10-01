@@ -93,8 +93,43 @@ public sealed class StartupPolicyTests
             StartupPolicy.ExitForeignHost,
             StartupPolicy.ExitElevationDeclined,
             StartupPolicy.ExitHostStartFailed,
+            StartupPolicy.ExitLegacyProductRunning,
+            StartupPolicy.ExitLegacyDataUnavailable,
         ];
-        Assert.HasCount(5, codes, "Kody wyjscia maja byc rozne.");
+        Assert.HasCount(7, codes, "Kody wyjscia maja byc rozne.");
+    }
+
+    [TestMethod]
+    public void RunningLegacyProductStopsTheWindowAndNamesTheExecutable()
+    {
+        StartupDecision decision = StartupPolicy.LegacyProductRunning(
+            @"C:\Program Files\GameShift\GameShift.UI.exe");
+
+        Assert.AreEqual(
+            StartupDecisionKind.ForeignHostRunning,
+            decision.Kind);
+        Assert.AreEqual(
+            StartupPolicy.ExitLegacyProductRunning,
+            decision.ExitCode);
+        Assert.IsNotNull(decision.Message);
+        Assert.Contains(
+            @"C:\Program Files\GameShift\GameShift.UI.exe",
+            decision.Message);
+        Assert.Contains("GameShift", decision.Message);
+    }
+
+    [TestMethod]
+    public void UnavailableLegacyDataStopsTheWindowAndListsTheProblems()
+    {
+        StartupDecision decision = StartupPolicy.LegacyDataUnavailable(
+            [@"C:\Users\x\AppData\Local\GameShift\gameshift-user.db: in use"]);
+
+        Assert.AreEqual(
+            StartupPolicy.ExitLegacyDataUnavailable,
+            decision.ExitCode);
+        Assert.IsNotNull(decision.Message);
+        Assert.Contains("gameshift-user.db: in use", decision.Message);
+        Assert.Contains("pustej biblioteki", decision.Message);
     }
 
     [TestMethod]

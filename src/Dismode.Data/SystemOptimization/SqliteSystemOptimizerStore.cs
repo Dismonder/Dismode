@@ -31,7 +31,6 @@ public sealed class SqliteSystemOptimizerStore : IDisposable
         {
             DataSource = _databasePath,
             Mode = SqliteOpenMode.ReadWriteCreate,
-            Cache = SqliteCacheMode.Shared,
             ForeignKeys = true,
             Pooling = false,
         }.ToString();

@@ -41,6 +41,9 @@ internal static class EtwSessionCleanup
     [
         "dismode-frametime",
         "DismodeFrameCapture",
+        // Wydania sprzed zmiany nazwy (GameShift, do 0.7.0).
+        "gameshift-frametime",
+        "GameShiftFrameCapture",
     ];
 
     /// <summary>

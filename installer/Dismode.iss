@@ -625,6 +625,11 @@ begin
       'Dismode zostawi tam jego pliki i zabierze jedyne narzędzie, które ' +
       'potrafi je stamtąd usunąć. Otwórz Dismode, usuń OptiScaler dla ' +
       'każdej gry, która go ma, i dopiero wtedy odinstaluj program.'
+  else if ResultCode = 9 then
+    ErrorMessage :=
+      'Poprzednia wersja programu (GameShift) nadal działa albo trzyma ' +
+      'swoją bazę profili lub dziennik recovery. Zamknij GameShift ' +
+      '(ikona w zasobniku → Wyłącz GameShift) i uruchom instalator ponownie.'
   else
     ErrorMessage :=
       'Nie udało się zamknąć wyłącznie składników Dismode z katalogu ' +

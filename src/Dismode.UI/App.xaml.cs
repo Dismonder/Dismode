@@ -1,5 +1,4 @@
 using Dismode.Core.Activation;
-using Dismode.Data.Storage;
 using Dismode.UI.Services;
 using Microsoft.UI.Xaml;
 
@@ -34,14 +33,25 @@ public partial class App : Application
                     GameExecutablePath: null);
             }
 
+            // Poprzednia wersja (GameShift) w tej sesji: te same gry i, do
+            // pierwszego startu, ten sam katalog danych. Sprawdzane przed
+            // migracja, zeby nie przenosic danych spod dzialajacego programu.
+            if (StartupGate.RefuseWhileLegacyProductRuns() is int legacyExitCode)
+            {
+                Environment.Exit(legacyExitCode);
+                return;
+            }
+
             // Przed pierwszym odczytem bazy: inaczej UI zalozyloby pusta
             // baze obok niezmigrowanych danych z wydan GameShift.
-            foreach (string problem in
-                LegacyStorageMigration.MigrateUserData())
+            if (StartupGate.MigrateLegacyData(problem =>
+                    WriteStartupFailure(
+                        "LegacyStorageMigration",
+                        new IOException(problem)))
+                is int migrationExitCode)
             {
-                WriteStartupFailure(
-                    "LegacyStorageMigration",
-                    new IOException(problem));
+                Environment.Exit(migrationExitCode);
+                return;
             }
 
             // Jeden egzemplarz na sesje i dzialajacy, uprawniony host —
