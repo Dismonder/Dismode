@@ -193,6 +193,22 @@ sprawdzona w podglądzie na desktopie, 375 px i 404. Dawny shader WebGL
 i animacje przewijania zostały usunięte na rzecz czytelności. Wdrożona na
 `dismode-site-dev`.
 
+Przenośność na inne komputery (2026-10-01, audyt `dumpbin /dependents`
+payloadu): `Dismode.ShellExtension.dll` (menu kontekstowe Windows 11,
+sparse package) wymagał `MSVCP140`/`VCRUNTIME140`/`VCRUNTIME140_1`, czyli
+redystrybucji VC++, której instalator nie dokłada — na czystym systemie
+moduł powłoki nie ładowałby się. Poprawka: `RuntimeLibrary=MultiThreaded`
+(Release) / `MultiThreadedDebug` (Debug) w vcxproj; po przebudowie zależy
+tylko od SHELL32/ole32/SHLWAPI/KERNEL32. Pozostałe binaria (WindowsAppRuntime,
+Microsoft.ui.xaml, coreclr, Dismode.UI.exe, SystemAgent, PresentMon) bez
+zależności od CRT; payload self-contained (.NET + Windows App Runtime).
+Ograniczenie buildu z certyfikatem testowym na innych maszynach:
+`AuthenticodeSignatureVerifier` używa WinVerifyTrust, więc niezaufany
+samopodpisany łańcuch daje agentowi tryb tylko do odczytu (System
+Optimizer nie zastosuje zmian) i ostrzeżenie SmartScreen; pełna
+funkcjonalność wymaga produkcyjnego certyfikatu
+(`DISMODE_RELEASE_SIGNING_THUMBPRINT`).
+
 Następne kroki: pierwsza instalacja Dismode obok
 zainstalowanego GameShift to pierwszy żywy test migracji (w tym ścieżki
 kodu 9 → komunikat UI); `wrangler deploy` nowego adresu update-service;
