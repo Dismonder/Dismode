@@ -134,7 +134,25 @@ produktu w nich zmienione na Dismode; pozostałe pliki scaliły się
 automatycznie. Weryfikacja: build 0/0, testy 582 zaliczone (7 pominięte;
 +12 Integration z PR), `dotnet format --verify-no-changes` czysto.
 
-Następne kroki: scalić PR #4; pierwsza instalacja Dismode obok
+Recenzja Codex 6.1 PR #4 (2026-10-01) i poprawki:
+- naprawione: junction na samym katalogu gry (`steamapps\common\Gra` →
+  `D:\Gra`) gubił znacznik biblioteki, więc root wyprowadzony z rozwiązanej
+  ścieżki EXE obejmował tylko podkatalog `bin` — teraz root z biblioteki jest
+  rozwiązywany osobno (`ResolvedGamePaths.InstallationRoot`); rozwiązanie
+  ścieżki gry i rootu trzymane w pamięci podręcznej 30 s / 16 wpisów
+  (`ResolveGamePaths`), zamiast otwierać plik gry przy każdym nietrafionym
+  procesie skanu (na odłączonym udziale każde otwarcie czeka sekundy).
+  Test `AHelperBesideTheExecutableDirectoryIsRecognisedThroughAGameDirectoryJunction`.
+- świadomie bez zmian (zachowanie identyczne jak przed PR): nierozstrzygnięta
+  tożsamość (brak dostępu, wolumen bez litery) = brak dopasowania; hard-linki
+  do tego samego EXE w różnych katalogach; katalogi NTFS z rozróżnianiem
+  wielkości liter; alias-symlink o innej nazwie EXE odpada na filtrze nazwy
+  procesu.
+
+Weryfikacja PR #4 po poprawkach: build 0/0, testy 583 zaliczone
+(7 pominięte), `dotnet format --verify-no-changes` czysto.
+
+Następne kroki: pierwsza instalacja Dismode obok
 zainstalowanego GameShift to pierwszy żywy test migracji (w tym ścieżki
 kodu 9 → komunikat UI); `wrangler deploy` nowego adresu update-service;
 instalator 0.8.0 po podaniu produkcyjnego certyfikatu.

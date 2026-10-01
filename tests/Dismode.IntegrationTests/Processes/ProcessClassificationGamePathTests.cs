@@ -78,6 +78,39 @@ public sealed class ProcessClassificationGamePathTests
     }
 
     [TestMethod]
+    public void AHelperBesideTheExecutableDirectoryIsRecognisedThroughAGameDirectoryJunction()
+    {
+        // Junction na samym katalogu gry, nie na bibliotece: za nim nie ma
+        // juz znacznika steamapps\common, wiec root instalacji musi byc
+        // rozwiazany z biblioteki, a nie wyprowadzony z rozwiazanej sciezki
+        // EXE, ktora wskazalaby tylko podkatalog bin.
+        string realGameDirectory = Path.Combine(_root, "dysk-e", "Gra");
+        Directory.CreateDirectory(Path.Combine(realGameDirectory, "bin"));
+        Directory.CreateDirectory(Path.Combine(realGameDirectory, "helpers"));
+        File.WriteAllText(Path.Combine(realGameDirectory, "bin", "gra.exe"), "gra");
+        string helper = Path.Combine(realGameDirectory, "helpers", "crashhandler.exe");
+        File.WriteAllText(helper, "helper");
+        string libraryGameDirectory = DirectoryJunction.Create(
+            Path.Combine(_root, "dysk-d", "steamapps", "common", "Gra2"),
+            realGameDirectory);
+        string libraryGamePath = Path.Combine(libraryGameDirectory, "bin", "gra.exe");
+
+        ProcessClassification classification =
+            ProcessClassificationService.Classify(
+                "crashhandler",
+                helper,
+                SessionId,
+                SessionId,
+                libraryGamePath);
+
+        Assert.AreEqual(
+            ProcessSafetyClassification.GameInfrastructure,
+            classification.Kind,
+            "Helper obok katalogu z EXE nalezy do gry przeniesionej junctionem.");
+        StringAssert.Contains(classification.Reason, "katalogu instalacyjnego");
+    }
+
+    [TestMethod]
     public void AProcessOutsideTheGameStaysAnOrdinaryBackgroundApplication()
     {
         string unrelated = Path.Combine(_root, "obce", "przegladarka.exe");
