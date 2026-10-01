@@ -320,4 +320,42 @@ public sealed class LegacyStorageMigrationTests
         Assert.IsFalse(File.Exists(journal));
         Assert.IsFalse(LegacyStorageMigration.Migrate(legacy, current).BlocksStartup);
     }
+
+    [TestMethod]
+    public void AMigrationHeldByAnotherComponentRefusesTheStartInsteadOfInterleaving()
+    {
+        // Plik blokady, nie mutex: mutex zalozony przez podniesiony host ma
+        // DACL, ktorego niepodniesione okno nie otworzy, wiec oba procesy
+        // przenosilyby ten sam zestaw naraz.
+        using TemporaryDirectory root = new();
+        string legacy = Path.Combine(root.Path, "GameShift");
+        string current = Path.Combine(root.Path, "Dismode");
+        string gate = current + ".migration.lock";
+        Directory.CreateDirectory(legacy);
+        File.WriteAllText(Path.Combine(legacy, "gameshift-user.db"), "db");
+
+        LegacyStorageMigrationResult held;
+        using (new FileStream(
+            gate,
+            FileMode.OpenOrCreate,
+            FileAccess.ReadWrite,
+            FileShare.None))
+        {
+            held = LegacyStorageMigration.Migrate(
+                legacy,
+                current,
+                lockTimeout: TimeSpan.FromMilliseconds(400));
+        }
+
+        Assert.IsTrue(held.BlocksStartup, "Bez blokady nic sie nie rusza.");
+        Assert.IsNotEmpty(held.Problems);
+        Assert.IsTrue(File.Exists(Path.Combine(legacy, "gameshift-user.db")));
+
+        LegacyStorageMigrationResult released =
+            LegacyStorageMigration.Migrate(legacy, current);
+
+        Assert.IsFalse(released.BlocksStartup, string.Join("; ", released.Problems));
+        Assert.AreEqual("db", File.ReadAllText(Path.Combine(current, "dismode-user.db")));
+        Assert.IsFalse(File.Exists(gate), "Plik blokady znika po zwolnieniu.");
+    }
 }

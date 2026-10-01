@@ -1,5 +1,3 @@
-using System.Security.Cryptography;
-using System.Text;
 
 namespace Dismode.Data.Storage;
 
@@ -58,6 +56,11 @@ public static class LegacyStorageMigration
     private static readonly TimeSpan MoveRetryDelay =
         TimeSpan.FromMilliseconds(150);
     private static readonly TimeSpan LockTimeout = TimeSpan.FromSeconds(30);
+    private static readonly TimeSpan LockRetryDelay =
+        TimeSpan.FromMilliseconds(100);
+    private const string LockSuffix = ".migration.lock";
+    private const string MigrationLogName = "migration.log";
+    private const long MigrationLogLimit = 256 * 1024;
 
     // SQLite keeps the write-ahead log and the shared-memory index next to
     // the database under derived names; the three move as one set. The
@@ -95,7 +98,8 @@ public static class LegacyStorageMigration
     /// </summary>
     public static LegacyStorageMigrationResult Migrate(
         string legacyDirectory,
-        string currentDirectory)
+        string currentDirectory,
+        TimeSpan? lockTimeout = null)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(legacyDirectory);
         ArgumentException.ThrowIfNullOrWhiteSpace(currentDirectory);
@@ -109,22 +113,19 @@ public static class LegacyStorageMigration
         }
 
         List<string> problems = [];
-        using Mutex? mutex = TryOpenMutex(current);
-        bool acquired = mutex is not null && AcquireMutex(mutex);
-        if (!acquired
+        TimeSpan timeout = lockTimeout ?? LockTimeout;
+        FileStream? gate = TryAcquireGate(current, timeout);
+        if (gate is null
             && (Directory.Exists(legacy) || HasLegacyDatabase(current)))
         {
             // Two components moving the same set at once could leave the
             // database and its log under different names. Whoever holds the
             // lock finishes the work; this start is refused instead.
             problems.Add(
-                mutex is null
-                    ? $"{current}: the migration lock could not be opened; "
-                        + "start Dismode again."
-                    : $"{current}: another Dismode component held the "
-                        + "migration lock for more than "
-                        + $"{LockTimeout.TotalSeconds:F0} s; start Dismode again.");
-            return new(problems, BlocksStartup: true);
+                $"{current}: another Dismode component held the migration "
+                + $"lock for more than {timeout.TotalSeconds:F0} s; "
+                + "start Dismode again.");
+            return Finish(legacy, current, new(problems, BlocksStartup: true));
         }
 
         try
@@ -132,9 +133,12 @@ public static class LegacyStorageMigration
             if (!Directory.Exists(legacy)
                 && !HasLegacyDatabase(current))
             {
-                return problems.Count == 0
-                    ? LegacyStorageMigrationResult.Empty
-                    : new(problems, BlocksStartup: false);
+                return Finish(
+                    legacy,
+                    current,
+                    problems.Count == 0
+                        ? LegacyStorageMigrationResult.Empty
+                        : new(problems, BlocksStartup: false));
             }
 
             if (Directory.Exists(legacy))
@@ -171,22 +175,21 @@ public static class LegacyStorageMigration
                 problems.Add(
                     $"{Path.Combine(current, LegacyDatabaseName)}: waits for "
                     + $"its journal still held in {legacy}.");
-                return new(
-                    problems,
-                    BlocksStartup: LeavesCriticalDataBehind(legacy, current));
+                return Finish(
+                    legacy,
+                    current,
+                    new(problems, BlocksStartup: LeavesCriticalDataBehind(legacy, current)));
             }
 
             RenameLegacyDatabase(current, problems);
-            return new(
-                problems,
-                BlocksStartup: LeavesCriticalDataBehind(legacy, current));
+            return Finish(
+                legacy,
+                current,
+                new(problems, BlocksStartup: LeavesCriticalDataBehind(legacy, current)));
         }
         finally
         {
-            if (acquired)
-            {
-                mutex!.ReleaseMutex();
-            }
+            gate?.Dispose();
         }
     }
 
@@ -352,6 +355,56 @@ public static class LegacyStorageMigration
         Directory.Exists(directory)
         && DatabaseSuffixes.Any(suffix => File.Exists(
             Path.Combine(directory, LegacyDatabaseName + suffix)));
+
+    /// <summary>
+    /// One line per run that had anything to decide, appended to
+    /// <c>migration.log</c> in the current directory: which legacy path was
+    /// looked at, what stayed behind, what went wrong and who ran it. The
+    /// host's standard error is lost when the launcher starts it, and a user
+    /// whose library "disappeared" needs more than a guess.
+    /// </summary>
+    private static LegacyStorageMigrationResult Finish(
+        string legacy,
+        string current,
+        LegacyStorageMigrationResult result)
+    {
+        try
+        {
+            if (Directory.Exists(current))
+            {
+                int leftBehind = Directory.Exists(legacy)
+                    ? Directory.GetFiles(legacy, "*", SearchOption.AllDirectories).Length
+                    : 0;
+                string line =
+                    $"{DateTimeOffset.UtcNow:O} pid={Environment.ProcessId} "
+                    + $"process={Path.GetFileNameWithoutExtension(Environment.ProcessPath)} "
+                    + $"legacy={legacy} exists={Directory.Exists(legacy)} "
+                    + $"leftBehind={leftBehind} blocks={result.BlocksStartup} "
+                    + $"problems={result.Problems.Count}"
+                    + (result.Problems.Count == 0
+                        ? string.Empty
+                        : " :: " + string.Join(" | ", result.Problems.Take(5)))
+                    + Environment.NewLine;
+                string logPath = Path.Combine(current, MigrationLogName);
+                if (File.Exists(logPath)
+                    && new FileInfo(logPath).Length > MigrationLogLimit)
+                {
+                    // One line per start; a long-lived profile keeps the
+                    // recent ones, which are the ones a report is about.
+                    File.WriteAllText(logPath, string.Empty);
+                }
+
+                File.AppendAllText(logPath, line);
+            }
+        }
+        catch (Exception exception) when (
+            exception is IOException or UnauthorizedAccessException)
+        {
+            // The trace must never cost a start.
+        }
+
+        return result;
+    }
 
     /// <summary>
     /// True when the write-ahead log or the shared-memory index of the legacy
@@ -528,46 +581,53 @@ public static class LegacyStorageMigration
         return candidate;
     }
 
-    private static Mutex? TryOpenMutex(string currentDirectory)
+    /// <summary>
+    /// Exclusive hold on a lock file beside the current directory, or null
+    /// when another component kept it for the whole timeout. A file rather
+    /// than a named mutex: a mutex created by the elevated host carries a
+    /// DACL the unelevated window cannot open, so between those two it
+    /// serialised nothing; the directory's own ACL admits both. The file
+    /// deletes itself when the holder closes it, also when the holder dies.
+    /// </summary>
+    private static FileStream? TryAcquireGate(
+        string currentDirectory,
+        TimeSpan timeout)
     {
-        try
+        string lockPath = currentDirectory.TrimEnd(
+                Path.DirectorySeparatorChar,
+                Path.AltDirectorySeparatorChar)
+            + LockSuffix;
+        DateTimeOffset deadline = DateTimeOffset.UtcNow + timeout;
+        while (true)
         {
-            return new Mutex(
-                initiallyOwned: false,
-                BuildMutexName(currentDirectory));
-        }
-        catch (Exception exception) when (
-            exception is UnauthorizedAccessException
-                or IOException
-                or WaitHandleCannotBeOpenedException)
-        {
-            // A name held by a process this token cannot open. With legacy
-            // data still around the start is refused rather than migrated
-            // without the ordering guarantee; otherwise nothing is at stake.
-            return null;
-        }
-    }
+            try
+            {
+                string? parent = Path.GetDirectoryName(lockPath);
+                if (parent is not null)
+                {
+                    Directory.CreateDirectory(parent);
+                }
 
-    private static bool AcquireMutex(Mutex mutex)
-    {
-        try
-        {
-            return mutex.WaitOne(LockTimeout);
-        }
-        catch (AbandonedMutexException)
-        {
-            // The previous holder died mid-run; the resume logic above copes
-            // with whatever it left, so the lock is ours.
-            return true;
-        }
-    }
+                return new FileStream(
+                    lockPath,
+                    FileMode.OpenOrCreate,
+                    FileAccess.ReadWrite,
+                    FileShare.None,
+                    bufferSize: 1,
+                    FileOptions.DeleteOnClose);
+            }
+            catch (Exception exception) when (
+                exception is IOException or UnauthorizedAccessException)
+            {
+                // Held by the other component, or just released and still
+                // marked for deletion, which Windows reports as access denied.
+                if (DateTimeOffset.UtcNow >= deadline)
+                {
+                    return null;
+                }
 
-    private static string BuildMutexName(string currentDirectory)
-    {
-        string fingerprint = Convert.ToHexString(
-            SHA256.HashData(
-                Encoding.UTF8.GetBytes(
-                    currentDirectory.ToUpperInvariant())))[..20];
-        return $"Local\\Dismode.StorageMigration.{fingerprint}";
+                Thread.Sleep(LockRetryDelay);
+            }
+        }
     }
 }
