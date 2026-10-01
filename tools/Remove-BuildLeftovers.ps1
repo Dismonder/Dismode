@@ -27,7 +27,7 @@ if (-not (Test-Path -LiteralPath $artifactsRoot)) {
 $artifactsPrefix = $artifactsRoot.TrimEnd(
     [IO.Path]::DirectorySeparatorChar) + [IO.Path]::DirectorySeparatorChar
 
-$certificateSubject = "CN=GameShift Development"
+$certificateSubject = "CN=Dismode Development"
 $codeSigningOid = "1.3.6.1.5.5.7.3.3"
 
 function Get-PathSize {
@@ -77,7 +77,7 @@ $plan = [Collections.Generic.List[object]]::new()
 $kept = [Collections.Generic.List[string]]::new()
 
 # --- kopie poprzednich wydań -------------------------------------------
-foreach ($prefix in @("GameShift-App", "GameShift-MemoryOptimizer")) {
+foreach ($prefix in @("Dismode-App", "Dismode-MemoryOptimizer")) {
     $pattern = "^" + [regex]::Escape($prefix) + "\.backup-\d{8}-\d{6}$"
     $backups = Get-ChildItem -LiteralPath $artifactsRoot -Directory |
         Where-Object { $_.Name -match $pattern } |
@@ -99,7 +99,7 @@ foreach ($prefix in @("GameShift-App", "GameShift-MemoryOptimizer")) {
 $installerRoot = Join-Path $artifactsRoot "installer"
 if (Test-Path -LiteralPath $installerRoot) {
     $installers = Get-ChildItem -LiteralPath $installerRoot -File `
-            -Filter "GameShift-Setup-*.exe" |
+            -Filter "Dismode-Setup-*.exe" |
         Sort-Object @{ Expression = { Get-VersionKey $_.Name } } -Descending
     $installers |
         Select-Object -First $InstallerRetentionCount |
@@ -157,9 +157,9 @@ if ($IncludeCertificates) {
         ForEach-Object { $protectedThumbprints.Add($_.Thumbprint) }
     foreach ($certificateFile in @(
             (Join-Path $artifactsRoot (
-                "GameShift-App\ShellIntegration\GameShift-Development.cer")),
+                "Dismode-App\ShellIntegration\Dismode-Development.cer")),
             (Join-Path $env:ProgramFiles (
-                "GameShift\ShellIntegration\GameShift-Development.cer")))) {
+                "Dismode\ShellIntegration\Dismode-Development.cer")))) {
         if (Test-Path -LiteralPath $certificateFile -PathType Leaf) {
             $protectedThumbprints.Add(
                 ([Security.Cryptography.X509Certificates.X509Certificate2]::new(

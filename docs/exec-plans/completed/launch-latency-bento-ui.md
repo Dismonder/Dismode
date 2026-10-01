@@ -37,12 +37,12 @@ Brama akceptacyjna manualnego wyjścia z gry:
 - PresentMon kończy się i jest zweryfikowany przed `ReconciliationComplete`;
 - aktywna sesja znika, historia zostaje zapisana, a journal jest czysty;
 - zachowanie jest identyczne niezależnie od zamknięcia gry przyciskiem w
-  GameShift lub ręcznie w samej grze.
+  Dismode lub ręcznie w samej grze.
 
 ## Cel
 
 Skrócić czas od kliknięcia Play do utworzenia procesu gry, zachowując pełną
-walidację i recovery, oraz nadać głównym powierzchniom GameShift spójny,
+walidację i recovery, oraz nadać głównym powierzchniom Dismode spójny,
 nowoczesny układ Bento bez przebudowy natywnego stosu WinUI.
 
 ## Ustalenia z kodu
@@ -106,15 +106,15 @@ nowoczesny układ Bento bez przebudowy natywnego stosu WinUI.
 ## Dowody
 
 - izolowany `dotnet publish` unpackaged UI utworzył `App.xbf`,
-  `MainWindow.xbf`, `PerformanceOverlayWindow.xbf` i `GameShift.UI.pri` bez
+  `MainWindow.xbf`, `PerformanceOverlayWindow.xbf` i `Dismode.UI.pri` bez
   zagnieżdżenia `publish\publish`; build UI: 0 ostrzeżeń, testy Unit: 38/38;
 - wszystkie trzy pliki XAML są poprawnym XML;
-- `dotnet build GameShift.sln --configuration Debug`: kod 0, 0 ostrzeżeń;
-- `dotnet test GameShift.sln --configuration Debug --no-build`: 95/95;
-- `dotnet format GameShift.sln --verify-no-changes --no-restore`: kod 0;
+- `dotnet build Dismode.sln --configuration Debug`: kod 0, 0 ostrzeżeń;
+- `dotnet test Dismode.sln --configuration Debug --no-build`: 95/95;
+- `dotnet format Dismode.sln --verify-no-changes --no-restore`: kod 0;
 - regresja zapisanej reguły potwierdza `GameLaunched` przed
   `ProcessesApplied` oraz prawidłowe przywrócenie priorytetu procesu tła.
-- hotfix brakującego klucza `GameShiftCardBrush` przeszedł kontrolowany start,
+- hotfix brakującego klucza `DismodeCardBrush` przeszedł kontrolowany start,
   pełny build 0 ostrzeżeń i 106/106 testów; zainstalowane UI odpowiada,
   jest zmaksymalizowane i nie zapisuje nowego wyjątku startowego.
 - Rzeczywisty Play uruchomił Roblox jako dziecko SessionHost; po zakończeniu

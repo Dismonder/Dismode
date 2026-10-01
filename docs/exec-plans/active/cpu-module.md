@@ -34,7 +34,7 @@ Zmierzone na i7-11700F, 16 obciążaczy na 16 wątkach, cztery przebiegi:
 p99 opóźnienia wybudzenia spadło o 1,2–7,7 ms (średnio ~5 ms), mediana
 z ~17,1 do ~15,5 ms. Poprawa w każdym przebiegu.
 
-Pełne wyniki i metoda: `C:\Users\Damia\Documents\GameShift-DLSS5\porownanie-cpu.md`.
+Pełne wyniki i metoda: `C:\Users\Damia\Documents\Dismode-DLSS5\porownanie-cpu.md`.
 
 ## Czego nie wiemy
 
@@ -78,7 +78,7 @@ zostaną domknięte, każda liczba w tym planie jest wstępna.
 ### 3. Mocniejsze narzędzia ograniczania
 
 Obniżenie priorytetu to najsłabsza z dostępnych dźwigni. Windows daje mocniejsze
-i GameShift już ich używa gdzie indziej.
+i Dismode już ich używa gdzie indziej.
 
 7. Ograniczanie stopniowane — **alternatywa gotowa, niewłączona**. Preset
    `ProBalanceSettings.Aggressive` (2026-09-28) daje pełny pakiet od pierwszego złapania
@@ -121,7 +121,7 @@ i przy pustym aktuatorze.
     w trakcie gry.
 13. Dodać do pomiaru wariant z aktywnym aktuatorem, żeby koszt zapisu do
     journala i kontroli podpisu był policzony, a nie założony.
-14. Ograniczyć zużycie zasobów przez sam GameShift w trakcie sesji. Narzędzie
+14. Ograniczyć zużycie zasobów przez sam Dismode w trakcie sesji. Narzędzie
     pilnujące płynności, które samo zjada rdzeń, jest gorsze niż jego brak.
 15. Bramka na przełączanie planu zasilania, żeby krótka zmiana obciążenia nie
     powodowała migotania między planami. **Nie dotyczy w 0.6.9**: sesja nie
@@ -202,7 +202,7 @@ sukces przypisania, które nie ma prawa zadziałać.
 
 - **Disallowed Processes** — automatyczne ubijanie procesów;
 - **Keep Running** — automatyczne wznawianie procesów;
-- **reguły trwałe poza sesją** — GameShift cofa wszystko po grze i to jest jego
+- **reguły trwałe poza sesją** — Dismode cofa wszystko po grze i to jest jego
   model, nie brak;
 - **Instance Balancer**, **Group Extender** — istotne przy wielu gniazdach
   i powyżej 64 procesorów logicznych, czyli poza sprzętem, o który tu chodzi.
@@ -288,7 +288,7 @@ powinowactwa to reguła, której planista złamać nie może.
   dostaje teraz ćwiartkę maszyny, o ile ma co najmniej osiem wątków
   logicznych.
 - `JournaledProBalanceActuator` nakłada tę maskę przez `ProcessAffinityAction`
-  — z zapisem do dziennika, bo maska przeżywa śmierć GameShifta i musi
+  — z zapisem do dziennika, bo maska przeżywa śmierć Dismodea i musi
   zostać co odwrócić. Miękkie CPU Sets zostają obok jako dodatek.
 
 ### Pułapka pomiarowa, którą trzeba było zamknąć
@@ -302,7 +302,7 @@ Oba testy mają teraz kontrolę wstępną: krótkie próbne przechwycenie i
 `Inconclusive` z konkretnym powodem, gdy gra nie rysuje. Do tego twarde
 sprawdzenie, że żaden blok nie zwrócił zera.
 
-Drugi problem: pomiar zostawia po sobie sesję ETW `gameshift-frametime` —
+Drugi problem: pomiar zostawia po sobie sesję ETW `dismode-frametime` —
 także po przebiegu zakończonym normalnie — a `--stop_existing_session` jej nie
 sprząta. Sesja blokuje potem przechwytywanie **wszystkim** na maszynie.
 Sprząta ją `EtwSessionCleanup`, wołany też z testu przed pomiarem.
@@ -592,7 +592,7 @@ Zamknięcie: aktuator melduje każde ograniczenie i zwolnienie do
 zaplanowanych aplikacji, zapisuje w punkcie kontrolnym
 `BackgroundRestraintChanged` i odtwarza tą samą drogą. Przy wznowieniu żywej
 sesji po restarcie oddaje je od razu — nie mają już nadzorcy, który by je
-zdjął, gdy proces się uspokoi, a GameShift nie jest niczyim planistą na
+zdjął, gdy proces się uspokoi, a Dismode nie jest niczyim planistą na
 stałe. Pętla staje na początku przywracania, żeby jej zwolnienia były częścią
 sesji, a nie czymś po jej zamknięciu.
 
@@ -899,11 +899,11 @@ w pomiarze z 10.09 był przy innych ustawieniach graficznych) — maska
 odzyskuje praktycznie całość.
 
 Pułapka, która kosztowała dwa nieudane przebiegi: osierocona sesja ETW
-`gameshift-frametime` po przerwanym teście harnessu (Running, tysiące
+`dismode-frametime` po przerwanym teście harnessu (Running, tysiące
 utraconych zdarzeń, zero klatek w każdym innym pomiarze na maszynie).
 Poprawka `facf5e8` sprząta sesję dostawcy produktu, ale nie tę nazwę
 harnessu po zabiciu hosta testów. Przed każdym pomiarem:
-`logman query -ets | findstr gameshift`, i `logman stop <nazwa> -ets`.
+`logman query -ets | findstr dismode`, i `logman stop <nazwa> -ets`.
 
 Skrypt: `pomiar-a.ps1` w katalogu roboczym sesji (czeka, aż gra jest na
 pierwszym planie; hogi, PresentMon i sesja ETW sprzątane w `finally`).
@@ -927,7 +927,7 @@ pierwszym planie; hogi, PresentMon i sesja ETW sprzątane w `finally`).
 
 ### Poza modułem, znalezione przy okazji
 
-`GameShift.UI` zjada na biegu jałowym 0,023 rdzenia (925 s CPU przez 9 h,
+`Dismode.UI` zjada na biegu jałowym 0,023 rdzenia (925 s CPU przez 9 h,
 także zminimalizowane). Źródło zmierzone: `CheckForRunningUnoptimizedGameAsync`
 co 2 s czyta `MainModule.FileName` każdego procesu na maszynie — 50 ms na
 skan, czyli dokładnie te 2,3%. W trakcie sesji ten skan nie działa, więc

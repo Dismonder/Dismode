@@ -1,15 +1,15 @@
-# Obsługa lokalnego wydania GameShift
+# Obsługa lokalnego wydania Dismode
 
 ## Uruchomienie
 
-Kliknij skrót `GameShift` na pulpicie albo uruchom:
+Kliknij skrót `Dismode` na pulpicie albo uruchom:
 
 ```text
-artifacts\GameShift-App\GameShift.exe
+artifacts\Dismode-App\Dismode.exe
 ```
 
 Launcher działa bez podwyższonych uprawnień i prosi o zgodę UAC dla stałego
-`GameShift.SessionHost.exe`. SessionHost wykonuje działania sesji oraz
+`Dismode.SessionHost.exe`. SessionHost wykonuje działania sesji oraz
 uruchamia przypięty miernik klatek. SystemAgent i UI pozostają
 niepodwyższone. Kolejne uruchomienie nie tworzy duplikatów i maksymalizuje
 istniejące okno.
@@ -23,19 +23,19 @@ SystemAgent `ReadOnly`.
 Po zbudowaniu rozwiązania można wykonać również kontrolę obu pipe’ów:
 
 ```powershell
-dotnet tools\GameShift.SessionSimulator\bin\Release\net10.0-windows10.0.26100.0\GameShift.SessionSimulator.dll --pipe both
+dotnet tools\Dismode.SessionSimulator\bin\Release\net10.0-windows10.0.26100.0\Dismode.SessionSimulator.dll --pipe both
 ```
 
 Rozszerzony, nadal read-only test odrzucania błędnych żądań:
 
 ```powershell
-dotnet tools\GameShift.SessionSimulator\bin\Release\net10.0-windows10.0.26100.0\GameShift.SessionSimulator.dll --pipe both --security-self-test
+dotnet tools\Dismode.SessionSimulator\bin\Release\net10.0-windows10.0.26100.0\Dismode.SessionSimulator.dll --pipe both --security-self-test
 ```
 
 Integralność dołączonego PresentMon można sprawdzić bez uruchamiania gry:
 
 ```powershell
-dotnet tools\GameShift.SessionSimulator\bin\Release\net10.0-windows10.0.26100.0\GameShift.SessionSimulator.dll --presentmon-status --presentmon-path artifacts\GameShift-App\Tools\PresentMon\PresentMon-2.5.1-x64.exe
+dotnet tools\Dismode.SessionSimulator\bin\Release\net10.0-windows10.0.26100.0\Dismode.SessionSimulator.dll --presentmon-status --presentmon-path artifacts\Dismode-App\Tools\PresentMon\PresentMon-2.5.1-x64.exe
 ```
 
 Wynik `Ready` potwierdza dokładny rozmiar i SHA-256 przypiętego wydania 2.5.1.
@@ -44,8 +44,8 @@ oczekiwania na klatki nie jest zastępowany estymowanym FPS.
 
 ## Awaria UI lub SessionHost
 
-1. Nie zamykaj procesu gry i nie usuwaj danych GameShift.
-2. Ponownie kliknij skrót `GameShift`.
+1. Nie zamykaj procesu gry i nie usuwaj danych Dismode.
+2. Ponownie kliknij skrót `Dismode`.
 3. SessionHost odczyta niezależny journal i spróbuje odzyskać aktywną sesję
    na podstawie PID, czasu startu, ścieżki, SHA-256, SID i session ID.
 4. Otwórz **Diagnostyka** i sprawdź oba połączenia.
@@ -55,8 +55,8 @@ oczekiwania na klatki nie jest zastępowany estymowanym FPS.
 Pliki użytkownika:
 
 ```text
-%LOCALAPPDATA%\GameShift\gameshift-user.db
-%LOCALAPPDATA%\GameShift\user-recovery.jsonl
+%LOCALAPPDATA%\Dismode\dismode-user.db
+%LOCALAPPDATA%\Dismode\user-recovery.jsonl
 ```
 
 SQLite przechowuje profile i historię. Journal JSONL jest niezależnym źródłem
@@ -67,7 +67,7 @@ recovery i nie wolno go usuwać przed zakończeniem niedokończonej sesji.
 Nie podmieniaj plików w trakcie aktywnej sesji. Najpierw zakończ sesję w UI
 i potwierdź w diagnostyce brak aktywnej sesji. Publikuj projekty w kolejności:
 Launcher, SessionHost, SystemAgent, a UI jako ostatnie. UI musi dostarczyć
-`App.xbf`, `MainWindow.xbf` i `GameShift.UI.pri`.
+`App.xbf`, `MainWindow.xbf` i `Dismode.UI.pri`.
 
 Zalecana komenda:
 
@@ -80,12 +80,12 @@ zawiera niedokończoną sesję. Przed podmianą wykonuje build, testy, kontrolę
 formatu i walidację wymaganych plików.
 
 Katalog `artifacts` może zawierać wersjonowane kopie
-`GameShift-App.backup-*`. Cofnięcie lokalnej aktualizacji polega na:
+`Dismode-App.backup-*`. Cofnięcie lokalnej aktualizacji polega na:
 
 1. zamknięciu UI oraz obu hostów;
 2. zachowaniu bieżącego journalu i bazy użytkownika;
 3. przywróceniu całego poprzedniego katalogu wydania, nie pojedynczych DLL;
-4. ponownym uruchomieniu `GameShift.exe` i teście obu pipe’ów.
+4. ponownym uruchomieniu `Dismode.exe` i teście obu pipe’ów.
 
 Nie mieszaj plików z dwóch buildów i nie cofaj bazy utworzonej przez nowszy
 schemat.
@@ -101,19 +101,19 @@ Samodzielny instalator dla Windows 11 x64 powstaje komendą:
 Wynik:
 
 ```text
-artifacts\installer\GameShift-Setup-0.1.0-win-x64.exe
-artifacts\installer\GameShift-Setup-0.1.0-win-x64.exe.sha256
+artifacts\installer\Dismode-Setup-0.1.0-win-x64.exe
+artifacts\installer\Dismode-Setup-0.1.0-win-x64.exe.sha256
 ```
 
 Instalator zawiera .NET, Windows App Runtime, wszystkie cztery komponenty
-GameShift, zasoby XBF/PRI i przypięty PresentMon. Instaluje do
-`Program Files\GameShift`, tworzy skrót menu Start, opcjonalny skrót pulpitu
+Dismode, zasoby XBF/PRI i przypięty PresentMon. Instaluje do
+`Program Files\Dismode`, tworzy skrót menu Start, opcjonalny skrót pulpitu
 oraz standardowy wpis deinstalacji Windows.
 
 Przed instalacją, aktualizacją lub deinstalacją zakończ aktywną sesję i zamknij
-GameShift. Instalator blokuje operację, gdy wykryje dowolny komponent GameShift
+Dismode. Instalator blokuje operację, gdy wykryje dowolny komponent Dismode
 albo jego PresentMon; celowo nie kończy ich automatycznie. Deinstalacja nie
-usuwa `%LOCALAPPDATA%\GameShift`, ponieważ znajdują się tam profile, historia
+usuwa `%LOCALAPPDATA%\Dismode`, ponieważ znajdują się tam profile, historia
 i niezależny journal recovery.
 
 Wydanie 0.1.0 nie ma certyfikatu Authenticode. Ostrzeżenie SmartScreen o
@@ -122,7 +122,7 @@ SHA-256:
 
 ```powershell
 Get-FileHash `
-  .\artifacts\installer\GameShift-Setup-0.1.0-win-x64.exe `
+  .\artifacts\installer\Dismode-Setup-0.1.0-win-x64.exe `
   -Algorithm SHA256
 ```
 
@@ -160,7 +160,7 @@ PresentMon jest stałym komponentem w `Tools\PresentMon`. Skrypt wydania i
 SessionHost sprawdzają rozmiar oraz SHA-256 przed uruchomieniem. Argumenty są
 zamknięte: tylko zweryfikowane PID drzewa aktywnej gry, stdout CSV v2 oraz
 unikalna nazwa sesji ETW. Proces miernika kończy się przy zakończeniu lub
-recovery sesji. GameShift nie pobiera ani nie uruchamia dowolnego pliku
+recovery sesji. Dismode nie pobiera ani nie uruchamia dowolnego pliku
 podanego przez użytkownika.
 
 Wykrywanie Xbox przyjmuje tylko dostępny `MicrosoftGame.Config` z

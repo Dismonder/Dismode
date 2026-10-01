@@ -1,0 +1,62 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net10.0-windows10.0.26100.0</TargetFramework>
+    <SupportedOSPlatformVersion>10.0.22631.0</SupportedOSPlatformVersion>
+    <TargetPlatformMinVersion>10.0.22631.0</TargetPlatformMinVersion>
+    <RootNamespace>Dismode.UI</RootNamespace>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+    <ApplicationIcon>Assets\Dismode.ico</ApplicationIcon>
+    <RuntimeIdentifier>win-x64</RuntimeIdentifier>
+    <PlatformTarget>x64</PlatformTarget>
+    <UseWinUI>true</UseWinUI>
+    <WindowsPackageType>None</WindowsPackageType>
+    <WindowsAppSDKSelfContained>false</WindowsAppSDKSelfContained>
+    <EnableMsixTooling>false</EnableMsixTooling>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Grpc.Net.Client" />
+    <PackageReference Include="Microsoft.WindowsAppSDK" />
+    <PackageReference Include="System.ServiceProcess.ServiceController" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Dismode.Contracts\Dismode.Contracts.csproj" />
+    <ProjectReference Include="..\Dismode.Core\Dismode.Core.csproj" />
+    <ProjectReference Include="..\Dismode.Data\Dismode.Data.csproj" />
+    <ProjectReference Include="..\Dismode.Windows\Dismode.Windows.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Content Include="Assets\Dismode.png">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
+    </Content>
+    <Content Include="Assets\Dismode.ico">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
+    </Content>
+    <Content Include="Assets\TacticalHero.png">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
+    </Content>
+  </ItemGroup>
+
+  <Target Name="CopyLooseWinUiResourcesToPublish"
+          AfterTargets="Publish">
+    <ItemGroup>
+      <_LooseWinUiXbf Include="$(TargetDir)**\*.xbf"
+                      Exclude="$(PublishDir)**\*.xbf" />
+      <_LooseWinUiResource Include="@(_LooseWinUiXbf)" />
+      <_LooseWinUiResource Include="$(TargetDir)$(TargetName).pri" />
+    </ItemGroup>
+    <Error Condition="'@(_LooseWinUiXbf)' == ''"
+           Text="No compiled WinUI XAML resources were found under $(TargetDir)." />
+    <Error Condition="!Exists('%(_LooseWinUiResource.Identity)')"
+           Text="Required WinUI publish resource is missing: %(_LooseWinUiResource.Identity)" />
+    <Copy SourceFiles="@(_LooseWinUiResource)"
+          DestinationFiles="@(_LooseWinUiResource->'$(PublishDir)%(RecursiveDir)%(Filename)%(Extension)')"
+          SkipUnchangedFiles="true" />
+  </Target>
+</Project>

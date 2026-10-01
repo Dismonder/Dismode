@@ -1,15 +1,15 @@
-# Macierz akceptacji MVP GameShift
+# Macierz akceptacji MVP Dismode
 
 Źródło: sekcja 39 specyfikacji z załącznika zadania.  
 Aktualizacja: 2026-07-29.
 
 | Wymaganie MVP | Stan | Dowód / brakujący dowód |
 | --- | --- | --- |
-| WinUI 3 | Gotowe | Natywne, niepodwyższone UI x64; opublikowane XBF/PRI; responsywne okno `GameShift`. |
+| WinUI 3 | Gotowe | Natywne, niepodwyższone UI x64; opublikowane XBF/PRI; responsywne okno `Dismode`. |
 | SessionHost | Gotowe funkcjonalnie | Osobny backend wymagający zgody UAC, chroniony pipe użytkownika, plan i cykl sesji, recovery po restarcie hosta. UI pozostaje niepodwyższone. |
 | SystemAgent | Częściowe | Osobny proces i chroniony pipe systemowy działają read-only. Instalacja jako usługa Windows i recovery przy starcie systemu wymagają kontrolowanej VM. |
 | Zabezpieczone Named Pipes | Gotowe lokalnie | ACL ograniczone do SID użytkownika, LocalSystem i administratorów; wersja, SID, timestamp, replay, rozmiar i zamknięty katalog komend są walidowane. Brakuje testu obcego użytkownika na VM. |
-| Procesy | Gotowe dla sesji użytkownika | Pełna tożsamość, klasyfikacja, monitoring drzewa gry i produkcyjny plan obejmują łagodne zamknięcie/przywrócenie oraz odwracalne `BelowNormal` i EcoQoS. Potomek gry pozostaje śledzony po wyjściu launchera i restarcie SessionHost. Procesy systemowe, launchery, anti-cheat, Discord/OBS i GameShift są chronione. |
+| Procesy | Gotowe dla sesji użytkownika | Pełna tożsamość, klasyfikacja, monitoring drzewa gry i produkcyjny plan obejmują łagodne zamknięcie/przywrócenie oraz odwracalne `BelowNormal` i EcoQoS. Potomek gry pozostaje śledzony po wyjściu launchera i restarcie SessionHost. Procesy systemowe, launchery, anti-cheat, Discord/OBS i Dismode są chronione. |
 | Podstawowa analiza usług | Gotowe read-only | Enumeracja stanu, konfiguracji, triggerów i zależności działa bez mutacji. |
 | EcoQoS | Gotowe w klikalnym wydaniu | Jawny tryb `BelowNormal + EcoQoS` jest domyślną bezpieczną rekomendacją. Priorytet i EcoQoS mają osobne ActionId, snapshoty, weryfikację i rollback; użytkownik nadal może wybrać samo `BelowNormal`. |
 | Zmiana priorytetu | Gotowe w klikalnym wydaniu | Gra: `AboveNormal` lub jawne `High`; tło: wyłącznie `Normal/BelowNormal → BelowNormal`. Produkcyjna akcja `High` została potwierdzona niezależnym odczytem klasy procesu z Windows i przywrócona do `Normal`. `Realtime` jest zablokowany przez Hard Safety. |
@@ -24,7 +24,7 @@ Aktualizacja: 2026-07-29.
 | Recovery po restarcie | Częściowe | Restart SessionHost i rzeczywiste odzyskanie aktywnej gry są potwierdzone także wtedy, gdy launcher zniknął, a działa potomny proces gry. Restart usługi i całego systemu wymaga VM. |
 | Historia i reguły per gra | Gotowe | Parametryzowany SQLite v5, migracje zachowujące dane, retencja 90 dni, trwały priorytet gry i reguły `zamknij / obniż / obniż + EcoQoS / ignoruj` per ścieżka procesu. Starsze sesje bez pomiaru pozostają jawnie oznaczone jako brak danych. |
 | Twarda polityka ochronna | Gotowe w rdzeniu | Chronione cele, brak recovery, niezatwierdzone działania i ryzykowne usługi są blokowane testami. |
-| Klikalne uruchomienie | Gotowe lokalnie | `artifacts\GameShift-App\GameShift.exe` i skrót `GameShift` na pulpicie; wydanie protokołu v4 prosi o UAC dla SessionHost, uruchamia jedno zmaksymalizowane UI i nie dubluje procesów. |
+| Klikalne uruchomienie | Gotowe lokalnie | `artifacts\Dismode-App\Dismode.exe` i skrót `Dismode` na pulpicie; wydanie protokołu v4 prosi o UAC dla SessionHost, uruchamia jedno zmaksymalizowane UI i nie dubluje procesów. |
 | Dostępność UI | Częściowe | Jasny/ciemny/systemowy motyw, opisowe statusy, AutomationProperties i nazwy elementów list. Pozostały ręczne testy Narratora, wysokiego kontrastu i skalowania 300%. |
 
 ## Warunek aktywacji mutacji systemowych
