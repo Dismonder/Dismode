@@ -1,6 +1,6 @@
 const ALLOWED_CHANNELS = new Set(["preview", "stable"]);
 const VERSION_PATTERN = /^[0-9]+\.[0-9]+\.[0-9]+(?:-[0-9A-Za-z.-]+)?$/;
-const PACKAGE_CHUNK_PATTERN = /^GameShift-Setup-[0-9]+\.[0-9]+\.[0-9]+(?:-[0-9A-Za-z.-]+)?-win-x64\.part-[0-9]{4}\.bin$/;
+const PACKAGE_CHUNK_PATTERN = /^Dismode-Setup-[0-9]+\.[0-9]+\.[0-9]+(?:-[0-9A-Za-z.-]+)?-win-x64\.part-[0-9]{4}\.bin$/;
 
 const securityHeaders = Object.freeze({
   "Referrer-Policy": "no-referrer",
@@ -23,7 +23,7 @@ function htmlResponse(title: string, content: string): Response {
   headers.set("Cache-Control", "public, max-age=3600");
   const body = `<!doctype html>
 <html lang="pl"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>${title} — GameShift</title><style>
+<title>${title} — Dismode</title><style>
 :root{color-scheme:dark;font-family:Segoe UI,system-ui,sans-serif;background:#090d18;color:#f5f7ff}
 body{margin:0;min-height:100vh;background:radial-gradient(circle at 15% 10%,#153a5a 0,transparent 32rem),#090d18}
 main{max-width:960px;margin:auto;padding:48px 24px}.hero,.card{border:1px solid #27344d;background:#121a2aee;border-radius:28px;padding:28px;box-shadow:0 18px 60px #0007}
@@ -43,14 +43,14 @@ function productPage(productName: string): Response {
 function supportPage(): Response {
   return htmlResponse(
     "Pomoc",
-    `<section class="hero"><h1>Pomoc GameShift</h1><p>Przed aktualizacją lub odinstalowaniem zakończ aktywną sesję GameShift i użyj funkcji <strong>Przywróć wszystko teraz</strong>. Nie usuwaj ręcznie journalu odzyskiwania.</p><p>Wydanie badawczo-rozwojowe nie ma jeszcze komercyjnego centrum pomocy. Raport diagnostyczny pozostaje lokalny, dopóki użytkownik sam go nie wyeksportuje.</p></section>`,
+    `<section class="hero"><h1>Pomoc Dismode</h1><p>Przed aktualizacją lub odinstalowaniem zakończ aktywną sesję Dismode i użyj funkcji <strong>Przywróć wszystko teraz</strong>. Nie usuwaj ręcznie journalu odzyskiwania.</p><p>Wydanie badawczo-rozwojowe nie ma jeszcze komercyjnego centrum pomocy. Raport diagnostyczny pozostaje lokalny, dopóki użytkownik sam go nie wyeksportuje.</p></section>`,
   );
 }
 
 function privacyPage(): Response {
   return htmlResponse(
     "Prywatność",
-    `<section class="hero"><h1>Prywatność</h1><p>GameShift analizuje lokalnie procesy, gry, wykorzystanie zasobów i wyniki sesji. Dane te nie są automatycznie wysyłane na serwer aktualizacji.</p><p>Sprawdzenie aktualizacji wysyła zwykłe żądanie HTTPS. Cloudflare może przetworzyć standardowe metadane sieciowe, takie jak adres IP, czas, ścieżka i User-Agent. GameShift nie dołącza listy gier, procesów, sprzętu ani wyników FPS.</p><p>Automatyczne sprawdzanie można wyłączyć; ręczne sprawdzenie pozostaje dostępne.</p></section>`,
+    `<section class="hero"><h1>Prywatność</h1><p>Dismode analizuje lokalnie procesy, gry, wykorzystanie zasobów i wyniki sesji. Dane te nie są automatycznie wysyłane na serwer aktualizacji.</p><p>Sprawdzenie aktualizacji wysyła zwykłe żądanie HTTPS. Cloudflare może przetworzyć standardowe metadane sieciowe, takie jak adres IP, czas, ścieżka i User-Agent. Dismode nie dołącza listy gier, procesów, sprzętu ani wyników FPS.</p><p>Automatyczne sprawdzanie można wyłączyć; ręczne sprawdzenie pozostaje dostępne.</p></section>`,
   );
 }
 
@@ -73,7 +73,7 @@ export function isAllowedUpdateAssetPath(pathname: string): boolean {
     !fileName ||
     !VERSION_PATTERN.test(version) ||
     !PACKAGE_CHUNK_PATTERN.test(fileName) ||
-    !fileName.startsWith(`GameShift-Setup-${version}-win-x64.part-`)
+    !fileName.startsWith(`Dismode-Setup-${version}-win-x64.part-`)
   ) {
     return false;
   }
@@ -124,7 +124,7 @@ async function handleRequest(request: Request, env: Env): Promise<Response> {
   if (url.pathname === "/health") {
     return jsonResponse({
       status: "ok",
-      service: "gameshift-update-service",
+      service: "dismode-update-service",
       environment: env.ENVIRONMENT,
       timestampUtc: new Date().toISOString(),
     });

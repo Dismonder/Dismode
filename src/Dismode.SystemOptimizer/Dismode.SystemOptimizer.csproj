@@ -1,0 +1,49 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net10.0-windows10.0.26100.0</TargetFramework>
+    <SupportedOSPlatformVersion>10.0.22631.0</SupportedOSPlatformVersion>
+    <TargetPlatformMinVersion>10.0.22631.0</TargetPlatformMinVersion>
+    <RootNamespace>Dismode.SystemOptimizer</RootNamespace>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+    <ApplicationIcon>..\Dismode.UI\Assets\Dismode.ico</ApplicationIcon>
+    <RuntimeIdentifier>win-x64</RuntimeIdentifier>
+    <PlatformTarget>x64</PlatformTarget>
+    <UseWinUI>true</UseWinUI>
+    <WindowsPackageType>None</WindowsPackageType>
+    <WindowsAppSDKSelfContained>false</WindowsAppSDKSelfContained>
+    <EnableMsixTooling>false</EnableMsixTooling>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Grpc.Net.Client" />
+    <PackageReference Include="Microsoft.WindowsAppSDK" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Dismode.Contracts\Dismode.Contracts.csproj" />
+    <ProjectReference Include="..\Dismode.Core\Dismode.Core.csproj" />
+    <ProjectReference Include="..\Dismode.Windows\Dismode.Windows.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Content Include="..\Dismode.UI\Assets\Dismode.ico"
+             Link="Assets\Dismode.ico"
+             CopyToOutputDirectory="PreserveNewest"
+             CopyToPublishDirectory="PreserveNewest" />
+  </ItemGroup>
+
+  <Target Name="CopyLooseWinUiResourcesToPublish" AfterTargets="Publish">
+    <ItemGroup>
+      <_LooseWinUiXbf Include="$(TargetDir)**\*.xbf" Exclude="$(PublishDir)**\*.xbf" />
+      <_LooseWinUiResource Include="@(_LooseWinUiXbf)" />
+      <_LooseWinUiResource Include="$(TargetDir)$(TargetName).pri" />
+    </ItemGroup>
+    <Error Condition="'@(_LooseWinUiXbf)' == ''"
+           Text="No compiled WinUI XAML resources were found under $(TargetDir)." />
+    <Copy SourceFiles="@(_LooseWinUiResource)"
+          DestinationFiles="@(_LooseWinUiResource->'$(PublishDir)%(RecursiveDir)%(Filename)%(Extension)')"
+          SkipUnchangedFiles="true" />
+  </Target>
+</Project>

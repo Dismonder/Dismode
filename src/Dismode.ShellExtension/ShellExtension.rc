@@ -1,0 +1,46 @@
+#include <windows.h>
+
+#define IDI_DISMODE 101
+#define DISMODE_STRINGIZE_DETAIL(value) #value
+#define DISMODE_STRINGIZE(value) DISMODE_STRINGIZE_DETAIL(value)
+
+#if !defined(DISMODE_VERSION_MAJOR) || \
+    !defined(DISMODE_VERSION_MINOR) || \
+    !defined(DISMODE_VERSION_PATCH)
+#error Dismode version macros must be provided by MSBuild.
+#endif
+
+IDI_DISMODE ICON "..\\..\\assets\\branding\\Dismode.ico"
+
+VS_VERSION_INFO VERSIONINFO
+ FILEVERSION DISMODE_VERSION_MAJOR,DISMODE_VERSION_MINOR,DISMODE_VERSION_PATCH,0
+ PRODUCTVERSION DISMODE_VERSION_MAJOR,DISMODE_VERSION_MINOR,DISMODE_VERSION_PATCH,0
+ FILEFLAGSMASK 0x3fL
+#ifdef _DEBUG
+ FILEFLAGS VS_FF_DEBUG
+#else
+ FILEFLAGS 0x0L
+#endif
+ FILEOS VOS_NT_WINDOWS32
+ FILETYPE VFT_DLL
+ FILESUBTYPE 0x0L
+BEGIN
+    BLOCK "StringFileInfo"
+    BEGIN
+        BLOCK "040904b0"
+        BEGIN
+            VALUE "CompanyName", "Dismode Development\0"
+            VALUE "FileDescription", "Dismode Windows 11 Explorer Command\0"
+            VALUE "FileVersion", DISMODE_STRINGIZE(DISMODE_VERSION_MAJOR) "." DISMODE_STRINGIZE(DISMODE_VERSION_MINOR) "." DISMODE_STRINGIZE(DISMODE_VERSION_PATCH) ".0\0"
+            VALUE "InternalName", "Dismode.ShellExtension.dll\0"
+            VALUE "LegalCopyright", "Copyright (c) 2026 Dismode Development\0"
+            VALUE "OriginalFilename", "Dismode.ShellExtension.dll\0"
+            VALUE "ProductName", "Dismode Gaming Edition\0"
+            VALUE "ProductVersion", DISMODE_STRINGIZE(DISMODE_VERSION_MAJOR) "." DISMODE_STRINGIZE(DISMODE_VERSION_MINOR) "." DISMODE_STRINGIZE(DISMODE_VERSION_PATCH) ".0\0"
+        END
+    END
+    BLOCK "VarFileInfo"
+    BEGIN
+        VALUE "Translation", 0x0409, 1200
+    END
+END

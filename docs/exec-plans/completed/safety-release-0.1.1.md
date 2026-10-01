@@ -1,4 +1,4 @@
-# Plan wykonawczy: GameShift 0.1.1 — Safety Release
+# Plan wykonawczy: Dismode 0.1.1 — Safety Release
 
 Status: ukończony  
 Utworzono: 2026-07-30  
@@ -8,7 +8,7 @@ Ukończono: 2026-08-01
 ## Cel
 
 Przestać automatycznie wykonywać albo sugerować działania, dla których
-GameShift nie ma jeszcze dowodu poprawy frametime. Zachować istniejące,
+Dismode nie ma jeszcze dowodu poprawy frametime. Zachować istniejące,
 transakcyjne mechanizmy procesu, ale zmienić domyślne zachowanie na
 konserwatywne i wyjaśnialne.
 
@@ -66,10 +66,10 @@ konserwatywne i wyjaśnialne.
 
 ## Dowody walidacji
 
-- `dotnet build GameShift.sln --configuration Debug`: kod 0, 0 ostrzeżeń.
-- `dotnet test GameShift.sln --configuration Debug --no-build`: 95/95
+- `dotnet build Dismode.sln --configuration Debug`: kod 0, 0 ostrzeżeń.
+- `dotnet test Dismode.sln --configuration Debug --no-build`: 95/95
   (27 Unit, 12 Recovery, 53 Integration, 3 Security).
-- `dotnet format GameShift.sln --verify-no-changes --no-restore`: kod 0.
+- `dotnet format Dismode.sln --verify-no-changes --no-restore`: kod 0.
 - Test regresji zapisuje `High`, uruchamia ścieżkę szybkiego Play i
   potwierdza brak `BOOST_GAME_PRIORITY` przy zachowaniu jawnej reguły tła.
 - Wyszukanie produkcyjnych punktów tworzenia
