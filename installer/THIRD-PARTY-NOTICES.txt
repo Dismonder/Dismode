@@ -1,4 +1,4 @@
-GameShift wykorzystuje składniki open source dostarczane z odpowiednimi
+Dismode wykorzystuje składniki open source dostarczane z odpowiednimi
 informacjami licencyjnymi, między innymi:
 
 - PresentMon 2.5.1 — MIT; pełna licencja i notices znajdują się w
@@ -12,7 +12,7 @@ informacjami licencyjnymi, między innymi:
   żądanie z przypiętych repozytoriów: oficjalnego Stable/Nightly albo wyraźnie
   oznaczonego, społecznościowego i nieoficjalnego kanału Beta. Licencje
   właściwe dla wybranego pakietu są zachowywane przy instalacji gry.
-- GameShift Memory Optimizer — niezależny program GPL-3.0-only,
+- Dismode Memory Optimizer — niezależny program GPL-3.0-only,
   wywodzący się z Windows Memory Cleaner 3.0.8 © Igor Mundstein;
   https://github.com/IgorMundstein/WinMemoryCleaner. Jego katalog zawiera
   pełną licencję, listę modyfikacji, metadane wydania i dokładne odpowiadające

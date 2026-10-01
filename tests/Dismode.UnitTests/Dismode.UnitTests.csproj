@@ -1,0 +1,27 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <IsPackable>false</IsPackable>
+    <IsTestProject>true</IsTestProject>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" />
+    <PackageReference Include="MSTest.TestAdapter" />
+    <PackageReference Include="MSTest.TestFramework" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\Dismode.Contracts\Dismode.Contracts.csproj" />
+    <ProjectReference Include="..\..\src\Dismode.Core\Dismode.Core.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Compile Include="..\..\tools\Dismode.UpdatePublisher\UpdatePublisherTrust.cs"
+             Link="Updates\UpdatePublisherTrust.cs" />
+    <Compile Include="..\..\src\Dismode.UI\Services\MemoryOptimizerComponentStatus.cs"
+             Link="UI\MemoryOptimizerComponentStatus.cs" />
+    <Compile Include="..\..\src\Dismode.UI\Services\SystemOptimizerComponentStatus.cs"
+             Link="UI\SystemOptimizerComponentStatus.cs" />
+  </ItemGroup>
+</Project>

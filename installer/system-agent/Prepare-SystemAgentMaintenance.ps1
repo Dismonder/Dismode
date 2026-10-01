@@ -2,7 +2,7 @@
 param()
 
 $ErrorActionPreference = "Stop"
-$serviceName = "GameShiftSystemAgent"
+$serviceName = "DismodeSystemAgent"
 $service = Get-Service -Name $serviceName -ErrorAction SilentlyContinue
 if ($null -eq $service) {
     exit 0

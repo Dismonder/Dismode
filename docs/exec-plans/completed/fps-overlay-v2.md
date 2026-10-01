@@ -15,10 +15,10 @@ Utworzono: 2026-07-29
 ## Ustalenia
 
 - aktywna sesja Roblox śledzi prawidłowy PID `19436`;
-- własny PresentMon działa, ale GameShift otrzymuje zero klatek;
+- własny PresentMon działa, ale Dismode otrzymuje zero klatek;
 - niezależne próby konsolowe kończą się komunikatem o utraconych zdarzeniach
   ETW;
-- na hoście pozostało siedem sesji `GameShift-18416-*` po nieistniejącym
+- na hoście pozostało siedem sesji `Dismode-18416-*` po nieistniejącym
   SessionHost oraz jedna sesja bieżącego hosta;
 - źródłem wycieku jest losowa nazwa sesji przy każdym starcie połączona z
   wymuszonym `Process.Kill`, bez zakończenia nazwanej sesji ETW.
@@ -50,17 +50,17 @@ Utworzono: 2026-07-29
 - build Debug i Release zakończyły się bez ostrzeżeń;
 - pięć wąskich testów parsera, selekcji PID i stabilnej nazwy sesji przeszło
   5/5;
-- po kontrolowanym restarcie wyłącznie składników GameShift recovery
+- po kontrolowanym restarcie wyłącznie składników Dismode recovery
   zachowało Roblox PID `19436`, a nowy backend utworzył dokładnie jedną
-  stabilną sesję `GameShift-9CD59278A121E901`;
+  stabilną sesję `Dismode-9CD59278A121E901`;
 - końcowy odczyt zwrócił `240,1 FPS` i `4,16 ms` dla zweryfikowanego PID;
 - HUD v2 został opublikowany i zweryfikowany jako widoczny, topmost,
   click-through oraz nieaktywujący; pełny render przy DPI 144 ma 492×216 px
   i nie jest ucięty;
 - kopie sprzed podmian:
-  `artifacts/GameShift-App.ui-overlay-v2-backup-20260729-204516`,
-  `artifacts/GameShift-App.ui-dpi-backup-20260729-204820` oraz
-  `artifacts/GameShift-App.backend-etw-backup-20260729-205007`.
+  `artifacts/Dismode-App.ui-overlay-v2-backup-20260729-204516`,
+  `artifacts/Dismode-App.ui-dpi-backup-20260729-204820` oraz
+  `artifacts/Dismode-App.backend-etw-backup-20260729-205007`.
 
 ## Ryzyka
 

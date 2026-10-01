@@ -7,7 +7,7 @@ Utworzono: 2026-08-01
 
 ## Cel
 
-Dostarczyć powtarzalną instalację GameShift na obsługiwanych komputerach oraz
+Dostarczyć powtarzalną instalację Dismode na obsługiwanych komputerach oraz
 bezpieczny kanał aktualizacji ręcznych i automatycznych. Aktualizacje mają być
 sprawdzane automatycznie najwyżej raz na 30 dni i pobierane z publicznego,
 tylko-do-odczytu Cloudflare Worker Static Assets. Instalator jest dzielony na
@@ -17,7 +17,7 @@ weryfikacji manifestu, każdego fragmentu oraz złożonej paczki.
 ## Granice bezpieczeństwa
 
 - Aktualizator nigdy nie zamyka gry ani obcych procesów; może zamknąć wyłącznie
-  komponenty GameShift z dokładnie zweryfikowanego katalogu instalacji.
+  komponenty Dismode z dokładnie zweryfikowanego katalogu instalacji.
 - Aktualizacja, naprawa i pełna deinstalacja są blokowane przy aktywnej sesji
   gry, niedokończonym journalu lub oczekującym recovery.
 - UI pozostaje `asInvoker`; podniesienie uprawnień następuje dopiero przy
@@ -34,12 +34,12 @@ weryfikacji manifestu, każdego fragmentu oraz złożonej paczki.
 ## Architektura
 
 ```text
-GameShift.UI (bez administratora)
+Dismode.UI (bez administratora)
   ├─ UpdateCheckService — manualnie lub co 30 dni
   ├─ SignedManifestVerifier — wbudowany klucz publiczny
   └─ UpdateStagingService — HTTPS + limit + SHA-256
              ↓ zweryfikowany update ticket
-GameShift.Updater (minimalny helper)
+Dismode.Updater (minimalny helper)
   ├─ ponowna walidacja ticketu, manifestu i paczki
   ├─ brama active-session/recovery
   ├─ zamknięcie wyłącznie własnych komponentów
@@ -72,7 +72,7 @@ Status: ukończone
 Zrealizowano:
 
 - Worker działa pod
-  `https://gameshift-update-service-dev.dismonder.workers.dev`;
+  `https://dismode-update-service-dev.dismonder.workers.dev`;
 - typecheck, 5/5 testów runtime oraz dry-run zakończyły się kodem 0;
 - live `/health` i strona produktu zwracają 200, a zapis zwraca 405;
 - R2 nie jest używane. Konto zwróciło kod 10042 wymagający aktywacji przez
@@ -95,7 +95,7 @@ Status: ukończone
 - SQLite v6: kanał, auto-update, ostatnia udana próba, ostatni błąd i wersja;
 - ręczny check zawsze dostępny; automatyczny najwyżej raz na 30 dni;
 - limit rozmiaru manifestu, timeout, HTTPS, ETag i uczciwe statusy offline;
-- staging w `%LocalAppData%\\GameShift\\Updates`;
+- staging w `%LocalAppData%\\Dismode\\Updates`;
 - UI Bento: stan wersji, check, pobranie, instalacja, preferencje i prywatność.
 
 ### 4. Bezpieczny handoff i mutexy
@@ -103,9 +103,9 @@ Status: ukończone
 Status: ukończone dla instalatora 0.1.2
 
 - pojedyncza instancja UI i setupu;
-- minimalny `GameShift.Updater.exe` z zamkniętym ticketem;
+- minimalny `Dismode.Updater.exe` z zamkniętym ticketem;
 - brama aktywnej sesji i recovery przed zamykaniem czegokolwiek;
-- zamknięcie tylko znanych procesów GameShift z katalogu instalacji;
+- zamknięcie tylko znanych procesów Dismode z katalogu instalacji;
 - uruchomienie instalatora i potwierdzenie zdrowego startu nowej wersji;
 - zachowanie poprzedniej zweryfikowanej paczki do potwierdzenia.
 
@@ -133,7 +133,7 @@ Status: częściowo ukończone; finalny deploy 0.1.2 oczekuje na smoke instalacj
 
 - Finalny build 0.1.2: kod 0, 0 ostrzeżeń, format bez zmian, czysty journal
   (797 rekordów), 106/106 testów.
-- `GameShift-Setup-0.1.2-win-x64.exe`: 71 728 335 B, SHA-256
+- `Dismode-Setup-0.1.2-win-x64.exe`: 71 728 335 B, SHA-256
   `F4CC1136A92BC68622CFEC00247F9DA089F87C5266407AFA7D9C35EB82952742`.
 - Payload: 0 PDB, 0 Windows Forms, self-contained, wersje plików 0.1.2.0.
 - Natywna DLL menu eksportuje oba entrypointy COM. Podpis sparse MSIX i
@@ -145,10 +145,10 @@ Status: częściowo ukończone; finalny deploy 0.1.2 oczekuje na smoke instalacj
 ## Wydanie 0.4.0 na kanale preview — 2026-09-05
 
 Wydanie prywatne, przeznaczone do testów na drugim komputerze. Podpisane
-certyfikatem testowym `CN=GameShift Development`, odcisk
+certyfikatem testowym `CN=Dismode Development`, odcisk
 `B78DD0E0D609D24588608BB76AF87F007ADC63A5`.
 
-- `GameShift-Setup-0.4.0-win-x64.exe`, 223 988 960 B (213,61 MiB),
+- `Dismode-Setup-0.4.0-win-x64.exe`, 223 988 960 B (213,61 MiB),
   SHA-256 `40CC1DD41749A450FC7AF8884BE5E112287D88D8E5C6DE40B3CF9DF42C8AD5E9`,
   podpis Authenticode `Valid`, build zakończony kodem 0.
 - Testy przed spakowaniem: UnitTests 180/180, RecoveryTests 13/13,
@@ -167,14 +167,14 @@ Warunek konieczny na maszynie docelowej: certyfikat testowy musi trafić do
 `WinVerifyTrust` odrzuci podpis, więc SystemAgent potraktuje SystemOptimizer
 jako niezaufanego klienta i zablokuje mutacje, a instalator zobaczy
 ostrzeżenie SmartScreen. Część publiczna certyfikatu leży w
-`artifacts/installer/GameShift-TestSigning-B78DD0E0.cer`.
+`artifacts/installer/Dismode-TestSigning-B78DD0E0.cer`.
 
 ## Wydanie 0.4.1 na kanale preview — 2026-09-05
 
 Wydanie naprawcze deinstalatora. Numer podbity, bo zmienia zachowanie, a
 publikowanie innej binarki pod istniejącym 0.4.0 złamałoby niezmienność paczki.
 
-- `GameShift-Setup-0.4.1-win-x64.exe`, 223 993 976 B (213,62 MiB),
+- `Dismode-Setup-0.4.1-win-x64.exe`, 223 993 976 B (213,62 MiB),
   SHA-256 `E383CC6478FCD3E9C4CCE5A8918B79097F8C136BABB2163798A68CC1691E06E0`,
   podpis Authenticode `Valid`, build kodem 0.
 - Kanał `preview` serwuje 0.4.1 z `minimumSupportedVersion` 0.1.1.
@@ -246,7 +246,7 @@ te same pliki w czterech niezależnych katalogach self-contained:
 | `DirectML.dll` (17,8 MB) | 3 | ~36 MB |
 
 `onnxruntime.dll` i `DirectML.dll` pochodzą z Windows App SDK 2.3.1 i służą
-Windows ML, którego GameShift nie używa.
+Windows ML, którego Dismode nie używa.
 
 Deduplikacja payloadu i usunięcie nieużywanego runtime'u ML zmniejszy każde
 pobranie — również świeżą instalację — bez nowej powierzchni bezpieczeństwa
@@ -301,7 +301,7 @@ restore było nie tylko niewykonalne, ale i bezprzedmiotowe.
 
 ### Weryfikacja
 
-- 6 nowych testów w `GameShift.RecoveryTests` przypina, co liczy się jako
+- 6 nowych testów w `Dismode.RecoveryTests` przypina, co liczy się jako
   trwała zmiana: akcja zastosowana bez kompensacji blokuje, akcja
   skompensowana lub zablokowana przed zastosowaniem nie blokuje.
 - Test kontraktowy `UninstallRestoresMachineTweaksBeforeRemovingSystemAgent`

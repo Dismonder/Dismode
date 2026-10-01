@@ -1,6 +1,6 @@
 ﻿[CmdletBinding()]
 param(
-    [string]$OutputDirectory = "artifacts\GameShift-App",
+    [string]$OutputDirectory = "artifacts\Dismode-App",
     [switch]$CreateDesktopShortcut,
     [switch]$SelfContained,
     [switch]$SkipTests,
@@ -20,16 +20,16 @@ $artifactsRoot = [IO.Path]::GetFullPath(
     (Join-Path $repositoryRoot "artifacts"))
 $directoryBuildPropsPath = Join-Path $repositoryRoot "Directory.Build.props"
 $nativeShellProject = Join-Path $repositoryRoot (
-    "src\GameShift.ShellExtension\GameShift.ShellExtension.vcxproj")
+    "src\Dismode.ShellExtension\Dismode.ShellExtension.vcxproj")
 $nativeShellDll = Join-Path $repositoryRoot (
-    "src\GameShift.ShellExtension\bin\x64\Release\" +
-    "GameShift.ShellExtension.dll")
+    "src\Dismode.ShellExtension\bin\x64\Release\" +
+    "Dismode.ShellExtension.dll")
 $sparseManifestSource = Join-Path $repositoryRoot (
     "installer\sparse-package\AppxManifest.xml")
 $shellRegistrationScriptSource = Join-Path $repositoryRoot (
-    "installer\sparse-package\Register-GameShiftShell.ps1")
+    "installer\sparse-package\Register-DismodeShell.ps1")
 $shellUnregistrationScriptSource = Join-Path $repositoryRoot (
-    "installer\sparse-package\Unregister-GameShiftShell.ps1")
+    "installer\sparse-package\Unregister-DismodeShell.ps1")
 $outputPath = if ([IO.Path]::IsPathFullyQualified($OutputDirectory)) {
     [IO.Path]::GetFullPath($OutputDirectory)
 }
@@ -55,22 +55,22 @@ $runningComponents = Get-CimInstance Win32_Process |
             $outputPrefix,
             [StringComparison]::OrdinalIgnoreCase) -and
         $_.Name -in @(
-            "GameShift.UI.exe",
-            "GameShift.SystemOptimizer.exe",
-            "GameShift.SessionHost.exe",
-            "GameShift.SystemAgent.exe",
+            "Dismode.UI.exe",
+            "Dismode.SystemOptimizer.exe",
+            "Dismode.SessionHost.exe",
+            "Dismode.SystemAgent.exe",
             "PresentMon-2.5.1-x64.exe")
     }
 if ($runningComponents) {
     $description = $runningComponents |
         ForEach-Object { "$($_.Name) (PID $($_.ProcessId))" }
     throw "Wydanie jest uruchomione: $($description -join ', '). " +
-        "Zakończ sesję i zamknij GameShift przed aktualizacją."
+        "Zakończ sesję i zamknij Dismode przed aktualizacją."
 }
 
 $journalPath = Join-Path (
     [Environment]::GetFolderPath("LocalApplicationData")) (
-    "GameShift\user-recovery.jsonl")
+    "Dismode\user-recovery.jsonl")
 if (Test-Path -LiteralPath $journalPath) {
     $checkpoints = Get-Content -LiteralPath $journalPath |
         ForEach-Object {
@@ -99,7 +99,7 @@ if (Test-Path -LiteralPath $stagingPath) {
     throw "Katalog staging już istnieje: $stagingPath"
 }
 $sparsePackageStagingPath = Join-Path $artifactsRoot (
-    "GameShift-SparsePackage.staging-$PID")
+    "Dismode-SparsePackage.staging-$PID")
 if (Test-Path -LiteralPath $sparsePackageStagingPath) {
     throw "Katalog sparse package staging już istnieje: " +
         $sparsePackageStagingPath
@@ -204,13 +204,13 @@ if ($CodeSigningCertificateThumbprint) {
 }
 
 $projects = @(
-    "src\GameShift.Launcher\GameShift.Launcher.csproj",
-    "src\GameShift.SessionHost\GameShift.SessionHost.csproj",
-    "src\GameShift.SystemAgent\GameShift.SystemAgent.csproj",
-    "src\GameShift.UI\GameShift.UI.csproj"
+    "src\Dismode.Launcher\Dismode.Launcher.csproj",
+    "src\Dismode.SessionHost\Dismode.SessionHost.csproj",
+    "src\Dismode.SystemAgent\Dismode.SystemAgent.csproj",
+    "src\Dismode.UI\Dismode.UI.csproj"
 )
 $systemOptimizerProject =
-    "src\GameShift.SystemOptimizer\GameShift.SystemOptimizer.csproj"
+    "src\Dismode.SystemOptimizer\Dismode.SystemOptimizer.csproj"
 $presentMonSourceDirectory = Join-Path (
     $repositoryRoot) "third_party\PresentMon"
 $presentMonExecutableName = "PresentMon-2.5.1-x64.exe"
@@ -224,24 +224,24 @@ $presentMonFiles = @(
     "README.md"
 )
 $requiredFiles = @(
-    "GameShift.exe",
-    "GameShift.UI.exe",
-    "GameShift.SessionHost.exe",
-    "GameShift.SystemAgent.exe",
+    "Dismode.exe",
+    "Dismode.UI.exe",
+    "Dismode.SessionHost.exe",
+    "Dismode.SystemAgent.exe",
     "App.xbf",
     "MainWindow.xbf",
     "PerformanceOverlayWindow.xbf",
-    "GameShift.UI.pri",
-    "SystemOptimizer\GameShift.SystemOptimizer.exe",
+    "Dismode.UI.pri",
+    "SystemOptimizer\Dismode.SystemOptimizer.exe",
     "SystemOptimizer\App.xbf",
     "SystemOptimizer\MainWindow.xbf",
-    "SystemOptimizer\GameShift.SystemOptimizer.pri",
+    "SystemOptimizer\Dismode.SystemOptimizer.pri",
     "trusted-signers.json",
-    "GameShift.ShellExtension.dll",
-    "ShellIntegration\GameShift.Sparse.msix",
-    "ShellIntegration\GameShift-Development.cer",
-    "ShellIntegration\Register-GameShiftShell.ps1",
-    "ShellIntegration\Unregister-GameShiftShell.ps1",
+    "Dismode.ShellExtension.dll",
+    "ShellIntegration\Dismode.Sparse.msix",
+    "ShellIntegration\Dismode-Development.cer",
+    "ShellIntegration\Register-DismodeShell.ps1",
+    "ShellIntegration\Unregister-DismodeShell.ps1",
     "Tools\PresentMon\$presentMonExecutableName",
     "Tools\PresentMon\LICENSE.txt",
     "Tools\PresentMon\THIRD_PARTY.txt",
@@ -283,20 +283,20 @@ try {
         throw "PresentMon nie przeszedł weryfikacji rozmiaru i SHA-256."
     }
 
-    dotnet restore GameShift.sln
+    dotnet restore Dismode.sln
     if ($LASTEXITCODE -ne 0) {
         throw "Restore zakończył się kodem $LASTEXITCODE."
     }
 
-    dotnet build GameShift.sln --configuration Release --no-restore
+    dotnet build Dismode.sln --configuration Release --no-restore
     if ($LASTEXITCODE -ne 0) {
         throw "Build zakończył się kodem $LASTEXITCODE."
     }
 
     $journalVerifier = (
-        "tools\GameShift.SessionSimulator\bin\Release\" +
+        "tools\Dismode.SessionSimulator\bin\Release\" +
         "net10.0-windows10.0.26100.0\" +
-        "GameShift.SessionSimulator.dll")
+        "Dismode.SessionSimulator.dll")
     dotnet $journalVerifier --journal-status
     if ($LASTEXITCODE -ne 0) {
         throw "Integralny journal nie potwierdził zakończenia " +
@@ -304,7 +304,7 @@ try {
     }
 
     if (-not $SkipTests) {
-        dotnet test GameShift.sln `
+        dotnet test Dismode.sln `
             --configuration Release `
             --no-build `
             --no-restore `
@@ -313,7 +313,7 @@ try {
             throw "Testy zakończyły się kodem $LASTEXITCODE."
         }
 
-        dotnet format GameShift.sln `
+        dotnet format Dismode.sln `
             --verify-no-changes `
             --no-restore
         if ($LASTEXITCODE -ne 0) {
@@ -341,7 +341,7 @@ try {
                 "win-x64"
             )
             if ($project.EndsWith(
-                    "GameShift.UI.csproj",
+                    "Dismode.UI.csproj",
                     [StringComparison]::OrdinalIgnoreCase)) {
                 $restoreArguments +=
                     "-p:WindowsAppSDKSelfContained=true"
@@ -386,7 +386,7 @@ try {
                 "true"
             )
             if ($project.EndsWith(
-                    "GameShift.UI.csproj",
+                    "Dismode.UI.csproj",
                     [StringComparison]::OrdinalIgnoreCase)) {
                 $publishArguments +=
                     "-p:WindowsAppSDKSelfContained=true"
@@ -438,7 +438,7 @@ try {
     }
 
     Copy-Item -LiteralPath $nativeShellDll -Destination (
-        Join-Path $stagingPath "GameShift.ShellExtension.dll")
+        Join-Path $stagingPath "Dismode.ShellExtension.dll")
 
     $trustedSignerThumbprints = @()
     if ($productionSigningCertificate) {
@@ -447,7 +447,7 @@ try {
                 -File |
             Where-Object {
                 $_.Name.StartsWith(
-                    "GameShift",
+                    "Dismode",
                     [StringComparison]::OrdinalIgnoreCase) -and
                 $_.Extension -in @(".exe", ".dll")
             } |
@@ -524,7 +524,7 @@ try {
     New-Item -ItemType Directory -Path (
         $shellIntegrationDirectory) | Out-Null
     $sparsePackagePath = Join-Path (
-        $shellIntegrationDirectory) "GameShift.Sparse.msix"
+        $shellIntegrationDirectory) "Dismode.Sparse.msix"
     & $makeAppxPath `
         pack `
         /o `
@@ -536,7 +536,7 @@ try {
         throw "Budowa sparse package dla menu Windows 11 nie powiodła się."
     }
 
-    $certificateSubject = "CN=GameShift Development"
+    $certificateSubject = "CN=Dismode Development"
     # Nowy certyfikat powstaje tylko wtedy, gdy w magazynie nie ma żadnego
     # zdatnego do podpisywania. Filtr pytał kiedyś o właściwość .Value tej
     # listy, której ten typ nie ma, więc nie trafiał nigdy i każde
@@ -581,7 +581,7 @@ try {
     if (-not $signingCertificate -or
         $signingCertificate.Subject -ne $certificateSubject -or
         -not $signingCertificate.HasPrivateKey) {
-        throw "Brak poprawnego certyfikatu deweloperskiego GameShift."
+        throw "Brak poprawnego certyfikatu deweloperskiego Dismode."
     }
 
     $currentUserTrustStore = [Security.Cryptography.X509Certificates.X509Store]::new(
@@ -622,7 +622,7 @@ try {
     }
 
     $developmentCertificatePath = Join-Path (
-        $shellIntegrationDirectory) "GameShift-Development.cer"
+        $shellIntegrationDirectory) "Dismode-Development.cer"
     [IO.File]::WriteAllBytes(
         $developmentCertificatePath,
         $signingCertificate.Export(
@@ -694,12 +694,12 @@ try {
 
     if ($CreateDesktopShortcut) {
         $desktop = [Environment]::GetFolderPath("Desktop")
-        $shortcutPath = Join-Path $desktop "GameShift.lnk"
+        $shortcutPath = Join-Path $desktop "Dismode.lnk"
         $shell = New-Object -ComObject WScript.Shell
         $shortcut = $shell.CreateShortcut($shortcutPath)
-        $shortcut.TargetPath = Join-Path $outputPath "GameShift.exe"
+        $shortcut.TargetPath = Join-Path $outputPath "Dismode.exe"
         $shortcut.WorkingDirectory = $outputPath
-        $shortcut.Description = "Uruchom GameShift"
+        $shortcut.Description = "Uruchom Dismode"
         $shortcut.Save()
     }
 

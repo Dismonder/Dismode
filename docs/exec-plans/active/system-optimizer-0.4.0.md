@@ -1,17 +1,17 @@
-# Plan wykonawczy: GameShift System Optimizer 0.4.0
+# Plan wykonawczy: Dismode System Optimizer 0.4.0
 
 Status: implementacja i lokalna regresja hosta zakończone; lokalny staging
 0.4.0 jest zbudowany i zweryfikowany, a macierz VM oraz produkcyjny podpis
 pozostają wymagane przed dystrybucją
 
 Utworzono: 2026-08-30
-Źródło wymagań: zaakceptowany plan użytkownika „GameShift System Optimizer
+Źródło wymagań: zaakceptowany plan użytkownika „Dismode System Optimizer
 0.4.0 — pomiarowy optimizer A/B”
 
 ## Cel
 
-Dostarczyć osobny interfejs `GameShift.SystemOptimizer.exe` i usługę Windows
-`GameShiftSystemAgent`, które wykonują wyłącznie katalogowane, mierzone metodą
+Dostarczyć osobny interfejs `Dismode.SystemOptimizer.exe` i usługę Windows
+`DismodeSystemAgent`, które wykonują wyłącznie katalogowane, mierzone metodą
 A/B i odwracalne zmiany. Brak zweryfikowanego adaptera oznacza `Unsupported`,
 a Hard Safety Policy nie może zostać ominięta zgodą użytkownika.
 
@@ -86,9 +86,9 @@ Aktualny stan 2026-09-05 po zleceniu publikacji dla innych użytkowników:
 
 ## Walidacja lokalna 2026-08-30
 
-- `GameShift.sln`: restore i Debug build zakończone bez ostrzeżeń; 285/285
+- `Dismode.sln`: restore i Debug build zakończone bez ostrzeżeń; 285/285
   testy przeszły, a `dotnet format --verify-no-changes` jest czysty;
-- `GameShift.MemoryOptimizer.sln`: restore i Release build zakończone bez
+- `Dismode.MemoryOptimizer.sln`: restore i Release build zakończone bez
   ostrzeżeń; 70 testów przeszło, a jeden agresywny test VM został prawidłowo
   pominięty bez jawnej flagi; formatowanie jest czyste;
 - na hoście nie uruchomiono UI, instalatora, gry ani żadnej mutacji Windows.
@@ -100,10 +100,10 @@ Aktualny stan 2026-09-05 po zleceniu publikacji dla innych użytkowników:
 
 ## Walidacja Windows po handoffie Linux 2026-09-05
 
-- Windows 11 x64 build `28120`: restore i build Debug `GameShift.sln` oraz
+- Windows 11 x64 build `28120`: restore i build Debug `Dismode.sln` oraz
   restore i build Release rozwiązania Memory Optimizer zakończyły się bez
   ostrzeżeń i błędów.
-- Bezpieczna regresja Release GameShift przeszła: 134 Unit, 13 Recovery,
+- Bezpieczna regresja Release Dismode przeszła: 134 Unit, 13 Recovery,
   140 read-only Integration i 4 Security. Jeden test symlinków pominięto z
   powodu braku funkcji na hoście. Memory Optimizer przeszedł 58 Core i 12
   Security; agresywny test VM pozostał pominięty bez jawnej flagi.
@@ -111,20 +111,20 @@ Aktualny stan 2026-09-05 po zleceniu publikacji dla innych użytkowników:
   21/22 testów Integration; jedyny skip to brak obsługi symlinków na hoście.
 - `dotnet format --verify-no-changes` jest czysty dla obu rozwiązań.
   `SystemMemoryCleanerTests` wymagają teraz jawnego
-  `GAMESHIFT_ALLOW_AGGRESSIVE_MEMORY_TESTS=1`, więc zwykła regresja nie
+  `DISMODE_ALLOW_AGGRESSIVE_MEMORY_TESTS=1`, więc zwykła regresja nie
   zmienia globalnego cache systemu.
 - Read-only smoke: recovery journal czysty (1127 rekordów), PresentMon 2.5.1
-  `Ready`, `GameShift.SystemAgent.exe --diagnostics` zwraca IPC v6.
+  `Ready`, `Dismode.SystemAgent.exe --diagnostics` zwraca IPC v6.
 - Finalny staging lokalny: instalator 0.4.0 ma 223 888 088 B i SHA-256
   `26C6A83C5D870E12F8CFC272AA5BD528F88F10D5F71D51427435914475C70369`.
-  Authenticode `Valid`; 24 własne binaria GameShift i sześć binariów Memory
+  Authenticode `Valid`; 24 własne binaria Dismode i sześć binariów Memory
   Optimizer ma wersję `0.4.0.0` i zgodny podpis. Manifest preview `0.4.0`
   (`minimumSupportedVersion=0.3.0`) zawiera 11 chunków zgodnych z hashem
   instalatora.
 - GPL release gate przeszedł; NOTICE i odpowiadające źródło są 0.4.0, a
   archiwum źródłowe ma SHA-256
   `7FFFDF98286946C588183251A5F3A28EB058A0196426B2347A746AF36032B8BF`.
-  Staging podpisano lokalnym certyfikatem deweloperskim `CN=GameShift
+  Staging podpisano lokalnym certyfikatem deweloperskim `CN=Dismode
   Development`; podpis produkcyjny i testy VM pozostają bramami dystrybucji.
 - Nie uruchamiano instalatora, nie instalowano SystemAgent, nie wykonywano
   restartu, gry ani agresywnej mutacji Windows.

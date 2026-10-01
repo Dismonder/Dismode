@@ -1,0 +1,137 @@
+<Application
+    x:Class="Dismode.MemoryOptimizer.App"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    RequestedTheme="Dark">
+  <Application.Resources>
+    <ResourceDictionary>
+      <ResourceDictionary.MergedDictionaries>
+        <XamlControlsResources xmlns="using:Microsoft.UI.Xaml.Controls" />
+      </ResourceDictionary.MergedDictionaries>
+
+      <ResourceDictionary.ThemeDictionaries>
+        <ResourceDictionary x:Key="Default">
+          <SolidColorBrush x:Key="MemoryBackgroundBrush" Color="#FF070B10" />
+          <SolidColorBrush x:Key="MemoryTitleBarBrush" Color="#FF090D12" />
+          <SolidColorBrush x:Key="MemoryNavigationBrush" Color="#F20B1117" />
+          <SolidColorBrush x:Key="MemoryCardBrush" Color="#F2121A21" />
+          <!-- Tlo okna menu w trayu. Nieprzezroczyste celowo: przy #F2121A21
+               panel przepuszczal 5% tego, co akurat lezy pod oknem, wiec jego
+               odcien zalezal od pulpitu. To jest swiadoma zmiana wygladu, a
+               nie neutralna poprawka: nowa wartosc odpowiada zmierzonemu
+               zlozeniu na ciemnym tle, na jasnym panel bedzie teraz ciemniejszy
+               niz wczesniej. Menu ma wygladac tak samo niezaleznie od tego, co
+               pod nim lezy. -->
+          <SolidColorBrush x:Key="MemoryTrayPanelBrush" Color="#FF11191F" />
+          <SolidColorBrush x:Key="MemoryElevatedBrush" Color="#FF18222B" />
+          <SolidColorBrush x:Key="MemoryInsetBrush" Color="#B90C1319" />
+          <SolidColorBrush x:Key="MemoryBorderBrush" Color="#FF273640" />
+          <SolidColorBrush x:Key="MemoryDividerBrush" Color="#B5223039" />
+          <SolidColorBrush x:Key="MemoryMutedBrush" Color="#FF8FA1AE" />
+          <SolidColorBrush x:Key="MemorySecondaryTextBrush" Color="#FFC3CFD7" />
+          <SolidColorBrush x:Key="MemoryAccentBrush" Color="#FF20D7D0" />
+          <SolidColorBrush x:Key="MemoryAccentForegroundBrush" Color="#FF041011" />
+          <SolidColorBrush x:Key="MemoryAccentSoftBrush" Color="#3320D7D0" />
+          <SolidColorBrush x:Key="MemorySuccessBrush" Color="#FF3BD680" />
+          <SolidColorBrush x:Key="MemoryWarningBrush" Color="#FFFFB84D" />
+          <SolidColorBrush x:Key="MemoryWarningSoftBrush" Color="#2EFFB84D" />
+          <SolidColorBrush x:Key="MemoryDangerBrush" Color="#FFFF6978" />
+          <SolidColorBrush x:Key="MemoryTrackBrush" Color="#FF26343D" />
+        </ResourceDictionary>
+        <ResourceDictionary x:Key="HighContrast">
+          <SolidColorBrush x:Key="MemoryBackgroundBrush" Color="{ThemeResource SystemColorWindowColor}" />
+          <SolidColorBrush x:Key="MemoryTitleBarBrush" Color="{ThemeResource SystemColorWindowColor}" />
+          <SolidColorBrush x:Key="MemoryNavigationBrush" Color="{ThemeResource SystemColorWindowColor}" />
+          <SolidColorBrush x:Key="MemoryCardBrush" Color="{ThemeResource SystemColorWindowColor}" />
+          <SolidColorBrush x:Key="MemoryTrayPanelBrush" Color="{ThemeResource SystemColorWindowColor}" />
+          <SolidColorBrush x:Key="MemoryElevatedBrush" Color="{ThemeResource SystemColorWindowColor}" />
+          <SolidColorBrush x:Key="MemoryInsetBrush" Color="{ThemeResource SystemColorWindowColor}" />
+          <SolidColorBrush x:Key="MemoryBorderBrush" Color="{ThemeResource SystemColorWindowTextColor}" />
+          <SolidColorBrush x:Key="MemoryDividerBrush" Color="{ThemeResource SystemColorWindowTextColor}" />
+          <SolidColorBrush x:Key="MemoryMutedBrush" Color="{ThemeResource SystemColorGrayTextColor}" />
+          <SolidColorBrush x:Key="MemorySecondaryTextBrush" Color="{ThemeResource SystemColorWindowTextColor}" />
+          <SolidColorBrush x:Key="MemoryAccentBrush" Color="{ThemeResource SystemColorHighlightColor}" />
+          <SolidColorBrush x:Key="MemoryAccentForegroundBrush" Color="{ThemeResource SystemColorHighlightTextColor}" />
+          <SolidColorBrush x:Key="MemoryAccentSoftBrush" Color="{ThemeResource SystemColorWindowColor}" />
+          <SolidColorBrush x:Key="MemorySuccessBrush" Color="{ThemeResource SystemColorHotlightColor}" />
+          <SolidColorBrush x:Key="MemoryWarningBrush" Color="{ThemeResource SystemColorHighlightColor}" />
+          <SolidColorBrush x:Key="MemoryWarningSoftBrush" Color="{ThemeResource SystemColorWindowColor}" />
+          <SolidColorBrush x:Key="MemoryDangerBrush" Color="{ThemeResource SystemColorHotlightColor}" />
+          <SolidColorBrush x:Key="MemoryTrackBrush" Color="{ThemeResource SystemColorWindowTextColor}" />
+        </ResourceDictionary>
+      </ResourceDictionary.ThemeDictionaries>
+
+      <Style x:Key="MemoryCardStyle" TargetType="Border">
+        <Setter Property="Padding" Value="20" />
+        <Setter Property="CornerRadius" Value="14" />
+        <Setter Property="Background" Value="{ThemeResource MemoryCardBrush}" />
+        <Setter Property="BorderBrush" Value="{ThemeResource MemoryBorderBrush}" />
+        <Setter Property="BorderThickness" Value="1" />
+      </Style>
+      <Style x:Key="MemoryListItemStyle" TargetType="ListViewItem">
+        <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+        <Setter Property="Padding" Value="0" />
+        <Setter Property="Margin" Value="0,2" />
+      </Style>
+      <Style x:Key="MemoryInsetCardStyle" TargetType="Border">
+        <Setter Property="Padding" Value="14" />
+        <Setter Property="CornerRadius" Value="10" />
+        <Setter Property="Background" Value="{ThemeResource MemoryInsetBrush}" />
+        <Setter Property="BorderBrush" Value="{ThemeResource MemoryDividerBrush}" />
+        <Setter Property="BorderThickness" Value="1" />
+      </Style>
+      <Style x:Key="MemoryPrimaryButtonStyle" TargetType="Button" BasedOn="{StaticResource AccentButtonStyle}">
+        <Setter Property="MinHeight" Value="42" />
+        <Setter Property="Padding" Value="18,9" />
+        <Setter Property="Background" Value="{ThemeResource MemoryAccentBrush}" />
+        <Setter Property="BorderBrush" Value="{ThemeResource MemoryAccentBrush}" />
+        <Setter Property="Foreground" Value="{ThemeResource MemoryAccentForegroundBrush}" />
+        <Setter Property="FontWeight" Value="SemiBold" />
+        <Setter Property="CornerRadius" Value="8" />
+      </Style>
+      <!-- MinHeight 42 jak w stylu glownym: oba warianty stoja obok siebie
+           w jednej grupie akcji i przy 40 kontra 42 dolna krawedz sie rozjezdza. -->
+      <Style x:Key="MemorySecondaryButtonStyle" TargetType="Button" BasedOn="{StaticResource DefaultButtonStyle}">
+        <Setter Property="MinHeight" Value="42" />
+        <Setter Property="Padding" Value="16,8" />
+        <Setter Property="Background" Value="{ThemeResource MemoryElevatedBrush}" />
+        <Setter Property="BorderBrush" Value="{ThemeResource MemoryBorderBrush}" />
+        <Setter Property="Foreground" Value="{ThemeResource MemorySecondaryTextBrush}" />
+        <Setter Property="CornerRadius" Value="8" />
+      </Style>
+      <Style x:Key="MemoryEyebrowStyle" TargetType="TextBlock">
+        <Setter Property="Foreground" Value="{ThemeResource MemoryAccentBrush}" />
+        <Setter Property="FontSize" Value="11" />
+        <Setter Property="FontWeight" Value="SemiBold" />
+        <Setter Property="CharacterSpacing" Value="105" />
+      </Style>
+      <Style x:Key="MemoryPageTitleStyle" TargetType="TextBlock">
+        <Setter Property="FontFamily" Value="Segoe UI Variable Display" />
+        <Setter Property="FontSize" Value="30" />
+        <Setter Property="FontWeight" Value="SemiBold" />
+        <Setter Property="TextWrapping" Value="Wrap" />
+      </Style>
+      <Style x:Key="MemorySectionTitleStyle" TargetType="TextBlock">
+        <Setter Property="FontFamily" Value="Segoe UI Variable Display" />
+        <Setter Property="FontSize" Value="19" />
+        <Setter Property="FontWeight" Value="SemiBold" />
+        <Setter Property="TextWrapping" Value="Wrap" />
+      </Style>
+      <Style x:Key="MemoryMetricLabelStyle" TargetType="TextBlock">
+        <Setter Property="Foreground" Value="{ThemeResource MemoryMutedBrush}" />
+        <Setter Property="FontSize" Value="11" />
+        <Setter Property="FontWeight" Value="SemiBold" />
+        <Setter Property="CharacterSpacing" Value="75" />
+      </Style>
+      <Style x:Key="MemoryMetricValueStyle" TargetType="TextBlock">
+        <Setter Property="FontFamily" Value="Segoe UI Variable Display" />
+        <Setter Property="FontSize" Value="26" />
+        <Setter Property="FontWeight" Value="SemiBold" />
+      </Style>
+      <Style x:Key="MemoryMutedTextStyle" TargetType="TextBlock">
+        <Setter Property="Foreground" Value="{ThemeResource MemoryMutedBrush}" />
+        <Setter Property="TextWrapping" Value="Wrap" />
+      </Style>
+    </ResourceDictionary>
+  </Application.Resources>
+</Application>

@@ -1,11 +1,11 @@
-# GameShift Memory Optimizer 0.3.0 — przebudowa UI
+# Dismode Memory Optimizer 0.3.0 — przebudowa UI
 
 Status: implementacja, walidacja i artefakty wydania ukończone; instalacja oraz
 kontrola wizualna wymagają udziału użytkownika.
 
 ## Zatwierdzony zakres
 
-- Niezależny komponent GPL, bez referencji do zamkniętych bibliotek GameShift.
+- Niezależny komponent GPL, bez referencji do zamkniętych bibliotek Dismode.
 - Ciemny rozszerzony pasek tytułu, Mica, lokalna ikona, czytelna typografia,
   poprawne stany oraz High Contrast.
 - NavigationView: Przegląd, Automatyzacja, Procesy, Historia, Zaawansowane.
@@ -68,14 +68,14 @@ kontrola wizualna wymagają udziału użytkownika.
 - `dotnet build` projektu WinUI Release: 0 błędów, 0 ostrzeżeń.
 - Testy komponentu Release: 58/58 Core oraz 12/12 Security; łącznie 70 testów
   zaliczonych i 1 kontrolowany test agresywny pominięty bez jawnej flagi VM.
-- Testy głównego GameShift: 217/217 (77 Unit, 124 Integration, 13 Recovery,
+- Testy głównego Dismode: 217/217 (77 Unit, 124 Integration, 13 Recovery,
   3 Security).
 - `dotnet format ... --verify-no-changes`: przechodzi dla obu rozwiązań.
 - Manifest głównego payloadu: 703/703 pliki zgodne; manifest Memory Optimizer:
   736/736 pliki zgodne; wszystkie sprawdzone własne binaria mają wersję 0.3.0.0.
 - Finalny startup-probe payloadu kończy się kodem 0 i nie tworzy nowego
   zdarzenia awarii aplikacji.
-- Instalator: `artifacts/installer/GameShift-Setup-0.3.0-win-x64.exe`, SHA-256
+- Instalator: `artifacts/installer/Dismode-Setup-0.3.0-win-x64.exe`, SHA-256
   `0928FACF8DE43BBAC3B6AC3C96F4675865E54005D2C7B5EFF07A09FBD051DDCA`
   (163 143 906 B).
 - Odpowiadające źródła GPL: SHA-256

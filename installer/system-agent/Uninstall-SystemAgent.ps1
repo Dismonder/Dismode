@@ -1,8 +1,8 @@
-[CmdletBinding()]
+﻿[CmdletBinding()]
 param()
 
 $ErrorActionPreference = "Stop"
-$serviceName = "GameShiftSystemAgent"
+$serviceName = "DismodeSystemAgent"
 $serviceController = Join-Path $env:SystemRoot "System32\sc.exe"
 $service = Get-Service -Name $serviceName -ErrorAction SilentlyContinue
 if ($null -eq $service) {

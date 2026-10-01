@@ -46,7 +46,7 @@ Korekta po zgłoszeniu użytkownika:
   harnessu;
 - SQLite użytkownika został bez błędu podniesiony do wersji 4;
 - UI z wydania
-  `artifacts/GameShift-App-overlay-settings-20260729-212445` działa jako PID
+  `artifacts/Dismode-App-overlay-settings-20260729-212445` działa jako PID
   `21144`; Roblox, SessionHost, SystemAgent i PresentMon zachowały swoje PID;
 - odczyt IPC: Roblox PID `19436`, `159,5 FPS`, `6,27 ms`;
 - read-only enumeracja Win32 potwierdziła foreground Robloxa i HUD 328×144
@@ -59,8 +59,8 @@ Korekta po zgłoszeniu użytkownika:
 
 Po naturalnym zakończeniu gry read-only IPC potwierdził brak aktywnej sesji,
 a journal był czysty. Spójne wydanie zostało opublikowane do
-`artifacts/GameShift-App`, poprzednie zachowano jako
-`GameShift-App.backup-20260729-221808`, a skrót pulpitu odświeżono. Smoke
+`artifacts/Dismode-App`, poprzednie zachowano jako
+`Dismode-App.backup-20260729-221808`, a skrót pulpitu odświeżono. Smoke
 potwierdził zmaksymalizowane, responsywne UI oraz brak widocznego HUD przy
 braku aktywnej gry.
 
