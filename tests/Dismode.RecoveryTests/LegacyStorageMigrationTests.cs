@@ -260,4 +260,64 @@ public sealed class LegacyStorageMigrationTests
             }
         }
     }
+
+    [TestMethod]
+    [DataRow("GameShift", false, "wal", DisplayName = "dziennik zablokowany w starym katalogu")]
+    [DataRow("Dismode", false, "wal", DisplayName = "dziennik zablokowany juz w nowym katalogu")]
+    [DataRow("GameShift", true, "wal", DisplayName = "kolizja z nowa baza, dziennik w starym katalogu")]
+    [DataRow("Dismode", true, "", DisplayName = "kolizja z nowa baza, pusty dziennik w nowym katalogu")]
+    public void ALockedJournalKeepsTheDatabaseSetTogetherAcrossRestarts(
+        string sourceDirectoryName,
+        bool newDatabaseExists,
+        string journalContents)
+    {
+        // Baza bez swojego dziennika WAL otworzylaby sie bez zatwierdzonych
+        // wierszy, a dziennik odlozony pod inna nazwa nikomu juz nie pomoze.
+        using TemporaryDirectory root = new();
+        string legacy = Path.Combine(root.Path, "GameShift");
+        string current = Path.Combine(root.Path, "Dismode");
+        string source = Path.Combine(root.Path, sourceDirectoryName);
+        Directory.CreateDirectory(current);
+        Directory.CreateDirectory(source);
+        if (newDatabaseExists)
+        {
+            File.WriteAllText(Path.Combine(current, "dismode-user.db"), "new db");
+        }
+
+        File.WriteAllText(Path.Combine(source, "gameshift-user.db"), "old db");
+        string journal = Path.Combine(source, "gameshift-user.db-wal");
+        File.WriteAllText(journal, journalContents);
+
+        LegacyStorageMigrationResult locked;
+        using (new FileStream(
+            journal,
+            FileMode.Open,
+            FileAccess.ReadWrite,
+            FileShare.None))
+        {
+            locked = LegacyStorageMigration.Migrate(legacy, current);
+        }
+
+        Assert.IsTrue(locked.BlocksStartup, "Zablokowany dziennik zatrzymuje start.");
+        Assert.IsFalse(
+            File.Exists(Path.Combine(current, "gameshift-user.unmerged.db")),
+            "Baza nie rusza sie bez swojego dziennika.");
+        if (!newDatabaseExists)
+        {
+            Assert.IsFalse(File.Exists(Path.Combine(current, "dismode-user.db")));
+        }
+
+        LegacyStorageMigrationResult released =
+            LegacyStorageMigration.Migrate(legacy, current);
+
+        Assert.IsFalse(released.BlocksStartup, string.Join("; ", released.Problems));
+        string database = Path.Combine(
+            current,
+            newDatabaseExists ? "gameshift-user.unmerged.db" : "dismode-user.db");
+        Assert.AreEqual("old db", File.ReadAllText(database));
+        Assert.AreEqual(journalContents, File.ReadAllText(database + "-wal"));
+        Assert.IsFalse(File.Exists(Path.Combine(current, "gameshift-user.db-wal")));
+        Assert.IsFalse(File.Exists(journal));
+        Assert.IsFalse(LegacyStorageMigration.Migrate(legacy, current).BlocksStartup);
+    }
 }
