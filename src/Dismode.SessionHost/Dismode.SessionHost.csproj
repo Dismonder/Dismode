@@ -1,0 +1,20 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0-windows10.0.26100.0</TargetFramework>
+    <SupportedOSPlatformVersion>10.0.22631.0</SupportedOSPlatformVersion>
+    <PlatformTarget>x64</PlatformTarget>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Grpc.AspNetCore" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Dismode.Contracts\Dismode.Contracts.csproj" />
+    <ProjectReference Include="..\Dismode.Core\Dismode.Core.csproj" />
+    <ProjectReference Include="..\Dismode.Data\Dismode.Data.csproj" />
+    <ProjectReference Include="..\Dismode.Windows\Dismode.Windows.csproj" />
+  </ItemGroup>
+</Project>

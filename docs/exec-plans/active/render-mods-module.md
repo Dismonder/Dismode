@@ -24,18 +24,18 @@ rozwoju — czeka wyłącznie na potwierdzenie w grze (etap 5).
 
 | Element | Plik | Co robi |
 |---|---|---|
-| polityka bezpieczeństwa | `src/GameShift.Core/OptiScaler/OptiScalerSafetyPolicy.cs` | bramki gry uruchomionej, anti-cheatu i potwierdzenia; mapowanie proxy DLL |
-| katalog wymagań gier | `src/GameShift.Core/OptiScaler/OptiScalerGameRequirements.cs` | proxy, ustawienia INI, wymagany dodatek i pliki kolidujące — per gra |
-| patcher INI | `src/GameShift.Core/OptiScaler/OptiScalerIniPatcher.cs` | zamknięta lista kluczy, zachowanie BOM i CRLF |
-| źródło paczek | `src/GameShift.Windows/OptiScaler/GitHubOptiScalerPackageSource.cs` | cztery kanały, allow-lista hostów, SHA-256, format archiwum zależny od kanału |
-| źródło dodatków | `src/GameShift.Windows/OptiScaler/REFrameworkCompanionSource.cs` | przypięte wydanie REFramework, weryfikacja SHA-256 |
-| bramka plików NGX | `src/GameShift.Windows/OptiScaler/NeuralRenderingModelImporter.cs` | podpis Authenticode + podmiot „NVIDIA Corporation" |
-| sonda sterownika | `src/GameShift.Windows/OptiScaler/NvidiaDriverStoreProbe.cs` | wersja sterownika, obecność `nvngx_*` w DriverStore |
-| manager | `src/GameShift.Windows/OptiScaler/OptiScalerManager.cs` | transakcyjny deploy, kopie zapasowe, manifest, wykrywanie obcych zmian, rollback |
+| polityka bezpieczeństwa | `src/Dismode.Core/OptiScaler/OptiScalerSafetyPolicy.cs` | bramki gry uruchomionej, anti-cheatu i potwierdzenia; mapowanie proxy DLL |
+| katalog wymagań gier | `src/Dismode.Core/OptiScaler/OptiScalerGameRequirements.cs` | proxy, ustawienia INI, wymagany dodatek i pliki kolidujące — per gra |
+| patcher INI | `src/Dismode.Core/OptiScaler/OptiScalerIniPatcher.cs` | zamknięta lista kluczy, zachowanie BOM i CRLF |
+| źródło paczek | `src/Dismode.Windows/OptiScaler/GitHubOptiScalerPackageSource.cs` | cztery kanały, allow-lista hostów, SHA-256, format archiwum zależny od kanału |
+| źródło dodatków | `src/Dismode.Windows/OptiScaler/REFrameworkCompanionSource.cs` | przypięte wydanie REFramework, weryfikacja SHA-256 |
+| bramka plików NGX | `src/Dismode.Windows/OptiScaler/NeuralRenderingModelImporter.cs` | podpis Authenticode + podmiot „NVIDIA Corporation" |
+| sonda sterownika | `src/Dismode.Windows/OptiScaler/NvidiaDriverStoreProbe.cs` | wersja sterownika, obecność `nvngx_*` w DriverStore |
+| manager | `src/Dismode.Windows/OptiScaler/OptiScalerManager.cs` | transakcyjny deploy, kopie zapasowe, manifest, wykrywanie obcych zmian, rollback |
 
 ## Granice bezpieczeństwa
 
-- Instalator GameShift nie zawiera ani OptiScalera, ani DLL-ek NVIDII.
+- Instalator Dismode nie zawiera ani OptiScalera, ani DLL-ek NVIDII.
   OptiScaler jest na GPL-3.0, `nvngx_*` należą do NVIDII.
 - Każde wydanie zewnętrzne jest **przypięte** tagiem i skrótem SHA-256 w kodzie.
   Nowsza wersja wymaga zmiany kodu i przejścia testów — nigdy nie instalujemy
@@ -96,7 +96,7 @@ Wniosek, który przewrócił założenie etapu 2: **sterownik nie niesie ani
 opierał się cały etap 2, dla tych dwóch nazw nie zadziała na żadnej znanej
 wersji sterownika. Stąd ścieżka „plik wskazany przez użytkownika".
 
-Stan plików, które użytkownik posiada (`Documents\GameShift-DLSS5`):
+Stan plików, które użytkownik posiada (`Documents\Dismode-DLSS5`):
 
 | Plik | Podpis Authenticode |
 |---|---|
@@ -121,7 +121,7 @@ brak bibliotek. Poprawka to jedna stała `MinimumDriverVersion`.
 
 Runbook do wykonania na `ERYK`:
 
-1. Zainstaluj GameShift 0.5.1. Skopiuj cały folder `GameShift-DLSS5` — obie
+1. Zainstaluj Dismode 0.5.1. Skopiuj cały folder `Dismode-DLSS5` — obie
    biblioteki NGX są potrzebne.
 2. Okno OptiScaler, kanał „DLSS 5 Neural Rendering — fork". Opis pod
    przełącznikiem musi pokazać `Rtx50` i wersję w formacie NVIDII (`616.64`),
@@ -268,7 +268,7 @@ gracza. Sprawdziłem, że test ma zęby: po wyłączeniu pętli przywracania pad
   to samo co obraz na ekranie.
 - Wiki ostrzega, że REFramework rozbija się o antymodową ochronę Capcomu po
   każdej aktualizacji gry. Świeża aktualizacja RE9 może oznaczać, że zgodnego
-  REFramework po prostu jeszcze nie ma — i nie jest to defekt GameShifta.
+  REFramework po prostu jeszcze nie ma — i nie jest to defekt Dismodea.
 - Nowe wydanie forka i nowy nightly REFramework wymagają ręcznej zmiany
   przypiętego skrótu w kodzie. To celowe.
 - `nvngx_dlssnr.dll` waży ~158 MB i jest kopiowany do każdego katalogu gry.

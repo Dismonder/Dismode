@@ -6,7 +6,7 @@ param(
     [switch]$SkipTests,
     [ValidatePattern("^[A-Fa-f0-9]{40}$")]
     [string]$CodeSigningCertificateThumbprint =
-        $env:GAMESHIFT_RELEASE_SIGNING_THUMBPRINT,
+        $env:DISMODE_RELEASE_SIGNING_THUMBPRINT,
     [string]$CodeSigningTimestampUrl = "http://timestamp.digicert.com",
     [switch]$AllowTestCodeSigningCertificate,
     [ValidateRange(1, 100)]
@@ -40,21 +40,21 @@ if ($Version -and -not [StringComparer]::Ordinal.Equals(
 $Version = $repositoryVersion
 if (-not $CodeSigningCertificateThumbprint) {
     throw "Wydanie $Version wymaga produkcyjnego certyfikatu. Ustaw " +
-        "GAMESHIFT_RELEASE_SIGNING_THUMBPRINT lub podaj " +
+        "DISMODE_RELEASE_SIGNING_THUMBPRINT lub podaj " +
         "-CodeSigningCertificateThumbprint."
 }
 
 $artifactsRoot = Join-Path $repositoryRoot "artifacts"
-$payloadPath = Join-Path $artifactsRoot "GameShift-App"
+$payloadPath = Join-Path $artifactsRoot "Dismode-App"
 $installerOutputPath = Join-Path $artifactsRoot "installer"
-$installerScript = Join-Path $repositoryRoot "installer\GameShift.iss"
+$installerScript = Join-Path $repositoryRoot "installer\Dismode.iss"
 $releaseScript = Join-Path $PSScriptRoot "Build-LocalRelease.ps1"
 $updatePublisherProject = Join-Path $repositoryRoot (
-    "tools\GameShift.UpdatePublisher\GameShift.UpdatePublisher.csproj")
+    "tools\Dismode.UpdatePublisher\Dismode.UpdatePublisher.csproj")
 $memoryOptimizerBuildScript = Join-Path $repositoryRoot (
-    "components\GameShift.MemoryOptimizer\tools\Build-MemoryOptimizer.ps1")
+    "components\Dismode.MemoryOptimizer\tools\Build-MemoryOptimizer.ps1")
 $memoryOptimizerPayloadPath = Join-Path $artifactsRoot (
-    "GameShift-MemoryOptimizer")
+    "Dismode-MemoryOptimizer")
 $updateAssetsPath = Join-Path $artifactsRoot "update-service-$Version"
 $readmePath = Join-Path $repositoryRoot "README.md"
 
@@ -132,7 +132,7 @@ if ($LASTEXITCODE -ne 0) {
 Copy-Item -LiteralPath $readmePath -Destination (
     Join-Path $payloadPath "README.md") -Force
 
-$manifestName = "GameShift-Payload.sha256"
+$manifestName = "Dismode-Payload.sha256"
 $manifestPath = Join-Path $payloadPath $manifestName
 $manifestLines = Get-ChildItem -LiteralPath $payloadPath -File -Recurse |
     Where-Object { $_.FullName -ne $manifestPath } |
@@ -163,7 +163,7 @@ if ($LASTEXITCODE -ne 0) {
 }
 
 $setupPath = Join-Path $installerOutputPath (
-    "GameShift-Setup-$Version-win-x64.exe")
+    "Dismode-Setup-$Version-win-x64.exe")
 if (-not (Test-Path -LiteralPath $setupPath)) {
     throw "Kompilator nie utworzył oczekiwanego instalatora: $setupPath"
 }
@@ -251,7 +251,7 @@ $publisherArguments = @(
     "--minimum-version",
     "0.3.0",
     "--note",
-    "GameShift $Version Gaming Edition — lokalny staging preview.")
+    "Dismode $Version Gaming Edition — lokalny staging preview.")
 & dotnet @publisherArguments
 if ($LASTEXITCODE -ne 0) {
     throw "Publikacja manifestu aktualizacji zakończyła się kodem $LASTEXITCODE."

@@ -10,15 +10,15 @@
   IgnorableNamespaces="uap uap10 rescap com desktop4 desktop5">
 
   <Identity
-    Name="GameShift.Desktop"
-    Publisher="CN=GameShift Development"
+    Name="Dismode.Desktop"
+    Publisher="CN=Dismode Development"
     Version="0.0.0.0"
     ProcessorArchitecture="x64" />
 
   <Properties>
-    <DisplayName>GameShift</DisplayName>
-    <PublisherDisplayName>GameShift Development</PublisherDisplayName>
-    <Logo>Assets\GameShift.png</Logo>
+    <DisplayName>Dismode</DisplayName>
+    <PublisherDisplayName>Dismode Development</PublisherDisplayName>
+    <Logo>Assets\Dismode.png</Logo>
     <uap10:AllowExternalContent>true</uap10:AllowExternalContent>
   </Properties>
 
@@ -41,24 +41,24 @@
 
   <Applications>
     <Application
-      Id="GameShift"
-      Executable="GameShift.exe"
+      Id="Dismode"
+      Executable="Dismode.exe"
       uap10:TrustLevel="mediumIL"
       uap10:RuntimeBehavior="win32App">
       <uap:VisualElements
         AppListEntry="none"
-        DisplayName="GameShift"
-        Description="GameShift Gaming Edition"
+        DisplayName="Dismode"
+        Description="Dismode Gaming Edition"
         BackgroundColor="transparent"
-        Square150x150Logo="Assets\GameShift.png"
-        Square44x44Logo="Assets\GameShift.png" />
+        Square150x150Logo="Assets\Dismode.png"
+        Square44x44Logo="Assets\Dismode.png" />
       <Extensions>
         <com:Extension Category="windows.comServer">
           <com:ComServer>
-            <com:SurrogateServer DisplayName="GameShift Explorer Command">
+            <com:SurrogateServer DisplayName="Dismode Explorer Command">
               <com:Class
                 Id="1DD2A4B8-88B4-4F02-9E22-4A7A3A541C2F"
-                Path="GameShift.ShellExtension.dll"
+                Path="Dismode.ShellExtension.dll"
                 ThreadingModel="STA" />
             </com:SurrogateServer>
           </com:ComServer>
@@ -67,7 +67,7 @@
           <desktop4:FileExplorerContextMenus>
             <desktop5:ItemType Type="*">
               <desktop5:Verb
-                Id="LaunchThroughGameShift"
+                Id="LaunchThroughDismode"
                 Clsid="1DD2A4B8-88B4-4F02-9E22-4A7A3A541C2F" />
             </desktop5:ItemType>
           </desktop4:FileExplorerContextMenus>

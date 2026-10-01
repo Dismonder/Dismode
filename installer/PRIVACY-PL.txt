@@ -1,15 +1,15 @@
-POLITYKA PRYWATNOŚCI GAMESHIFT GAMING EDITION
+POLITYKA PRYWATNOŚCI DISMODE GAMING EDITION
 
-GameShift działa lokalnie. Profile gier, ścieżki plików EXE, skróty hashy,
+Dismode działa lokalnie. Profile gier, ścieżki plików EXE, skróty hashy,
 ustawienia, lista procesów i usług, journal recovery, historia sesji oraz
 wyniki FPS/frametime są zapisywane wyłącznie na komputerze użytkownika.
 
 Program nie ma telemetrii produktu ani kont użytkowników. Nie przesyła listy
 gier, procesów, usług, danych sprzętu ani wyników wydajności. Przy ręcznym lub
 automatycznym sprawdzeniu aktualizacji klient wykonuje żądanie HTTPS do
-publicznego serwera aktualizacji GameShift. Operator infrastruktury może
+publicznego serwera aktualizacji Dismode. Operator infrastruktury może
 otrzymać standardowe metadane połączenia, takie jak adres IP, czas żądania,
-wersja protokołu i User-Agent zawierający nazwę oraz wersję GameShift.
+wersja protokołu i User-Agent zawierający nazwę oraz wersję Dismode.
 
 Automatyczne sprawdzanie i automatyczną instalację można niezależnie wyłączyć
 w zakładce Aktualizacje. Domyślny interwał automatycznego sprawdzania wynosi

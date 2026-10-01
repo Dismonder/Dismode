@@ -1,20 +1,20 @@
-# Plan wykonawczy: instalator EXE GameShift
+# Plan wykonawczy: instalator EXE Dismode
 
 Status: ukończony — instalator zbudowany i zweryfikowany statycznie;
 install/uninstall smoke pozostaje ręczną kontrolą po zamknięciu działającego
-GameShift  
+Dismode  
 Utworzono: 2026-07-29
 
 ## Cel
 
-Zbudować pojedynczy instalator EXE dla aktualnej architektury GameShift,
+Zbudować pojedynczy instalator EXE dla aktualnej architektury Dismode,
 bez uzależniania komputera docelowego od osobnej instalacji .NET lub Windows
 App Runtime.
 
 ## Zakres
 
 - self-contained publikacja win-x64 istniejących czterech procesów;
-- instalacja do `Program Files\GameShift`;
+- instalacja do `Program Files\Dismode`;
 - skróty menu Start i opcjonalnie pulpitu;
 - standardowy deinstalator Windows;
 - ochrona przed aktualizacją podczas aktywnej sesji;
@@ -37,7 +37,7 @@ App Runtime.
 
 - Instalator wymaga UAC tylko dla zapisu do Program Files.
 - Nie kończy automatycznie gry, SessionHost ani recovery.
-- Aktualizacja i deinstalacja są blokowane, gdy działa komponent GameShift
+- Aktualizacja i deinstalacja są blokowane, gdy działa komponent Dismode
   albo jego proces PresentMon.
 - Program Files korzysta z dziedziczonych ACL Windows; instalator nie
   rozluźnia uprawnień.
@@ -69,6 +69,6 @@ Oczekiwane dowody:
 - SHA-256:
   `164C642355EE5F59F0CB9BB652D3EDDED1A73434AF371800816A1F556CA4F630`.
 - Podpis: `NotSigned`, zgodnie z jawnym brakiem certyfikatu.
-- Install/uninstall smoke nie został wykonany, ponieważ bieżący GameShift
+- Install/uninstall smoke nie został wykonany, ponieważ bieżący Dismode
   nadal działa, instalator poprawnie blokuje taki scenariusz, a użytkownik
   nie zezwolił na sterowanie komputerem ani zamykanie jego procesów.
