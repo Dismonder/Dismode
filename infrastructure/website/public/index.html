@@ -3,278 +3,176 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Dismode — tryb gry dla Windows 11</title>
-  <meta name="description" content="Dismode przygotowuje przejrzysty, odwracalny plan optymalizacji sesji gry w Windows 11 i przywraca system po zakończeniu gry.">
-  <meta name="theme-color" content="#05070f">
-  <meta name="color-scheme" content="dark">
-  <meta name="view-transition" content="same-origin">
-  <link rel="icon" type="image/png" href="assets/favicon.png">
-  <meta property="og:title" content="Dismode — tryb gry dla Windows 11">
-  <meta property="og:description" content="Przejrzysty, odwracalny plan optymalizacji każdej sesji gry.">
+  <title>Dismode 0.8.0 — optymalizator sesji gry dla Windows 11</title>
+  <meta name="description" content="Poznaj cały projekt Dismode 0.8.0: odwracalne sesje gry, System Optimizer, niezależny Memory Optimizer i pomiar FPS w Windows 11 x64 23H2+.">
+  <meta name="color-scheme" content="dark light">
+  <meta name="theme-color" content="#0b101b" media="(prefers-color-scheme: dark)">
+  <meta name="theme-color" content="#f3f5fa" media="(prefers-color-scheme: light)">
+  <meta property="og:type" content="website">
+  <meta property="og:locale" content="pl_PL">
+  <meta property="og:title" content="Dismode 0.8.0 — cały projekt">
+  <meta property="og:description" content="Optymalizacja sesji gry z planem, dziennikiem recovery i przywracaniem. Natywnie dla Windows 11.">
   <meta property="og:image" content="assets/dismode.png">
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;700&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="styles.css">
+  <meta property="og:image:alt" content="Logo Dismode">
+  <link rel="icon" type="image/png" href="assets/favicon.png">
   <script src="motion.js"></script>
+  <link rel="stylesheet" href="styles.css">
+  <script src="app.js" defer></script>
 </head>
 <body>
-  <div class="progress" aria-hidden="true"></div>
-  <canvas id="warp" aria-hidden="true"></canvas>
-  <div class="grain" aria-hidden="true"></div>
-
-  <header class="nav">
-    <a class="brand" href="#top" aria-label="Dismode — początek strony">
-      <img src="assets/dismode.png" alt="" width="36" height="36">
-      <span>Dismode</span>
-    </a>
-    <nav aria-label="Sekcje">
-      <a href="#funkcje">Funkcje</a>
-      <a href="#jak-dziala">Jak działa</a>
-      <a href="#instrukcja">Instrukcja</a>
-      <a href="#faq">FAQ</a>
-    </nav>
-    <button class="motion-toggle" type="button" aria-pressed="false">Efekty</button>
-    <a class="nav-cta magnetic" href="#instrukcja">Zacznij</a>
+  <a class="skip-link" href="#tresc">Przejdź do treści</a>
+  <header class="site-header">
+    <div class="header-inner container">
+      <a class="brand" href="#start" aria-label="Dismode — początek strony"><img src="assets/dismode.png" alt="" width="36" height="36"><span>Dismode<span class="brand-version">0.8.0</span></span></a>
+      <nav class="section-nav" aria-label="Sekcje strony">
+        <a href="#moduly">Moduły</a><a href="#sesja">Sesja</a><a href="#bezpieczenstwo">Bezpieczeństwo</a><a href="#instalacja">Instalacja</a><a href="#faq">FAQ</a>
+      </nav>
+      <a class="header-download" href="https://github.com/Dismonder/Dismode">Pobierz <span aria-hidden="true">↗</span></a>
+    </div>
   </header>
-
-  <main id="top">
-    <section class="hero">
+  <main id="tresc" tabindex="-1">
+    <section class="hero container" id="start" aria-labelledby="hero-title">
       <div class="hero-copy">
-        <p class="eyebrow"><span class="dot"></span> Windows 11 · x64 · wersja dev</p>
-        <h1>
-          <span class="scramble" data-text="Tryb gry,">Tryb gry,</span>
-          <span class="scramble accent" data-text="który się cofa.">który się cofa.</span>
-        </h1>
-        <p class="lead">
-          Dismode przygotowuje przejrzysty plan optymalizacji każdej sesji gry,
-          wykonuje go przez prawdziwe API Windows, a po grze przywraca system
-          dokładnie do stanu sprzed sesji. Każda akcja trafia do dziennika
-          i da się ją odwrócić.
-        </p>
-        <div class="hero-actions">
-          <a class="btn primary magnetic" href="#instrukcja"><span>Instrukcja krok po kroku</span></a>
-          <a class="btn ghost magnetic" href="https://github.com/Dismonder/Dismode"><span>Kod na GitHub</span></a>
-        </div>
-        <ul class="hero-facts">
-          <li><strong>100%</strong><span>akcji w dzienniku recovery</span></li>
-          <li><strong>ETW</strong><span>FPS z prawdziwych zdarzeń present</span></li>
-          <li><strong>0</strong><span>szacunków zamiast pomiarów</span></li>
-        </ul>
+        <p class="eyebrow"><span class="status-dot" aria-hidden="true"></span> Windows 11 x64 · 23H2+ · dawniej GameShift</p>
+        <h1 id="hero-title">Dismode <span class="version-label">0.8.0</span><span class="hero-title-line">Optymalizator<br>sesji gry.</span></h1>
+        <p class="lead">Przygotowuje system na czas gry i przywraca go po sesji — każdą zmianę da się cofnąć dzięki transakcyjnej sesji i dziennikowi recovery.</p>
+        <div class="actions"><a class="button button-primary" href="https://github.com/Dismonder/Dismode">Pobierz <span aria-hidden="true">↗</span></a><a class="button button-secondary" href="https://github.com/Dismonder/Dismode">Kod źródłowy <span aria-hidden="true">↗</span></a></div>
+        <p class="download-note">Wydanie rozwojowe. Stan instalatora 0.8.0: <a href="#instalacja">czeka na certyfikat produkcyjny</a>.</p>
+        <ul class="hero-facts" aria-label="Podstawy projektu"><li>Natywny WinUI 3</li><li>Dane lokalne</li><li>Zmiany odwracalne</li></ul>
       </div>
-      <div class="hero-visual">
-        <div class="logo-stage tilt">
-          <div class="halo"></div>
-          <img src="assets/dismode.png" alt="Logo Dismode: litera D z paskami prędkości" width="512" height="512">
-        </div>
-      </div>
-      <a class="scroll-hint" href="#funkcje" aria-label="Przewiń do funkcji"><span></span></a>
-    </section>
-
-    <section id="funkcje" class="section">
-      <header class="section-head reveal">
-        <p class="kicker">01 · Funkcje</p>
-        <h2>Wszystko, czego gra potrzebuje. Nic, czego nie da się cofnąć.</h2>
-      </header>
-      <div class="cards">
-        <article class="card reveal">
-          <div class="card-icon">◎</div>
-          <h3>Biblioteka gier</h3>
-          <p>Sama buduje lokalną bibliotekę ze Steama, Epic, GOG, Robloxa i dostępnych instalacji Xbox.</p>
-        </article>
-        <article class="card reveal">
-          <div class="card-icon">⚡</div>
-          <h3>Plan sesji</h3>
-          <p>Zamyka i przywraca wybrane aplikacje, nakłada BelowNormal i EcoQoS na obce procesy w tle, podnosi priorytet gry.</p>
-        </article>
-        <article class="card reveal">
-          <div class="card-icon">◉</div>
-          <h3>Automat w zasobniku</h3>
-          <p>Gra uruchomiona poza Dismode? W kilka sekund podpina sesję z zapisanymi regułami — nigdy nie uruchamia gry sam.</p>
-        </article>
-        <article class="card reveal">
-          <div class="card-icon">▤</div>
-          <h3>Prawdziwe FPS</h3>
-          <p>Dołączony PresentMon 2.5.1 liczy FPS i czas klatki z ETW tylko dla procesów gry. Brak danych = „niedostępne”, nie zgadywanie.</p>
-        </article>
-        <article class="card reveal">
-          <div class="card-icon">⛨</div>
-          <h3>System Optimizer</h3>
-          <p>Osobna usługa z katalogiem A/B zamkniętym na błędy: działa tylko to, co ma zweryfikowany adapter. Zabezpieczenia i anti-cheat są zablokowane na stałe.</p>
-        </article>
-        <article class="card reveal">
-          <div class="card-icon">✦</div>
-          <h3>OptiScaler na grę</h3>
-          <p>Kanały Stable, Beta i Nightly, weryfikacja SHA-256, kopia zapasowa podmienianych plików i blokada dla gier z anti-cheatem.</p>
-        </article>
-      </div>
-    </section>
-
-    <section id="jak-dziala" class="section">
-      <header class="section-head reveal">
-        <p class="kicker">02 · Jak działa</p>
-        <h2>Jedna sesja, cztery fazy, zero niespodzianek.</h2>
-      </header>
-      <ol class="timeline">
-        <li class="reveal">
-          <span class="phase">Plan</span>
-          <p>Dismode pokazuje, co zamierza zrobić: które procesy przyciszy, które aplikacje zamknie i jaki priorytet dostanie gra. Nic nie dzieje się bez Twojej zgody.</p>
-        </li>
-        <li class="reveal">
-          <span class="phase">Dziennik</span>
-          <p>Zanim cokolwiek zmieni, zapisuje stan „przed” do dziennika recovery. Awaria prądu w trakcie gry nie zostawi systemu w połowie drogi.</p>
-        </li>
-        <li class="reveal">
-          <span class="phase">Sesja</span>
-          <p>Śledzi grę i jej procesy potomne, także po wyjściu launchera, mierzy FPS i czas klatki na żywo i pilnuje, by optymalizacja dotyczyła tylko obcych procesów.</p>
-        </li>
-        <li class="reveal">
-          <span class="phase">Przywrócenie</span>
-          <p>Po zamknięciu gry cofa każdą akcję w odwrotnej kolejności i sprawdza, czy system wrócił do stanu sprzed sesji.</p>
-        </li>
-      </ol>
-      <figure class="telemetry reveal" aria-label="Wizualizacja czasu klatki">
-        <figcaption>
-          <span>Czas klatki · wizualizacja</span>
-          <span class="mono" id="fps-readout">— FPS</span>
-        </figcaption>
-        <canvas id="frametime" height="160"></canvas>
-        <p class="note">Animowana ilustracja wykresu z aplikacji, nie pomiar z Twojego komputera.</p>
+      <figure class="session-map">
+        <div class="map-topline"><span>Cykl sesji</span><span class="mono">plan → recovery</span></div>
+        <div class="logo-orbit" aria-hidden="true"><span class="orbit orbit-one"></span><span class="orbit orbit-two"></span><img src="assets/dismode.png" alt="" width="512" height="512" fetchpriority="high"></div>
+        <ol class="map-phases">
+          <li><span class="phase-number">01</span><span>Plan<strong>Wiesz, co się zmieni</strong></span></li>
+          <li><span class="phase-number">02</span><span>Dziennik<strong>Stan przed zmianą</strong></span></li>
+          <li><span class="phase-number">03</span><span>Gra<strong>Reguły Twojej sesji</strong></span></li>
+          <li><span class="phase-number">04</span><span>Przywrócenie<strong>Powrót po grze</strong></span></li>
+        </ol>
+        <figcaption>Schemat działania. Bez obietnic wzrostu FPS.</figcaption>
       </figure>
     </section>
-
-    <section id="instrukcja" class="section">
-      <header class="section-head reveal">
-        <p class="kicker">03 · Instrukcja</p>
-        <h2>Od instalacji do pierwszej sesji.</h2>
-      </header>
-      <div class="guide reveal">
-        <div class="guide-tabs" role="tablist" aria-label="Kroki instrukcji">
-          <button role="tab" aria-selected="true" data-step="0">1. Instalacja</button>
-          <button role="tab" aria-selected="false" data-step="1">2. Pierwsze uruchomienie</button>
-          <button role="tab" aria-selected="false" data-step="2">3. Sesja gry</button>
-          <button role="tab" aria-selected="false" data-step="3">4. Automat</button>
-          <button role="tab" aria-selected="false" data-step="4">5. Menu Eksploratora</button>
-          <button role="tab" aria-selected="false" data-step="5">6. System Optimizer</button>
-          <button role="tab" aria-selected="false" data-step="6">7. Memory Optimizer</button>
-          <button role="tab" aria-selected="false" data-step="7">8. Aktualizacja i odinstalowanie</button>
-        </div>
-        <div class="guide-panel" role="tabpanel" aria-live="polite">
-          <template data-step="0">
-            <h3>Instalacja</h3>
-            <ol>
-              <li>Sprawdź wymagania: <strong>Windows 11 23H2 lub nowszy, x64</strong>, komputer stacjonarny.</li>
-              <li>Uruchom <code>Dismode-Setup-&lt;wersja&gt;-win-x64.exe</code> i potwierdź monit UAC — instalator zakłada usługę <code>DismodeSystemAgent</code>.</li>
-              <li>Wybierz typ instalacji: <em>Pełna</em> (z Memory Optimizer, GPL-3.0) albo <em>Tylko część gamingowa</em>.</li>
-              <li>Instalator jest samowystarczalny: nie trzeba osobno instalować .NET ani Windows App Runtime.</li>
-            </ol>
-            <p class="tip">Masz starsze wydanie pod nazwą GameShift? Instalator sam je wykryje, sprawdzi dziennik recovery, zdejmie stare usługi i przeniesie Twoje dane do katalogów Dismode.</p>
-          </template>
-          <template data-step="1">
-            <h3>Pierwsze uruchomienie</h3>
-            <ol>
-              <li>Otwórz <strong>Dismode</strong> ze skrótu. Launcher poprosi o UAC dla zaplecza <code>Dismode.SessionHost.exe</code> — bez niego okno nie wystartuje, bo nie mogłoby niczego zoptymalizować.</li>
-              <li>Dismode przeskanuje biblioteki Steam, Epic, GOG, Roblox i Xbox i pokaże wykryte gry.</li>
-              <li>Na raz działa jeden Dismode na użytkownika: drugie uruchomienie tylko wywoła istniejące okno.</li>
-            </ol>
-          </template>
-          <template data-step="2">
-            <h3>Sesja gry</h3>
-            <ol>
-              <li>Wybierz grę z biblioteki i otwórz jej <strong>plan</strong>.</li>
-              <li>Zaznacz aplikacje do zamknięcia na czas gry i procesy do przyciszenia. Regułę możesz zapisać dla tej gry albo globalnie dla wszystkich gier.</li>
-              <li>Uruchom grę z Dismode. Jeśli już działa, Dismode podepnie się do niej zamiast uruchamiać drugą kopię.</li>
-              <li>Po wyjściu z gry wszystko wraca na miejsce: zamknięte aplikacje są przywracane, a priorytety cofane.</li>
-            </ol>
-            <p class="tip">Launchery, anti-cheaty, procesy Windows i pomocnicze pliki z katalogu gry są zawsze wyłączone z optymalizacji tła.</p>
-          </template>
-          <template data-step="3">
-            <h3>Automat w zasobniku</h3>
-            <ol>
-              <li>Włącz „optymalizuj w locie” w ustawieniach albo w menu ikony w zasobniku.</li>
-              <li>Gdy uruchomisz grę z biblioteki poza Dismode, program w kilka sekund podepnie sesję z jej zapisanymi regułami — także ukryty w zasobniku.</li>
-              <li>Pojedynczą grę wykluczysz na stronie jej planu. Sesji zakończonej ręcznie automat nie wznowi, dopóki nie uruchomisz gry ponownie.</li>
-            </ol>
-          </template>
-          <template data-step="4">
-            <h3>Menu Eksploratora</h3>
-            <ol>
-              <li>Kliknij prawym przyciskiem dowolny plik <code>.exe</code>.</li>
-              <li>Wybierz <strong>Uruchom przez Dismode</strong> — w Windows 11 pozycja jest w nowym menu kontekstowym.</li>
-              <li>Gra wystartuje od razu z sesją Dismode w tle.</li>
-            </ol>
-          </template>
-          <template data-step="5">
-            <h3>System Optimizer</h3>
-            <ol>
-              <li>Otwórz <strong>Dismode System Optimizer</strong> z menu Start.</li>
-              <li>Katalog pokazuje każdą pozycję ze stanem: wykonywalne są tylko te ze zweryfikowanym adapterem, reszta jest widocznie oznaczona jako <code>Unsupported</code>.</li>
-              <li>Zmiany zabezpieczeń, anti-cheatu, WHEA i BCD są zablokowane na stałe — nie da się ich włączyć.</li>
-              <li>Usługa działa niezależnie od okna: zamknięcie UI nie wyłącza nadzoru nad przywracaniem.</li>
-            </ol>
-          </template>
-          <template data-step="6">
-            <h3>Memory Optimizer</h3>
-            <ol>
-              <li>Opcjonalny, niezależny komponent na licencji GPL-3.0 z własnym trayem i usługą.</li>
-              <li>Agresywne opcje są domyślnie ukryte i wymagają osobnej zgody w interfejsie.</li>
-              <li>Wie, kiedy trwa sesja gry, i nie przeszkadza w jej trakcie.</li>
-            </ol>
-          </template>
-          <template data-step="7">
-            <h3>Aktualizacja i odinstalowanie</h3>
-            <ol>
-              <li>Uruchom nowy instalator i wybierz <strong>Aktualizuj</strong>. Profile gier, historia i baza zostają.</li>
-              <li>Aktualizacja jest blokowana, jeśli dziennik ma aktywną lub niedokończoną sesję — najpierw zakończ grę.</li>
-              <li>Odinstalowanie najpierw przywraca system. Dane recovery w <code>%ProgramData%\Dismode</code> i <code>%LocalAppData%\Dismode</code> nie są kasowane.</li>
-              <li>Jeśli w grach został OptiScaler, usuń go w Dismode przed odinstalowaniem — instalator Cię o tym ostrzeże.</li>
-            </ol>
-          </template>
-        </div>
+    <div class="project-strip"><div class="container strip-inner"><p>Jeden projekt.<br><strong>Wyraźny podział odpowiedzialności.</strong></p><span>Interfejs użytkownika</span><span>Host sesji</span><span>Usługi Windows</span></div></div>
+    <section class="section container" id="moduly" aria-labelledby="modules-title">
+      <header class="section-heading"><p class="eyebrow">01 / Cały projekt</p><h2 id="modules-title">Więcej niż przycisk „optymalizuj”.</h2><p>Interfejs pokazuje plan. Host prowadzi sesję. Usługi mają własny zakres i zabezpieczenia.</p></header>
+      <div class="module-grid">
+        <article class="module-card module-wide">
+          <div class="card-top"><span class="module-number">01</span><span class="tag">WinUI 3 · bez podwyższenia</span></div>
+          <h3>Biblioteka gier i Tryb gry</h3><p>Lokalna biblioteka ze Steam, Epic, GOG, Roblox i dostępnych instalacji Xbox. Plan sesji, reguły dla każdej gry, historia i diagnostyka w natywnym interfejsie.</p><p class="card-detail">UI działa z uprawnieniami użytkownika; operacje uprzywilejowane przekazuje do hosta.</p>
+        </article>
+        <article class="module-card module-wide">
+          <div class="card-top"><span class="module-number">02</span><span class="tag">Backend · UAC</span></div>
+          <h3>SessionHost</h3><p>Klasyfikuje procesy i prowadzi transakcyjną sesję w czterech fazach. Obsługuje reguły tła, priorytety i affinity, czyli przydział rdzeni procesora.</p><p class="card-detail">PresentMon 2.5.1 zbiera rzeczywiste zdarzenia ETW dla procesów gry — to źródło FPS i czasu klatki.</p>
+        </article>
+        <article class="module-card">
+          <div class="card-top"><span class="module-number">03</span><span class="tag">LocalSystem</span></div>
+          <h3>System Optimizer</h3><p>Osobny interfejs i usługa <code>DismodeSystemAgent</code>. Usługa sprawdza zaufanych sygnatariuszy klientów, prowadzi dziennik maszyny i nadzoruje recovery niezależnie od okna.</p><p class="card-detail">Wykonywalne są tylko pozycje ze zweryfikowanym adapterem. Bez zaufanego podpisu: tylko odczyt.</p>
+        </article>
+        <article class="module-card">
+          <div class="card-top"><span class="module-number">04</span><span class="tag">Opcjonalny · GPL-3.0-only</span></div>
+          <h3>Dismode Memory Optimizer</h3><p>Niezależny składnik z własnym zasobnikiem i usługą LocalSystem. Pozostaje aktywny po zamknięciu części gamingowej; można go odznaczyć w instalatorze.</p><p class="card-detail">Operacje pamięci przechodzą przez ochronę sesji gry. Czyszczenie pamięci nie jest obietnicą dodatkowych FPS.</p>
+        </article>
+        <article class="module-card">
+          <div class="card-top"><span class="module-number">05</span><span class="tag">FPS / frametime</span></div>
+          <h3>Nakładka pomiarowa</h3><p>Natywne okno topmost: pozostaje nad grą, przepuszcza wejście i nie przejmuje fokusu. Ustawiasz krycie, skalę i róg ekranu; możesz ją wyłączyć.</p><p class="card-detail">Gdy źródło nie dostarcza aktualnych danych, pomiar jest niedostępny. Program nie zastępuje go szacunkiem.</p>
+        </article>
+        <article class="module-card">
+          <div class="card-top"><span class="module-number">06</span><span class="tag">Automat w zasobniku</span></div>
+          <h3>„Optymalizuj w locie”</h3><p>Wykrywa grę uruchomioną poza Dismode i podpina sesję z zapisanymi regułami. Działa także z zasobnika. Reguła dla konkretnej gry ma pierwszeństwo przed globalną.</p><p class="card-detail">Automat nie uruchamia gry. Po ręcznym zakończeniu sesji czeka na jej kolejne uruchomienie.</p>
+        </article>
+        <article class="module-card">
+          <div class="card-top"><span class="module-number">07</span><span class="tag">Dziennik recovery</span></div>
+          <h3>Przywracanie po awarii</h3><p>Niedokończona sesja zostawia ślad w dzienniku. Tryb przywracania korzysta z zapisanych stanów, aby cofnąć priorytety i affinity oraz przywrócić wybrane aplikacje tła.</p><p class="card-detail">Recovery nie nadpisuje ślepo zmian dokonanych przez inne programy.</p>
+        </article>
+        <article class="module-card">
+          <div class="card-top"><span class="module-number">08</span><span class="tag">Tylko offline / single-player</span></div>
+          <h3>Menedżer OptiScaler</h3><p>Osobna funkcja dla wybranej gry: weryfikacja SHA-256 pobranego wydania, kopia podmienianych plików i przywrócenie przy usuwaniu.</p><p class="card-detail">Instaluje proxy DLL. Wymaga potwierdzenia gry offline lub single-player; blokuje wykryty anti-cheat, gry tylko online i działającą grę.</p>
+        </article>
       </div>
     </section>
-
-    <section id="faq" class="section">
-      <header class="section-head reveal">
-        <p class="kicker">04 · FAQ</p>
-        <h2>Pytania, które warto zadać każdemu optymalizatorowi.</h2>
-      </header>
-      <div class="faq">
-        <details class="reveal">
-          <summary>Czy Dismode zmienia coś na stałe?</summary>
-          <p>Nie. Każda akcja produkcyjna jest zapisana w dzienniku i odwracalna. Po sesji system wraca do stanu sprzed gry, a po awarii przywrócenie dokończy się przy następnym starcie.</p>
-        </details>
-        <details class="reveal">
-          <summary>Czy grozi mi ban za anti-cheat?</summary>
-          <p>Dismode nie dotyka procesów gry poza podniesieniem priorytetu przez standardowe API Windows, a komponenty anti-cheat są wyłączone z optymalizacji. OptiScaler jest zablokowany dla gier z wykrytym anti-cheatem i tylko online.</p>
-        </details>
-        <details class="reveal">
-          <summary>Skąd pochodzą liczby FPS?</summary>
-          <p>Z prawdziwych zdarzeń present w ETW, zbieranych przez PresentMon wyłącznie dla procesów gry. Gdy danych brakuje, aplikacja pokazuje „niedostępne” zamiast szacunku.</p>
-        </details>
-        <details class="reveal">
-          <summary>Czy działa na laptopie?</summary>
-          <p>Obecnie celem są komputery stacjonarne. Profile baterii laptopów są poza zakresem tej wersji.</p>
-        </details>
-        <details class="reveal">
-          <summary>Dlaczego wcześniej nazywał się GameShift?</summary>
-          <p>To ten sam program. Nazwa GameShift była w sieci zbyt popularna, więc od wersji po 0.7.0 program nazywa się Dismode. Instalator przenosi dane starszych wydań automatycznie.</p>
-        </details>
+    <section class="session-section" id="sesja" aria-labelledby="session-title">
+      <div class="container section">
+        <header class="section-heading"><p class="eyebrow">02 / Jak działa sesja</p><h2 id="session-title">Nic, czego nie da się cofnąć.</h2><p>Każda zmiana przechodzi walidację, zapis intencji i stanu oryginalnego, wykonanie oraz weryfikację wyniku.</p></header>
+        <ol class="phase-grid">
+          <li><span class="phase-index">01</span><h3>Plan</h3><p>Wybierasz reguły dla gry i aplikacji tła. Procesy Windows, launchery, komponenty anti-cheat i pomocnicy gry są chronieni przed optymalizacją tła.</p></li>
+          <li><span class="phase-index">02</span><h3>Dziennik</h3><p>Przed zmianą zapisywany jest stan potrzebny do cofnięcia operacji. Dziennik recovery jest dopisywany i działa niezależnie od bazy SQLite.</p></li>
+          <li><span class="phase-index">03</span><h3>Sesja gry</h3><p>Host stosuje plan, śledzi grę i jej procesy potomne oraz zbiera FPS i frametime przez PresentMon. Uruchamiana gra zachowuje zwykłe uprawnienia użytkownika.</p></li>
+          <li><span class="phase-index">04</span><h3>Przywrócenie</h3><p>Po grze operacje są cofane w odwrotnej kolejności: wracają priorytety, affinity i wybrane aplikacje tła. Stan jest sprawdzany z uwzględnieniem zmian zewnętrznych.</p></li>
+        </ol>
+        <aside class="recovery-callout"><span class="callout-mark" aria-hidden="true">↶</span><div><h3>A jeśli SessionHost ulegnie awarii?</h3><p>Przywracanie opiera się na dzienniku niedokończonej sesji, a nadzór usługi nie kończy się wraz z zamknięciem UI. Przy kolejnym uruchomieniu recovery pozwala dokończyć cofanie zapisanych zmian. Najpierw zakończ przywracanie, potem aktualizuj program.</p></div></aside>
       </div>
     </section>
-
-    <section class="cta reveal">
-      <h2>Graj. Dismode posprząta.</h2>
-      <a class="btn primary magnetic" href="#instrukcja"><span>Przejdź do instrukcji</span></a>
+    <section class="section container" id="bezpieczenstwo" aria-labelledby="safety-title">
+      <header class="section-heading"><p class="eyebrow">03 / Bezpieczeństwo i prywatność</p><h2 id="safety-title">Uprawnienia mają granice.<br>Dane zostają u Ciebie.</h2></header>
+      <div class="safety-grid">
+        <div><ul class="safety-list">
+          <li><strong>Bez sterownika kernel-mode.</strong><span>Natywne API Windows; bez Electron i WebView.</span></li>
+          <li><strong>Interfejs bez uprawnień administratora.</strong><span>UAC dotyczy SessionHost. UI nie wykonuje bezpośrednio uprzywilejowanych operacji.</span></li>
+          <li><strong>Podpisy i zaufani wydawcy.</strong><span>Łańcuch wydania produkcyjnego wymaga Authenticode. Usługa porównuje podpis klienta z zainstalowaną listą zaufanych wydawców.</span></li>
+          <li><strong>Zabezpieczenia pozostają chronione.</strong><span>Zmiany zabezpieczeń systemu i anti-cheat są zablokowane. Reguły użytkownika nie omijają polityki bezpieczeństwa.</span></li>
+        </ul></div>
+        <article class="privacy-panel" id="prywatnosc">
+          <p class="eyebrow">Dane i połączenia</p><h3>Bez kont, chmury i telemetrii produktu.</h3>
+          <p>Profile, ścieżki EXE, skróty hashy, ustawienia, listy procesów i usług, historia, dzienniki oraz wyniki FPS/frametime są zapisywane lokalnie.</p>
+          <dl class="data-paths"><dt>Dane użytkownika</dt><dd><code>%LocalAppData%\Dismode</code></dd><dt>Dane maszyny i recovery</dt><dd><code>%ProgramData%\Dismode</code></dd></dl>
+          <p><strong>Sprawdzanie aktualizacji łączy się przez HTTPS z serwerem Dismode.</strong> Operator może otrzymać IP, czas żądania, wersję protokołu i User-Agent z nazwą oraz wersją programu. Listy gier, procesów, usług, sprzętu i wyników nie są przesyłane.</p>
+          <p class="small-text">Automatyczne sprawdzanie (domyślnie co 30 dni) i automatyczną instalację wyłączysz niezależnie w zakładce Aktualizacje. Usunięcie danych przy pełnej deinstalacji wymaga zakończonego recovery.</p>
+        </article>
+      </div>
+    </section>
+    <section class="section container" id="instalacja" aria-labelledby="install-title">
+      <header class="section-heading"><p class="eyebrow">04 / Instalacja i aktualizacja</p><h2 id="install-title">Jeden instalator EXE.<br>Składniki wybierasz Ty.</h2></header>
+      <div class="install-grid">
+        <article class="install-panel">
+          <h3>Zanim pobierzesz</h3><p><strong>Windows 11 23H2 lub nowszy, x64.</strong> Projekt jest przeznaczony dla komputerów stacjonarnych; profile baterii laptopów są poza obecnym zakresem.</p><p>Instalator zawiera .NET i Windows App Runtime — nie potrzebujesz instalować ich osobno.</p>
+          <div class="release-status"><strong>Wersja projektu: 0.8.0</strong><p>Według stanu wydania z 1 października 2026 instalator 0.8.0 czeka na certyfikat produkcyjny. Aktualną dostępność pliku sprawdź w repozytorium.</p></div>
+          <a class="button button-primary" href="https://github.com/Dismonder/Dismode">Pobierz <span aria-hidden="true">↗</span></a><p class="small-text">Suma <strong>SHA-256</strong> jest dołączana obok pliku EXE. Porównaj ją przed uruchomieniem instalatora.</p>
+        </article>
+        <div class="install-steps">
+          <article><span class="step-label">Krok 01</span><h3>Zakończ sesję i zamknij program</h3><p>Przed instalacją lub aktualizacją dokończ recovery, zamknij Dismode i jego kolektor FPS. Instalator celowo nie zabija gry ani procesów przywracania.</p></article>
+          <article><span class="step-label">Krok 02</span><h3>Potwierdź UAC i wybierz składniki</h3><p>EXE instaluje aplikację w chronionym <code>Program Files</code>, System Optimizer i usługę <code>DismodeSystemAgent</code> z opóźnionym startem. Domyślnie wybrany Memory Optimizer możesz odznaczyć.</p></article>
+          <article><span class="step-label">Krok 03</span><h3>Uruchom ze skrótu</h3><p>Instalator tworzy wpis w menu Start, opcjonalny skrót na pulpicie i standardowy deinstalator Windows. Launcher prosi o UAC dla SessionHost; bez tego hosta interfejs nie wystartuje.</p></article>
+        </div>
+      </div>
+      <div class="migration-panel">
+        <div><p class="eyebrow">GameShift → Dismode</p><h3>Ten sam program. Nowa nazwa.</h3><p>Instalator przenosi dane starszego wydania do katalogów Dismode. Profile, historia i dziennik recovery nie są usuwane przy standardowym odinstalowaniu.</p></div>
+        <div><h3>Jeśli migracja jest zablokowana</h3><p>Gdy GameShift nadal działa, zamknij go przez ikonę w zasobniku: „Wyłącz GameShift”. Jeśli baza profili lub dziennik są w użyciu albo nie zostały przeniesione w całości, zamknij programy trzymające te pliki i uruchom Dismode ponownie. Host odmawia startu, aby nie otworzyć pustej biblioteki obok Twoich danych.</p></div>
+      </div>
+      <p class="channel-note">Kanał deweloperski aktualizacji: <a href="https://dismode-update-service-dev.dismonder.workers.dev">dismode-update-service-dev.dismonder.workers.dev</a></p>
+    </section>
+    <section class="section container news-section" id="nowosci" aria-labelledby="news-title">
+      <header class="section-heading"><p class="eyebrow">05 / Co nowego w 0.8.0</p><h2 id="news-title">Nowa nazwa. Dokładniejsza tożsamość gry.</h2></header>
+      <div class="news-grid"><article><span class="tag">Migracja</span><h3>GameShift staje się Dismode</h3><p>Przejęcie profili, historii i dzienników użytkownika oraz maszyny. Uruchomienie jest wstrzymywane, gdy starsza wersja działa lub przeniesienie danych nie może zostać ukończone.</p></article><article><span class="tag">Rozpoznawanie gry</span><h3>Liczy się plik, nie tekst ścieżki</h3><p>Rozpoznawanie gry korzysta z rozwiązanej tożsamości pliku EXE. Uwzględnia też rozwiązany katalog instalacji, aby właściwie chronić pomocnicze procesy gry.</p></article></div>
+    </section>
+    <section class="section container faq-section" id="faq" aria-labelledby="faq-title">
+      <header class="section-heading"><p class="eyebrow">06 / FAQ</p><h2 id="faq-title">Zanim włączysz optymalizację.</h2></header>
+      <div class="faq-list">
+        <details><summary>Czy Dismode jest bezpieczny dla anti-cheat?</summary><div class="faq-answer"><p>Tryb gry nie wstrzykuje kodu do gry i nie ma sterownika kernel-mode. Zmienia priorytety, affinity i działanie wybranych aplikacji tła; komponenty anti-cheat są wyłączone z optymalizacji tła. To nie jest gwarancja zgodności z konkretnym anti-cheatem — sprawdź zasady danej gry.</p><p>Osobny menedżer OptiScaler instaluje proxy DLL. Wymaga potwierdzenia offline lub single-player i blokuje instalację przy wykrytym anti-cheacie oraz dla gier tylko online.</p></div></details>
+        <details><summary>Co się stanie po awarii hosta lub zamknięciu okna?</summary><div class="faq-answer"><p>Zamknięcie UI nie wyłącza nadzoru usługi nad recovery. Po awarii hosta dziennik pozwala wznowić przywracanie zapisanych priorytetów, affinity i aplikacji tła. Nie aktualizuj ani nie usuwaj danych przed zakończeniem recovery.</p></div></details>
+        <details><summary>Czy dostanę więcej FPS?</summary><div class="faq-answer"><p>Nie ma gwarantowanego przyrostu. PresentMon 2.5.1 mierzy FPS i czas klatki na podstawie rzeczywistych zdarzeń ETW dla śledzonej gry. Brak lub nieaktualne dane są pokazywane jako niedostępne. Memory Optimizer nie jest funkcją zwiększania FPS.</p></div></details>
+        <details><summary>Dlaczego program prosi o uprawnienia administratora?</summary><div class="faq-answer"><p>SessionHost potrzebuje UAC do wykonywania planu sesji. Interfejs WinUI 3 pozostaje niepodwyższony, a uruchamiane gry i przywracane aplikacje korzystają ze zwykłego tokenu użytkownika. Osobna usługa systemowa działa jako LocalSystem.</p></div></details>
+        <details><summary>Czy muszę instalować Memory Optimizer?</summary><div class="faq-answer"><p>Nie. Jest domyślnie zaznaczonym, niezależnym składnikiem GPL-3.0-only, który możesz odznaczyć w instalatorze. Ma własny zasobnik i usługę; zamknięcie gamingowego Dismode go nie wyłącza.</p></div></details>
+        <details><summary>Czy program działa offline i wysyła moje dane?</summary><div class="faq-answer"><p>Sesje i dane są lokalne, bez kont, chmury i telemetrii produktu. Sprawdzanie aktualizacji wymaga HTTPS; serwer może widzieć standardowe metadane połączenia, ale nie otrzymuje list gier, procesów ani wyników pomiarów. Pobieranie wydań OptiScaler również wymaga sieci.</p></div></details>
+        <details><summary>Mam GameShift. Czy stracę bibliotekę i profile?</summary><div class="faq-answer"><p>Dismode to ten sam program pod nową nazwą. Instalator przenosi dane. Jeśli GameShift nadal działa albo pliki są w użyciu, Dismode wstrzymuje start i wyświetla wyjaśnienie. Zamknij starą wersję oraz programy blokujące pliki i ponów uruchomienie.</p></div></details>
+        <details><summary>Czy działa na Windows 10, ARM lub laptopie?</summary><div class="faq-answer"><p>Wymagania to Windows 11 x64, wersja 23H2 lub nowsza. Docelowym sprzętem są komputery stacjonarne. Profile baterii laptopów nie należą do obecnego zakresu projektu.</p></div></details>
+      </div>
+    </section>
+    <section class="section container license-section" id="licencje" aria-labelledby="license-title">
+      <header class="section-heading"><p class="eyebrow">07 / Licencje</p><h2 id="license-title">Produkt i jego składniki.</h2></header>
+      <div class="license-grid">
+        <article><h3>Dismode</h3><p>Kod źródłowy i warunki licencji produktu sprawdź w <a href="https://github.com/Dismonder/Dismode">repozytorium Dismode</a>. Licencji osobnego składnika nie należy przypisywać całemu produktowi.</p></article>
+        <article><h3>Memory Optimizer <span class="license-name">GPL-3.0-only</span></h3><p>Niezależny składnik wywodzący się z Windows Memory Cleaner 3.0.8 autorstwa Igora Mundsteina. Licencja, pochodzenie, lista zmian i odpowiadające źródła są dołączone w katalogu komponentu.</p></article>
+        <article><h3>PresentMon 2.5.1 <span class="license-name">MIT</span></h3><p>Dołączony kolektor FPS. Jego licencja i informacje o składnikach innych firm są dostarczane obok pliku programu.</p></article>
+      </div>
     </section>
   </main>
-
-  <footer class="footer">
-    <span>© 2026 Dismonder · Dismode</span>
-    <span class="mono">strona dev</span>
-    <a href="https://github.com/Dismonder/Dismode">GitHub</a>
+  <footer class="site-footer">
+    <div class="container footer-inner">
+      <a class="brand" href="#start"><img src="assets/dismode.png" alt="" width="32" height="32"><span>Dismode<span class="brand-version">0.8.0 · wydanie rozwojowe</span></span></a>
+      <nav class="footer-links" aria-label="Informacje o projekcie"><a href="https://github.com/Dismonder/Dismode">Kod źródłowy</a><a href="#prywatnosc">Prywatność</a><a href="#licencje">Licencje innych firm</a><a href="#nowosci">Co nowego</a></nav>
+      <button class="motion-toggle" type="button" aria-pressed="false" hidden><span class="toggle-dot" aria-hidden="true"></span><span data-motion-label>Efekty animacji</span></button>
+      <noscript><p class="small-text">Efekty wyłączone. Treść i nawigacja działają bez JavaScriptu.</p></noscript>
+    </div>
   </footer>
-
-  <script src="app.js" type="module"></script>
 </body>
 </html>

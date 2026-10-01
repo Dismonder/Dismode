@@ -3,16 +3,26 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Nie znaleziono — Dismode</title>
+  <title>Nie znaleziono strony — Dismode 0.8.0</title>
+  <meta name="description" content="Nie znaleziono tej strony. Wróć do projektu Dismode i poznaj moduły, instalację oraz zasady odwracalnej sesji gry.">
+  <meta name="robots" content="noindex">
+  <meta name="color-scheme" content="dark light">
+  <meta name="theme-color" content="#0b101b" media="(prefers-color-scheme: dark)">
+  <meta name="theme-color" content="#f3f5fa" media="(prefers-color-scheme: light)">
   <link rel="icon" type="image/png" href="/assets/favicon.png">
+  <script src="/motion.js"></script>
   <link rel="stylesheet" href="/styles.css">
+  <script src="/app.js" defer></script>
 </head>
 <body>
-  <main class="section not-found">
-    <p class="kicker">404</p>
-    <h2>Tej strony nie ma w dzienniku.</h2>
-    <p class="lead">Nic tu nie zmieniliśmy, więc nie ma czego przywracać.</p>
-    <p><a class="btn primary" href="/"><span>Wróć na start</span></a></p>
+  <a class="skip-link" href="#tresc">Przejdź do treści</a>
+  <header class="site-header"><div class="container header-inner"><a class="brand" href="/"><img src="/assets/dismode.png" alt="" width="36" height="36"><span>Dismode<span class="brand-version">0.8.0</span></span></a><a class="header-download" href="/">Strona projektu <span aria-hidden="true">↗</span></a></div></header>
+  <main class="container not-found" id="tresc" tabindex="-1">
+    <p class="eyebrow">Błąd 404 / Nie znaleziono strony</p>
+    <h1>Ten adres prowadzi donikąd.</h1>
+    <p>Strona mogła zmienić adres albo nie istnieje. Wróć do Dismode, aby poznać moduły projektu i sposób instalacji.</p>
+    <div class="actions"><a class="button button-primary" href="/">Wróć na stronę główną <span aria-hidden="true">↗</span></a><a class="button button-secondary" href="https://github.com/Dismonder/Dismode">Kod źródłowy</a></div>
   </main>
+  <footer class="site-footer"><div class="container footer-inner"><span class="small-text">Dismode 0.8.0 · wydanie rozwojowe</span><nav class="footer-links" aria-label="Informacje o projekcie"><a href="/#prywatnosc">Prywatność</a><a href="/#licencje">Licencje innych firm</a></nav><button class="motion-toggle" type="button" aria-pressed="false" hidden><span class="toggle-dot" aria-hidden="true"></span><span data-motion-label>Efekty animacji</span></button></div></footer>
 </body>
 </html>
