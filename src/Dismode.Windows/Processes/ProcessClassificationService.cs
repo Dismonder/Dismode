@@ -91,8 +91,13 @@ public static class ProcessClassificationService
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(processName);
 
+        // Takze wydania sprzed zmiany nazwy: do czasu instalacji nowej wersji
+        // ich usluga i tray moga dzialac obok Dismode.
         if (processName.StartsWith(
                 "Dismode",
+                StringComparison.OrdinalIgnoreCase)
+            || processName.StartsWith(
+                "GameShift",
                 StringComparison.OrdinalIgnoreCase))
         {
             return new(

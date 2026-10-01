@@ -24,11 +24,36 @@ if (!WindowsPlatformSupport.IsSupported)
     return 2;
 }
 
+// Poprzednia wersja (GameShift) w tej sesji optymalizuje te same gry i, do
+// pierwszego startu Dismode, trzyma ten sam katalog danych. Jej mutexy i rury
+// nosza stara nazwe, wiec blokada pojedynczego egzemplarza nizej jej nie
+// widzi; migracja spod dzialajacego programu rozdzielilaby dane na pol.
+if (LegacyProductProcesses.FindRunningInCurrentSession() is string legacyComponent)
+{
+    Console.Error.WriteLine(
+        "Działa jeszcze poprzednia wersja programu (GameShift): "
+        + legacyComponent
+        + ". Zamknij ją i uruchom Dismode ponownie.");
+    return 9;
+}
+
 // Dane z wydan pod stara nazwa (GameShift) musza byc na miejscu, zanim
 // ktorykolwiek tryb, lacznie z brama aktualizacji, przeczyta dziennik.
-foreach (string problem in LegacyStorageMigration.MigrateUserData())
+LegacyStorageMigrationResult migration = LegacyStorageMigration.MigrateUserData();
+foreach (string problem in migration.Problems)
 {
     Console.Error.WriteLine($"Migracja danych GameShift: {problem}");
+}
+
+if (migration.BlocksStartup)
+{
+    // Bez bazy i dziennika host zalozylby puste; uzytkownik zobaczylby program,
+    // ktory zapomnial biblioteke i nie dokonczy recovery.
+    Console.Error.WriteLine(
+        "Migracja danych GameShift: baza profili albo dziennik recovery "
+        + "poprzedniej wersji są w użyciu. Zamknij programy, które je trzymają, "
+        + "i uruchom Dismode ponownie.");
+    return 9;
 }
 
 if (args.Length == 1)

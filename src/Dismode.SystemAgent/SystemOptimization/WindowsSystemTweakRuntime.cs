@@ -567,12 +567,22 @@ internal sealed class WindowsSystemTweakRuntime :
             experimentId,
             $"action:{applicationIndex}"));
 
+    /// <summary>
+    /// Seed of every action and idempotency id the runtime derives. It still
+    /// carries the old product name on purpose: the machine journal and the
+    /// database written by releases published as GameShift key their records
+    /// by these ids, and a restore that recomputes them under a new seed finds
+    /// no preparation record, cannot reverse the tweak, and blocks every later
+    /// update and uninstall behind it. The string is a constant, not a name.
+    /// </summary>
+    private const string DeterministicIdSeed = "GameShift.SystemOptimizer.v1";
+
     private static Guid CreateDeterministicGuid(
         Guid experimentId,
         string purpose)
     {
         byte[] payload = Encoding.UTF8.GetBytes(
-            $"Dismode.SystemOptimizer.v1|{experimentId:D}|{purpose}");
+            $"{DeterministicIdSeed}|{experimentId:D}|{purpose}");
         byte[] hash = SHA256.HashData(payload);
         return new Guid(hash.AsSpan(0, 16));
     }

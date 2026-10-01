@@ -1,3 +1,5 @@
+using System.Security.AccessControl;
+using System.Security.Principal;
 using System.Text.Json;
 using Dismode.Data.Storage;
 
@@ -14,7 +16,9 @@ internal static class TrustedSignerConfiguration
         try
         {
             FileInfo file = new(path);
-            if (file.Exists && file.Length <= MaximumConfigurationBytes)
+            if (file.Exists
+                && file.Length <= MaximumConfigurationBytes
+                && IsOwnedByAdministratorsOrSystem(file))
             {
                 byte[] payload = File.ReadAllBytes(path);
                 TrustedSignerDocument? document =
@@ -49,6 +53,34 @@ internal static class TrustedSignerConfiguration
         return thumbprints
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .ToArray();
+    }
+
+    /// <summary>
+    /// The file names who may mutate the system through this service, so it
+    /// is trusted only when it belongs to Administrators or SYSTEM — which
+    /// is what an elevated installer creates and what Install-SystemAgent.ps1
+    /// sets explicitly. A copy planted by an ordinary user — possible while
+    /// the data directory still carried the ProgramData default of letting
+    /// everyone create files — is ignored, and the service stays read-only.
+    /// </summary>
+    private static bool IsOwnedByAdministratorsOrSystem(FileInfo file)
+    {
+        try
+        {
+            IdentityReference? owner = file
+                .GetAccessControl(AccessControlSections.Owner)
+                .GetOwner(typeof(SecurityIdentifier));
+            return owner is SecurityIdentifier sid
+                && (sid.IsWellKnown(WellKnownSidType.BuiltinAdministratorsSid)
+                    || sid.IsWellKnown(WellKnownSidType.LocalSystemSid));
+        }
+        catch (Exception exception) when (
+            exception is IOException
+                or UnauthorizedAccessException
+                or InvalidOperationException)
+        {
+            return false;
+        }
     }
 
     private static bool IsThumbprint(string value) =>

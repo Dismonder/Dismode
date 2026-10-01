@@ -1,6 +1,84 @@
 # Dismode — kontekst roboczy repozytorium
 
-Ostatnia aktualizacja: 2026-09-05
+Ostatnia aktualizacja: 2026-10-01
+
+## Zasady prowadzenia sesji (od 2026-10-01)
+
+- Ten plik jest kontekstem dla następnej sesji: nowa sesja zamiast kompresji
+  kontekstu. Każda sesja dopisuje tu wpis do change logu i stan prac.
+- Większe pliki do przeczytania zleca się Antigravity CLI (Gemini Flash,
+  `agent_call` model `flash`, profil `find`/`shell`), nie czyta się ich
+  w kontekście sesji Claude.
+- Recenzja i cięższa praca wykonawcza: Codex CLI, model GPT sol
+  (`agent_call` model `sol`, `codex exec`).
+
+## Change log — gałąź `rename-dismode` (stan 2026-10-01, niezacommitowane)
+
+- `.gitattributes`: `* text=auto eol=lf`, binaria oznaczone; `dotnet format`
+  znów zielony.
+- `LegacyStorageMigration`: wynik `LegacyStorageMigrationResult`
+  (`Problems`, `BlocksStartup`), mutex `Local\Dismode.StorageMigration.*`,
+  scalanie katalogów rekurencyjnie, identyczne pliki usuwane, kolizje
+  odkładane pod `.gameshift`, baza `gameshift-user.db*` przenoszona zestawem
+  (db, -wal, -shm) lub odkładana jako `.unmerged`, ponawianie `Move`.
+- `LegacyProductProcesses` (nowy plik): wykrycie `GameShift.UI` /
+  `GameShift.SessionHost` w bieżącej sesji.
+- `StartupPolicy`: kody 6 (`LegacyProductRunning`) i 7
+  (`LegacyDataUnavailable`); `StartupGate.RefuseWhileLegacyProductRuns`,
+  `StartupGate.MigrateLegacyData`; `App.xaml.cs` używa obu.
+- `SessionHost/Program.cs`: zwraca 9 przy działającym GameShift lub
+  zablokowanej migracji; `Dismode.iss` tłumaczy `ResultCode = 9`.
+- `SqliteUserDataStore`: schemat 15 (`ActionMode IN (1..5)` w regułach gry,
+  sieroty odfiltrowane), migracje ponawiane po wyścigu UI/host; usunięte
+  `Cache=Shared` (także w `SqliteSystemOptimizerStore`).
+- `AppendOnlyRecoveryJournal`: zweryfikowane wpisy trzymane w pamięci
+  po przejęciu writera.
+- `LocalGameSessionOrchestrator`: affinity gry dziennikowane i przywracane
+  (`GameAffinityRecoveryMetadata`, `RestoreGameAffinityAsync`), koniec sesji
+  nie wcześniej niż start (`ResolveSessionEnd`).
+- `WindowsSystemTweakRuntime`: ziarno id `GameShift.SystemOptimizer.v1`
+  zachowane celowo (zgodność dziennika maszyny).
+- `BackgroundApplicationGuard`, `ProcessClassificationService`,
+  `EtwSessionCleanup`, `PresentMonFrameRateProvider`: stare nazwy GameShift
+  chronione / sprzątane.
+- `TrustedSignerConfiguration`: plik honorowany tylko gdy właścicielem jest
+  Administrators lub SYSTEM; `Install-SystemAgent.ps1` ustawia właściciela
+  i DACL `ProgramData\Dismode` (Shared do zapisu dla Users).
+- Skrypty PS1 instalatora dostały BOM UTF-8 (polskie komunikaty w PS 5.1).
+- Testy: nowe w `UserDataStoreTests`, `AppendOnlyRecoveryJournalTests`,
+  `LegacyStorageMigrationTests`, `StartupPolicyTests`,
+  `SystemOptimizerReleaseContractTests`.
+
+Weryfikacja 2026-10-01: build 0/0, testy 565 zaliczone (7 pominięte),
+`dotnet format --verify-no-changes` czysto, `git diff --check` czysto.
+
+Recenzja Codex (gpt-6-sol, 2026-10-01) diffu pod kątem wyścigu migracji,
+schematu 15, recovery affinity i ACL `ProgramData\Dismode`:
+- naprawione: `LegacyStorageMigration` przenosi zestaw bazy w kolejności
+  `-shm`, `-wal`, baza (nazwa bazy jako ostatni krok), a pozostawiony legacy
+  `-wal` w którymkolwiek katalogu daje `BlocksStartup` (wcześniej baza bez
+  dziennika WAL otwierała się bez zatwierdzonych wierszy);
+  `Install-SystemAgent.ps1` robi `icacls /reset` korzenia przed
+  `/inheritance:r`, bo jawny wpis CREATOR OWNER użytkownika, który utworzył
+  katalog wcześniej, przetrwałby zdjęcie dziedziczenia.
+- świadomie bez zmian: po 30 s bez mutexu migracja idzie dalej (przeplot
+  dwóch procesów daje tylko wpisy w `Problems`, `TryMove` nie gubi plików);
+  `SQLITE_BUSY` przy migracji schematu dłuższej niż timeout połączenia
+  (migracja 14→15 trwa ułamek sekundy); okno awarii hosta między
+  nałożeniem twardej maski gry a checkpointem `ProcessesApplied` (gra
+  zostaje na masce P-core do wyjścia; checkpoint przed akcją wymagałby
+  recovery dla akcji bez wpisów w dzienniku).
+- schemat 15 i round-trip `GameAffinityRecoveryMetadata`: bez uwag.
+
+Weryfikacja po poprawkach 2026-10-01: build 0/0, testy 565 zaliczone
+(7 pominięte), `dotnet format --verify-no-changes` czysto,
+`git diff --check` czysto. PR #5 (`rename-dismode` → `main`) już istniał,
+więc jego opis został uzupełniony zamiast tworzenia nowego.
+
+Następne kroki: scalić PR #5 do `main`; po scaleniu podbić `<Version>`
+w `Directory.Build.props` do 0.8.0 (obecnie 0.7.0 = origin/main) osobnym
+commitem i dopisać tu wpis o wydaniu; pierwsza instalacja Dismode obok
+zainstalowanego GameShift to pierwszy żywy test migracji.
 
 ### Memory Optimizer — bieżąca poprawka panelu tray (2026-09-05)
 

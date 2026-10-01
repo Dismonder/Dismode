@@ -42,6 +42,17 @@ public sealed class AppendOnlyRecoveryJournal : IRecoveryJournal, IDisposable
     private bool _writeFaulted;
     private bool _disposed;
 
+    /// <summary>
+    /// The verified records, kept once this instance owns the writer. The
+    /// writer holds the file with FileShare.Read, so nobody else can append
+    /// and the only records that can arrive are our own. Every action the
+    /// transaction machinery runs reads the whole journal first, and the
+    /// reactive loop runs several actions per restraint; re-reading and
+    /// re-hashing every record from disk each time made that cost grow with
+    /// the journal's age instead of with the work at hand.
+    /// </summary>
+    private List<RecoveryJournalEntry>? _verifiedEntries;
+
     public AppendOnlyRecoveryJournal(string path)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(path);
@@ -112,6 +123,7 @@ public sealed class AppendOnlyRecoveryJournal : IRecoveryJournal, IDisposable
 
             _lastSequence = entry.Sequence;
             _lastRecordHash = entry.RecordHash;
+            _verifiedEntries?.Add(entry);
             return entry;
         }
         finally
@@ -128,7 +140,11 @@ public sealed class AppendOnlyRecoveryJournal : IRecoveryJournal, IDisposable
 
         try
         {
-            return await ReadAllCoreAsync(cancellationToken).ConfigureAwait(false);
+            // A snapshot, not the live list: callers filter it after the gate
+            // is released, while the next append may already be adding to it.
+            return _verifiedEntries is not null
+                ? [.. _verifiedEntries]
+                : await ReadAllCoreAsync(cancellationToken).ConfigureAwait(false);
         }
         finally
         {
@@ -184,6 +200,7 @@ public sealed class AppendOnlyRecoveryJournal : IRecoveryJournal, IDisposable
         _lastSequence = previous?.Sequence ?? 0;
         _lastRecordHash = previous?.RecordHash ?? GenesisHash;
         _tailLoaded = true;
+        _verifiedEntries = [.. existing];
         if (_writeStream.Length > _completeLength)
         {
             _writeStream.SetLength(_completeLength);

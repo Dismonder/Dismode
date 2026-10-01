@@ -238,6 +238,23 @@ public sealed class AppendOnlyRecoveryJournalTests
         Assert.AreEqual(
             records[^2].RecordHash,
             records[^1].PreviousRecordHash);
+
+        // Wlasciciel pisarza odpowiada z pamieci; niezalezny czytelnik
+        // weryfikuje plik od zera. Oba widza to samo, takze po dopisaniu.
+        using AppendOnlyRecoveryJournal reader = new(testContext.JournalPath);
+        IReadOnlyList<RecoveryJournalEntry> fromDisk =
+            await reader.ReadAllAsync(CancellationToken.None);
+        CollectionAssert.AreEqual(records.ToArray(), fromDisk.ToArray());
+
+        RecoveryJournalEntry appended = await journal.AppendDurableAsync(
+            CreateDraft(testContext, JournalEventKind.ActionApplied, "target-late"),
+            CancellationToken.None);
+        IReadOnlyList<RecoveryJournalEntry> writerView =
+            await journal.ReadAllAsync(CancellationToken.None);
+        IReadOnlyList<RecoveryJournalEntry> readerView =
+            await reader.ReadAllAsync(CancellationToken.None);
+        Assert.AreEqual(appended, writerView[^1]);
+        CollectionAssert.AreEqual(writerView.ToArray(), readerView.ToArray());
     }
 
     private static RecoveryJournalDraft CreateDraft(

@@ -603,13 +603,18 @@ public sealed class LocalGameSessionOrchestrator : IAsyncDisposable
 
                 // Przypiecie gry do rdzeni wydajnych. Na jednorodnym
                 // procesorze polityka odmawia i nic sie nie dzieje.
-                int affinityActionCount = await ApplyGameAffinityAsync(
+                GameAffinityOutcome gameAffinity = await ApplyGameAffinityAsync(
                         plan.SessionId,
                         launched.Identity,
                         startedAtUtc,
                         enableProBalance ?? _proBalanceEnabled,
                         CancellationToken.None)
                     .ConfigureAwait(false);
+                int affinityActionCount = gameAffinity.AppliedCount;
+                metadata = metadata with
+                {
+                    GameAffinity = gameAffinity.Journaled,
+                };
 
                 BackgroundBundleOutcome bundle =
                     await ApplyBackgroundApplicationsAsync(
@@ -671,7 +676,8 @@ public sealed class LocalGameSessionOrchestrator : IAsyncDisposable
                     recoveredFromHostCrash: false,
                     frameRateTrackingEnabled: enableFrameRateTracking,
                     systemProfileActive: systemProfile.WasApplied,
-                    backgroundAffinityMask: backgroundMask);
+                    backgroundAffinityMask: backgroundMask,
+                    gameAffinity: metadata.GameAffinity);
                 runtime.FrameRate = enableFrameRateTracking
                     ? await _frameRateProvider.SampleAsync(
                             [launched.Identity.RuntimeKey.ProcessId],
@@ -733,6 +739,13 @@ public sealed class LocalGameSessionOrchestrator : IAsyncDisposable
                             startedAtUtc,
                             CancellationToken.None)
                         .ConfigureAwait(false);
+                BackgroundRecoveryTotals affinityRecovery =
+                    await RestoreGameAffinityAsync(
+                            plan.SessionId,
+                            metadata.GameAffinity,
+                            startedAtUtc,
+                            CancellationToken.None)
+                        .ConfigureAwait(false);
                 BackgroundRecoveryTotals applicationRecovery =
                     await RestoreBackgroundApplicationsAsync(
                             plan.SessionId,
@@ -742,7 +755,7 @@ public sealed class LocalGameSessionOrchestrator : IAsyncDisposable
                             CancellationToken.None)
                         .ConfigureAwait(false);
                 BackgroundRecoveryTotals recovery = MergeRecoveryTotals(
-                    priorityRecovery,
+                    MergeRecoveryTotals(priorityRecovery, affinityRecovery),
                     applicationRecovery);
                 if (recovery.ErrorCount == 0)
                 {
@@ -1197,7 +1210,8 @@ public sealed class LocalGameSessionOrchestrator : IAsyncDisposable
                         systemProfileActive:
                             metadata.SystemProfileActive,
                         dynamicRestraints: unresolvedRestraints,
-                        backgroundAffinityMask: recoveredMask);
+                        backgroundAffinityMask: recoveredMask,
+                        gameAffinity: metadata.GameAffinity);
                     recovered.FrameRate = metadata.FrameRateTrackingEnabled
                         ? await _frameRateProvider.SampleAsync(
                                 observation.RunningProcesses
@@ -1224,12 +1238,19 @@ public sealed class LocalGameSessionOrchestrator : IAsyncDisposable
             }
 
             BackgroundRecoveryTotals priorityRecovery =
-                await RestoreGamePriorityAsync(
-                        sessionId,
-                        metadata.GamePriority,
-                        metadata.StartedAtUtc,
-                        cancellationToken)
-                    .ConfigureAwait(false);
+                MergeRecoveryTotals(
+                    await RestoreGamePriorityAsync(
+                            sessionId,
+                            metadata.GamePriority,
+                            metadata.StartedAtUtc,
+                            cancellationToken)
+                        .ConfigureAwait(false),
+                    await RestoreGameAffinityAsync(
+                            sessionId,
+                            metadata.GameAffinity,
+                            metadata.StartedAtUtc,
+                            cancellationToken)
+                        .ConfigureAwait(false));
             ulong finalMask = metadata.BackgroundAffinityMask
                 ?? ReadHistoricalBackgroundMask(
                     entries,
@@ -1291,7 +1312,7 @@ public sealed class LocalGameSessionOrchestrator : IAsyncDisposable
                 metadata,
                 cancellationToken)
             .ConfigureAwait(false);
-        DateTimeOffset endedAtUtc = _timeProvider.GetUtcNow();
+        DateTimeOffset endedAtUtc = ResolveSessionEnd(metadata.StartedAtUtc);
         await _history.AddAsync(
                 new(
                     sessionId,
@@ -1772,12 +1793,19 @@ public sealed class LocalGameSessionOrchestrator : IAsyncDisposable
         }
 
         BackgroundRecoveryTotals priorityRecovery =
-            await RestoreGamePriorityAsync(
-                    runtime.SessionId,
-                    runtime.GamePriority,
-                    runtime.StartedAtUtc,
-                    CancellationToken.None)
-                .ConfigureAwait(false);
+            MergeRecoveryTotals(
+                await RestoreGamePriorityAsync(
+                        runtime.SessionId,
+                        runtime.GamePriority,
+                        runtime.StartedAtUtc,
+                        CancellationToken.None)
+                    .ConfigureAwait(false),
+                await RestoreGameAffinityAsync(
+                        runtime.SessionId,
+                        runtime.GameAffinity,
+                        runtime.StartedAtUtc,
+                        CancellationToken.None)
+                    .ConfigureAwait(false));
         BackgroundRecoveryTotals restraintRecovery =
             await RestoreBackgroundApplicationsAsync(
                     runtime.SessionId,
@@ -1852,7 +1880,7 @@ public sealed class LocalGameSessionOrchestrator : IAsyncDisposable
                 metadata,
                 CancellationToken.None)
             .ConfigureAwait(false);
-        DateTimeOffset endedAtUtc = _timeProvider.GetUtcNow();
+        DateTimeOffset endedAtUtc = ResolveSessionEnd(runtime.StartedAtUtc);
         SessionCompletionStatus finalStatus =
             recovery.ConflictCount == 0
                 ? status
@@ -1896,6 +1924,20 @@ public sealed class LocalGameSessionOrchestrator : IAsyncDisposable
                 ? message
                 : $"{message} Przywrócono aplikacji: "
                     + $"{runtime.RestoredActionCount}.");
+    }
+
+    /// <summary>
+    /// The moment a session ended, never earlier than it started. The system
+    /// clock can move backwards between the two — the time service corrects
+    /// a clock that ran ahead, or the session is being recovered after a
+    /// crash on a different clock — and a summary that ends before it began
+    /// is refused by the domain. That refusal must not stop the host from
+    /// starting, so the end is clamped here, where the clock is read.
+    /// </summary>
+    private DateTimeOffset ResolveSessionEnd(DateTimeOffset startedAtUtc)
+    {
+        DateTimeOffset now = _timeProvider.GetUtcNow();
+        return now < startedAtUtc ? startedAtUtc : now;
     }
 
     private async ValueTask TryRefreshCompletedSessionMetadataAsync(
@@ -1951,7 +1993,8 @@ public sealed class LocalGameSessionOrchestrator : IAsyncDisposable
             runtime.SnapshotDynamicRestraints()
                 .Select(ToRecoveryMetadata)
                 .ToArray(),
-            runtime.BackgroundAffinityMask);
+            runtime.BackgroundAffinityMask,
+            runtime.GameAffinity);
 
     /// <summary>
     /// Writes the session checkpoint that carries the current set of reactive
@@ -2077,7 +2120,7 @@ public sealed class LocalGameSessionOrchestrator : IAsyncDisposable
     /// without pinning is better than a session that refuses to start.
     /// </para>
     /// </summary>
-    private async ValueTask<int> ApplyGameAffinityAsync(
+    private async ValueTask<GameAffinityOutcome> ApplyGameAffinityAsync(
         SessionId sessionId,
         ProcessIdentity gameIdentity,
         DateTimeOffset requestedAtUtc,
@@ -2086,7 +2129,7 @@ public sealed class LocalGameSessionOrchestrator : IAsyncDisposable
     {
         if (!enabled)
         {
-            return 0;
+            return GameAffinityOutcome.Nothing;
         }
 
         CpuTopology? topology = SystemCpuTopologyProvider.Read();
@@ -2095,7 +2138,7 @@ public sealed class LocalGameSessionOrchestrator : IAsyncDisposable
             CpuAffinityRole.Foreground);
         if (!decision.ShouldApply || topology is null)
         {
-            return 0;
+            return GameAffinityOutcome.Nothing;
         }
 
         // Domyslne zbiory procesorow sa podpowiedzia, nie regula: harmonogram
@@ -2108,10 +2151,15 @@ public sealed class LocalGameSessionOrchestrator : IAsyncDisposable
         // ktora naprawde dziala, jest maska.
         if (TryApplyCpuSets(gameIdentity, topology, decision.Mask))
         {
-            return 1;
+            return new(AppliedCount: 1, Journaled: null);
         }
 
+        // Twarda maska idzie przez dziennik, wiec jej identyfikatory trafiaja
+        // do metadanych sesji: bez nich nikt by jej nie cofnal ani przy
+        // „Przywroc teraz", ani po awarii hosta, a gra zostawalaby na
+        // rdzeniach wydajnych z maska, ktora sama sobie zawezila.
         ActionId actionId = new(Guid.NewGuid());
+        IdempotencyKey idempotencyKey = IdempotencyKey.Create();
         ProcessAffinityAction action = new(
             actionId,
             gameIdentity,
@@ -2120,8 +2168,12 @@ public sealed class LocalGameSessionOrchestrator : IAsyncDisposable
         ActionExecutionContext context = new(
             sessionId,
             actionId,
-            IdempotencyKey.Create(),
+            idempotencyKey,
             requestedAtUtc);
+        GameAffinityRecoveryMetadata journaled = new(
+            actionId.Value,
+            idempotencyKey.Value,
+            gameIdentity);
 
         try
         {
@@ -2131,8 +2183,8 @@ public sealed class LocalGameSessionOrchestrator : IAsyncDisposable
                     .ConfigureAwait(false);
             return result.Status is ActionExecutionStatus.AppliedAndVerified
                 or ActionExecutionStatus.AlreadyCompleted
-                ? 1
-                : 0;
+                ? new(AppliedCount: 1, journaled)
+                : new(AppliedCount: 0, journaled);
         }
         catch (Exception exception) when (
             exception is InvalidOperationException
@@ -2142,7 +2194,60 @@ public sealed class LocalGameSessionOrchestrator : IAsyncDisposable
                 or Win32Exception
                 or TimeoutException)
         {
-            return 0;
+            // Przygotowanie moglo juz trafic do dziennika; odtwarzanie
+            // rozstrzygnie po wpisach, czy jest co cofac.
+            return new(AppliedCount: 0, journaled);
+        }
+    }
+
+    /// <summary>
+    /// Puts back the mask the game had before <see cref="ApplyGameAffinityAsync"/>
+    /// narrowed it. A game that has already exited took the mask with it, so
+    /// it is skipped rather than counted as a recovery error.
+    /// </summary>
+    private async ValueTask<BackgroundRecoveryTotals> RestoreGameAffinityAsync(
+        SessionId sessionId,
+        GameAffinityRecoveryMetadata? affinity,
+        DateTimeOffset requestedAtUtc,
+        CancellationToken cancellationToken)
+    {
+        if (affinity is null)
+        {
+            return new(0, 0, 0);
+        }
+
+        try
+        {
+            if (!await _identityProvider
+                    .MatchesRuntimeIdentityAsync(
+                        affinity.Identity,
+                        cancellationToken)
+                    .ConfigureAwait(false))
+            {
+                return new(0, 0, 0);
+            }
+
+            ActionRecoveryResult result =
+                await new ActionRecoveryCoordinator<ProcessAffinityState>(
+                        _journal)
+                    .RecoverAsync(
+                        ProcessAffinityAction.ForRecovery(
+                            new ActionId(affinity.ActionId),
+                            affinity.Identity,
+                            _identityProvider),
+                        new ActionExecutionContext(
+                            sessionId,
+                            new ActionId(affinity.ActionId),
+                            new IdempotencyKey(affinity.IdempotencyKey),
+                            requestedAtUtc),
+                        cancellationToken)
+                    .ConfigureAwait(false);
+            return ToRecoveryTotals(result);
+        }
+        catch (Exception exception) when (
+            IsExpectedRecoveryFailure(exception))
+        {
+            return new(0, 0, 1);
         }
     }
 
@@ -3659,9 +3764,18 @@ public sealed class LocalGameSessionOrchestrator : IAsyncDisposable
         bool frameRateTrackingEnabled = true,
         bool systemProfileActive = false,
         IReadOnlyList<PlannedBackgroundApplication>? dynamicRestraints = null,
-        ulong backgroundAffinityMask = 0)
+        ulong backgroundAffinityMask = 0,
+        GameAffinityRecoveryMetadata? gameAffinity = null)
     {
         private readonly object _restraintLock = new();
+
+        /// <summary>
+        /// The journaled hard mask put on the game, or null when the game got
+        /// CPU sets or nothing at all. Carried in every checkpoint so the mask
+        /// is reversed with the rest of the session.
+        /// </summary>
+        internal GameAffinityRecoveryMetadata? GameAffinity { get; } =
+            gameAffinity;
         private readonly List<PlannedBackgroundApplication> _dynamicRestraints =
             [.. dynamicRestraints ?? []];
         private readonly object _proBalanceLock = new();
@@ -3899,7 +4013,10 @@ public sealed class LocalGameSessionOrchestrator : IAsyncDisposable
             RestrainedProcesses = null,
         // Maska, do ktorej zamknieto tlo. Odtwarzanie ma cofac to, co
         // nalozono, a nie to, co dzisiejszy odczyt topologii by nalozyl.
-        ulong? BackgroundAffinityMask = null);
+        ulong? BackgroundAffinityMask = null,
+        // Twarda maska nalozona na sama gre (rdzenie wydajne), gdy zbiory CPU
+        // nie wchodzily w gre. Na koncu i z domyslnym null jak wyzej.
+        GameAffinityRecoveryMetadata? GameAffinity = null);
 
     private sealed record BackgroundApplicationRecoveryMetadata(
         Guid ActionId,
@@ -3936,6 +4053,23 @@ public sealed class LocalGameSessionOrchestrator : IAsyncDisposable
         Guid IdempotencyKey,
         ProcessIdentity Identity,
         ProcessPriorityClass DesiredPriority);
+
+    private sealed record GameAffinityRecoveryMetadata(
+        Guid ActionId,
+        Guid IdempotencyKey,
+        ProcessIdentity Identity);
+
+    /// <summary>
+    /// What pinning the game did: how many actions count as applied, and the
+    /// journaled hard mask to reverse, when one was written.
+    /// </summary>
+    private sealed record GameAffinityOutcome(
+        int AppliedCount,
+        GameAffinityRecoveryMetadata? Journaled)
+    {
+        internal static GameAffinityOutcome Nothing { get; } =
+            new(AppliedCount: 0, Journaled: null);
+    }
 
     private sealed record BackgroundRecoveryTotals(
         int RestoredCount,

@@ -517,6 +517,41 @@ public sealed class UserDataStoreTests
                 CancellationToken.None));
     }
 
+    [TestMethod]
+    public async Task PerGameRulesRoundTripEveryBackgroundActionMode()
+    {
+        using UserDataTestContext testContext = new();
+        GameProfileId profile = await UpsertProfileAsync(
+            testContext,
+            "Every mode");
+
+        // Kazdy tryb, ktory strona planu potrafi zapisac, musi przejsc przez
+        // ograniczenie CHECK tabeli — takze pelny pakiet tla dodany po
+        // migracji 3.
+        SavedBackgroundProcessRule[] rules =
+        [
+            .. Enum.GetValues<SavedBackgroundActionMode>()
+                .Select(mode => new SavedBackgroundProcessRule(
+                    Path.Combine(testContext.DirectoryPath, $"{mode}.exe"),
+                    mode)),
+        ];
+        await testContext.Store.SaveOptimizationPreferencesAsync(
+            new(
+                profile,
+                SavedGamePriorityMode.Normal,
+                rules,
+                DateTimeOffset.UtcNow),
+            CancellationToken.None);
+
+        GameOptimizationPreferences loaded =
+            await testContext.Store.LoadOptimizationPreferencesAsync(
+                profile,
+                CancellationToken.None);
+        CollectionAssert.AreEquivalent(
+            rules.Select(rule => rule.ActionMode).ToArray(),
+            loaded.BackgroundRules.Select(rule => rule.ActionMode).ToArray());
+    }
+
     private static async Task<GameProfileId> UpsertProfileAsync(
         UserDataTestContext testContext,
         string displayName)
@@ -589,11 +624,127 @@ public sealed class UserDataStoreTests
             Assert.AreEqual(legacySummary.SessionId, history[0].SessionId);
             Assert.IsNull(history[0].FrameRateStatistics);
             Assert.AreEqual(
-                14,
+                15,
                 await ReadMaximumSchemaVersionAsync(databasePath));
         }
         finally
         {
+            Directory.Delete(directory, recursive: true);
+        }
+    }
+
+    [TestMethod]
+    public async Task VersionFourteenRulesMigrateAndThenAcceptTheFullBundle()
+    {
+        using UserDataTestContext testContext = new();
+        GameProfileId profile = await UpsertProfileAsync(
+            testContext,
+            "Legacy rules");
+        string discord = Path.Combine(testContext.DirectoryPath, "Discord.exe");
+        await testContext.Store.SaveOptimizationPreferencesAsync(
+            new(
+                profile,
+                SavedGamePriorityMode.AboveNormal,
+                [new(discord, SavedBackgroundActionMode.LowerPriorityAndEcoQos)],
+                DateTimeOffset.UtcNow),
+            CancellationToken.None);
+        await DowngradeBackgroundRulesToVersionFourteenAsync(
+            testContext.DatabasePath,
+            orphanedProfileId: GameProfileId.Create());
+
+        using SqliteUserDataStore migratedStore = new(testContext.DatabasePath);
+        GameOptimizationPreferences migrated =
+            await migratedStore.LoadOptimizationPreferencesAsync(
+                profile,
+                CancellationToken.None);
+        Assert.AreEqual(SavedGamePriorityMode.AboveNormal, migrated.GamePriority);
+        Assert.HasCount(1, migrated.BackgroundRules);
+        Assert.AreEqual(
+            SavedBackgroundActionMode.LowerPriorityAndEcoQos,
+            migrated.BackgroundRules[0].ActionMode,
+            "Stara regula zachowuje znaczenie, na ktore zgodzil sie uzytkownik.");
+
+        await migratedStore.SaveOptimizationPreferencesAsync(
+            new(
+                profile,
+                SavedGamePriorityMode.AboveNormal,
+                [new(discord, SavedBackgroundActionMode.RestrainBackground)],
+                DateTimeOffset.UtcNow),
+            CancellationToken.None);
+        GameOptimizationPreferences upgraded =
+            await migratedStore.LoadOptimizationPreferencesAsync(
+                profile,
+                CancellationToken.None);
+        Assert.AreEqual(
+            SavedBackgroundActionMode.RestrainBackground,
+            upgraded.BackgroundRules[0].ActionMode);
+        Assert.AreEqual(
+            15,
+            await ReadMaximumSchemaVersionAsync(testContext.DatabasePath));
+        Assert.AreEqual(
+            1,
+            await CountBackgroundRulesAsync(testContext.DatabasePath),
+            "Regula bez profilu nie przechodzi migracji i jej nie zatrzymuje.");
+    }
+
+    [TestMethod]
+    public async Task ConcurrentInitializationOfAnOlderDatabaseMigratesItOnce()
+    {
+        string directory = Path.Combine(
+            Path.GetTempPath(),
+            "Dismode.UserDataTests",
+            Guid.NewGuid().ToString("N"));
+        string databasePath = Path.Combine(directory, "concurrent.db");
+        Directory.CreateDirectory(directory);
+        SessionSummary legacySummary = CreateSummary(
+            GameProfileId.Create(),
+            DateTimeOffset.UtcNow.AddHours(-1),
+            DateTimeOffset.UtcNow);
+        SqliteUserDataStore[] stores = [];
+
+        try
+        {
+            using (SqliteUserDataStore currentStore = new(databasePath))
+            {
+                await currentStore.AddAsync(
+                    legacySummary,
+                    CancellationToken.None);
+            }
+
+            await DowngradeSessionHistoryToVersionFourAsync(databasePath);
+
+            // Interfejs i SessionHost to osobne procesy z osobnymi
+            // polaczeniami; tutaj udaja je osobne magazyny ruszajace naraz.
+            stores = [.. Enumerable.Range(0, 8)
+                .Select(_ => new SqliteUserDataStore(databasePath))];
+            TaskCompletionSource start = new(
+                TaskCreationOptions.RunContinuationsAsynchronously);
+            Task[] initializations = [.. stores.Select(store => Task.Run(
+                async () =>
+                {
+                    await start.Task;
+                    await store.InitializeAsync(CancellationToken.None);
+                }))];
+            start.SetResult();
+            await Task.WhenAll(initializations);
+
+            Assert.AreEqual(
+                15,
+                await ReadMaximumSchemaVersionAsync(databasePath));
+            IReadOnlyList<SessionSummary> history =
+                await stores[0].ListRecentAsync(
+                    maximumCount: 10,
+                    CancellationToken.None);
+            Assert.HasCount(1, history);
+            Assert.AreEqual(legacySummary.SessionId, history[0].SessionId);
+        }
+        finally
+        {
+            foreach (SqliteUserDataStore store in stores)
+            {
+                store.Dispose();
+            }
+
             Directory.Delete(directory, recursive: true);
         }
     }
@@ -646,7 +797,7 @@ public sealed class UserDataStoreTests
             Assert.AreEqual(artworkPath, migrated.ArtworkPath);
             Assert.IsEmpty(metadata);
             Assert.AreEqual(
-                14,
+                15,
                 await ReadMaximumSchemaVersionAsync(databasePath));
         }
         finally
@@ -833,10 +984,84 @@ public sealed class UserDataStoreTests
                 DROP COLUMN AutoOptimizeWhenDetected;
             DROP TABLE GlobalBackgroundProcessRules;
             DELETE FROM SchemaMigrations
-            WHERE Version IN (5, 6, 7, 8, 9, 10, 11, 12, 13, 14);
+            WHERE Version IN (5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15);
             """;
         await command.ExecuteNonQueryAsync();
         await transaction.CommitAsync();
+    }
+
+    /// <summary>
+    /// Puts the per-game rule table back into the shape migration 3 left it
+    /// in, and plants a rule whose profile no longer exists.
+    /// </summary>
+    private static async Task DowngradeBackgroundRulesToVersionFourteenAsync(
+        string databasePath,
+        GameProfileId orphanedProfileId)
+    {
+        // Bez kluczy obcych: regula bez profilu inaczej by sie nie zapisala.
+        await using SqliteConnection connection = new(
+            new SqliteConnectionStringBuilder
+            {
+                DataSource = databasePath,
+                Mode = SqliteOpenMode.ReadWrite,
+                ForeignKeys = false,
+                Pooling = false,
+            }.ToString());
+        await connection.OpenAsync();
+        await using SqliteTransaction transaction =
+            (SqliteTransaction)await connection.BeginTransactionAsync();
+        await using SqliteCommand command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText =
+            """
+            CREATE TABLE BackgroundProcessRulesV14 (
+                ProfileId TEXT NOT NULL,
+                ExecutablePath TEXT NOT NULL COLLATE NOCASE,
+                ActionMode INTEGER NOT NULL
+                    CHECK (ActionMode IN (1, 2, 3, 4)),
+                UpdatedAtUtc TEXT NOT NULL,
+                PRIMARY KEY (ProfileId, ExecutablePath),
+                FOREIGN KEY (ProfileId)
+                    REFERENCES GameProfiles(ProfileId)
+                    ON DELETE CASCADE
+            );
+
+            INSERT INTO BackgroundProcessRulesV14 (
+                ProfileId, ExecutablePath, ActionMode, UpdatedAtUtc)
+            SELECT ProfileId, ExecutablePath, ActionMode, UpdatedAtUtc
+            FROM BackgroundProcessRules;
+
+            INSERT INTO BackgroundProcessRulesV14 (
+                ProfileId, ExecutablePath, ActionMode, UpdatedAtUtc)
+            VALUES ($orphanedProfileId, 'C:\Orphan\Orphan.exe', 2, $updatedAtUtc);
+
+            DROP INDEX IX_BackgroundProcessRules_ProfileId;
+            DROP TABLE BackgroundProcessRules;
+            ALTER TABLE BackgroundProcessRulesV14
+                RENAME TO BackgroundProcessRules;
+            CREATE INDEX IX_BackgroundProcessRules_ProfileId
+                ON BackgroundProcessRules(ProfileId);
+            DELETE FROM SchemaMigrations WHERE Version = 15;
+            """;
+        command.Parameters.AddWithValue(
+            "$orphanedProfileId",
+            orphanedProfileId.Value.ToString("D"));
+        command.Parameters.AddWithValue(
+            "$updatedAtUtc",
+            DateTimeOffset.UtcNow.ToString("O"));
+        await command.ExecuteNonQueryAsync();
+        await transaction.CommitAsync();
+    }
+
+    private static async Task<int> CountBackgroundRulesAsync(
+        string databasePath)
+    {
+        await using SqliteConnection connection = CreateConnection(databasePath);
+        await connection.OpenAsync();
+        await using SqliteCommand command = connection.CreateCommand();
+        command.CommandText = "SELECT COUNT(*) FROM BackgroundProcessRules;";
+        object? value = await command.ExecuteScalarAsync();
+        return Convert.ToInt32(value, System.Globalization.CultureInfo.InvariantCulture);
     }
 
     private static async Task DowngradeGameMetadataToVersionSevenAsync(
@@ -859,7 +1084,7 @@ public sealed class UserDataStoreTests
                 DROP COLUMN AutoOptimizeWhenDetected;
             DROP TABLE GlobalBackgroundProcessRules;
             DELETE FROM SchemaMigrations
-            WHERE Version IN (8, 9, 10, 11, 12, 13, 14);
+            WHERE Version IN (8, 9, 10, 11, 12, 13, 14, 15);
             """;
         await command.ExecuteNonQueryAsync();
         await transaction.CommitAsync();

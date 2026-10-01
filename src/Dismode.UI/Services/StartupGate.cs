@@ -3,6 +3,7 @@ using System.Diagnostics;
 using System.Runtime.InteropServices;
 using Dismode.Contracts.Protocol;
 using Dismode.Core.Activation;
+using Dismode.Data.Storage;
 using Dismode.Windows.Processes;
 using Dismode.Windows.Security;
 
@@ -28,6 +29,52 @@ internal static class StartupGate
     // Trzymany do konca procesu; zwolnienie oddaloby nazwe drugiemu
     // egzemplarzowi, poki ten jeszcze dziala.
     private static SingleInstanceLock? _instanceLock;
+
+    /// <summary>
+    /// Null, gdy w tej sesji nie dziala zaden skladnik wydania pod stara
+    /// nazwa (GameShift); inaczej kod wyjscia (komunikat juz pokazany).
+    /// Tamten program ma te same gry i ten sam katalog danych, a jego mutexy
+    /// nosza stara nazwe, wiec <see cref="Run"/> by go nie zauwazyl.
+    /// </summary>
+    public static int? RefuseWhileLegacyProductRuns()
+    {
+        if (LegacyProductProcesses.FindRunningInCurrentSession()
+            is not string legacyExecutable)
+        {
+            return null;
+        }
+
+        StartupDecision decision =
+            StartupPolicy.LegacyProductRunning(legacyExecutable);
+        ShowError(decision.Message ?? string.Empty);
+        return decision.ExitCode;
+    }
+
+    /// <summary>
+    /// Przenosi dane z wydan pod stara nazwa. Null, gdy okno moze powstac;
+    /// kod wyjscia, gdy baza albo dziennik poprzedniej wersji zostaly poza
+    /// zasiegiem — okno z pusta biblioteka udawaloby wtedy program.
+    /// </summary>
+    public static int? MigrateLegacyData(Action<string> reportProblem)
+    {
+        ArgumentNullException.ThrowIfNull(reportProblem);
+        LegacyStorageMigrationResult migration =
+            LegacyStorageMigration.MigrateUserData();
+        foreach (string problem in migration.Problems)
+        {
+            reportProblem(problem);
+        }
+
+        if (!migration.BlocksStartup)
+        {
+            return null;
+        }
+
+        StartupDecision decision =
+            StartupPolicy.LegacyDataUnavailable(migration.Problems);
+        ShowError(decision.Message ?? string.Empty);
+        return decision.ExitCode;
+    }
 
     /// <summary>
     /// Null, gdy okno ma powstac; inaczej kod wyjscia, z ktorym proces ma

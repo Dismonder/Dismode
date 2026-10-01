@@ -35,7 +35,7 @@ if (args.Contains("--diagnostics", StringComparer.OrdinalIgnoreCase))
 
 // Instalator przenosi katalog maszyny przed startem uslugi; to jest zapas
 // na wypadek, gdyby tamten krok sie nie udal.
-foreach (string problem in LegacyStorageMigration.MigrateMachineData())
+foreach (string problem in LegacyStorageMigration.MigrateMachineData().Problems)
 {
     Console.Error.WriteLine($"Migracja danych GameShift: {problem}");
 }
