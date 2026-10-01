@@ -152,6 +152,47 @@ Recenzja Codex 6.1 PR #4 (2026-10-01) i poprawki:
 Weryfikacja PR #4 po poprawkach: build 0/0, testy 583 zaliczone
 (7 pominięte), `dotnet format --verify-no-changes` czysto.
 
+Żywy test migracji (2026-10-01, po odinstalowaniu GameShift przez Damiana):
+- `Build-Installer.ps1` z certyfikatem testowym przeszedł do
+  `artifacts/installer/Dismode-Setup-0.8.0-win-x64.exe` (224 MB, podpis
+  `Valid`, SHA-256 obok); ostatni krok (staging manifestu aktualizacji przez
+  `Dismode.UpdatePublisher`) kończy się kodem 1, bo klucz podpisu
+  aktualizacji jest tylko na maszynie wydawniczej — do instalacji lokalnej
+  niepotrzebny. Wymagało to ręcznego przywrócenia zaufania dla certyfikatu
+  testowego (deinstalator GameShift usunął go z `TrustedPeople`).
+- Instalacja `/SILENT` kod 0; usługi `DismodeSystemAgent` i
+  `DismodeMemoryService` działają; `ProgramData\Dismode` ma DACL Users RX /
+  Administrators F / SYSTEM F, `Shared` dodatkowo Users M; dane maszyny
+  przeniesione. Baza Memory Optimizera z GameShift była jeszcze zapisywana
+  o 11:30 (po deinstalacji), więc faza Prepare instalatora nie mogła jej
+  przenieść; nowa usługa założyła własną, a agent odłożył starą jako
+  `memory-optimizer.gameshift.db` (bez utraty, ale bez przejęcia).
+- Pierwszy start z launchera (host + UI równocześnie): baza i dziennik
+  recovery przeszły (schemat 15), ale w `LocalAppData\GameShift\Artwork`
+  zostało 197 z 213 bitmap, bez żadnego wpisu w `ui-startup-errors.log`.
+  Sonda (konsola z `Dismode.Data.dll`) przeniosła resztę w 308 ms, drugi
+  start UI z syntetycznym katalogiem legacy (201 plików) przeniósł wszystko.
+  Przyczyna wskazana w kodzie: mutex `Local\Dismode.StorageMigration.*`
+  założony przez podniesiony host ma DACL tylko dla Administrators/SYSTEM,
+  więc niepodniesione UI nie może go otworzyć (`TryOpenMutex` → null) —
+  blokada nie serializowała obu procesów.
+- Poprawka: `LegacyStorageMigration` zamiast mutexu używa pliku blokady
+  `<katalog>.migration.lock` obok katalogu danych (`FileShare.None`,
+  `DeleteOnClose`, ponawianie do 30 s; `Migrate(..., lockTimeout)` dla
+  testów). Test `AMigrationHeldByAnotherComponentRefusesTheStartInsteadOfInterleaving`.
+  Weryfikacja: build 0/0, testy 585 zaliczone (6 pominięte), format czysto.
+
+Strona WWW (2026-10-01): `infrastructure/website/public` przebudowana przez
+Codex 6.1 (limit użycia skończył mu się przed raportem; pliki kompletne):
+8 sekcji całego projektu (moduły, sesja w 4 fazach, bezpieczeństwo,
+instalacja i migracja z GameShift, nowości 0.8.0, FAQ, licencje), bez
+inline JS/CSS (CSP z `_headers` zachowana), przełącznik efektów i
+`prefers-reduced-motion`, 45 KB HTML+CSS+JS; skrypt kontrolny
+`tools/check-site.mjs` (linki, kotwice, nagłówki, CSP, rozmiar) zielony;
+sprawdzona w podglądzie na desktopie, 375 px i 404. Dawny shader WebGL
+i animacje przewijania zostały usunięte na rzecz czytelności. Wdrożona na
+`dismode-site-dev`.
+
 Następne kroki: pierwsza instalacja Dismode obok
 zainstalowanego GameShift to pierwszy żywy test migracji (w tym ścieżki
 kodu 9 → komunikat UI); `wrangler deploy` nowego adresu update-service;
