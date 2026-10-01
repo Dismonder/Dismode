@@ -59,6 +59,8 @@ public static class LegacyStorageMigration
     private static readonly TimeSpan LockRetryDelay =
         TimeSpan.FromMilliseconds(100);
     private const string LockSuffix = ".migration.lock";
+    private const string MigrationLogName = "migration.log";
+    private const long MigrationLogLimit = 256 * 1024;
 
     // SQLite keeps the write-ahead log and the shared-memory index next to
     // the database under derived names; the three move as one set. The
@@ -123,7 +125,7 @@ public static class LegacyStorageMigration
                 $"{current}: another Dismode component held the migration "
                 + $"lock for more than {timeout.TotalSeconds:F0} s; "
                 + "start Dismode again.");
-            return new(problems, BlocksStartup: true);
+            return Finish(legacy, current, new(problems, BlocksStartup: true));
         }
 
         try
@@ -131,9 +133,12 @@ public static class LegacyStorageMigration
             if (!Directory.Exists(legacy)
                 && !HasLegacyDatabase(current))
             {
-                return problems.Count == 0
-                    ? LegacyStorageMigrationResult.Empty
-                    : new(problems, BlocksStartup: false);
+                return Finish(
+                    legacy,
+                    current,
+                    problems.Count == 0
+                        ? LegacyStorageMigrationResult.Empty
+                        : new(problems, BlocksStartup: false));
             }
 
             if (Directory.Exists(legacy))
@@ -170,15 +175,17 @@ public static class LegacyStorageMigration
                 problems.Add(
                     $"{Path.Combine(current, LegacyDatabaseName)}: waits for "
                     + $"its journal still held in {legacy}.");
-                return new(
-                    problems,
-                    BlocksStartup: LeavesCriticalDataBehind(legacy, current));
+                return Finish(
+                    legacy,
+                    current,
+                    new(problems, BlocksStartup: LeavesCriticalDataBehind(legacy, current)));
             }
 
             RenameLegacyDatabase(current, problems);
-            return new(
-                problems,
-                BlocksStartup: LeavesCriticalDataBehind(legacy, current));
+            return Finish(
+                legacy,
+                current,
+                new(problems, BlocksStartup: LeavesCriticalDataBehind(legacy, current)));
         }
         finally
         {
@@ -348,6 +355,56 @@ public static class LegacyStorageMigration
         Directory.Exists(directory)
         && DatabaseSuffixes.Any(suffix => File.Exists(
             Path.Combine(directory, LegacyDatabaseName + suffix)));
+
+    /// <summary>
+    /// One line per run that had anything to decide, appended to
+    /// <c>migration.log</c> in the current directory: which legacy path was
+    /// looked at, what stayed behind, what went wrong and who ran it. The
+    /// host's standard error is lost when the launcher starts it, and a user
+    /// whose library "disappeared" needs more than a guess.
+    /// </summary>
+    private static LegacyStorageMigrationResult Finish(
+        string legacy,
+        string current,
+        LegacyStorageMigrationResult result)
+    {
+        try
+        {
+            if (Directory.Exists(current))
+            {
+                int leftBehind = Directory.Exists(legacy)
+                    ? Directory.GetFiles(legacy, "*", SearchOption.AllDirectories).Length
+                    : 0;
+                string line =
+                    $"{DateTimeOffset.UtcNow:O} pid={Environment.ProcessId} "
+                    + $"process={Path.GetFileNameWithoutExtension(Environment.ProcessPath)} "
+                    + $"legacy={legacy} exists={Directory.Exists(legacy)} "
+                    + $"leftBehind={leftBehind} blocks={result.BlocksStartup} "
+                    + $"problems={result.Problems.Count}"
+                    + (result.Problems.Count == 0
+                        ? string.Empty
+                        : " :: " + string.Join(" | ", result.Problems.Take(5)))
+                    + Environment.NewLine;
+                string logPath = Path.Combine(current, MigrationLogName);
+                if (File.Exists(logPath)
+                    && new FileInfo(logPath).Length > MigrationLogLimit)
+                {
+                    // One line per start; a long-lived profile keeps the
+                    // recent ones, which are the ones a report is about.
+                    File.WriteAllText(logPath, string.Empty);
+                }
+
+                File.AppendAllText(logPath, line);
+            }
+        }
+        catch (Exception exception) when (
+            exception is IOException or UnauthorizedAccessException)
+        {
+            // The trace must never cost a start.
+        }
+
+        return result;
+    }
 
     /// <summary>
     /// True when the write-ahead log or the shared-memory index of the legacy

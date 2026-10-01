@@ -209,6 +209,24 @@ Optimizer nie zastosuje zmian) i ostrzeżenie SmartScreen; pełna
 funkcjonalność wymaga produkcyjnego certyfikatu
 (`DISMODE_RELEASE_SIGNING_THUMBPRINT`).
 
+Korekta po dalszej diagnozie (2026-10-01, popołudnie): powłoki narzędziowe
+sesji Claude (aplikacja MSIX) widzą `%LOCALAPPDATA%` przez nakładkę
+`Packages\Claude_…\LocalCache\Local` (odczyty przechodzą do prawdziwych
+plików, zapisy i przeniesienia zostają w nakładce), a procesy potomne powłoki
+dziedziczą ją; procesy z launchera (runas/explorer) widzą prawdziwy profil.
+Wszystkie testy „syntetyczny katalog legacy + start UI/hosta” po 11:56
+były skażone, a usunięcie nakładki skasowało 197 bitmap cache grafik
+(`LocalGameArtworkResolver` odbudowuje je z ikon EXE i bibliotek Steam/Epic).
+Wiarygodne fakty: pierwszy start z launchera o 11:51 (build z mutexem)
+przeniósł bazę, dziennik i 16 grafik (obserwacja z 11:52 sprzed pierwszego
+zapisu do nakładki); po aktualizacji instalacji buildem z blokadą plikową
+prawdziwy katalog `GameShift` zniknął, a nowy ślad `migration.log` z
+procesów launchera (`exists=False leftBehind=0 problems=0`) potwierdza
+brak pozostałości. `migration.log` (jedna linia na start, limit 256 KB)
+zostaje w produkcie jako pierwszy wiarygodny obraz tego, co widzi
+prawdziwy proces. Szczegóły pułapki: pamięć sesji
+`msix-virtualized-appdata-pitfall`.
+
 Następne kroki: pierwsza instalacja Dismode obok
 zainstalowanego GameShift to pierwszy żywy test migracji (w tym ścieżki
 kodu 9 → komunikat UI); `wrangler deploy` nowego adresu update-service;
