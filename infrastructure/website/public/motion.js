@@ -1,6 +1,4 @@
-// Ładowany synchronicznie w <head>, zanim cokolwiek się narysuje: ustala,
-// czy strona gra pełne efekty. Domyślnie idzie za ustawieniem systemu,
-// a przełącznik w nawigacji zapisuje wybór użytkownika.
+// Synchroniczny skrypt w head: preferencja jest znana przed pierwszym rysowaniem.
 (function () {
   var stored = null;
   try {
@@ -9,6 +7,6 @@
     stored = null;
   }
   var systemReduced = matchMedia("(prefers-reduced-motion: reduce)").matches;
-  var reduced = stored ? stored === "reduced" : systemReduced;
+  var reduced = systemReduced || stored === "reduced";
   document.documentElement.dataset.motion = reduced ? "reduced" : "full";
 })();
