@@ -1,17 +1,17 @@
 :root {
   color-scheme: dark;
-  --bg: #0b101b;
-  --surface: #111a2a;
-  --surface-raised: #172237;
-  --ink: #f0f4ff;
-  --muted: #acb9cf;
-  --accent: #89b4ff;
-  --cyan: #8be4db;
-  --line: #2d3e58;
-  --button: #a9c8ff;
-  --button-ink: #0c1c36;
-  --focus: #9be9df;
-  --glow: rgb(72 115 245 / 0.14);
+  --bg: #080c0f;
+  --surface: #151a1e;
+  --surface-raised: #1b1f23;
+  --ink: #dde2e5;
+  --muted: #9da5aa;
+  --accent: #00d7e2;
+  --cyan: #45cdd8;
+  --line: #323c43;
+  --button: #00d7e2;
+  --button-ink: #071018;
+  --focus: #00d7e2;
+  --glow: rgb(0 215 226 / 0.14);
   --shadow: 0 24px 70px rgb(0 0 0 / 0.17);
   --mono: ui-monospace, "Cascadia Code", Consolas, monospace;
 }
@@ -23,10 +23,10 @@
     --surface-raised: #e9eef8;
     --ink: #15243b;
     --muted: #455872;
-    --accent: #254fb2;
-    --cyan: #166d68;
+    --accent: #087e86;
+    --cyan: #126c72;
     --line: #c5cede;
-    --button: #244dae;
+    --button: #087e86;
     --button-ink: #ffffff;
     --focus: #17655f;
     --glow: rgb(56 102 236 / 0.09);
@@ -35,7 +35,7 @@
 }
 *, *::before, *::after { box-sizing: border-box; }
 html { scroll-padding-top: 108px; }
-body { margin: 0; background: var(--bg); color: var(--ink); font: 1rem/1.65 "Segoe UI", system-ui, sans-serif; }
+body { margin: 0; background: var(--bg); color: var(--ink); font: 1rem/1.65 "Segoe UI Variable", "Segoe UI", system-ui, sans-serif; }
 [hidden] { display: none !important; }
 img { max-width: 100%; height: auto; }
 a { color: var(--accent); text-underline-offset: 0.22em; }
@@ -250,4 +250,109 @@ html[data-paused="true"] .orbit { animation-play-state: paused; }
   .faq-list summary { padding-block: 19px; font-size: 0.94rem; }
   .faq-answer { padding-right: 8px; }
   .not-found h1 { font-size: 2.45rem; }
+}
+
+/* Rozszerzenia zachowują całą treść w podstawowym HTML. */
+@view-transition { navigation: auto; }
+.site-header { view-transition-name: dismode-header; }
+.section-nav { gap: 14px; }
+.section-nav a { font-size: .8rem; }
+.hero { position: relative; isolation: isolate; }
+.hero::before { content: ""; position: absolute; inset: 0 -2%; z-index: -2; background: radial-gradient(ellipse at 80% 40%, var(--glow), transparent 68%); pointer-events: none; }
+.hero-canvas { display: none; position: absolute; inset: 0; z-index: -1; width: 100%; height: 100%; pointer-events: none; }
+html[data-motion="full"][data-effects-ready="true"] .hero-canvas { display: block; }
+.hero-copy, .session-map, .module-card { min-width: 0; }
+.hero-ui { display: block; width: 100%; margin-block: 20px; border-radius: 8px; border: 1px solid var(--line); background: #080c0f; }
+.gallery-note { max-width: 80ch; color: var(--muted); font-size: .85rem; margin: -10px 0 24px; }
+.module-card { position: relative; isolation: isolate; overflow: hidden; border-radius: 11px; display: flex; flex-direction: column; }
+.module-card .card-detail { margin-bottom: 22px; }
+.ui-link { display: block; position: relative; margin-top: auto; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; background: #080c0f; }
+.module-ui { width: 100%; display: block; aspect-ratio: 16 / 9; }
+.ui-link-compact { aspect-ratio: 400 / 548; width: min(100%, 270px); align-self: center; }
+.ui-link-compact .module-ui { position: absolute; width: 400%; max-width: none; left: 50%; top: 50%; transform: translate(-50%, -50%); }
+.ui-link-hud { aspect-ratio: 344 / 152; }
+.ui-link-hud .module-ui { position: absolute; width: 465.116%; max-width: none; left: -9.302%; top: -21.053%; }
+.card-spotlight { position: absolute; width: 300px; height: 300px; top: 0; left: 0; border-radius: 50%; background: radial-gradient(circle, rgb(0 215 226 / .12), transparent 68%); z-index: -1; opacity: 0; pointer-events: none; }
+@media (hover: hover) and (pointer: fine) {
+  html[data-motion="full"][data-effects-ready="true"] .module-card:hover .card-spotlight { opacity: 1; }
+  html[data-motion="full"][data-effects-ready="true"] .module-card:hover { border-color: var(--accent); }
+}
+.telemetry-demo { margin-top: 24px; padding: 16px; border: 1px solid var(--line); border-radius: 8px; background: var(--bg); }
+.demo-readout { display: flex; justify-content: space-between; flex-wrap: wrap; color: var(--accent); gap: 12px; font: .65rem/1.6 var(--mono); }
+.demo-readout strong { font-size: .9rem; font-variant-numeric: tabular-nums; }
+.frametime-canvas, .frametime-static { width: 100%; aspect-ratio: 600 / 180; display: block; height: auto; margin-top: 12px; }
+.frametime-canvas { display: none; }
+html[data-motion="full"][data-effects-ready="true"] .demo-running .frametime-canvas { display: block; }
+html[data-motion="full"][data-effects-ready="true"] .demo-running .frametime-static { display: none; }
+.telemetry-demo figcaption, .recovery-demo figcaption { color: var(--muted); font-size: .72rem; margin-top: 12px; }
+.phase-summary { margin-bottom: 14px; color: var(--muted); font-size: .86rem; }
+.phase-summary strong { color: var(--accent); font: 1.6rem/1.4 var(--mono); font-variant-numeric: tabular-nums; }
+.session-axis { width: 100%; height: 38px; display: block; margin-bottom: 18px; }
+.phase-grid li.is-revealed .phase-index { border-color: var(--accent); }
+.recovery-demo { padding: 24px; margin-top: 20px; border: 1px solid var(--line); border-radius: 11px; }
+.recovery-demo svg { display: block; width: min(100%, 800px); margin: auto; font: 13px "Segoe UI", sans-serif; }
+.recovery-signal { display: none; }
+html[data-motion="full"][data-effects-ready="true"] .recovery-playing .recovery-signal { display: block; animation: recovery-signal 3.4s ease-in-out 1 both; }
+html[data-motion="full"][data-effects-ready="true"] .recovery-playing .recovery-node { animation: recovery-node 3.4s ease-in-out 1; }
+.recovery-node:nth-of-type(2) { animation-delay: .35s; }
+.recovery-node:nth-of-type(3) { animation-delay: .7s; }
+.checksum { display: block; padding-top: 16px; overflow-wrap: anywhere; font-size: .73rem; }
+.release-status strong { overflow-wrap: anywhere; }
+.step-controls { padding: 18px; background: var(--surface); border: 1px solid var(--line); border-radius: 11px; }
+.step-controls p { font-size: .85rem; color: var(--muted); }
+.step-buttons { display: flex; gap: 8px; margin-block: 13px; }
+.step-buttons button { min-height: 44px; min-width: 44px; cursor: pointer; border: 1px solid var(--line); background: var(--bg); border-radius: 7px; color: var(--ink); }
+.step-buttons button[aria-current] { color: var(--button-ink); background: var(--button); border-color: var(--button); }
+.step-buttons button:disabled { opacity: .5; cursor: default; }
+.step-controls progress { width: 100%; height: 5px; border: none; accent-color: var(--accent); }
+.step-controls progress::-webkit-progress-bar { background: var(--line); border-radius: 4px; }
+.step-controls progress::-webkit-progress-value { background: var(--accent); border-radius: 4px; }
+.install-steps { view-transition-name: install-guide; }
+.install-steps article { padding: 16px; border-left: 2px solid transparent; }
+.install-steps article[data-active] { border-left-color: var(--accent); background: var(--glow); border-radius: 7px; }
+html[data-motion="full"][data-effects-ready="true"] .hero-copy > * { animation: text-in 700ms cubic-bezier(.2,.7,.2,1) backwards; }
+html[data-motion="full"][data-effects-ready="true"] .hero-copy .lead { animation-delay: 80ms; }
+html[data-motion="full"][data-effects-ready="true"] .hero-copy .actions { animation-delay: 140ms; }
+html[data-motion="full"][data-effects-ready="true"] .step-controls progress::-webkit-progress-value { transition: width 450ms ease; }
+html[data-paused="true"] .recovery-demo * { animation-play-state: paused !important; }
+@keyframes text-in { from { transform: translateY(14px); } to { transform: none; } }
+@keyframes recovery-signal { 0%, 12% { transform: translateX(0); opacity: 0; } 20% { opacity: 1; } 50% { transform: translateX(330px); } 86%, 100% { transform: translateX(660px); opacity: 0; } }
+@keyframes recovery-node { 45% { opacity: .55; } }
+@keyframes reading-progress { from { transform: scaleX(0); } to { transform: scaleX(1); } }
+/* IntersectionObserver jest fallbackiem reveal; scroll() dodaje pasek lektury. */
+@supports (animation-timeline: scroll()) {
+  html[data-motion="full"][data-effects-ready="true"] .site-header::after { content: ""; position: absolute; inset: auto 0 -1px; height: 2px; background: var(--accent); transform-origin: left; animation: reading-progress linear both; animation-timeline: scroll(root block); }
+}
+::view-transition-group(*), ::view-transition-old(*), ::view-transition-new(*) { animation: none; }
+html[data-motion="full"]::view-transition-old(install-guide),
+html[data-motion="full"]::view-transition-old(root) { animation: guide-out 160ms ease both; }
+html[data-motion="full"]::view-transition-new(install-guide),
+html[data-motion="full"]::view-transition-new(root) { animation: guide-in 240ms ease both; }
+@keyframes guide-out { to { opacity: 0; transform: translateY(-6px); } }
+@keyframes guide-in { from { opacity: 0; transform: translateY(6px); } }
+html[data-motion="reduced"]::view-transition-group(*),
+html[data-motion="reduced"]::view-transition-old(*),
+html[data-motion="reduced"]::view-transition-new(*) { animation: none; }
+@media (max-width: 1100px) {
+  html { scroll-padding-top: 168px; }
+  :target { scroll-margin-top: 168px; }
+  .header-inner { display: grid; grid-template-columns: 1fr auto; padding-top: 12px; gap: 6px 14px; }
+  .section-nav { grid-column: 1 / -1; grid-row: 2; flex-wrap: wrap; gap: 0 14px; justify-content: space-between; }
+  .section-nav a { min-height: 44px; }
+}
+@media (max-width: 520px) {
+  .section-nav { justify-content: flex-start; gap: 0 13px; }
+  .section-nav a { font-size: .72rem; }
+  .recovery-demo { padding: 12px; }
+  .recovery-demo svg { min-height: 100px; }
+  .recovery-demo svg text { font-size: 16px; }
+  .phase-summary { font-size: .78rem; }
+  .step-buttons { justify-content: space-between; gap: 4px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  html { scroll-behavior: auto !important; }
+  .hero-canvas, .frametime-canvas { display: none !important; }
+  .frametime-static { display: block !important; }
+  .recovery-demo *, .hero-copy > *, .site-header::after { animation: none !important; }
+  ::view-transition-group(*), ::view-transition-old(*), ::view-transition-new(*) { animation: none !important; }
 }

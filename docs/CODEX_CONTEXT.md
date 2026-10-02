@@ -246,6 +246,26 @@ tagu (`ProductVersion 0.8.0-gaming-edition+f3bb7f2…`, SHA-256
 `InformationalVersion` bieżącym HEAD, więc wydanie buduje się z checkoutu
 tagu, nie z gałęzi roboczej.
 
+Obecność na GitHubie (2026-10-02, po upublicznieniu repozytorium; Codex 6.1):
+- `assets/brand/ui/*.svg`: rekonstrukcje widoków 1:1 ze źródeł XAML
+  (przegląd Bento, biblioteka, sesja, historia, diagnostyka, nakładka FPS,
+  System Optimizer, tray Memory Optimizer, karta społecznościowa 1280×640,
+  baner README 1600×600) + `README.md` z mapą źródeł; PNG (`social-preview`,
+  `readme-hero`, `overview`) wyrenderowane przez `sharp` (skrypt w scratch
+  sesji; `tools/render-brand.mjs` generuje tylko galerię HTML).
+- `README.md` przeprojektowany pod publiczne repo (po polsku, English summary),
+  pobieranie z releases/latest, SHA-256, ostrzeżenie o podpisie testowym,
+  grafiki modułów, sekcja „Dla deweloperów” z dotychczasowymi komendami.
+- Strona: hero na WebGL2 (`aurora.js`, fallback 2D/gradient, DPR ≤ 1,5, pauza
+  poza widokiem), `effects.js` (parallax, tilt, reveal, fazy sesji, liczniki),
+  `telemetry.js` (syntetyczny frametime), View Transitions w instrukcji i 404,
+  grafiki UI w `public/assets/ui/`; moduły efektów ładowane tylko przy
+  włączonych efektach (`motion.js`); `check-site.mjs` z limitem 160 KB
+  i walidacją SVG; 77,8 KB HTML+CSS+JS. Sprawdzona w podglądzie, bez błędów
+  konsoli; wdrożona na `dismode-site-dev`.
+- Metadane repo: opis, strona domowa, tematy (gh repo edit); karta
+  społecznościowa wymaga ręcznego wgrania `social-preview.png` w Settings.
+
 Następne kroki: produkcyjny certyfikat (`DISMODE_RELEASE_SIGNING_THUMBPRINT`)
 i paczka dla update-service; pierwsza instalacja Dismode obok
 zainstalowanego GameShift to pierwszy żywy test migracji (w tym ścieżki
