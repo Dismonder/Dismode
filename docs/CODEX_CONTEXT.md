@@ -8,7 +8,7 @@ Ostatnia aktualizacja: 2026-10-01 (wydanie 0.8.0)
   kontekstu. Każda sesja dopisuje tu wpis do change logu i stan prac.
 - Większe pliki do przeczytania zleca się Antigravity CLI (Gemini Flash,
   `agent_call` model `flash`, profil `find`/`shell`), nie czyta się ich
-  w kontekście sesji Claude.
+  w kontekście głównej sesji.
 - Recenzja i cięższa praca wykonawcza: Codex CLI WYŁĄCZNIE z modelem
   w wersji 6.1 (`codex exec -m gpt-6.1-sol`, effort `xhigh`); `agent_call`
   z modelem `sol`/`astra` mapuje na stare gpt-6-* i nie jest używany
@@ -210,8 +210,8 @@ funkcjonalność wymaga produkcyjnego certyfikatu
 (`DISMODE_RELEASE_SIGNING_THUMBPRINT`).
 
 Korekta po dalszej diagnozie (2026-10-01, popołudnie): powłoki narzędziowe
-sesji Claude (aplikacja MSIX) widzą `%LOCALAPPDATA%` przez nakładkę
-`Packages\Claude_…\LocalCache\Local` (odczyty przechodzą do prawdziwych
+sesji asystenta (aplikacja MSIX) widzą `%LOCALAPPDATA%` przez nakładkę
+`Packages\<aplikacja>_…\LocalCache\Local` (odczyty przechodzą do prawdziwych
 plików, zapisy i przeniesienia zostają w nakładce), a procesy potomne powłoki
 dziedziczą ją; procesy z launchera (runas/explorer) widzą prawdziwy profil.
 Wszystkie testy „syntetyczny katalog legacy + start UI/hosta” po 11:56
