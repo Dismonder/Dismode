@@ -496,7 +496,8 @@ public static partial class InstalledGameDiscoveryService
                             displayName,
                             executable,
                             LaunchArguments: [],
-                            Confidence: 100));
+                            Confidence: 100,
+                            CatalogNamespace: ReadJsonString(root, "CatalogNamespace")));
                 }
             }
             catch (Exception exception) when (
