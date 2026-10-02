@@ -6,4 +6,5 @@ public sealed record DetectedGame(
     string DisplayName,
     string ExecutablePath,
     IReadOnlyList<string> LaunchArguments,
-    int Confidence);
+    int Confidence,
+    string? CatalogNamespace = null);

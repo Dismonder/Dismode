@@ -442,9 +442,14 @@
                                 Visibility="{Binding FallbackInitialVisibility}"
                                 Text="{Binding Initial}" />
                             <Image
-                                x:Name="DashboardRailPosterImage"
-                                Source="{Binding PosterArtworkSource}"
+                                Source="{Binding TileArtworkSource}"
+                                Opacity="0.18"
+                                Visibility="{Binding TileBackdropVisibility}"
                                 Stretch="UniformToFill" />
+                            <Image
+                                x:Name="DashboardRailPosterImage"
+                                Source="{Binding TileArtworkSource}"
+                                Stretch="{Binding TileArtworkStretch}" />
                             <Border
                                 BorderBrush="{ThemeResource DismodeAccentBrush}"
                                 BorderThickness="2"
@@ -1563,15 +1568,20 @@
                                 FontFamily="Segoe UI Variable Display"
                                 FontSize="54"
                                 FontWeight="SemiBold"
-                                Opacity="0.3"
+                                Opacity="0.85"
                                 Visibility="{Binding FallbackInitialVisibility}"
                                 Text="{Binding Initial}" />
 
                             <!-- Crisp Poster Artwork -->
                             <Image
+                                Source="{Binding LibraryArtworkSource}"
+                                Opacity="0.18"
+                                Visibility="{Binding LibraryBackdropVisibility}"
+                                Stretch="UniformToFill" />
+                            <Image
                                 x:Name="LibraryPosterImage"
-                                Source="{Binding PosterArtworkSource}"
-                                Stretch="UniformToFill"
+                                Source="{Binding LibraryArtworkSource}"
+                                Stretch="{Binding LibraryArtworkStretch}"
                                 HorizontalAlignment="Center"
                                 VerticalAlignment="Center" />
 
@@ -2234,11 +2244,13 @@
             <Grid.RowDefinitions>
               <RowDefinition Height="Auto" />
               <RowDefinition Height="Auto" />
+              <RowDefinition Height="Auto" />
               <RowDefinition Height="*" />
             </Grid.RowDefinitions>
 
             <!-- Bento Header -->
             <Border
+                Grid.Row="0"
                 Style="{StaticResource DismodeDeckHeaderStyle}">
               <Grid x:Name="HistoryHeaderGrid" ColumnSpacing="20" RowSpacing="12">
                 <Grid.ColumnDefinitions>
@@ -2279,6 +2291,7 @@
 
             <Grid
                 x:Name="HistorySummaryPanel"
+                Grid.Row="1"
                 Margin="0,14,0,0"
                 ColumnSpacing="12"
                 Visibility="Collapsed">
@@ -2356,14 +2369,14 @@
 
             <InfoBar
                 x:Name="HistoryInfoBar"
-                Grid.Row="1"
+                Grid.Row="2"
                 Margin="0,12,0,10"
                 IsClosable="True"
                 IsOpen="False"
                 Title="Historia" />
 
             <!-- Bento History List -->
-            <Grid Grid.Row="2" Margin="0,8,0,0">
+            <Grid Grid.Row="3" Margin="0,8,0,0">
               <ListView
                   x:Name="HistoryList"
                   AutomationProperties.Name="Lista zakończonych sesji"

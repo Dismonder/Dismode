@@ -758,7 +758,8 @@ public sealed class LocalGameArtworkResolverTests
             thumbnailCacheDirectory: context.GetPath("Cache"),
             executableExtractor: new NullExecutableArtworkExtractor(),
             artworkHttpHandler: handler,
-            epicCatalogPaths: [catalogPath]);
+            epicCatalogPaths: [catalogPath],
+            epicManifestPaths: []);
 
         GameArtworkSet artwork = await resolver.ResolveSetAsync(
             CreateGame("Epic Games", catalogItemId, executable),
@@ -773,6 +774,70 @@ public sealed class LocalGameArtworkResolverTests
             GameArtworkSource.EpicCatalogCache,
             artwork.Hero.Source);
         Assert.AreEqual(2, handler.InvocationCount);
+    }
+
+    [TestMethod]
+    public async Task EpicCatalogArtworkSurvivesAnExecutableOnADetachedDrive()
+    {
+        // Profil zapisany, gdy gra stala na dysku, ktorego juz nie ma
+        // (Fortnite na D:): okladka z katalogu Epic nie potrzebuje pliku gry.
+        using ArtworkTestContext context = new();
+        const string catalogItemId = "4fe75bbc5a674f4f9b356b5c90567da5";
+        string posterSource = await context.CreateJpegAsync(
+            Path.Combine("Source", "poster.jpg"),
+            width: 600,
+            height: 900);
+        byte[] poster = File.ReadAllBytes(posterSource);
+        string catalogPath = context.CreateEpicCatalog(
+            catalogItemId,
+            ("DieselGameBoxTall", "https://cdn1.epicgames.com/item/fn/poster.jpg", 600, 900));
+        string missingExecutable = Path.Combine(
+            context.GetPath("Gone"),
+            "Fortnite",
+            "FortniteBootstrapper.exe");
+        using UriArtworkResponseHandler handler = new(
+            new Dictionary<string, byte[]>(StringComparer.Ordinal)
+            {
+                ["/item/fn/poster.jpg"] = poster,
+            });
+        LocalGameArtworkResolver resolver = new(
+            steamRoots: [],
+            thumbnailCacheDirectory: context.GetPath("Cache"),
+            executableExtractor: new NullExecutableArtworkExtractor(),
+            artworkHttpHandler: handler,
+            epicCatalogPaths: [catalogPath],
+            epicManifestPaths: []);
+
+        GameArtwork? artwork = await resolver.ResolveAsync(
+            CreateGame("Epic Games", catalogItemId, missingExecutable),
+            CancellationToken.None);
+
+        Assert.IsNotNull(artwork);
+        Assert.AreEqual(GameArtworkSource.EpicCatalogCache, artwork.Source);
+        Assert.IsTrue(File.Exists(artwork.LocalPath));
+    }
+
+    [TestMethod]
+    public async Task AMissingExecutableWithoutAStoreIdentityHasNoArtwork()
+    {
+        using ArtworkTestContext context = new();
+        FakeExecutableArtworkExtractor extractor = new(
+            context,
+            width: 512,
+            height: 512);
+        LocalGameArtworkResolver resolver = new(
+            steamRoots: [],
+            thumbnailCacheDirectory: context.GetPath("Cache"),
+            executableExtractor: extractor,
+            artworkHttpHandler: new OfflineResponseHandler(),
+            epicCatalogPaths: [],
+            epicManifestPaths: []);
+
+        GameArtwork? artwork = await resolver.ResolveAsync(
+            CreateGame("Manual", "manual", Path.Combine(context.GetPath("Gone"), "Game.exe")),
+            CancellationToken.None);
+
+        Assert.IsNull(artwork, "Ikona wymaga pliku; bez niego nie ma skad jej wziac.");
     }
 
     [TestMethod]
@@ -891,6 +956,151 @@ public sealed class LocalGameArtworkResolverTests
         Assert.IsFalse(
             LocalGameArtworkResolver.IsSafeArtworkFile(
                 @"\\example.invalid\share\cover.png"));
+    }
+
+    [TestMethod]
+    [DataRow(false, "DieselGameBoxTall", "DieselGameBox")]
+    [DataRow(true, "OfferImageTall", "OfferImageWide")]
+    [DataRow(true, "Thumbnail", "DieselGameBoxWide")]
+    public async Task EpicRetriesOtherKeyImagesAndSupportsJsonWithoutDimensions(
+        bool rawJson, string posterType, string heroType)
+    {
+        using ArtworkTestContext context = new();
+        const string id = "4fe75bbc5a674f4f9b356b5c90567da5";
+        string poster = await context.CreateJpegAsync(Path.Combine("Source", "poster.jpg"), 600, 900);
+        string hero = await context.CreateJpegAsync(Path.Combine("Source", "hero.jpg"), 1600, 900);
+        string catalog = context.CreateEpicCatalog(id);
+        string json = JsonSerializer.Serialize(new[]
+        {
+            new
+            {
+                id, @namespace = "fn",
+                keyImages = new[]
+                {
+                    new { type = "DieselGameBoxTall", url = "https://cdn1.epicgames.com/missing.jpg" },
+                    new { type = posterType, url = "https://cdn1.epicgames.com/poster.jpg" },
+                    new { type = heroType, url = "https://cdn1.epicgames.com/hero.jpg" },
+                },
+            },
+        });
+        File.WriteAllText(catalog, rawJson ? json : Convert.ToBase64String(Encoding.UTF8.GetBytes(json)));
+        string executable = context.CreateFile(Path.Combine("Game", "Game.exe"));
+        using UriArtworkResponseHandler handler = new(new Dictionary<string, byte[]>
+        {
+            ["/poster.jpg"] = File.ReadAllBytes(poster),
+            ["/hero.jpg"] = File.ReadAllBytes(hero),
+        });
+        LocalGameArtworkResolver resolver = new([], context.GetPath("Cache"),
+            new NullExecutableArtworkExtractor(), handler, epicCatalogPaths: [catalog], epicManifestPaths: []);
+        DetectedGame game = CreateGame("Epic Games", id, executable) with { CatalogNamespace = "fn" };
+        GameArtworkSet result = await resolver.ResolveSetAsync(game, CancellationToken.None);
+        Assert.AreEqual(GameArtworkSource.EpicCatalogCache, result.Poster?.Source);
+        Assert.AreEqual(GameArtworkSource.EpicCatalogCache, result.Hero?.Source);
+        int requests = handler.InvocationCount;
+        File.Delete(catalog);
+        GameArtworkSet cached = await resolver.ResolveSetAsync(game, CancellationToken.None);
+        Assert.AreEqual(result, cached);
+        Assert.AreEqual(requests, handler.InvocationCount);
+    }
+
+    [TestMethod]
+    public async Task EpicManifestAppNameUsesCatalogIdentityAndNamespace()
+    {
+        using ArtworkTestContext context = new();
+        const string id = "4fe75bbc5a674f4f9b356b5c90567da5";
+        string image = await context.CreateJpegAsync(Path.Combine("Source", "poster.jpg"), 600, 900);
+        string executable = context.CreateFile(Path.Combine("Game", "Game.exe"));
+        string catalog = context.CreateEpicCatalog(id);
+        string json = JsonSerializer.Serialize(new[]
+        {
+            new { id, @namespace = "unrelated", keyImages = new[] { new { type = "DieselGameBoxTall", url = "https://cdn1.epicgames.com/wrong.jpg" } } },
+            new { id, @namespace = "fn", keyImages = new[] { new { type = "OfferImageTall", url = "https://cdn1.epicgames.com/poster.jpg" } } },
+        });
+        File.WriteAllText(catalog, json);
+        string manifest = context.CreateFile(Path.Combine("Epic", "Fortnite.item"));
+        File.WriteAllText(manifest, JsonSerializer.Serialize(new
+        {
+            CatalogItemId = id,
+            CatalogNamespace = "fn",
+            AppName = "Fortnite",
+            InstallLocation = Path.GetDirectoryName(executable),
+            LaunchExecutable = "Game.exe",
+        }));
+        using UriArtworkResponseHandler handler = new(new Dictionary<string, byte[]>
+        {
+            ["/poster.jpg"] = File.ReadAllBytes(image),
+        });
+        LocalGameArtworkResolver resolver = new([], context.GetPath("Cache"),
+            new NullExecutableArtworkExtractor(), handler, epicCatalogPaths: [catalog], epicManifestPaths: [manifest]);
+        GameArtworkSet result = await resolver.ResolveSetAsync(
+            CreateGame("Epic Games", "Fortnite", executable), CancellationToken.None);
+        Assert.AreEqual(GameArtworkSource.EpicCatalogCache, result.Poster?.Source);
+        Assert.AreEqual(GameArtworkSource.EpicCatalogCache, result.Hero?.Source);
+        Assert.AreEqual(2, handler.InvocationCount);
+    }
+
+    [TestMethod]
+    public async Task EpicReusesLegacyThumbnailCacheWithoutCatalogOrNetwork()
+    {
+        using ArtworkTestContext context = new();
+        const string id = "4fe75bbc5a674f4f9b356b5c90567da5";
+        string cached = await context.CreateJpegAsync(Path.Combine("Cache", $"epic_{id}_poster.jpg"), 600, 900);
+        string executable = context.CreateFile(Path.Combine("Game", "Game.exe"));
+        using UriArtworkResponseHandler handler = new(new Dictionary<string, byte[]>());
+        LocalGameArtworkResolver resolver = new([], context.GetPath("Cache"),
+            new NullExecutableArtworkExtractor(), handler, epicCatalogPaths: [], epicManifestPaths: []);
+        GameArtwork? result = await resolver.ResolveRoleAsync(
+            CreateGame("Epic Games", id, executable) with { CatalogNamespace = "fn" },
+            GameArtworkRole.Poster, CancellationToken.None);
+        Assert.AreEqual(cached, result?.LocalPath);
+        Assert.AreEqual(GameArtworkSource.EpicCatalogCache, result?.Source);
+        Assert.AreEqual(0, handler.InvocationCount);
+    }
+
+    [TestMethod]
+    public async Task SteamCdnHeroFallsBackToHeaderAndCachesIt()
+    {
+        using ArtworkTestContext context = new();
+        string image = await context.CreateJpegAsync(Path.Combine("Source", "header.jpg"), 460, 215);
+        string executable = context.CreateFile(Path.Combine("Game", "Game.exe"));
+        using UriArtworkResponseHandler handler = new(new Dictionary<string, byte[]>
+        {
+            ["/store_item_assets/steam/apps/12345/header.jpg"] = File.ReadAllBytes(image),
+        });
+        LocalGameArtworkResolver resolver = CreateSteamResolver(context, handler);
+        DetectedGame game = CreateGame("Steam", "12345", executable);
+        GameArtwork? result = await resolver.ResolveRoleAsync(game, GameArtworkRole.Hero, CancellationToken.None);
+        Assert.AreEqual(GameArtworkSource.SteamOfficialCdn, result?.Source);
+        Assert.AreEqual(3, handler.InvocationCount);
+        Assert.AreEqual(result, await resolver.ResolveRoleAsync(game, GameArtworkRole.Hero, CancellationToken.None));
+        Assert.AreEqual(3, handler.InvocationCount);
+    }
+
+    [TestMethod]
+    public async Task HeroExecutableThumbnailIsMarkedAsIcon()
+    {
+        using ArtworkTestContext context = new();
+        string executable = context.CreateFile(Path.Combine("Game", "Game.exe"));
+        FakeExecutableArtworkExtractor extractor = new(context, 256, 256);
+        LocalGameArtworkResolver resolver = new([], context.GetPath("Cache"), extractor);
+        GameArtwork? result = await resolver.ResolveRoleAsync(
+            CreateGame("Manual", "Game.exe", executable), GameArtworkRole.Hero, CancellationToken.None);
+        Assert.IsNotNull(result);
+        Assert.IsTrue(result.IsIcon);
+    }
+
+    [TestMethod]
+    [TestCategory("Live")]
+    public async Task LiveFortniteArtworkFromInstalledEpicCatalog()
+    {
+        using ArtworkTestContext context = new();
+        string executable = context.CreateFile(Path.Combine("Game", "Game.exe"));
+        LocalGameArtworkResolver resolver = new([], context.GetPath("Cache"), new NullExecutableArtworkExtractor());
+        GameArtworkSet result = await resolver.ResolveSetAsync(
+            CreateGame("Epic Games", "4fe75bbc5a674f4f9b356b5c90567da5", executable) with { CatalogNamespace = "fn" },
+            CancellationToken.None);
+        Assert.AreEqual(GameArtworkSource.EpicCatalogCache, result.Poster?.Source);
+        Assert.AreEqual(GameArtworkSource.EpicCatalogCache, result.Hero?.Source);
     }
 
     private static DetectedGame CreateGame(
