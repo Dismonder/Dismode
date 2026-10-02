@@ -227,7 +227,18 @@ zostaje w produkcie jako pierwszy wiarygodny obraz tego, co widzi
 prawdziwy proces. Szczegóły pułapki: pamięć sesji
 `msix-virtualized-appdata-pitfall`.
 
-Następne kroki: pierwsza instalacja Dismode obok
+Finalna instalacja 0.8.0 (2026-10-02 07:58, build z `main` 37ab7a9):
+`Build-Installer.ps1` pod PowerShell 7 (pod Windows PowerShell 5.1 pada na
+`IsPathFullyQualified`), instalacja `/SILENT` kod 0, usługi
+`DismodeSystemAgent` i `DismodeMemoryService` działają, zainstalowany
+`Dismode.ShellExtension.dll` zależy tylko od SHELL32/ole32/SHLWAPI/KERNEL32,
+procesy z launchera zapisały w `migration.log` `exists=False leftBehind=0
+problems=0`. Instalator: `artifacts/installer/Dismode-Setup-0.8.0-win-x64.exe`
+(certyfikat testowy; staging manifestu aktualizacji wymaga maszyny
+wydawniczej).
+
+Następne kroki: produkcyjny certyfikat (`DISMODE_RELEASE_SIGNING_THUMBPRINT`)
+i paczka dla update-service; pierwsza instalacja Dismode obok
 zainstalowanego GameShift to pierwszy żywy test migracji (w tym ścieżki
 kodu 9 → komunikat UI); `wrangler deploy` nowego adresu update-service;
 instalator 0.8.0 po podaniu produkcyjnego certyfikatu.
