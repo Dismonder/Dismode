@@ -2,6 +2,7 @@ using System.ComponentModel;
 using System.Globalization;
 using Dismode.Core.Profiles;
 using Microsoft.UI.Xaml.Media;
+using Microsoft.UI.Xaml.Media.Imaging;
 
 namespace Dismode.UI.ViewModels;
 
@@ -105,6 +106,7 @@ public sealed class ProfileListItem : INotifyPropertyChanged
             PropertyChanged?.Invoke(
                 this,
                 new(nameof(ArtworkVisibility)));
+            NotifyTileArtworkChanged();
         }
     }
 
@@ -121,10 +123,51 @@ public sealed class ProfileListItem : INotifyPropertyChanged
             _heroArtworkSource = value;
             PropertyChanged?.Invoke(this, new(nameof(HeroArtworkSource)));
             PropertyChanged?.Invoke(this, new(nameof(HasHeroArtwork)));
+            PropertyChanged?.Invoke(this, new(nameof(HasArtwork)));
+            PropertyChanged?.Invoke(this, new(nameof(FallbackInitialVisibility)));
+            PropertyChanged?.Invoke(this, new(nameof(ArtworkVisibility)));
+            NotifyTileArtworkChanged();
         }
     }
 
-    public bool HasArtwork => ArtworkSource is not null;
+    public bool HasArtwork => PosterArtworkSource is not null || HeroArtworkSource is not null;
+
+    public ImageSource? TileArtworkSource => IsWideArtwork(HeroArtworkSource)
+        ? HeroArtworkSource
+        : PosterArtworkSource ?? HeroArtworkSource;
+
+    public ImageSource? LibraryArtworkSource => PosterArtworkSource ?? HeroArtworkSource;
+
+    public Stretch TileArtworkStretch => ArtworkStretch(TileArtworkSource);
+
+    public Stretch LibraryArtworkStretch => ArtworkStretch(LibraryArtworkSource);
+
+    public Microsoft.UI.Xaml.Visibility TileBackdropVisibility => BackdropVisibility(TileArtworkSource);
+
+    public Microsoft.UI.Xaml.Visibility LibraryBackdropVisibility => BackdropVisibility(LibraryArtworkSource);
+
+    private static bool IsWideArtwork(ImageSource? source) =>
+        source is BitmapSource bitmap && bitmap.PixelWidth > bitmap.PixelHeight * 1.15;
+
+    private static Stretch ArtworkStretch(ImageSource? source) =>
+        IsWideArtwork(source) ? Stretch.UniformToFill : Stretch.Uniform;
+
+    private static Microsoft.UI.Xaml.Visibility BackdropVisibility(ImageSource? source) =>
+        source is not null && !IsWideArtwork(source)
+            ? Microsoft.UI.Xaml.Visibility.Visible
+            : Microsoft.UI.Xaml.Visibility.Collapsed;
+
+    private void NotifyTileArtworkChanged()
+    {
+        foreach (string property in new[]
+                 {
+                     nameof(TileArtworkSource), nameof(TileArtworkStretch), nameof(TileBackdropVisibility),
+                     nameof(LibraryArtworkSource), nameof(LibraryArtworkStretch), nameof(LibraryBackdropVisibility),
+                 })
+        {
+            PropertyChanged?.Invoke(this, new(property));
+        }
+    }
 
     public bool HasPosterArtwork => PosterArtworkSource is not null;
 
