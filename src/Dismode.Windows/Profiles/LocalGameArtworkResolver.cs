@@ -23,6 +23,7 @@ public sealed class LocalGameArtworkResolver
     private const int MaximumDirectoryDepth = 2;
     private readonly string[] _steamRoots;
     private readonly string[] _epicCatalogPaths;
+    private readonly string[] _epicManifestPaths;
     private readonly string _thumbnailCacheDirectory;
     private readonly IExecutableArtworkExtractor _executableExtractor;
     private readonly HttpClient _artworkHttpClient;
@@ -31,11 +32,13 @@ public sealed class LocalGameArtworkResolver
 
     public LocalGameArtworkResolver(
         IEnumerable<string>? steamRoots = null,
-        string? thumbnailCacheDirectory = null)
+        string? thumbnailCacheDirectory = null,
+        HttpMessageHandler? artworkHttpHandler = null)
         : this(
             steamRoots,
             thumbnailCacheDirectory,
-            new WindowsExecutableArtworkExtractor())
+            new WindowsExecutableArtworkExtractor(),
+            artworkHttpHandler)
     {
     }
 
@@ -46,7 +49,8 @@ public sealed class LocalGameArtworkResolver
         HttpMessageHandler? artworkHttpHandler = null,
         TimeSpan? networkTimeout = null,
         IArtworkResolutionObserver? resolutionObserver = null,
-        IEnumerable<string>? epicCatalogPaths = null)
+        IEnumerable<string>? epicCatalogPaths = null,
+        IEnumerable<string>? epicManifestPaths = null)
     {
         ArgumentNullException.ThrowIfNull(executableExtractor);
         _steamRoots = (steamRoots ?? FindDefaultSteamRoots())
@@ -68,6 +72,11 @@ public sealed class LocalGameArtworkResolver
                     Environment.SpecialFolder.LocalApplicationData),
                 "Dismode",
                 "Artwork"));
+        _epicManifestPaths = (epicManifestPaths ?? FindDefaultEpicManifestPaths())
+            .Where(Path.IsPathFullyQualified)
+            .Where(path => !path.StartsWith(@"\\", StringComparison.Ordinal))
+            .Take(256)
+            .ToArray();
         _executableExtractor = executableExtractor;
         _artworkHttpClient = artworkHttpHandler is null
             ? DefaultArtworkHttpClient
@@ -86,10 +95,7 @@ public sealed class LocalGameArtworkResolver
         ArgumentNullException.ThrowIfNull(game);
         cancellationToken.ThrowIfCancellationRequested();
         string executablePath = Path.GetFullPath(game.ExecutablePath);
-        if (!File.Exists(executablePath)
-            || !Path.GetExtension(executablePath).Equals(
-                ".exe",
-                StringComparison.OrdinalIgnoreCase))
+        if (!IsExecutablePath(executablePath))
         {
             return null;
         }
@@ -112,10 +118,7 @@ public sealed class LocalGameArtworkResolver
         ArgumentNullException.ThrowIfNull(game);
         cancellationToken.ThrowIfCancellationRequested();
         string executablePath = Path.GetFullPath(game.ExecutablePath);
-        if (!File.Exists(executablePath)
-            || !Path.GetExtension(executablePath).Equals(
-                ".exe",
-                StringComparison.OrdinalIgnoreCase))
+        if (!IsExecutablePath(executablePath))
         {
             return new(null, null);
         }
@@ -149,10 +152,7 @@ public sealed class LocalGameArtworkResolver
         ArgumentNullException.ThrowIfNull(game);
         cancellationToken.ThrowIfCancellationRequested();
         string executablePath = Path.GetFullPath(game.ExecutablePath);
-        if (!File.Exists(executablePath)
-            || !Path.GetExtension(executablePath).Equals(
-                ".exe",
-                StringComparison.OrdinalIgnoreCase))
+        if (!IsExecutablePath(executablePath))
         {
             return null;
         }
@@ -165,6 +165,9 @@ public sealed class LocalGameArtworkResolver
                 cancellationToken)
             .ConfigureAwait(false);
     }
+
+    private static bool IsExecutablePath(string path) =>
+        Path.GetExtension(path).Equals(".exe", StringComparison.OrdinalIgnoreCase);
 
     internal bool IsArtworkValidForRole(
         string? path,
@@ -201,7 +204,13 @@ public sealed class LocalGameArtworkResolver
         string installDirectory = Path.GetDirectoryName(executablePath)
             ?? throw new InvalidOperationException(
                 "The game executable has no installation directory.");
-        if (game.Source.Equals("Xbox", StringComparison.OrdinalIgnoreCase)
+        // A saved profile outlives its installation: a library moved to a
+        // drive that is no longer attached still has a store identity, and
+        // the store's artwork does not need the executable. Only the sources
+        // that read the installation are skipped.
+        bool installed = Directory.Exists(installDirectory);
+        if (installed
+            && game.Source.Equals("Xbox", StringComparison.OrdinalIgnoreCase)
             && FindXboxShellVisualsArtwork(
                     installDirectory,
                     role,
@@ -210,7 +219,8 @@ public sealed class LocalGameArtworkResolver
         {
             return new(shellVisual, GameArtworkSource.GameDirectory);
         }
-        if (!game.Source.Equals(
+        if (installed
+            && !game.Source.Equals(
                 "Roblox",
                 StringComparison.OrdinalIgnoreCase)
             && FindGameDirectoryArtwork(
@@ -224,26 +234,34 @@ public sealed class LocalGameArtworkResolver
             return new(localArtwork, GameArtworkSource.GameDirectory);
         }
 
-        if (IsEpicSource(game.Source)
-            && IsEpicCatalogId(game.ExternalId)
-            && await FindEpicCatalogArtworkAsync(
-                    game.ExternalId,
-                    role,
-                    cancellationToken)
-                .ConfigureAwait(false) is EpicCatalogArtwork epicArtwork)
+        if (IsEpicSource(game.Source))
         {
-            string? downloadedEpic = await DownloadEpicArtworkAsync(
-                    game.ExternalId,
-                    epicArtwork,
-                    role,
-                    budget,
-                    cancellationToken)
+            DetectedGame epicGame = await ResolveEpicManifestIdentityAsync(game, cancellationToken)
                 .ConfigureAwait(false);
-            if (downloadedEpic is not null)
+            if (IsEpicCatalogId(epicGame.ExternalId))
             {
-                return new(
-                    downloadedEpic,
-                    GameArtworkSource.EpicCatalogCache);
+                string targetPath = GetEpicCachePath(epicGame, role);
+                if (IsSafeArtworkFileForRole(targetPath, role, budget, cancellationToken, out _, allowAnyAspect: true))
+                {
+                    return new(targetPath, GameArtworkSource.EpicCatalogCache);
+                }
+                // Reuse downloads made before catalog namespaces were included in cache keys.
+                string legacyPath = Path.Combine(_thumbnailCacheDirectory,
+                    $"epic_{epicGame.ExternalId}_{role.ToString().ToLowerInvariant()}.jpg");
+                if (epicGame.CatalogNamespace is not null
+                    && IsSafeArtworkFileForRole(legacyPath, role, budget, cancellationToken))
+                {
+                    return new(legacyPath, GameArtworkSource.EpicCatalogCache);
+                }
+
+                IReadOnlyList<EpicCatalogArtwork> epicArtwork = await FindEpicCatalogArtworkAsync(
+                        epicGame, role, cancellationToken).ConfigureAwait(false);
+                string? downloadedEpic = await DownloadEpicArtworkAsync(
+                        targetPath, epicArtwork, role, budget, cancellationToken).ConfigureAwait(false);
+                if (downloadedEpic is not null)
+                {
+                    return new(downloadedEpic, GameArtworkSource.EpicCatalogCache);
+                }
             }
         }
 
@@ -263,6 +281,11 @@ public sealed class LocalGameArtworkResolver
         }
 
         if (!budget.HasDecodeCapacity)
+        {
+            return null;
+        }
+
+        if (!File.Exists(executablePath))
         {
             return null;
         }
@@ -387,8 +410,75 @@ public sealed class LocalGameArtworkResolver
         }
     }
 
-    private async ValueTask<EpicCatalogArtwork?> FindEpicCatalogArtworkAsync(
-        string catalogItemId,
+    private string GetEpicCachePath(DetectedGame game, GameArtworkRole role)
+    {
+        string namespaceKey = game.CatalogNamespace is null
+            ? string.Empty
+            : "_" + Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(game.CatalogNamespace)).AsSpan(0, 8));
+        return Path.Combine(_thumbnailCacheDirectory,
+            $"epic_{game.ExternalId}{namespaceKey}_{role.ToString().ToLowerInvariant()}.jpg");
+    }
+
+    private async ValueTask<DetectedGame> ResolveEpicManifestIdentityAsync(
+        DetectedGame game, CancellationToken cancellationToken)
+    {
+        if (game.CatalogNamespace is not null && IsEpicCatalogId(game.ExternalId))
+        {
+            return game;
+        }
+
+        foreach (string path in _epicManifestPaths)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            if (!IsReadableEpicCatalogFile(path))
+            {
+                continue;
+            }
+
+            try
+            {
+                if (new FileInfo(path).Length > 2 * 1024 * 1024)
+                {
+                    continue;
+                }
+                using JsonDocument manifest = JsonDocument.Parse(
+                    await File.ReadAllTextAsync(path, cancellationToken).ConfigureAwait(false),
+                    new JsonDocumentOptions { MaxDepth = 32 });
+                JsonElement root = manifest.RootElement;
+                string? id = ReadEpicString(root, "CatalogItemId");
+                if (id is null || !IsEpicCatalogId(id))
+                {
+                    continue;
+                }
+                string? appName = ReadEpicString(root, "AppName");
+                string? install = ReadEpicString(root, "InstallLocation");
+                string? launch = ReadEpicString(root, "LaunchExecutable");
+                bool executableMatches = install is not null && launch is not null
+                    && Path.IsPathFullyQualified(install)
+                    && string.Equals(Path.GetFullPath(Path.Combine(install, launch)),
+                        Path.GetFullPath(game.ExecutablePath), StringComparison.OrdinalIgnoreCase);
+                if (string.Equals(id, game.ExternalId, StringComparison.OrdinalIgnoreCase)
+                    || string.Equals(appName, game.ExternalId, StringComparison.OrdinalIgnoreCase)
+                    || executableMatches)
+                {
+                    return game with { ExternalId = id, CatalogNamespace = ReadEpicString(root, "CatalogNamespace") };
+                }
+            }
+            catch (Exception exception) when (exception is IOException or UnauthorizedAccessException
+                or System.Security.SecurityException or JsonException or ArgumentException or NotSupportedException)
+            {
+            }
+        }
+        return game;
+    }
+
+    private static string? ReadEpicString(JsonElement item, string property) =>
+        item.ValueKind is JsonValueKind.Object
+        && item.TryGetProperty(property, out JsonElement value)
+        && value.ValueKind is JsonValueKind.String ? value.GetString() : null;
+
+    private async ValueTask<IReadOnlyList<EpicCatalogArtwork>> FindEpicCatalogArtworkAsync(
+        DetectedGame game,
         GameArtworkRole role,
         CancellationToken cancellationToken)
     {
@@ -407,7 +497,10 @@ public sealed class LocalGameArtworkResolver
                         Encoding.UTF8,
                         cancellationToken)
                     .ConfigureAwait(false);
-                byte[] json = Convert.FromBase64String(encoded);
+                string trimmed = encoded.TrimStart('\uFEFF', ' ', '\r', '\n', '\t');
+                byte[] json = trimmed.StartsWith('[') || trimmed.StartsWith('{')
+                    ? Encoding.UTF8.GetBytes(trimmed)
+                    : Convert.FromBase64String(trimmed);
                 using JsonDocument document = JsonDocument.Parse(
                     json,
                     new JsonDocumentOptions { MaxDepth = 32 });
@@ -425,17 +518,26 @@ public sealed class LocalGameArtworkResolver
                         break;
                     }
 
-                    if (!item.TryGetProperty("id", out JsonElement id)
+                    if (item.ValueKind is not JsonValueKind.Object
+                        || !item.TryGetProperty("id", out JsonElement id)
                         || id.ValueKind is not JsonValueKind.String
                         || !string.Equals(
                             id.GetString(),
-                            catalogItemId,
-                            StringComparison.OrdinalIgnoreCase))
+                            game.ExternalId,
+                            StringComparison.OrdinalIgnoreCase)
+                        || game.CatalogNamespace is not null
+                            && (!item.TryGetProperty("namespace", out JsonElement catalogNamespace)
+                                || catalogNamespace.ValueKind is not JsonValueKind.String
+                                || !string.Equals(catalogNamespace.GetString(), game.CatalogNamespace, StringComparison.OrdinalIgnoreCase)))
                     {
                         continue;
                     }
 
-                    return SelectEpicCatalogArtwork(item, role);
+                    IReadOnlyList<EpicCatalogArtwork> candidates = SelectEpicCatalogArtwork(item, role);
+                    if (candidates.Count > 0)
+                    {
+                        return candidates;
+                    }
                 }
             }
             catch (Exception exception) when (
@@ -449,36 +551,29 @@ public sealed class LocalGameArtworkResolver
             }
         }
 
-        return null;
+        return [];
     }
 
-    private static EpicCatalogArtwork? SelectEpicCatalogArtwork(
+    private static EpicCatalogArtwork[] SelectEpicCatalogArtwork(
         JsonElement item,
         GameArtworkRole role)
     {
         if (!item.TryGetProperty("keyImages", out JsonElement keyImages)
             || keyImages.ValueKind is not JsonValueKind.Array)
         {
-            return null;
+            return [];
         }
 
-        EpicCatalogArtwork? selected = null;
-        int selectedScore = int.MinValue;
+        List<EpicCatalogArtwork> candidates = [];
         int inspectedImages = 0;
         foreach (JsonElement image in keyImages.EnumerateArray())
         {
             if (++inspectedImages > 64
+                || image.ValueKind is not JsonValueKind.Object
                 || !image.TryGetProperty("type", out JsonElement typeElement)
                 || !image.TryGetProperty("url", out JsonElement urlElement)
                 || typeElement.ValueKind is not JsonValueKind.String
                 || urlElement.ValueKind is not JsonValueKind.String
-                || !image.TryGetProperty("width", out JsonElement widthElement)
-                || !image.TryGetProperty("height", out JsonElement heightElement)
-                || !widthElement.TryGetInt32(out int width)
-                || !heightElement.TryGetInt32(out int height)
-                || width < 128
-                || height < 128
-                || !MatchesArtworkRole(width, height, role)
                 || !Uri.TryCreate(
                     urlElement.GetString(),
                     UriKind.Absolute,
@@ -489,44 +584,43 @@ public sealed class LocalGameArtworkResolver
             }
 
             int score = ScoreEpicImageType(typeElement.GetString(), role);
-            if (score > selectedScore)
+            if (score < 0)
             {
-                selected = new(url);
-                selectedScore = score;
+                continue;
             }
+            if (image.TryGetProperty("width", out JsonElement widthElement)
+                && image.TryGetProperty("height", out JsonElement heightElement)
+                && widthElement.ValueKind is JsonValueKind.Number
+                && heightElement.ValueKind is JsonValueKind.Number
+                && widthElement.TryGetInt32(out int width)
+                && heightElement.TryGetInt32(out int height)
+                && MatchesArtworkRole(width, height, role))
+            {
+                score += 1000;
+            }
+            candidates.Add(new(url, score));
         }
 
-        return selected;
+        return candidates.OrderByDescending(candidate => candidate.Score)
+            .DistinctBy(candidate => candidate.Url).Take(8).ToArray();
     }
 
     private static int ScoreEpicImageType(
         string? imageType,
         GameArtworkRole role)
     {
-        if (role is GameArtworkRole.Poster)
+        string type = imageType?.ToUpperInvariant() ?? string.Empty;
+        return type switch
         {
-            return string.Equals(
-                imageType,
-                "DieselGameBoxTall",
-                StringComparison.OrdinalIgnoreCase)
-                ? 200
-                : 0;
-        }
-
-        if (string.Equals(
-                imageType,
-                "DieselGameBoxWide",
-                StringComparison.OrdinalIgnoreCase))
-        {
-            return 200;
-        }
-
-        return string.Equals(
-            imageType,
-            "DieselGameBox",
-            StringComparison.OrdinalIgnoreCase)
-            ? 150
-            : 0;
+            "DIESELGAMEBOXTALL" => role is GameArtworkRole.Poster ? 300 : 50,
+            "OFFERIMAGETALL" => role is GameArtworkRole.Poster ? 250 : 40,
+            "DIESELGAMEBOXWIDE" => role is GameArtworkRole.Hero ? 300 : 50,
+            "DIESELGAMEBOX" => role is GameArtworkRole.Hero ? 280 : 60,
+            "OFFERIMAGEWIDE" => role is GameArtworkRole.Hero ? 250 : 40,
+            "THUMBNAIL" => 100,
+            "ANDROIDICON" or "ICON" => 10,
+            _ => -1,
+        };
     }
 
     private static readonly HttpClient DefaultArtworkHttpClient = new(
@@ -560,6 +654,8 @@ public sealed class LocalGameArtworkResolver
             [
                 $"https://shared.fastly.steamstatic.com/store_item_assets/steam/apps/{appId}/library_hero.jpg",
                 $"https://cdn.cloudflare.steamstatic.com/steam/apps/{appId}/library_hero.jpg",
+                $"https://shared.fastly.steamstatic.com/store_item_assets/steam/apps/{appId}/header.jpg",
+                $"https://cdn.cloudflare.steamstatic.com/steam/apps/{appId}/header.jpg",
             ];
 
         return await DownloadArtworkAsync(
@@ -573,22 +669,20 @@ public sealed class LocalGameArtworkResolver
     }
 
     private async ValueTask<string?> DownloadEpicArtworkAsync(
-        string catalogItemId,
-        EpicCatalogArtwork artwork,
+        string targetPath,
+        IReadOnlyList<EpicCatalogArtwork> artwork,
         GameArtworkRole role,
         ArtworkResolutionBudget budget,
         CancellationToken cancellationToken)
     {
-        string targetPath = Path.Combine(
-            _thumbnailCacheDirectory,
-            $"epic_{catalogItemId}_{role.ToString().ToLowerInvariant()}.jpg");
         return await DownloadArtworkAsync(
-                [artwork.Url.AbsoluteUri],
+                artwork.Select(candidate => candidate.Url.AbsoluteUri),
                 targetPath,
                 role,
                 budget,
                 IsAllowedEpicHost,
-                cancellationToken)
+                cancellationToken,
+                allowAnyAspect: true)
             .ConfigureAwait(false);
     }
 
@@ -598,32 +692,45 @@ public sealed class LocalGameArtworkResolver
         GameArtworkRole role,
         ArtworkResolutionBudget budget,
         Func<Uri?, bool> isAllowedHost,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        bool allowAnyAspect = false)
     {
         if (budget.TryInspectName(cancellationToken)
             && IsSafeArtworkFileForRole(
                 targetPath,
                 role,
                 budget,
-                cancellationToken))
+                cancellationToken,
+                out _,
+                allowAnyAspect))
         {
             return Path.GetFullPath(targetPath);
         }
 
-        foreach (string url in urls)
+        using CancellationTokenSource timeout = new(_networkTimeout);
+        using CancellationTokenSource downloadCancellation = CancellationTokenSource.CreateLinkedTokenSource(
+            cancellationToken, timeout.Token);
+        try
         {
-            string? downloaded = await DownloadArtworkUrlAsync(
+            foreach (string url in urls)
+            {
+                string? downloaded = await DownloadArtworkUrlAsync(
                     url,
                     targetPath,
                     role,
                     budget,
                     isAllowedHost,
-                    cancellationToken)
+                    allowAnyAspect,
+                    downloadCancellation.Token)
                 .ConfigureAwait(false);
-            if (downloaded is not null)
-            {
-                return downloaded;
+                if (downloaded is not null)
+                {
+                    return downloaded;
+                }
             }
+        }
+        catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
+        {
         }
 
         return null;
@@ -635,6 +742,7 @@ public sealed class LocalGameArtworkResolver
         GameArtworkRole role,
         ArtworkResolutionBudget budget,
         Func<Uri?, bool> isAllowedHost,
+        bool allowAnyAspect,
         CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
@@ -711,7 +819,8 @@ public sealed class LocalGameArtworkResolver
                         role,
                         budget,
                         cancellationToken,
-                        out ArtworkContainerFormat containerFormat)
+                        out ArtworkContainerFormat containerFormat,
+                        allowAnyAspect)
                     && DoesContentTypeMatchContainer(mediaType!, containerFormat))
                 {
                     File.Move(tempPath, targetPath, overwrite: true);
@@ -1285,7 +1394,8 @@ public sealed class LocalGameArtworkResolver
         GameArtworkRole role,
         ArtworkResolutionBudget budget,
         CancellationToken cancellationToken,
-        out ArtworkContainerFormat containerFormat)
+        out ArtworkContainerFormat containerFormat,
+        bool allowAnyAspect = false)
     {
         containerFormat = ArtworkContainerFormat.Unknown;
         if (!IsSafeArtworkFile(path)
@@ -1302,7 +1412,7 @@ public sealed class LocalGameArtworkResolver
                 out int height)
             && width >= 128
             && height >= 128
-            && MatchesArtworkRole(width, height, role);
+            && (allowAnyAspect || MatchesArtworkRole(width, height, role));
         cancellationToken.ThrowIfCancellationRequested();
         return isValid;
     }
@@ -1706,8 +1816,8 @@ public sealed class LocalGameArtworkResolver
 
     private static bool IsEpicCatalogId(string value) =>
         !string.IsNullOrWhiteSpace(value)
-        && value.Length == 32
-        && value.All(Uri.IsHexDigit);
+        && value.Length <= 128
+        && value.All(character => char.IsAsciiLetterOrDigit(character) || character is '-' or '_');
 
     private static bool MatchesArtworkRole(
         int width,
@@ -1786,6 +1896,24 @@ public sealed class LocalGameArtworkResolver
         }
     }
 
+    private static string[] FindDefaultEpicManifestPaths()
+    {
+        string directory = Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData),
+            "Epic", "EpicGamesLauncher", "Data", "Manifests");
+        try
+        {
+            return Directory.Exists(directory)
+                ? Directory.EnumerateFiles(directory, "*.item", SearchOption.TopDirectoryOnly).Take(256).ToArray()
+                : [];
+        }
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException
+            or System.Security.SecurityException)
+        {
+            return [];
+        }
+    }
+
     private static void AddExistingDirectory(
         HashSet<string> output,
         string? path)
@@ -1809,7 +1937,7 @@ public sealed class LocalGameArtworkResolver
         string Path,
         int Depth);
 
-    private sealed record EpicCatalogArtwork(Uri Url);
+    private sealed record EpicCatalogArtwork(Uri Url, int Score);
 
     private enum ArtworkContainerFormat
     {

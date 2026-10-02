@@ -5,6 +5,8 @@ public sealed record GameArtwork(
     GameArtworkSource Source)
 {
     public Uri LocalUri => new(LocalPath);
+
+    public bool IsIcon => Source is GameArtworkSource.ExecutableThumbnail;
 }
 
 public enum GameArtworkRole

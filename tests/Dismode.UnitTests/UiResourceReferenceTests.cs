@@ -447,11 +447,13 @@ public sealed class UiResourceReferenceTests
         string codeBehind = LoadUiSource("MainWindow.xaml.cs");
 
         Assert.AreEqual(
-            "{Binding PosterArtworkSource}",
+            "{Binding TileArtworkSource}",
             (string?)railPoster.Attribute("Source"));
         Assert.AreEqual(
-            "{Binding PosterArtworkSource}",
+            "{Binding LibraryArtworkSource}",
             (string?)libraryPoster.Attribute("Source"));
+        Assert.AreEqual("{Binding TileArtworkStretch}", (string?)railPoster.Attribute("Stretch"));
+        Assert.AreEqual("{Binding LibraryArtworkStretch}", (string?)libraryPoster.Attribute("Stretch"));
         StringAssert.Contains(
             codeBehind,
             "item.PosterArtworkSource = await LocalArtworkImageLoader.LoadAsync(");
