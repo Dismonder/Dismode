@@ -237,6 +237,15 @@ problems=0`. Instalator: `artifacts/installer/Dismode-Setup-0.8.0-win-x64.exe`
 (certyfikat testowy; staging manifestu aktualizacji wymaga maszyny
 wydawniczej).
 
+Wydanie na GitHubie (2026-10-02): tag `v0.8.0` = `main` f3bb7f2, release
+(prerelease, tytuł „Dismode 0.8.0 Gaming Edition (wydanie rozwojowe, podpis
+testowy)”) z `Dismode-Setup-0.8.0-win-x64.exe` zbudowanym z wyewidencjonowanego
+tagu (`ProductVersion 0.8.0-gaming-edition+f3bb7f2…`, SHA-256
+`61011EA2…3851`, plik `.sha256` obok) i notatką z change logu; przycisk
+„Pobierz” na stronie prowadzi do `releases/latest`. Build-Installer stempluje
+`InformationalVersion` bieżącym HEAD, więc wydanie buduje się z checkoutu
+tagu, nie z gałęzi roboczej.
+
 Następne kroki: produkcyjny certyfikat (`DISMODE_RELEASE_SIGNING_THUMBPRINT`)
 i paczka dla update-service; pierwsza instalacja Dismode obok
 zainstalowanego GameShift to pierwszy żywy test migracji (w tym ścieżki
