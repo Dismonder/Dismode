@@ -81,7 +81,8 @@ internal sealed class PresentMonCsvParser
         }
 
         // Ramka bez DisplayedTime (NA, puste albo 0) nie trafila na ekran:
-        // zgubiona. Bez samej kolumny nie wiemy nic, wiec DisplayTracked
+        // zgubiona. Przyblizenie: wartosc nieczytelna albo ponad 10 s tez
+        // liczy sie jako zgubiona. Bez samej kolumny nie wiemy nic, wiec DisplayTracked
         // zostaje false i liczy sie tylko FPS prezentacji.
         bool displayTracked = _displayedTimeIndex >= 0;
         double? displayedTimeMilliseconds = null;

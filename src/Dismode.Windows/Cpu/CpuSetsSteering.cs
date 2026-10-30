@@ -137,7 +137,18 @@ internal static class CpuSetsSteering
         // co potem widac na procesie. Niezgodnosc to „nie zastosowano" i nie
         // wolamy cofania: bez zgodnosci z tym, co zapisalismy, aktualny stan
         // nie jest juz dowodnie nasz.
+        //
+        // Wyjatek: gdy odczytu zwrotnego nie da sie wykonac, nasz zapis
+        // moze lezec na procesie bez sladu. Oryginal byl pusty (inaczej nie
+        // doszloby do zapisu), wiec jedyny bezpieczny ruch to wrocic do
+        // pustego. Niepusty odczyt z innymi ID jest cudzy i zostaje.
         CpuSetsQuery after = port.Query(processId);
+        if (after.State == CpuSetsQueryState.Failed)
+        {
+            _ = port.Apply(processId, []);
+            return CpuSetsSteer.Of(CpuSetsSteerOutcome.NotApplied);
+        }
+
         return after.State == CpuSetsQueryState.NonEmpty
             && SameSet(after.Ids, target)
                 ? new(CpuSetsSteerOutcome.Applied, before.Ids, [.. target])

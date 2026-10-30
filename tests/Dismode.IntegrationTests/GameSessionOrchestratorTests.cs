@@ -1658,6 +1658,76 @@ public sealed class GameSessionOrchestratorTests
         }
     }
 
+    [TestMethod]
+    public async Task KeepAwakeIsReleasedWhenStartFailsWithAnUnlistedException()
+    {
+        // Wyjatek spoza listy obslugiwanej w StartAsync (tu z probnika
+        // klatek, po wzieciu zadania zasilania) nie moze zostawic zadania.
+        string directory = CreateTestDirectory();
+        string readyFile = Path.Combine(directory, "game.ready");
+        int? processId = null;
+        SqliteUserDataStore store = new(Path.Combine(directory, "user.db"));
+        AppendOnlyRecoveryJournal journal =
+            new(Path.Combine(directory, "recovery.jsonl"));
+        FakeInhibitor inhibitor = new();
+        LocalGameSessionOrchestrator orchestrator = new(
+            store,
+            store,
+            journal,
+            monitorInterval: TimeSpan.FromMilliseconds(50),
+            frameRateProvider: new ThrowingFrameRateProvider(),
+            keepAwakeFactory: () => inhibitor);
+
+        try
+        {
+            ManualGameProfile profile = await CreateHarnessProfileAsync(
+                readyFile);
+            await store.UpsertAsync(profile, CancellationToken.None);
+            await orchestrator.InitializeAsync(CancellationToken.None);
+            SessionPlanPreview plan = await orchestrator.PrepareAsync(
+                profile.ProfileId,
+                CancellationToken.None);
+
+            _ = await Assert.ThrowsExactlyAsync<NotSupportedException>(
+                async () => await orchestrator.StartAsync(
+                    plan.PlanId,
+                    plan.SessionId,
+                    CancellationToken.None));
+
+            Assert.AreEqual(1, inhibitor.AcquireCalls);
+            Assert.IsFalse(inhibitor.Held, "Zadanie zasilania nie moze przezyc nieudanego startu.");
+            // Gra byla juz uruchomiona: poczekaj na plik gotowosci, zeby ja
+            // zamknac przed skasowaniem katalogu.
+            await WaitForFileAsync(readyFile);
+            processId = ReadProcessId(readyFile);
+        }
+        finally
+        {
+            if (processId is not null)
+            {
+                await CloseProcessAsync(processId.Value);
+            }
+
+            await orchestrator.DisposeAsync();
+            journal.Dispose();
+            store.Dispose();
+            DeleteDirectory(directory);
+        }
+    }
+
+    private sealed class ThrowingFrameRateProvider : IFrameRateProvider
+    {
+        public ValueTask<FrameRateSample> SampleAsync(
+            IReadOnlyCollection<int> processIds,
+            CancellationToken cancellationToken) =>
+            throw new NotSupportedException("Blad spoza listy.");
+
+        public ValueTask StopAsync(CancellationToken cancellationToken) =>
+            ValueTask.CompletedTask;
+
+        public ValueTask DisposeAsync() => ValueTask.CompletedTask;
+    }
+
     private sealed class FakeInhibitor : IExecutionStateInhibitor
     {
         public bool Refuse { get; init; }

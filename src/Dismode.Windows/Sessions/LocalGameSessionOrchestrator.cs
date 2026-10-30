@@ -856,6 +856,18 @@ public sealed class LocalGameSessionOrchestrator : IAsyncDisposable
 
                 throw;
             }
+            catch
+            {
+                // Wyjatek spoza listy powyzej (np. blad zapisu punktu
+                // kontrolnego) tez nie moze zostawic zadania zasilania: sesja,
+                // ktora nie stala sie aktywna, nie ma kto go zdjac.
+                if (_activeSession is null)
+                {
+                    ReleaseKeepAwake();
+                }
+
+                throw;
+            }
         }
         finally
         {

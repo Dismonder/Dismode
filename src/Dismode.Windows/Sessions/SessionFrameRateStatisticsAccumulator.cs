@@ -7,8 +7,12 @@ internal sealed class SessionFrameRateStatisticsAccumulator
 {
     private readonly object _sync = new();
     private readonly FrameTimeHistogram _histogram = new();
-    // Tylko przy wlaczonym sledzeniu wyswietlania; inaczej puste i niewidoczne.
-    private readonly FrameTimeHistogram _displayedHistogram = new();
+    // Tworzony przy pierwszej wyswietlonej klatce: przy wylaczonym sledzeniu
+    // wyswietlania nie kosztuje nic (histogram to ~2,4 MB).
+    private FrameTimeHistogram? _displayedHistogram;
+    // Low z wyswietlonych klatek tylko z sensownej proby; poprzeczka z nakladki
+    // (osiem klatek), bo sesyjne lows nie maja dotad zadnego progu.
+    internal const int MinimumDisplayedLowSamples = 8;
     private int _droppedFrames;
     private bool _displayTracked;
 
@@ -23,7 +27,7 @@ internal sealed class SessionFrameRateStatisticsAccumulator
             if (displayedTimeMilliseconds is double displayed)
             {
                 _displayTracked = true;
-                _displayedHistogram.Add(displayed);
+                (_displayedHistogram ??= new()).Add(displayed);
             }
             else if (dropped)
             {
@@ -49,7 +53,7 @@ internal sealed class SessionFrameRateStatisticsAccumulator
                 _displayTracked = true;
                 if (displayedHistogram is not null)
                 {
-                    _displayedHistogram.Merge(displayedHistogram);
+                    (_displayedHistogram ??= new()).Merge(displayedHistogram);
                 }
 
                 _droppedFrames = (int)Math.Min(
@@ -68,7 +72,7 @@ internal sealed class SessionFrameRateStatisticsAccumulator
     {
         lock (_sync)
         {
-            return _displayTracked && _displayedHistogram.Count > 0
+            return _displayTracked && _displayedHistogram is { Count: > 0 }
                 ? new(
                     _displayedHistogram.Count,
                     _displayedHistogram.AverageFramesPerSecond,
@@ -90,11 +94,14 @@ internal sealed class SessionFrameRateStatisticsAccumulator
             double averageFramesPerSecond = _histogram.AverageFramesPerSecond;
             double maximumFrameTime = _histogram.MaximumFrameTimeMilliseconds;
 
-            // Low z samych wyswietlonych klatek, gdy takie mamy; inaczej
+            // Low z samych wyswietlonych klatek, gdy jest ich dosc: co najmniej
+            // MinimumDisplayedLowSamples i polowa klatek prezentacji. Inaczej
             // z klatek prezentacji, jak dotychczas.
             FrameTimeHistogram lowSource = _displayTracked
-                && _displayedHistogram.Count > 0
-                    ? _displayedHistogram
+                && _displayedHistogram is { } displayedSource
+                && displayedSource.Count >= MinimumDisplayedLowSamples
+                && displayedSource.Count * 2L >= _histogram.Count
+                    ? displayedSource
                     : _histogram;
 
             // Maksimum nie moze byc mniejsze od sredniej, a minimum wieksze —

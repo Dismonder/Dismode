@@ -829,7 +829,7 @@ public sealed class PresentMonFrameRateProvider : IFrameRateProvider, ISessionFr
                     pending.Present.Add(frame.FrameTimeMilliseconds);
                     if (frame.DisplayedTimeMilliseconds is double displayed)
                     {
-                        pending.Displayed.Add(displayed);
+                        (pending.Displayed ??= new()).Add(displayed);
                     }
                     else if (frame.IsDropped)
                     {
@@ -1511,7 +1511,8 @@ public sealed class PresentMonFrameRateProvider : IFrameRateProvider, ISessionFr
     {
         internal FrameTimeHistogram Present { get; } = new();
 
-        internal FrameTimeHistogram Displayed { get; } = new();
+        // Tworzony przy pierwszej wyswietlonej klatce (~2,4 MB).
+        internal FrameTimeHistogram? Displayed { get; set; }
 
         internal int Dropped { get; set; }
     }

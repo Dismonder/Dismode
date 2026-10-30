@@ -18,12 +18,15 @@ internal sealed class FakeCpuSetsPort : ICpuSetsPort
     /// <summary>What a read right after a write shows instead of the write.</summary>
     public uint[]? ReadBackAfterApply { get; set; }
 
+    /// <summary>Reads fail once a write has happened (until a clear).</summary>
+    public bool QueryFailsAfterApply { get; set; }
+
     public int Writes { get; private set; }
 
     public List<uint[]> Written { get; } = [];
 
     public CpuSetsQuery Query(int processId) =>
-        QueryFails
+        QueryFails || (QueryFailsAfterApply && Writes > 0 && Current.Length > 0)
             ? CpuSetsQuery.Failure
             : new(
                 Current.Length == 0

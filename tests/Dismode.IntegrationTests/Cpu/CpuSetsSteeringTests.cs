@@ -94,6 +94,33 @@ public sealed class CpuSetsSteeringTests
     }
 
     [TestMethod]
+    public void UnreadableReadBackClearsBackToTheEmptyOriginal()
+    {
+        // Zapis przeszedl, odczytu zwrotnego nie ma: nasz zapis moze lezec
+        // na procesie, a oryginal byl pusty.
+        FakeCpuSetsPort port = new() { QueryFailsAfterApply = true };
+
+        CpuSetsSteer steer = CpuSetsSteering.Steer(port, ProcessId, [1, 2]);
+
+        Assert.AreEqual(CpuSetsSteerOutcome.NotApplied, steer.Outcome);
+        Assert.AreEqual(2, port.Writes);
+        Assert.IsEmpty(port.Written[1]);
+        Assert.IsEmpty(port.Current);
+    }
+
+    [TestMethod]
+    public void ForeignReadBackAfterOurWriteIsNeverCleared()
+    {
+        FakeCpuSetsPort port = new() { ReadBackAfterApply = [9] };
+
+        CpuSetsSteer steer = CpuSetsSteering.Steer(port, ProcessId, [1, 2]);
+
+        Assert.AreEqual(CpuSetsSteerOutcome.NotApplied, steer.Outcome);
+        Assert.AreEqual(1, port.Writes);
+        CollectionAssert.AreEqual(new uint[] { 9 }, port.Current);
+    }
+
+    [TestMethod]
     public void ExternalChangeBeforeRestoreIsLeftAlone()
     {
         FakeCpuSetsPort port = new();

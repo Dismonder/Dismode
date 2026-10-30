@@ -211,6 +211,38 @@ public sealed class PresentMonDisplayedFramesTests
         Assert.AreEqual(100d, sample.FramesPerSecond!.Value, 0.01d);
     }
 
+    [TestMethod]
+    [DataRow(7, 0, 100d, DisplayName = "7 wyswietlonych: ponizej progu, low z prezentacji")]
+    [DataRow(8, 0, 50d, DisplayName = "8 wyswietlonych: prog osiagniety, low z wyswietlonych")]
+    [DataRow(10, 12, 100d, DisplayName = "10 z 22: ponizej polowy, low z prezentacji")]
+    [DataRow(11, 11, 50d, DisplayName = "11 z 22: dokladnie polowa, low z wyswietlonych")]
+    public void DisplayedLowsNeedAMeaningfulSample(
+        int displayedFrames,
+        int droppedFrames,
+        double expectedLow)
+    {
+        SessionFrameRateStatisticsAccumulator statistics = new();
+        for (int index = 0; index < displayedFrames; index++)
+        {
+            statistics.Add(10d, displayedTimeMilliseconds: 20d);
+        }
+
+        for (int index = 0; index < droppedFrames; index++)
+        {
+            statistics.Add(10d, dropped: true);
+        }
+
+        Assert.AreEqual(
+            expectedLow,
+            statistics.Snapshot()!.OnePercentLowFramesPerSecond!.Value,
+            0.5d);
+        Assert.AreEqual(
+            expectedLow,
+            statistics.Snapshot()!.PointOnePercentLowFramesPerSecond!.Value,
+            0.5d);
+        Assert.AreEqual(displayedFrames, statistics.SnapshotDisplayed()!.DisplayedFrameCount);
+    }
+
     private static async Task<(FrameRateSample Sample, SessionFrameRateStatisticsAccumulator Statistics)>
         RunAsync(string header, IEnumerable<string> rows, bool trackDisplay)
     {
