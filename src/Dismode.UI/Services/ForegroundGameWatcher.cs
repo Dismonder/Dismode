@@ -50,26 +50,66 @@ public sealed class ForegroundGameWatcher : IAsyncDisposable
         };
 
     private readonly IFrameRateProvider _frameRates;
+    private readonly Func<(int? ProcessId, string ProcessName)> _foregroundProcess;
+    private readonly SemaphoreSlim _gate = new(1, 1);
+    private volatile bool _enabled = true;
     private int? _attachedProcessId;
     private bool _disposed;
 
     public ForegroundGameWatcher(
         IFrameRateProvider? frameRates = null,
-        Func<CancellationToken, ValueTask<bool>>? displayTrackingSetting = null)
+        Func<CancellationToken, ValueTask<bool>>? displayTrackingSetting = null,
+        Func<(int? ProcessId, string ProcessName)>? foregroundProcess = null)
     {
         // Wlasna sesja ETW nakladki: ze wspolna nazwa pomiar nakladki
         // i pomiar sesji gry zatrzymywaly sie nawzajem.
         _frameRates = frameRates ?? new PresentMonFrameRateProvider(
             captureRole: PresentMonCaptureRole.Overlay,
             displayTrackingSetting: displayTrackingSetting);
+        _foregroundProcess = foregroundProcess ?? ReadForegroundProcess;
     }
 
     public async ValueTask<ForegroundGameSample> SampleAsync(
         CancellationToken cancellationToken)
     {
+        await _gate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            ObjectDisposedException.ThrowIf(_disposed, this);
+            return _enabled
+                ? await SampleCoreAsync(cancellationToken).ConfigureAwait(false)
+                : new(null, string.Empty, null, null, false);
+        }
+        finally
+        {
+            _gate.Release();
+        }
+    }
+
+    public async ValueTask SetEnabledAsync(bool enabled)
+    {
+        _enabled = enabled;
+        await _gate.WaitAsync().ConfigureAwait(false);
+        try
+        {
+            if (!enabled && !_disposed)
+            {
+                await _frameRates.StopAsync(CancellationToken.None).ConfigureAwait(false);
+                _attachedProcessId = null;
+            }
+        }
+        finally
+        {
+            _gate.Release();
+        }
+    }
+
+    private async ValueTask<ForegroundGameSample> SampleCoreAsync(
+        CancellationToken cancellationToken)
+    {
         ObjectDisposedException.ThrowIf(_disposed, this);
 
-        (int? processId, string processName) = ReadForegroundProcess();
+        (int? processId, string processName) = _foregroundProcess();
         if (processId is not int candidate)
         {
             await DetachAsync(cancellationToken).ConfigureAwait(false);
@@ -113,8 +153,20 @@ public sealed class ForegroundGameWatcher : IAsyncDisposable
             return;
         }
 
-        _disposed = true;
-        await _frameRates.DisposeAsync().ConfigureAwait(false);
+        _enabled = false;
+        await _gate.WaitAsync().ConfigureAwait(false);
+        try
+        {
+            if (!_disposed)
+            {
+                _disposed = true;
+                await _frameRates.DisposeAsync().ConfigureAwait(false);
+            }
+        }
+        finally
+        {
+            _gate.Release();
+        }
     }
 
     private async ValueTask DetachAsync(CancellationToken cancellationToken)

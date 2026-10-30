@@ -60,6 +60,22 @@ public sealed class FrameTimeHistogram
         MaximumFrameTimeMilliseconds = Math.Max(MaximumFrameTimeMilliseconds, frameTimeMilliseconds);
     }
 
+    public void Clear()
+    {
+        if (Count == 0)
+        {
+            return;
+        }
+
+        // Koszyki powyzej maksimum nigdy nie byly zapisane.
+        int length = (int)(MaximumFrameTimeMilliseconds / BucketWidthMilliseconds) + 1;
+        Array.Clear(_counts, 0, length);
+        Array.Clear(_totals, 0, length);
+        _totalMilliseconds = 0;
+        Count = 0;
+        MaximumFrameTimeMilliseconds = 0;
+    }
+
     public void Merge(FrameTimeHistogram other)
     {
         ArgumentNullException.ThrowIfNull(other);

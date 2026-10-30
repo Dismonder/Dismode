@@ -193,6 +193,7 @@ public sealed partial class MainWindow : Window
     internal void ShowFromTray()
     {
         _refreshPolicy.IsVisible = true;
+        _refreshTimer.Interval = _refreshPolicy.StatusPollInterval;
         _ = ShowWindow(WindowHandle, 9);
         _ = SetForegroundWindow(WindowHandle);
         _ = RefreshAsync(loadSettings: false);
@@ -201,6 +202,7 @@ public sealed partial class MainWindow : Window
     internal void HideToTray()
     {
         _refreshPolicy.IsVisible = false;
+        _refreshTimer.Interval = _refreshPolicy.StatusPollInterval;
         _ = ShowWindow(WindowHandle, 0);
     }
 

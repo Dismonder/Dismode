@@ -54,6 +54,8 @@ public sealed partial class PerformanceOverlayWindow : Window, IDisposable
 
     private readonly nint _windowHandle;
     private readonly Queue<double> _frameTimeHistory = [];
+    private readonly OverlayTargetWindow _targetWindow = new();
+    private readonly Dictionary<Color, SolidColorBrush> _metricBrushes = [];
     private readonly DispatcherTimer _foregroundTimer = new()
     {
         Interval = ForegroundPollInterval,
@@ -199,8 +201,14 @@ public sealed partial class PerformanceOverlayWindow : Window, IDisposable
                 FormatOnePercentLow());
 
             Color metricColor = GetMetricColor(ms);
-            FpsValueText.Foreground = new SolidColorBrush(metricColor);
-            FrameGraphLine.Stroke = new SolidColorBrush(metricColor);
+            if (!_metricBrushes.TryGetValue(metricColor, out SolidColorBrush? metricBrush))
+            {
+                metricBrush = new(metricColor);
+                _metricBrushes.Add(metricColor, metricBrush);
+            }
+
+            FpsValueText.Foreground = metricBrush;
+            FrameGraphLine.Stroke = metricBrush;
             SourceStatusText.Text = processId is int id
                 ? $"PID {id}"
                 : string.Empty;
@@ -548,22 +556,7 @@ public sealed partial class PerformanceOverlayWindow : Window, IDisposable
             return nint.Zero;
         }
 
-        try
-        {
-            using Process process = Process.GetProcessById(processId);
-            return process.HasExited
-                ? nint.Zero
-                : process.MainWindowHandle;
-        }
-        catch (Exception exception) when (
-            exception is
-                ArgumentException
-                or InvalidOperationException
-                or NotSupportedException
-                or Win32Exception)
-        {
-            return nint.Zero;
-        }
+        return _targetWindow.Resolve(processId);
     }
 
     private static Color GetMetricColor(double frameTime) =>

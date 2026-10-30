@@ -989,9 +989,9 @@ public sealed class PresentMonFrameRateProvider : IFrameRateProvider, ISessionFr
     private void RemoveStaleObservations(DateTimeOffset now)
     {
         DateTimeOffset cutoff = now - ObservationWindow;
-        foreach (FrameStreamKey key in _observations.Keys.ToArray())
+        // Dictionary pozwala usuwac wpisy podczas enumeracji (.NET Core 3+).
+        foreach ((FrameStreamKey key, Queue<FrameObservation> stream) in _observations)
         {
-            Queue<FrameObservation> stream = _observations[key];
             while (stream.TryPeek(out FrameObservation observation)
                 && observation.ObservedAtUtc < cutoff)
             {
@@ -1011,7 +1011,9 @@ public sealed class PresentMonFrameRateProvider : IFrameRateProvider, ISessionFr
         // Pierwszy odczyt wybiera strumien jak pomiar okienkowy. Histogram
         // zachowuje tez klatki sprzed tego wyboru, bez limitu kolejki wykresu.
         // Po wyborze kazda klatka tego strumienia trafia wprost do sesji.
-        if (_pendingStatistics.Remove(key, out PendingStatistics? pending))
+        if (_pendingStatistics.TryGetValue(key, out PendingStatistics? pending)
+            && (pending.Present.Count > 0 || pending.Displayed is { Count: > 0 }
+                || pending.Dropped > 0))
         {
             _sessionStatistics?.Merge(
                 pending.Present,
@@ -1020,7 +1022,14 @@ public sealed class PresentMonFrameRateProvider : IFrameRateProvider, ISessionFr
         }
 
         _statisticsStream = key;
-        _pendingStatistics.Clear();
+        // Granica probki zeruje dane wszystkich strumieni jak dotychczas,
+        // ale ich bufory zyja do wygasniecia strumienia zamiast trafiac do LOH.
+        foreach (PendingStatistics statistics in _pendingStatistics.Values)
+        {
+            statistics.Present.Clear();
+            statistics.Displayed?.Clear();
+            statistics.Dropped = 0;
+        }
     }
 
     internal static int? SelectCaptureTargetProcessId(

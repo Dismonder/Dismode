@@ -14,6 +14,8 @@ internal sealed class MemoryRefreshPolicy
 
     public bool IsCompact { get; set; }
 
+    public TimeSpan StatusPollInterval => TimeSpan.FromSeconds(IsVisible ? 5 : 30);
+
     public bool ShouldRefreshProcesses =>
         IsVisible && !IsCompact && ActivePage == "processes";
 

@@ -45,6 +45,10 @@ public sealed class ProBalanceSupervisor : IAsyncDisposable
     private readonly TimeSpan? _fixedInterval;
     private readonly Func<int> _foregroundProcessId;
     private readonly SemaphoreSlim _gate = new(1, 1);
+    private readonly List<ProBalanceObservation> _observations = [];
+    private readonly HashSet<ProcessRuntimeKey> _seen = [];
+    private readonly HashSet<int> _foregroundTree = [];
+    private readonly Dictionary<int, CpuProcessSample> _foregroundById = [];
     private double _lastBackgroundCores;
     private int _lastRestrainedCount;
 
@@ -170,13 +174,17 @@ public sealed class ProBalanceSupervisor : IAsyncDisposable
     {
         IReadOnlySet<int> gameIds = _gameProcessIds();
         DateTimeOffset now = _timeProvider.GetUtcNow();
-        List<ProBalanceObservation> observations = [];
-        HashSet<ProcessRuntimeKey> seen = [];
+        List<ProBalanceObservation> observations = _observations;
+        HashSet<ProcessRuntimeKey> seen = _seen;
+        observations.Clear();
+        seen.Clear();
 
         IReadOnlyList<CpuProcessSample> samples = _processes.Capture();
-        HashSet<int> foregroundTree = ForegroundTree(
+        HashSet<int> foregroundTree = PopulateForegroundTree(
             samples,
-            _settings.ExcludeForeground ? SafeForegroundProcessId() : 0);
+            _settings.ExcludeForeground ? SafeForegroundProcessId() : 0,
+            _foregroundTree,
+            _foregroundById);
 
         foreach (CpuProcessSample sample in samples)
         {
@@ -199,7 +207,7 @@ public sealed class ProBalanceSupervisor : IAsyncDisposable
                 foregroundTree.Contains(sample.ProcessId)));
         }
 
-        foreach (ProcessRuntimeKey key in _previous.Keys.ToArray())
+        foreach (ProcessRuntimeKey key in _previous.Keys)
         {
             if (!seen.Contains(key))
             {
@@ -228,7 +236,7 @@ public sealed class ProBalanceSupervisor : IAsyncDisposable
 
         // Zapis pod bramka; petla czyta to po jej zwolnieniu, zeby wybrac
         // odstep do nastepnej probki.
-        _lastRestrainedCount = _engine.Restrained.Count;
+        _lastRestrainedCount = _engine.RestrainedCount;
         return decisions;
     }
 
@@ -259,15 +267,21 @@ public sealed class ProBalanceSupervisor : IAsyncDisposable
     /// </summary>
     internal static HashSet<int> ForegroundTree(
         IReadOnlyList<CpuProcessSample> samples,
-        int foregroundId)
+        int foregroundId) => PopulateForegroundTree(samples, foregroundId, [], []);
+
+    private static HashSet<int> PopulateForegroundTree(
+        IReadOnlyList<CpuProcessSample> samples,
+        int foregroundId,
+        HashSet<int> tree,
+        Dictionary<int, CpuProcessSample> byId)
     {
-        HashSet<int> tree = [];
+        tree.Clear();
+        byId.Clear();
         if (foregroundId <= 0)
         {
             return tree;
         }
 
-        Dictionary<int, CpuProcessSample> byId = [];
         foreach (CpuProcessSample sample in samples)
         {
             byId[sample.ProcessId] = sample;
@@ -315,6 +329,11 @@ public sealed class ProBalanceSupervisor : IAsyncDisposable
     public async ValueTask DisposeAsync()
     {
         await StopAsync().ConfigureAwait(false);
+        if (_processes is IDisposable disposable)
+        {
+            disposable.Dispose();
+        }
+
         _gate.Dispose();
     }
 
