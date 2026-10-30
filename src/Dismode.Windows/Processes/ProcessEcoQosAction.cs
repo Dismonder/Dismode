@@ -37,7 +37,7 @@ public sealed class ProcessEcoQosAction :
                 .ConfigureAwait(false);
         return new(
             originalState,
-            new ProcessEcoQosState(ExecutionSpeedThrottled: true),
+            new ProcessEcoQosState(EcoQosMode.On),
             DateTimeOffset.UtcNow);
     }
 
@@ -75,7 +75,8 @@ public sealed class ProcessEcoQosAction :
             .ConfigureAwait(false);
         ProcessPowerThrottlingController.Set(
             process,
-            preparedAction.DesiredState.ExecutionSpeedThrottled);
+            preparedAction.DesiredState.Mode,
+            preparedAction.OriginalState.Mode);
         if (preparedAction.DesiredState.ExecutionSpeedThrottled)
         {
             _ = ProcessMemoryTrimmer.TryTrimWorkingSet(process, out _);
@@ -115,7 +116,8 @@ public sealed class ProcessEcoQosAction :
             .ConfigureAwait(false);
         ProcessPowerThrottlingController.Set(
             process,
-            preparedAction.OriginalState.ExecutionSpeedThrottled);
+            preparedAction.OriginalState.Mode,
+            preparedAction.DesiredState.Mode);
     }
 
     public async ValueTask<ActionVerificationResult> VerifyCompensationAsync(

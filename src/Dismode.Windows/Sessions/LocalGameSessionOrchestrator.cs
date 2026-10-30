@@ -151,6 +151,19 @@ public sealed class LocalGameSessionOrchestrator : IAsyncDisposable
         }
     }
 
+    private ValueTask<FrameRateSample> SampleFrameRateAsync(
+        ActiveRuntime runtime,
+        IReadOnlyCollection<int> processIds,
+        CancellationToken cancellationToken)
+    {
+        if (_frameRateProvider is ISessionFrameRateStatisticsSource source)
+        {
+            source.SetSessionStatistics(runtime.FrameRateAccumulator);
+        }
+
+        return _frameRateProvider.SampleAsync(processIds, cancellationToken);
+    }
+
     public async ValueTask InitializeAsync(
         CancellationToken cancellationToken)
     {
@@ -692,7 +705,8 @@ public sealed class LocalGameSessionOrchestrator : IAsyncDisposable
                     backgroundAffinityMask: backgroundMask,
                     gameAffinity: metadata.GameAffinity);
                 runtime.FrameRate = enableFrameRateTracking
-                    ? await _frameRateProvider.SampleAsync(
+                    ? await SampleFrameRateAsync(
+                            runtime,
                             [launched.Identity.RuntimeKey.ProcessId],
                             CancellationToken.None)
                         .ConfigureAwait(false)
@@ -844,6 +858,10 @@ public sealed class LocalGameSessionOrchestrator : IAsyncDisposable
             runtime.FrameRateTrackingEnabled = enabled;
             await _frameRateProvider.StopAsync(cancellationToken)
                 .ConfigureAwait(false);
+            // Przelaczenie to wprost prosba o nowa probe: po udanym
+            // zatrzymaniu PresentMon monitor moze znow probkowac, takze jesli
+            // wczesniej przestal przez awarie pomiaru.
+            runtime.FrameRateCaptureFaulted = false;
             runtime.FrameRate = enabled
                 ? FrameRateSample.WaitingForGame(
                     runtime.RootProcess.RuntimeKey.ProcessId)
@@ -1249,7 +1267,8 @@ public sealed class LocalGameSessionOrchestrator : IAsyncDisposable
                         backgroundAffinityMask: recoveredMask,
                         gameAffinity: metadata.GameAffinity);
                     recovered.FrameRate = metadata.FrameRateTrackingEnabled
-                        ? await _frameRateProvider.SampleAsync(
+                        ? await SampleFrameRateAsync(
+                                recovered,
                                 observation.RunningProcesses
                                     .Select(identity =>
                                         identity.RuntimeKey.ProcessId)
@@ -1407,7 +1426,8 @@ public sealed class LocalGameSessionOrchestrator : IAsyncDisposable
                     runtime.BackgroundAffinityMask,
                     _proBalanceSettings?.LowerBackgroundIoPriority
                         ?? new ProBalanceSettings().LowerBackgroundIoPriority,
-                    _proBalanceSettings?.ApplyEcoQos ?? false);
+                    _proBalanceSettings?.ApplyEcoQos ?? false,
+                    _proBalanceSettings?.LowerBackgroundGpuPriority ?? false);
 
             // Kazde ograniczenie, ktore petla nalozy, trafia do punktu
             // kontrolnego sesji. Bez tego wpisy w dzienniku sa, ale po
@@ -1483,31 +1503,51 @@ public sealed class LocalGameSessionOrchestrator : IAsyncDisposable
                 return;
             }
 
-            if (observation.HasRunningProcess
-                && runtime.FrameRateTrackingEnabled)
+            if (!runtime.FrameRateCaptureFaulted)
             {
-                FrameRateSample sample =
-                    await _frameRateProvider.SampleAsync(
-                            observation.RunningProcesses
-                                .Select(identity =>
-                                    identity.RuntimeKey.ProcessId)
-                                .ToArray(),
-                            cancellationToken)
-                        .ConfigureAwait(false);
-                if (runtime.FrameRateTrackingEnabled)
+                try
                 {
-                    runtime.FrameRate = sample;
+                    if (observation.HasRunningProcess
+                        && runtime.FrameRateTrackingEnabled)
+                    {
+                        FrameRateSample sample =
+                            await SampleFrameRateAsync(
+                                    runtime,
+                                    observation.RunningProcesses
+                                        .Select(identity =>
+                                            identity.RuntimeKey.ProcessId)
+                                        .ToArray(),
+                                    cancellationToken)
+                                .ConfigureAwait(false);
+                        if (runtime.FrameRateTrackingEnabled)
+                        {
+                            runtime.FrameRate = sample;
+                        }
+                        else
+                        {
+                            await _frameRateProvider.StopAsync(cancellationToken)
+                                .ConfigureAwait(false);
+                            runtime.FrameRate = FrameRateSample.Disabled();
+                        }
+                    }
+                    else if (!runtime.FrameRateTrackingEnabled)
+                    {
+                        runtime.FrameRate = FrameRateSample.Disabled();
+                    }
                 }
-                else
+                catch (Exception exception) when (
+                    exception is PresentMonCaptureCleanupException
+                        or IOException
+                        or Win32Exception
+                        or InvalidOperationException
+                        or TimeoutException)
                 {
-                    await _frameRateProvider.StopAsync(cancellationToken)
-                        .ConfigureAwait(false);
-                    runtime.FrameRate = FrameRateSample.Disabled();
+                    // Awaria FPS nie moze zatrzymac wykrywania wyjscia z gry.
+                    // Uchwyt zostaje u providera; sprzatanie ponowi dopiero
+                    // przywracanie sesji, zamiast kazdego obrotu monitora.
+                    runtime.FrameRateCaptureFaulted = true;
+                    runtime.FrameRate = FrameRateSample.Failed(exception.Message);
                 }
-            }
-            else if (!runtime.FrameRateTrackingEnabled)
-            {
-                runtime.FrameRate = FrameRateSample.Disabled();
             }
 
             if (observation.NewlyDiscoveredCount > 0)
@@ -2142,7 +2182,9 @@ public sealed class LocalGameSessionOrchestrator : IAsyncDisposable
             RestartDescriptor: null,
             EstimatedWorkingSetBytes: 0,
             AppliedAtUtc: record.RestrainedAtUtc,
-            SteeredCpuSets: record.SteeredCpuSets);
+            SteeredCpuSets: record.SteeredCpuSets,
+            GpuPriorityActionId: record.GpuPriorityActionId,
+            GpuPriorityIdempotencyKey: record.GpuPriorityIdempotencyKey);
 
     private GameProcessTreeSessionTracker CreateGameProcessTreeTracker(
         ProcessIdentity root,
@@ -2749,6 +2791,25 @@ public sealed class LocalGameSessionOrchestrator : IAsyncDisposable
             bool ioApplied = false;
             bool memoryApplied = false;
             bool affinityApplied = false;
+            if (application.GpuPriorityActionId is { } gpuPriorityActionId)
+            {
+                OptionalRestore gpuRestore =
+                    await RestoreOptionalActionAsync<ProcessGpuPriorityState>(
+                            application,
+                            () => new ProcessGpuPriorityAction(
+                                gpuPriorityActionId,
+                                application.Identity,
+                                identityProvider: _identityProvider),
+                            CreateOptionalActionContext(
+                                sessionId,
+                                gpuPriorityActionId,
+                                application.GpuPriorityIdempotencyKey,
+                                requestedAtUtc),
+                            cancellationToken)
+                        .ConfigureAwait(false);
+                totals = MergeRecoveryTotals(totals, gpuRestore.Totals);
+            }
+
             if (application.IoPriorityActionId is { } ioPriorityActionId)
             {
                 OptionalRestore ioRestore =
@@ -3416,7 +3477,9 @@ public sealed class LocalGameSessionOrchestrator : IAsyncDisposable
             application.MemoryPriorityActionId?.Value,
             application.MemoryPriorityIdempotencyKey?.Value,
             application.AppliedAtUtc,
-            application.SteeredCpuSets);
+            application.SteeredCpuSets,
+            application.GpuPriorityActionId?.Value,
+            application.GpuPriorityIdempotencyKey?.Value);
 
     private static GamePriorityRecoveryMetadata ToRecoveryMetadata(
         PlannedGamePriority priority,
@@ -3478,6 +3541,12 @@ public sealed class LocalGameSessionOrchestrator : IAsyncDisposable
                 metadata.MemoryPriorityActionId,
                 metadata.MemoryPriorityIdempotencyKey,
                 "priorytetu pamięci");
+        (ActionId? gpuPriorityActionId,
+            IdempotencyKey? gpuPriorityIdempotencyKey) =
+            ReadOptionalAction(
+                metadata.GpuPriorityActionId,
+                metadata.GpuPriorityIdempotencyKey,
+                "priorytetu GPU");
 
         return new(
             new ActionId(metadata.ActionId),
@@ -3505,7 +3574,9 @@ public sealed class LocalGameSessionOrchestrator : IAsyncDisposable
                 : null,
             metadata.EstimatedWorkingSetBytes,
             metadata.RestrainedAtUtc,
-            metadata.SteeredCpuSets);
+            metadata.SteeredCpuSets,
+            gpuPriorityActionId,
+            gpuPriorityIdempotencyKey);
     }
 
     /// <summary>
@@ -3990,8 +4061,7 @@ public sealed class LocalGameSessionOrchestrator : IAsyncDisposable
 
         private FrameRateSample _frameRate =
             FrameRateSample.WaitingForGame();
-        private readonly SessionFrameRateStatisticsAccumulator
-            _frameRateStatistics = new();
+        internal SessionFrameRateStatisticsAccumulator FrameRateAccumulator { get; } = new();
 
         internal FrameRateSample FrameRate
         {
@@ -4000,12 +4070,11 @@ public sealed class LocalGameSessionOrchestrator : IAsyncDisposable
             {
                 ArgumentNullException.ThrowIfNull(value);
                 Volatile.Write(ref _frameRate, value);
-                _frameRateStatistics.Add(value);
             }
         }
 
         internal SessionFrameRateStatistics? FrameRateStatistics =>
-            _frameRateStatistics.Snapshot();
+            FrameRateAccumulator.Snapshot();
 
         internal PlannedBackgroundApplication[]
             BackgroundApplications
@@ -4030,6 +4099,8 @@ public sealed class LocalGameSessionOrchestrator : IAsyncDisposable
 
         internal bool FrameRateTrackingEnabled { get; set; } =
             frameRateTrackingEnabled;
+
+        internal bool FrameRateCaptureFaulted { get; set; }
 
         internal bool SystemProfileActive { get; set; } =
             systemProfileActive;
@@ -4141,7 +4212,11 @@ public sealed class LocalGameSessionOrchestrator : IAsyncDisposable
         // Na koncu i z wartosciami domyslnymi, zeby wczesniejsze punkty
         // kontrolne nadal sie odczytywaly.
         DateTimeOffset? RestrainedAtUtc = null,
-        bool SteeredCpuSets = false);
+        bool SteeredCpuSets = false,
+        // Priorytet GPU petli reaktywnej. Na koncu i z domyslnym null jak
+        // wyzej, zeby starsze punkty kontrolne nadal sie odczytywaly.
+        Guid? GpuPriorityActionId = null,
+        Guid? GpuPriorityIdempotencyKey = null);
 
     /// <summary>What the background bundle actually did at session start.</summary>
     private sealed record BackgroundBundleOutcome(

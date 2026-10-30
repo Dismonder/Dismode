@@ -80,9 +80,9 @@ public sealed class HistoryListItem
             return "Pomiar FPS: brak wystarczających prawdziwych próbek";
         }
 
-        return string.Format(
+        string summary = string.Format(
             CultureInfo.CurrentCulture,
-            "Pomiar interwałowy: śr. {0:0.0} FPS • {1:0.00} ms • "
+            "Śr. {0:0.0} FPS • {1:0.00} ms • "
                 + "najniższa próbka {2:0.0} FPS • "
                 + "najwyższa próbka {3:0.00} ms • {4}",
             statistics.AverageFramesPerSecond,
@@ -90,6 +90,24 @@ public sealed class HistoryListItem
             statistics.MinimumFramesPerSecond,
             statistics.MaximumFrameTimeMilliseconds,
             FormatSampleCount(statistics.SampleCount));
+        if (statistics.OnePercentLowFramesPerSecond is double onePercentLow)
+        {
+            summary += string.Create(CultureInfo.CurrentCulture, $" • 1% low: {onePercentLow:0.0} FPS");
+        }
+
+        if (statistics.PointOnePercentLowFramesPerSecond is double pointOnePercentLow)
+        {
+            summary += string.Create(CultureInfo.CurrentCulture, $" • 0,1% low: {pointOnePercentLow:0.0} FPS");
+        }
+
+        if (statistics.HitchCount is int hitchCount)
+        {
+            summary += string.Create(CultureInfo.CurrentCulture, $" • przycięcia: {hitchCount}");
+        }
+
+        return (statistics.OnePercentLowFramesPerSecond.HasValue
+            ? "Pomiar klatek: "
+            : "Pomiar interwałowy: ") + summary;
     }
 
     private static string FormatSampleCount(int count)

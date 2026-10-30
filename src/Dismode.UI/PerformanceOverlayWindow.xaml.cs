@@ -2,6 +2,7 @@ using System.ComponentModel;
 using System.Diagnostics;
 using System.Globalization;
 using System.Runtime.InteropServices;
+using Dismode.Core.Performance;
 using Dismode.Core.Profiles;
 using Dismode.UI.Services;
 using Microsoft.UI.Windowing;
@@ -246,10 +247,10 @@ public sealed partial class PerformanceOverlayWindow : Window, IDisposable
 
         double[] sorted = [.. _frameTimeHistory];
         Array.Sort(sorted);
-        double worst = sorted[(int)(sorted.Length * 0.99)];
-        return worst <= 0
+        double low = FrameTimeStatistics.CalculateSlowestLow(sorted, 0.01d);
+        return low <= 0
             ? "—"
-            : (1000d / worst).ToString("0", CultureInfo.CurrentCulture)
+            : low.ToString("0", CultureInfo.CurrentCulture)
                 + " min 1%";
     }
 

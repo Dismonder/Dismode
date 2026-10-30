@@ -11,7 +11,9 @@ public sealed record CpuProcessSample(
     int ProcessId,
     string Name,
     DateTimeOffset StartedAtUtc,
-    TimeSpan TotalProcessorTime);
+    TimeSpan TotalProcessorTime,
+    int ParentProcessId = 0,
+    int SessionId = -1);
 
 public interface ICpuProcessSource
 {
@@ -80,7 +82,8 @@ public sealed partial class CpuProcessSampler : ICpuProcessSource
                         new DateTimeOffset(
                             process.StartTime.ToUniversalTime(),
                             TimeSpan.Zero),
-                        process.TotalProcessorTime));
+                        process.TotalProcessorTime,
+                        SessionId: process.SessionId));
                 }
                 catch (Exception exception) when (
                     exception is InvalidOperationException
@@ -223,7 +226,12 @@ public sealed partial class CpuProcessSampler : ICpuProcessSource
             (int)processId,
             name,
             startedAtUtc,
-            TimeSpan.FromTicks(processorTicks)));
+            TimeSpan.FromTicks(processorTicks),
+            (int)Math.Clamp(
+                (long)entry.InheritedFromUniqueProcessId,
+                0,
+                int.MaxValue),
+            (int)Math.Min(entry.SessionId, (uint)int.MaxValue)));
     }
 
     private static string ReadImageName(in SystemProcessInformation entry)

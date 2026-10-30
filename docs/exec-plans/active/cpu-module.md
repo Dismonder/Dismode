@@ -100,6 +100,21 @@ i Dismode już ich używa gdzie indziej.
    pozostaje **niezmierzony** — wariant (c) dał wynik nierozstrzygnięty na
    dwóch protokołach. Zostają jako dźwignie odwracalne bez obietnicy zysku;
    plan dla użytkownika mówi to wprost.
+9a. Wykluczenia pętli (2026-10-29): usługi (sesja 0) oraz proces z pierwszego
+   planu wraz z potomkami nie są ograniczane, a proces wchodzący na pierwszy
+   plan jest zwalniany (`ExcludeServices`, `ExcludeForeground`, domyślnie
+   włączone). Zweryfikowane testami jednostkowymi i integracyjnymi; **na żywej
+   sesji niesprawdzone** — jeśli nadzorca działa w innej sesji niż pulpit,
+   `GetForegroundWindow` zwraca zero i wykluczenie po prostu nie działa.
+   Priorytet GPU (`D3DKMTSetProcessSchedulingPriorityClass`) wdrożony
+   2026-10-29 jako `ProcessGpuPriorityAction`: dziennikowany, w księdze
+   ograniczeń i odtwarzany po awarii hosta jak priorytet I/O. Obniża klasę
+   do BelowNormal tylko procesom z klasą Normal (wyższą trzeba by
+   przywracać z uprawnieniem, którego nie mamy). `LowerBackgroundGpuPriority`
+   jest domyślnie **wyłączone**, włącza je tylko preset `Aggressive`. Zapis,
+   odczyt i odtworzenie po „awarii" sprawdzone na prawdziwym procesie; wpływ
+   na czas klatki **niezmierzony**. Potomków ograniczonego procesu nie
+   przeglądamy (nie wiadomo, czy klasa GPU się dziedziczy).
 10. Przypisanie per wątek zamiast per proces. Gra ma jeden wątek renderujący,
     który liczy się bardziej niż reszta jej wątków, a
     `SetThreadSelectedCpuSets` pozwala go wyróżnić. Wymaga rozpoznania, który

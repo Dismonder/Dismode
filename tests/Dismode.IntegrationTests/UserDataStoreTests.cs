@@ -252,6 +252,41 @@ public sealed class UserDataStoreTests
     }
 
     [TestMethod]
+    public async Task SqliteSessionFrameRateVersionFifteenRowsKeepNullLowsAfterMigration()
+    {
+        using UserDataTestContext testContext = new();
+        DateTimeOffset now = DateTimeOffset.UtcNow;
+        SessionFrameRateStatistics legacy = new(120, 100, 10, 100, 10);
+        await testContext.Store.AddAsync(CreateSummary(
+            GameProfileId.Create(), now.AddMinutes(-30), now, legacy), CancellationToken.None);
+        using (SqliteConnection connection = new($"Data Source={testContext.DatabasePath};Pooling=False"))
+        {
+            await connection.OpenAsync();
+            using SqliteCommand command = connection.CreateCommand();
+            command.CommandText = """
+                ALTER TABLE SessionSummaries DROP COLUMN OnePercentLowFramesPerSecond;
+                ALTER TABLE SessionSummaries DROP COLUMN PointOnePercentLowFramesPerSecond;
+                ALTER TABLE SessionSummaries DROP COLUMN HitchCount;
+                DELETE FROM SchemaMigrations WHERE Version = 16;
+                """;
+            await command.ExecuteNonQueryAsync();
+        }
+
+        using SqliteUserDataStore migrated = new(testContext.DatabasePath);
+        SessionFrameRateStatistics current = new(1_000, 98, 10.2, 5, 200, 34.5, 5, 1);
+        await migrated.AddAsync(CreateSummary(
+            GameProfileId.Create(), now, now.AddMinutes(1), current), CancellationToken.None);
+        IReadOnlyList<SessionSummary> history = await migrated.ListRecentAsync(10, CancellationToken.None);
+        Assert.HasCount(2, history);
+        Assert.AreEqual(current, history[0].FrameRateStatistics);
+        Assert.AreEqual(legacy, history[1].FrameRateStatistics);
+        Assert.IsNull(history[1].FrameRateStatistics!.OnePercentLowFramesPerSecond);
+        Assert.IsNull(history[1].FrameRateStatistics!.PointOnePercentLowFramesPerSecond);
+        Assert.IsNull(history[1].FrameRateStatistics!.HitchCount);
+        Assert.AreEqual(16, await ReadMaximumSchemaVersionAsync(testContext.DatabasePath));
+    }
+
+    [TestMethod]
     public async Task PerformanceOverlayPreferencesRoundTripAndHaveDefaults()
     {
         using UserDataTestContext testContext = new();
@@ -624,7 +659,7 @@ public sealed class UserDataStoreTests
             Assert.AreEqual(legacySummary.SessionId, history[0].SessionId);
             Assert.IsNull(history[0].FrameRateStatistics);
             Assert.AreEqual(
-                15,
+                16,
                 await ReadMaximumSchemaVersionAsync(databasePath));
         }
         finally
@@ -679,7 +714,7 @@ public sealed class UserDataStoreTests
             SavedBackgroundActionMode.RestrainBackground,
             upgraded.BackgroundRules[0].ActionMode);
         Assert.AreEqual(
-            15,
+            16,
             await ReadMaximumSchemaVersionAsync(testContext.DatabasePath));
         Assert.AreEqual(
             1,
@@ -729,7 +764,7 @@ public sealed class UserDataStoreTests
             await Task.WhenAll(initializations);
 
             Assert.AreEqual(
-                15,
+                16,
                 await ReadMaximumSchemaVersionAsync(databasePath));
             IReadOnlyList<SessionSummary> history =
                 await stores[0].ListRecentAsync(
@@ -797,7 +832,7 @@ public sealed class UserDataStoreTests
             Assert.AreEqual(artworkPath, migrated.ArtworkPath);
             Assert.IsEmpty(metadata);
             Assert.AreEqual(
-                15,
+                16,
                 await ReadMaximumSchemaVersionAsync(databasePath));
         }
         finally
@@ -984,7 +1019,7 @@ public sealed class UserDataStoreTests
                 DROP COLUMN AutoOptimizeWhenDetected;
             DROP TABLE GlobalBackgroundProcessRules;
             DELETE FROM SchemaMigrations
-            WHERE Version IN (5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15);
+            WHERE Version IN (5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16);
             """;
         await command.ExecuteNonQueryAsync();
         await transaction.CommitAsync();
@@ -1041,7 +1076,10 @@ public sealed class UserDataStoreTests
                 RENAME TO BackgroundProcessRules;
             CREATE INDEX IX_BackgroundProcessRules_ProfileId
                 ON BackgroundProcessRules(ProfileId);
-            DELETE FROM SchemaMigrations WHERE Version = 15;
+            ALTER TABLE SessionSummaries DROP COLUMN OnePercentLowFramesPerSecond;
+            ALTER TABLE SessionSummaries DROP COLUMN PointOnePercentLowFramesPerSecond;
+            ALTER TABLE SessionSummaries DROP COLUMN HitchCount;
+            DELETE FROM SchemaMigrations WHERE Version IN (15, 16);
             """;
         command.Parameters.AddWithValue(
             "$orphanedProfileId",
@@ -1083,6 +1121,10 @@ public sealed class UserDataStoreTests
             ALTER TABLE GameOptimizationPreferences
                 DROP COLUMN AutoOptimizeWhenDetected;
             DROP TABLE GlobalBackgroundProcessRules;
+            ALTER TABLE SessionSummaries DROP COLUMN OnePercentLowFramesPerSecond;
+            ALTER TABLE SessionSummaries DROP COLUMN PointOnePercentLowFramesPerSecond;
+            ALTER TABLE SessionSummaries DROP COLUMN HitchCount;
+            DELETE FROM SchemaMigrations WHERE Version = 16;
             DELETE FROM SchemaMigrations
             WHERE Version IN (8, 9, 10, 11, 12, 13, 14, 15);
             """;

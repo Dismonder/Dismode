@@ -11,6 +11,63 @@ public sealed class ProBalanceSupervisorTests
     private static readonly DateTimeOffset Started =
         new(2026, 9, 6, 11, 0, 0, TimeSpan.Zero);
 
+    private static CpuProcessSample Sample(
+        int id,
+        int parent,
+        int startedMinute) =>
+        new(
+            id,
+            "p" + id,
+            new DateTimeOffset(2026, 9, 6, 11, startedMinute, 0, TimeSpan.Zero),
+            TimeSpan.Zero,
+            parent);
+
+    [TestMethod]
+    public void ForegroundTreeIncludesDescendantsOnly()
+    {
+        CpuProcessSample[] samples =
+        [
+            Sample(10, 1, 0),   // pierwszy plan
+            Sample(11, 10, 1),  // dziecko
+            Sample(12, 11, 2),  // wnuk
+            Sample(20, 1, 0),   // obcy
+            Sample(21, 20, 1),
+        ];
+
+        HashSet<int> tree = ProBalanceSupervisor.ForegroundTree(samples, 10);
+
+        Assert.AreEqual(3, tree.Count);
+        Assert.IsTrue(tree.IsSupersetOf([10, 11, 12]));
+    }
+
+    [TestMethod]
+    public void ForegroundTreeIgnoresParentIdReusedByAStranger()
+    {
+        // Rodzic o numerze pierwszego planu wystartowal PO dziecku, wiec ten
+        // numer nalezy juz do kogos innego.
+        CpuProcessSample[] samples =
+        [
+            Sample(10, 1, 30),
+            Sample(11, 10, 5),
+        ];
+
+        HashSet<int> tree = ProBalanceSupervisor.ForegroundTree(samples, 10);
+
+        Assert.AreEqual(1, tree.Count);
+        Assert.IsTrue(tree.Contains(10));
+    }
+
+    [TestMethod]
+    public void ForegroundTreeIsEmptyWithoutAForegroundProcess()
+    {
+        Assert.AreEqual(
+            0,
+            ProBalanceSupervisor.ForegroundTree([Sample(10, 1, 0)], 0).Count);
+        Assert.AreEqual(
+            0,
+            ProBalanceSupervisor.ForegroundTree([Sample(10, 1, 0)], 99).Count);
+    }
+
     [TestMethod]
     public async Task BusyBackgroundProcessIsRestrainedAndThenReleased()
     {

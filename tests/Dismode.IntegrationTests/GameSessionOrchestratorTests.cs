@@ -189,7 +189,7 @@ public sealed class GameSessionOrchestratorTests
                 statistics.AverageFramesPerSecond,
                 0.001d);
             Assert.AreEqual(
-                8.33d,
+                1000d / 120d,
                 statistics.AverageFrameTimeMilliseconds,
                 0.001d);
             Assert.IsTrue(IsProcessRunning(processId.Value));
@@ -1769,13 +1769,308 @@ public sealed class GameSessionOrchestratorTests
             _inner.ReadAllAsync(cancellationToken);
     }
 
-    private sealed class ConstantFrameRateProvider : IFrameRateProvider
+    [TestMethod]
+    [DataRow(0, false)]
+    [DataRow(1, false)]
+    [DataRow(2, false)]
+    [DataRow(3, false)]
+    [DataRow(4, false)]
+    [DataRow(0, true)]
+    [DataRow(1, true)]
+    [DataRow(2, true)]
+    [DataRow(3, true)]
+    [DataRow(4, true)]
+    public async Task FrameRateFailureDoesNotPreventGameExitAndBackgroundRestore(
+        int failureKind,
+        bool failOnStop)
     {
+        string directory = CreateTestDirectory();
+        string readyFile = Path.Combine(directory, "capture-failure.ready");
+        int? processId = null;
+        RenamedHarnessFixture background =
+            await RenamedHarnessFixture.StartAsync(directory);
+        using SqliteUserDataStore store = new(Path.Combine(directory, "user.db"));
+        using AppendOnlyRecoveryJournal journal =
+            new(Path.Combine(directory, "recovery.jsonl"));
+        MonitorFailureFrameRateProvider provider = new(failureKind, failOnStop);
+        await using LocalGameSessionOrchestrator orchestrator = new(
+            store, store, journal,
+            monitorInterval: TimeSpan.FromMilliseconds(30),
+            frameRateProvider: provider);
+
+        try
+        {
+            background.Process.PriorityClass = ProcessPriorityClass.Normal;
+            ManualGameProfile profile = await CreateHarnessProfileAsync(readyFile);
+            await store.UpsertAsync(profile, CancellationToken.None);
+            await orchestrator.InitializeAsync(CancellationToken.None);
+            SessionPlanPreview plan = await orchestrator.PrepareAsync(
+                profile.ProfileId,
+                [new BackgroundApplicationSelection(
+                    background.Process.Id,
+                    new DateTimeOffset(background.Process.StartTime.ToUniversalTime()),
+                    BackgroundProcessActionMode.LowerPriority)],
+                CancellationToken.None);
+            await orchestrator.StartAsync(
+                plan.PlanId, plan.SessionId, CancellationToken.None);
+            await WaitForFileAsync(readyFile);
+            processId = ReadProcessId(readyFile);
+            await provider.MonitorSampling.Task.WaitAsync(TimeSpan.FromSeconds(10));
+            background.Process.Refresh();
+            Assert.AreEqual(ProcessPriorityClass.BelowNormal, background.Process.PriorityClass);
+
+            if (failOnStop)
+            {
+                // Wylaczenie podczas probki kieruje monitor do StopAsync.
+                await orchestrator.SetFrameRateTrackingAsync(
+                    plan.SessionId, false, CancellationToken.None);
+            }
+
+            provider.ReleaseSample.TrySetResult();
+            using CancellationTokenSource timeout = new(TimeSpan.FromSeconds(10));
+            GameSessionSnapshot? active;
+            do
+            {
+                await Task.Delay(30, timeout.Token);
+                active = await orchestrator.GetActiveAsync(timeout.Token);
+            }
+            while (active?.FrameRateStatus != MonitorFailureFrameRateProvider.FailureMessage);
+
+            await Task.Delay(150, timeout.Token);
+            Assert.AreEqual(2, provider.SampleCount);
+            Assert.AreEqual(failOnStop ? 2 : 0, provider.StopCount);
+            Assert.AreEqual(
+                MonitorFailureFrameRateProvider.FailureMessage,
+                (await orchestrator.GetActiveAsync(timeout.Token))?.FrameRateStatus);
+            await CloseProcessAsync(processId.Value);
+            processId = null;
+
+            if (failureKind == 0)
+            {
+                GameSessionSnapshot recovery = await WaitForActiveStateAsync(
+                    orchestrator, OptimizationSessionState.RecoveryRequired);
+                Assert.AreEqual(1, recovery.ErrorCount);
+                Assert.AreEqual(recovery.AppliedActionCount, recovery.RestoredActionCount);
+                Assert.AreEqual(
+                    MonitorFailureFrameRateProvider.FailureMessage,
+                    recovery.FrameRateStatus);
+                Assert.HasCount(
+                    0, await store.ListRecentAsync(10, CancellationToken.None));
+                background.Process.Refresh();
+                Assert.AreEqual(
+                    ProcessPriorityClass.Normal, background.Process.PriorityClass);
+                provider.CleanupFails = false;
+                await orchestrator.RestoreAsync(plan.SessionId, CancellationToken.None);
+            }
+
+            await WaitForNoActiveSessionAsync(orchestrator);
+            background.Process.Refresh();
+            Assert.AreEqual(ProcessPriorityClass.Normal, background.Process.PriorityClass);
+            IReadOnlyList<SessionSummary> history =
+                await store.ListRecentAsync(10, CancellationToken.None);
+            Assert.HasCount(1, history);
+            Assert.AreEqual(SessionCompletionStatus.Completed, history[0].Status);
+        }
+        finally
+        {
+            provider.ReleaseSample.TrySetResult();
+            if (processId is not null)
+            {
+                await CloseProcessAsync(processId.Value);
+            }
+
+            await orchestrator.DisposeAsync();
+            await background.DisposeAsync();
+            journal.Dispose();
+            store.Dispose();
+            DeleteDirectory(directory);
+        }
+    }
+
+    [TestMethod]
+    public async Task ReEnablingFrameRateTrackingAfterAFailureResumesSampling()
+    {
+        // Po awarii pomiaru monitor przestaje probkowac, zeby nie sprzatac
+        // PresentMon w kazdym obrocie. Ale uzytkownik, ktory wylaczy i wlaczy
+        // FPS, prosi wprost o nowa probe — bez tego nakladka czekalaby na gre
+        // do konca sesji.
+        string directory = CreateTestDirectory();
+        string readyFile = Path.Combine(directory, "capture-reenable.ready");
+        using SqliteUserDataStore store = new(Path.Combine(directory, "user.db"));
+        using AppendOnlyRecoveryJournal journal =
+            new(Path.Combine(directory, "recovery.jsonl"));
+        MonitorFailureFrameRateProvider provider = new(1, false);
+        await using LocalGameSessionOrchestrator orchestrator = new(
+            store, store, journal,
+            monitorInterval: TimeSpan.FromMilliseconds(30),
+            frameRateProvider: provider);
+        try
+        {
+            ManualGameProfile profile = await CreateHarnessProfileAsync(readyFile);
+            await store.UpsertAsync(profile, CancellationToken.None);
+            await orchestrator.InitializeAsync(CancellationToken.None);
+            SessionPlanPreview plan = await orchestrator.PrepareAsync(
+                profile.ProfileId, CancellationToken.None);
+            await orchestrator.StartAsync(
+                plan.PlanId, plan.SessionId, CancellationToken.None);
+            await WaitForFileAsync(readyFile);
+            await provider.MonitorSampling.Task.WaitAsync(TimeSpan.FromSeconds(10));
+            provider.ReleaseSample.TrySetResult();
+
+            using CancellationTokenSource timeout = new(TimeSpan.FromSeconds(10));
+            while ((await orchestrator.GetActiveAsync(timeout.Token))?.FrameRateStatus
+                != MonitorFailureFrameRateProvider.FailureMessage)
+            {
+                await Task.Delay(30, timeout.Token);
+            }
+
+            int samplesAfterFailure = provider.SampleCount;
+            await orchestrator.SetFrameRateTrackingAsync(
+                plan.SessionId, false, CancellationToken.None);
+            await orchestrator.SetFrameRateTrackingAsync(
+                plan.SessionId, true, CancellationToken.None);
+
+            while (provider.SampleCount == samplesAfterFailure)
+            {
+                await Task.Delay(30, timeout.Token);
+            }
+
+            Assert.IsGreaterThan(samplesAfterFailure, provider.SampleCount);
+        }
+        finally
+        {
+            provider.ReleaseSample.TrySetResult();
+            await orchestrator.DisposeAsync();
+            if (File.Exists(readyFile))
+            {
+                await CloseProcessAsync(ReadProcessId(readyFile));
+            }
+
+            journal.Dispose();
+            store.Dispose();
+            DeleteDirectory(directory);
+        }
+    }
+
+    [TestMethod]
+    public async Task FrameRateSamplingPropagatesMonitorLifetimeCancellation()
+    {
+        string directory = CreateTestDirectory();
+        string readyFile = Path.Combine(directory, "capture-cancel.ready");
+        using SqliteUserDataStore store = new(Path.Combine(directory, "user.db"));
+        using AppendOnlyRecoveryJournal journal =
+            new(Path.Combine(directory, "recovery.jsonl"));
+        MonitorFailureFrameRateProvider provider = new(1, false);
+        await using LocalGameSessionOrchestrator orchestrator = new(
+            store, store, journal,
+            monitorInterval: TimeSpan.FromMilliseconds(30),
+            frameRateProvider: provider);
+        try
+        {
+            ManualGameProfile profile = await CreateHarnessProfileAsync(readyFile);
+            await store.UpsertAsync(profile, CancellationToken.None);
+            await orchestrator.InitializeAsync(CancellationToken.None);
+            SessionPlanPreview plan = await orchestrator.PrepareAsync(
+                profile.ProfileId, CancellationToken.None);
+            await orchestrator.StartAsync(
+                plan.PlanId, plan.SessionId, CancellationToken.None);
+            await WaitForFileAsync(readyFile);
+            await provider.MonitorSampling.Task.WaitAsync(TimeSpan.FromSeconds(10));
+
+            await orchestrator.DisposeAsync().AsTask().WaitAsync(TimeSpan.FromSeconds(10));
+
+            Assert.IsTrue(provider.MonitorToken.IsCancellationRequested);
+            Assert.AreEqual(2, provider.SampleCount);
+            Assert.AreEqual(0, provider.StopCount);
+        }
+        finally
+        {
+            await orchestrator.DisposeAsync();
+            if (File.Exists(readyFile))
+            {
+                await CloseProcessAsync(ReadProcessId(readyFile));
+            }
+
+            journal.Dispose();
+            store.Dispose();
+            DeleteDirectory(directory);
+        }
+    }
+
+    private sealed class MonitorFailureFrameRateProvider(
+        int failureKind,
+        bool failOnStop) : IFrameRateProvider
+    {
+        internal const string FailureMessage = "Kontrolowana awaria pomiaru FPS.";
+        private int _sampleCount;
+        private int _stopCount;
+
+        internal TaskCompletionSource MonitorSampling { get; } =
+            new(TaskCreationOptions.RunContinuationsAsynchronously);
+        internal TaskCompletionSource ReleaseSample { get; } =
+            new(TaskCreationOptions.RunContinuationsAsynchronously);
+        internal CancellationToken MonitorToken { get; private set; }
+        internal int SampleCount => Volatile.Read(ref _sampleCount);
+        internal int StopCount => Volatile.Read(ref _stopCount);
+        internal bool CleanupFails { get; set; } = true;
+
+        public async ValueTask<FrameRateSample> SampleAsync(
+            IReadOnlyCollection<int> processIds,
+            CancellationToken cancellationToken)
+        {
+            if (Interlocked.Increment(ref _sampleCount) > 1)
+            {
+                MonitorToken = cancellationToken;
+                MonitorSampling.TrySetResult();
+                await ReleaseSample.Task.WaitAsync(cancellationToken);
+                if (!failOnStop)
+                {
+                    throw CreateFailure();
+                }
+            }
+
+            return FrameRateSample.WaitingForGame(processIds.FirstOrDefault());
+        }
+
+        public ValueTask StopAsync(CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            int count = Interlocked.Increment(ref _stopCount);
+            if ((failOnStop && count == 2)
+                || (failureKind == 0 && CleanupFails && (!failOnStop || count > 2)))
+            {
+                throw CreateFailure();
+            }
+
+            return ValueTask.CompletedTask;
+        }
+
+        private Exception CreateFailure() => failureKind switch
+        {
+            0 => new PresentMonCaptureCleanupException(FailureMessage),
+            1 => new IOException(FailureMessage),
+            2 => new System.ComponentModel.Win32Exception(FailureMessage),
+            3 => new InvalidOperationException(FailureMessage),
+            4 => new TimeoutException(FailureMessage),
+            _ => throw new ArgumentOutOfRangeException(nameof(failureKind)),
+        };
+
+        public ValueTask DisposeAsync() => ValueTask.CompletedTask;
+    }
+
+    private sealed class ConstantFrameRateProvider : IFrameRateProvider, ISessionFrameRateStatisticsSource
+    {
+        private SessionFrameRateStatisticsAccumulator? _statistics;
+
+        public void SetSessionStatistics(SessionFrameRateStatisticsAccumulator statistics) =>
+            _statistics = statistics;
+
         public ValueTask<FrameRateSample> SampleAsync(
             IReadOnlyCollection<int> processIds,
             CancellationToken cancellationToken)
         {
             cancellationToken.ThrowIfCancellationRequested();
+            _statistics?.Add(1000d / 120d);
             return ValueTask.FromResult(
                 new FrameRateSample(
                     FrameRateStatus.Measuring,

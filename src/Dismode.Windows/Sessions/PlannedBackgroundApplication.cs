@@ -28,4 +28,8 @@ public sealed record PlannedBackgroundApplication(
     DateTimeOffset? AppliedAtUtc = null,
     // Czy proces dostal domyslne zbiory procesorow, ktore trzeba wyczyscic
     // przy odtwarzaniu. Tylko ograniczenia reaktywne.
-    bool SteeredCpuSets = false);
+    bool SteeredCpuSets = false,
+    // Priorytet GPU nalozony przez petle reaktywna; aplikacje z planu go nie
+    // dostaja.
+    ActionId? GpuPriorityActionId = null,
+    IdempotencyKey? GpuPriorityIdempotencyKey = null);

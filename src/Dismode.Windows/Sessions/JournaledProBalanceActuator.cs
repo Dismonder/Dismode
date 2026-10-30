@@ -75,6 +75,12 @@ public sealed class JournaledProBalanceActuator :
     /// Czy ograniczanemu procesowi wlaczac EcoQoS (preset agresywny).
     /// </summary>
     private readonly bool _applyEcoQos;
+
+    /// <summary>
+    /// Czy ograniczanemu procesowi obnizac klase priorytetu GPU. Wplyw na czas
+    /// klatki jest niezmierzony, dlatego domyslnie wylaczone.
+    /// </summary>
+    private readonly bool _lowerBackgroundGpuPriority;
     private readonly Dictionary<ProcessRuntimeKey, RestraintRecord> _applied =
         [];
 
@@ -97,7 +103,8 @@ public sealed class JournaledProBalanceActuator :
         IReadOnlyList<uint>? backgroundCpuSetIds = null,
         ulong backgroundAffinityMask = 0,
         bool lowerBackgroundIoPriority = true,
-        bool applyEcoQos = false)
+        bool applyEcoQos = false,
+        bool lowerBackgroundGpuPriority = false)
     {
         ArgumentNullException.ThrowIfNull(journal);
         _journal = journal;
@@ -109,6 +116,7 @@ public sealed class JournaledProBalanceActuator :
         _backgroundAffinityMask = backgroundAffinityMask;
         _lowerBackgroundIoPriority = lowerBackgroundIoPriority;
         _applyEcoQos = applyEcoQos;
+        _lowerBackgroundGpuPriority = lowerBackgroundGpuPriority;
     }
 
     public void AttachLedger(IRestraintLedger ledger)
@@ -148,6 +156,9 @@ public sealed class JournaledProBalanceActuator :
         ThrottledEcoQos? plannedEcoQos = _applyEcoQos
             ? new(new(Guid.NewGuid()), IdempotencyKey.Create())
             : null;
+        LoweredGpu? plannedGpu = _lowerBackgroundGpuPriority
+            ? new(new(Guid.NewGuid()), IdempotencyKey.Create())
+            : null;
         bool plannedSteer = _backgroundCpuSetIds.Count > 0;
         DateTimeOffset restrainedAtUtc = _timeProvider.GetUtcNow();
 
@@ -170,6 +181,7 @@ public sealed class JournaledProBalanceActuator :
                 plannedPin,
                 plannedIo,
                 plannedEcoQos,
+                plannedGpu,
                 steeredCpuSets: false,
                 restrainedAtUtc)
             .ConfigureAwait(false))
@@ -218,6 +230,7 @@ public sealed class JournaledProBalanceActuator :
                 plannedPin,
                 plannedIo,
                 plannedEcoQos,
+                plannedGpu,
                 restrainedAtUtc);
             return true;
         }
@@ -246,6 +259,7 @@ public sealed class JournaledProBalanceActuator :
                     plannedPin,
                     plannedIo,
                     plannedEcoQos,
+                    plannedGpu,
                     restrainedAtUtc);
                 return true;
         }
@@ -261,6 +275,7 @@ public sealed class JournaledProBalanceActuator :
         PinnedAffinity? pinned = null;
         ThrottledEcoQos? ecoQos = null;
         LoweredIo? loweredIo = null;
+        LoweredGpu? loweredGpu = null;
         try
         {
             // Odsuniecie od rdzeni gry. Idzie po ograniczeniu priorytetu,
@@ -275,6 +290,9 @@ public sealed class JournaledProBalanceActuator :
             // Niepowodzenie nie moze przeslonic udanej maski.
             loweredIo = await TryLowerIoAsync(identity, plannedIo)
                 .ConfigureAwait(false);
+            // Po wejsciu-wyjsciu z tego samego powodu: najmniej sprawdzone.
+            loweredGpu = await TryLowerGpuAsync(identity, plannedGpu)
+                .ConfigureAwait(false);
         }
         finally
         {
@@ -286,7 +304,8 @@ public sealed class JournaledProBalanceActuator :
                 pinned,
                 loweredIo,
                 restrainedAtUtc,
-                ecoQos);
+                ecoQos,
+                loweredGpu);
         }
 
         // Drugi meldunek, z tym, co realnie sie nalozylo. Pierwszy szedl
@@ -301,6 +320,7 @@ public sealed class JournaledProBalanceActuator :
                 pinned,
                 loweredIo,
                 ecoQos,
+                loweredGpu,
                 steered,
                 restrainedAtUtc)
             .ConfigureAwait(false);
@@ -322,6 +342,7 @@ public sealed class JournaledProBalanceActuator :
         PinnedAffinity? plannedPin,
         LoweredIo? plannedIo,
         ThrottledEcoQos? plannedEcoQos,
+        LoweredGpu? plannedGpu,
         DateTimeOffset restrainedAtUtc) =>
         _applied[runtimeKey] = new(
             identity,
@@ -331,7 +352,8 @@ public sealed class JournaledProBalanceActuator :
             plannedPin,
             plannedIo,
             restrainedAtUtc,
-            plannedEcoQos);
+            plannedEcoQos,
+            plannedGpu);
 
     /// <summary>
     /// Zdejmuje ograniczenia z procesu.
@@ -371,6 +393,9 @@ public sealed class JournaledProBalanceActuator :
         // Kolejnosc odwrotna do nakladania: dysk, maska, priorytet. Potem
         // potomkowie — rozpoznajemy ich po ICH wartosciach, nie po rodzicu,
         // a maska, ktora maja dostac, to ta, ktora rodzic ma po przywroceniu.
+        bool gpuRestored = record.LoweredGpu is not { } loweredGpu
+            || await RestoreGpuAsync(record.Identity, loweredGpu)
+                .ConfigureAwait(false);
         bool ioRestored = record.LoweredIo is not { } loweredIo
             || await RestoreIoAsync(record.Identity, loweredIo)
                 .ConfigureAwait(false);
@@ -413,6 +438,7 @@ public sealed class JournaledProBalanceActuator :
         // zostaje, to jedyny slad po ograniczeniu, ktore moze wlasnie nie
         // zostalo zdjete — ksiega sesji ponowi probe przy jej zamknieciu.
         bool restored = setsCleared
+            && gpuRestored
             && ioRestored
             && ecoQosRestored
             && pinRestored
@@ -645,6 +671,7 @@ public sealed class JournaledProBalanceActuator :
         PinnedAffinity? pinned,
         LoweredIo? loweredIo,
         ThrottledEcoQos? ecoQos,
+        LoweredGpu? loweredGpu,
         bool steeredCpuSets,
         DateTimeOffset restrainedAtUtc)
     {
@@ -673,7 +700,9 @@ public sealed class JournaledProBalanceActuator :
                         restrainedAtUtc,
                         steeredCpuSets,
                         ecoQos?.ActionId,
-                        ecoQos?.IdempotencyKey),
+                        ecoQos?.IdempotencyKey,
+                        loweredGpu?.ActionId,
+                        loweredGpu?.IdempotencyKey),
                     CancellationToken.None)
                 .ConfigureAwait(false);
             return true;
@@ -807,6 +836,73 @@ public sealed class JournaledProBalanceActuator :
         }
     }
 
+    private async ValueTask<LoweredGpu?> TryLowerGpuAsync(
+        ProcessIdentity identity,
+        LoweredGpu? planned)
+    {
+        if (planned is null)
+        {
+            return null;
+        }
+
+        ProcessGpuPriorityAction action = new(
+            planned.ActionId,
+            identity,
+            identityProvider: _identityProvider);
+        ActionExecutionContext context = new(
+            _sessionId,
+            planned.ActionId,
+            planned.IdempotencyKey,
+            _timeProvider.GetUtcNow());
+
+        try
+        {
+            ActionExecutionResult result =
+                await new TransactionCoordinator<ProcessGpuPriorityState>(
+                        _journal)
+                    .ExecuteAsync(action, context, CancellationToken.None)
+                    .ConfigureAwait(false);
+            // Jak przy wejsciu-wyjsciu: tylko odmowa walidacji znaczy, ze nic
+            // nie nalozono. Reszta zostawia identyfikatory w rekordzie.
+            return result.Status == ActionExecutionStatus.Blocked
+                ? null
+                : planned;
+        }
+        catch (Exception exception) when (IsExpected(exception))
+        {
+            return planned;
+        }
+    }
+
+    private async ValueTask<bool> RestoreGpuAsync(
+        ProcessIdentity identity,
+        LoweredGpu loweredGpu)
+    {
+        ProcessGpuPriorityAction action = new(
+            loweredGpu.ActionId,
+            identity,
+            identityProvider: _identityProvider);
+        ActionExecutionContext context = new(
+            _sessionId,
+            loweredGpu.ActionId,
+            loweredGpu.IdempotencyKey,
+            _timeProvider.GetUtcNow());
+
+        try
+        {
+            ActionRecoveryResult result =
+                await new ActionRecoveryCoordinator<ProcessGpuPriorityState>(
+                        _journal)
+                    .RecoverAsync(action, context, CancellationToken.None)
+                    .ConfigureAwait(false);
+            return IsRestored(result.Status);
+        }
+        catch (Exception exception) when (IsExpected(exception))
+        {
+            return false;
+        }
+    }
+
     private async ValueTask<bool> RestoreIoAsync(
         ProcessIdentity identity,
         LoweredIo loweredIo)
@@ -879,6 +975,10 @@ public sealed class JournaledProBalanceActuator :
         ActionId ActionId,
         IdempotencyKey IdempotencyKey);
 
+    private sealed record LoweredGpu(
+        ActionId ActionId,
+        IdempotencyKey IdempotencyKey);
+
     private sealed record RestraintRecord(
         ProcessIdentity Identity,
         ActionId ActionId,
@@ -887,5 +987,6 @@ public sealed class JournaledProBalanceActuator :
         PinnedAffinity? Pinned,
         LoweredIo? LoweredIo,
         DateTimeOffset RestrainedAtUtc,
-        ThrottledEcoQos? EcoQos = null);
+        ThrottledEcoQos? EcoQos = null,
+        LoweredGpu? LoweredGpu = null);
 }

@@ -7116,9 +7116,12 @@ public sealed partial class MainWindow : Window, IDisposable
             string gameModeDesc = report.GameModeEnabled
                 ? "Włączony (Optymalnie)"
                 : "Wyłączony";
-            string dvrDesc = report.BackgroundRecordingEnabled
-                ? "Włączone (Zużywa zasoby GPU)"
-                : "Wyłączone (Optymalnie)";
+            string dvrDesc = report.BackgroundRecordingEnabled switch
+            {
+                true => "Włączone (Zużywa zasoby GPU)",
+                false => "Wyłączone (Optymalnie)",
+                null => "Nieznane",
+            };
 
             DiagnosticsGamingEnvironmentText.Text =
                 $"Planowanie GPU (HAGS): {hagsDesc}\n"

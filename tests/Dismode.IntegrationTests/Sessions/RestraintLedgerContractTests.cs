@@ -170,6 +170,87 @@ public sealed class RestraintLedgerContractTests
         Assert.HasCount(1, ledger.Forgotten);
     }
 
+    [TestMethod]
+    [Timeout(120_000)]
+    public async Task GpuPriorityIsReportedToTheLedgerAndReleasedWithTheRestraint()
+    {
+        _target = StartSleeper();
+        ProcessRuntimeKey key = new(
+            _target.Id,
+            _target.StartTime.ToUniversalTime());
+        using AppendOnlyRecoveryJournal journal =
+            new(Path.Combine(_directory, "recovery.jsonl"));
+        RecordingLedger ledger = new();
+        JournaledProBalanceActuator actuator = new(
+            journal,
+            new SessionId(Guid.NewGuid()),
+            backgroundAffinityMask: 0,
+            lowerBackgroundIoPriority: false,
+            lowerBackgroundGpuPriority: true);
+        actuator.AttachLedger(ledger);
+
+        Assert.IsTrue(
+            await actuator.RestrainAsync(key, CancellationToken.None));
+
+        Assert.AreEqual(
+            GpuPriorityNativeMethods.BelowNormal,
+            ReadGpuPriority(_target),
+            "Klasa GPU nie zostala obnizona.");
+        Assert.IsTrue(
+            ledger.Recorded.All(record =>
+                record.GpuPriorityActionId is not null
+                && record.GpuPriorityIdempotencyKey is not null),
+            "Kazdy meldunek do ksiegi ma niesc identyfikatory akcji GPU, "
+                + "inaczej po awarii hosta nikt jej nie cofnie.");
+
+        Assert.IsTrue(
+            await actuator.ReleaseAsync(key, CancellationToken.None));
+
+        Assert.AreEqual(
+            GpuPriorityNativeMethods.Normal,
+            ReadGpuPriority(_target),
+            "Klasa GPU nie zostala przywrocona przy zwolnieniu.");
+    }
+
+    [TestMethod]
+    [Timeout(120_000)]
+    public async Task GpuPriorityIsLeftAloneWhenNotRequested()
+    {
+        _target = StartSleeper();
+        ProcessRuntimeKey key = new(
+            _target.Id,
+            _target.StartTime.ToUniversalTime());
+        using AppendOnlyRecoveryJournal journal =
+            new(Path.Combine(_directory, "recovery.jsonl"));
+        RecordingLedger ledger = new();
+        JournaledProBalanceActuator actuator = new(
+            journal,
+            new SessionId(Guid.NewGuid()),
+            backgroundAffinityMask: 0,
+            lowerBackgroundIoPriority: false);
+        actuator.AttachLedger(ledger);
+
+        Assert.IsTrue(
+            await actuator.RestrainAsync(key, CancellationToken.None));
+
+        Assert.AreEqual(
+            GpuPriorityNativeMethods.Normal,
+            ReadGpuPriority(_target));
+        Assert.IsTrue(
+            ledger.Recorded.All(record =>
+                record.GpuPriorityActionId is null));
+    }
+
+    private static int ReadGpuPriority(Process process)
+    {
+        int status = GpuPriorityNativeMethods
+            .D3DKMTGetProcessSchedulingPriorityClass(
+                process.Handle,
+                out int priorityClass);
+        Assert.AreEqual(GpuPriorityNativeMethods.StatusSuccess, status);
+        return priorityClass;
+    }
+
     private sealed class FailingLedger : IRestraintLedger
     {
         public ValueTask RecordAsync(

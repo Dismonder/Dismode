@@ -104,7 +104,10 @@ public sealed class LiveGameFrameTimeTests
                 MinimumRestraint = TimeSpan.FromSeconds(1),
                 Cooldown = TimeSpan.FromSeconds(1),
                 MaximumRestrained = hogs,
-            });
+            },
+            // Hogi sa potomkami terminala testu; bez tego ExcludeForeground
+            // pomija je, gdy terminal jest na pierwszym planie.
+            foregroundProcessId: static () => 0);
 
         List<double> withoutRestraint = [];
         List<double> withRestraint = [];
@@ -333,12 +336,15 @@ public sealed class LiveGameFrameTimeTests
 
         List<ProBalanceDecision> decisions = [];
         HashSet<int> noGame = [];
-        // Domyslne ustawienia. Zadnych podmianek.
+        // Domyslne ustawienia. Zadnych podmianek. Pierwszy plan jest odciety:
+        // hogi sa potomkami terminala, z ktorego idzie test, a ten zwykle
+        // jest na pierwszym planie, wiec ExcludeForeground pominalby wszystkie.
         ProBalanceSupervisor supervisor = new(
             new CpuProcessSampler(),
             new PriorityProBalanceActuator(),
             () => noGame,
-            settings: new ProBalanceSettings());
+            settings: new ProBalanceSettings(),
+            foregroundProcessId: static () => 0);
 
         try
         {

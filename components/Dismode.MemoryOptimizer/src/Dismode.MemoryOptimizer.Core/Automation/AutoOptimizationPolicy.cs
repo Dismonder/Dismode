@@ -14,10 +14,23 @@ public sealed record AutoOptimizationDecision(
 
 public sealed class AutoOptimizationPolicy
 {
+    private readonly Lock _sync = new();
     private DateTimeOffset? _cpuIdleSinceUtc;
     private DateTimeOffset? _lastOptimizationUtc;
 
     public AutoOptimizationDecision Evaluate(
+        MemoryOptimizerSettings settings,
+        MemorySnapshot memory,
+        double cpuUsagePercent,
+        DateTimeOffset nowUtc)
+    {
+        lock (_sync)
+        {
+            return EvaluateCore(settings, memory, cpuUsagePercent, nowUtc);
+        }
+    }
+
+    private AutoOptimizationDecision EvaluateCore(
         MemoryOptimizerSettings settings,
         MemorySnapshot memory,
         double cpuUsagePercent,
@@ -85,7 +98,10 @@ public sealed class AutoOptimizationPolicy
 
     public void RecordCompleted(DateTimeOffset completedAtUtc)
     {
-        _lastOptimizationUtc = completedAtUtc;
-        _cpuIdleSinceUtc = null;
+        lock (_sync)
+        {
+            _lastOptimizationUtc = completedAtUtc;
+            _cpuIdleSinceUtc = null;
+        }
     }
 }

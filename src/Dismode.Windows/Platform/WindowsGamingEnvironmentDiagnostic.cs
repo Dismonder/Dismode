@@ -4,11 +4,14 @@ namespace Dismode.Windows.Platform;
 
 public static class WindowsGamingEnvironmentDiagnostic
 {
-    public static WindowsGamingDiagnosticReport Evaluate()
+    public static WindowsGamingDiagnosticReport Evaluate() => Evaluate(new WindowsGamingEnvironmentRegistryReader());
+
+    public static WindowsGamingDiagnosticReport Evaluate(IGamingEnvironmentRegistryReader registryReader)
     {
-        bool? hagsEnabled = CheckHagsEnabled();
-        bool gameModeEnabled = CheckGameModeEnabled();
-        bool backgroundRecordingEnabled = CheckBackgroundRecordingEnabled();
+        ArgumentNullException.ThrowIfNull(registryReader);
+        bool? hagsEnabled = CheckHagsEnabled(registryReader);
+        bool gameModeEnabled = CheckGameModeEnabled(registryReader);
+        bool? backgroundRecordingEnabled = CheckBackgroundRecordingEnabled(registryReader);
 
         List<WindowsGamingRecommendation> recommendations = [];
 
@@ -30,12 +33,21 @@ public static class WindowsGamingEnvironmentDiagnostic
                     DiagnosticSeverity.Warning));
         }
 
-        if (backgroundRecordingEnabled)
+        if (backgroundRecordingEnabled == true)
         {
             recommendations.Add(
                 new(
                     "Nagrywanie w tle Xbox Game DVR jest aktywne.",
                     "Jeśli nie nagrywasz powtórek, wyłączenie Game DVR w Ustawieniach Windows zwolni zasoby kodera karty graficznej.",
+                    DiagnosticSeverity.Info));
+        }
+
+        if (backgroundRecordingEnabled is null)
+        {
+            recommendations.Add(
+                new(
+                    "Nie można ustalić stanu nagrywania w tle Xbox Game DVR.",
+                    "Sprawdź ustawienia nagrywania w tle w Ustawieniach Windows oraz zasady Game DVR.",
                     DiagnosticSeverity.Info));
         }
 
@@ -55,13 +67,12 @@ public static class WindowsGamingEnvironmentDiagnostic
             Recommendations: recommendations);
     }
 
-    private static bool? CheckHagsEnabled()
+    private static bool? CheckHagsEnabled(IGamingEnvironmentRegistryReader registryReader)
     {
         try
         {
-            using RegistryKey? key = Registry.LocalMachine.OpenSubKey(
-                @"SYSTEM\CurrentControlSet\Control\GraphicsDrivers");
-            if (key?.GetValue("HwSchMode") is int mode)
+            if (registryReader.ReadValue(RegistryHive.LocalMachine,
+                @"SYSTEM\CurrentControlSet\Control\GraphicsDrivers", "HwSchMode") is int mode)
             {
                 return mode == 2;
             }
@@ -74,13 +85,12 @@ public static class WindowsGamingEnvironmentDiagnostic
         }
     }
 
-    private static bool CheckGameModeEnabled()
+    private static bool CheckGameModeEnabled(IGamingEnvironmentRegistryReader registryReader)
     {
         try
         {
-            using RegistryKey? key = Registry.CurrentUser.OpenSubKey(
-                @"Software\Microsoft\GameBar");
-            if (key?.GetValue("AllowAutoGameMode") is int mode)
+            if (registryReader.ReadValue(RegistryHive.CurrentUser,
+                @"Software\Microsoft\GameBar", "AllowAutoGameMode") is int mode)
             {
                 return mode != 0;
             }
@@ -94,22 +104,40 @@ public static class WindowsGamingEnvironmentDiagnostic
         }
     }
 
-    private static bool CheckBackgroundRecordingEnabled()
+    private static bool? CheckBackgroundRecordingEnabled(IGamingEnvironmentRegistryReader registryReader)
     {
         try
         {
-            using RegistryKey? key = Registry.CurrentUser.OpenSubKey(
-                @"Software\Microsoft\Windows\CurrentVersion\GameDVR");
-            if (key?.GetValue("AppCaptureEnabled") is int enabled)
+            // Polityka ma pierwszenstwo; zezwolenie nie oznacza wlaczonego nagrywania.
+            object? policy = registryReader.ReadValue(RegistryHive.LocalMachine,
+                @"SOFTWARE\Policies\Microsoft\Windows\GameDVR", "AllowGameDVR");
+            if (policy is int policyValue && policyValue == 0)
             {
-                return enabled != 0;
+                return false;
             }
 
-            return false;
+            if (policy is not null && policy is not int)
+            {
+                return null;
+            }
+
+            if (policy is int allowed && allowed != 1)
+            {
+                return null;
+            }
+
+            // AppCaptureEnabled dotyczy dostepnosci przechwytywania, nie nagrywania w tle.
+            return registryReader.ReadValue(RegistryHive.CurrentUser,
+                @"Software\Microsoft\Windows\CurrentVersion\GameDVR", "HistoricalCaptureEnabled") switch
+            {
+                int value when value == 1 => true,
+                int value when value == 0 => false,
+                _ => null,
+            };
         }
         catch
         {
-            return false;
+            return null;
         }
     }
 }
@@ -117,7 +145,7 @@ public static class WindowsGamingEnvironmentDiagnostic
 public sealed record WindowsGamingDiagnosticReport(
     bool? HagsEnabled,
     bool GameModeEnabled,
-    bool BackgroundRecordingEnabled,
+    bool? BackgroundRecordingEnabled,
     IReadOnlyList<WindowsGamingRecommendation> Recommendations);
 
 public sealed record WindowsGamingRecommendation(
@@ -130,4 +158,19 @@ public enum DiagnosticSeverity
     Success,
     Info,
     Warning,
+}
+
+public interface IGamingEnvironmentRegistryReader
+{
+    object? ReadValue(RegistryHive hive, string subKey, string valueName);
+}
+
+internal sealed class WindowsGamingEnvironmentRegistryReader : IGamingEnvironmentRegistryReader
+{
+    public object? ReadValue(RegistryHive hive, string subKey, string valueName)
+    {
+        using RegistryKey baseKey = RegistryKey.OpenBaseKey(hive, RegistryView.Default);
+        using RegistryKey? key = baseKey.OpenSubKey(subKey, writable: false);
+        return key?.GetValue(valueName);
+    }
 }

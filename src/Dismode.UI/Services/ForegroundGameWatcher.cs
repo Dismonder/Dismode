@@ -53,7 +53,10 @@ public sealed class ForegroundGameWatcher : IAsyncDisposable
 
     public ForegroundGameWatcher(IFrameRateProvider? frameRates = null)
     {
-        _frameRates = frameRates ?? new PresentMonFrameRateProvider();
+        // Wlasna sesja ETW nakladki: ze wspolna nazwa pomiar nakladki
+        // i pomiar sesji gry zatrzymywaly sie nawzajem.
+        _frameRates = frameRates ?? new PresentMonFrameRateProvider(
+            captureRole: PresentMonCaptureRole.Overlay);
     }
 
     public async ValueTask<ForegroundGameSample> SampleAsync(

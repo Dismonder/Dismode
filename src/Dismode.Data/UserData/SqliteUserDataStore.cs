@@ -20,7 +20,7 @@ public sealed class SqliteUserDataStore :
     IGlobalBackgroundRuleRepository,
     IDisposable
 {
-    private const int CurrentSchemaVersion = 15;
+    private const int CurrentSchemaVersion = 16;
     private const int MaximumGlobalRuleCount = 128;
     private const int MaximumHistoryPageSize = 1000;
 
@@ -978,14 +978,18 @@ public sealed class SqliteUserDataStore :
                 EndedAtUtc, Status, AppliedActionCount, RestoredActionCount,
                 ConflictCount, ErrorCount, FrameRateSampleCount,
                 AverageFramesPerSecond, AverageFrameTimeMilliseconds,
-                MinimumFramesPerSecond, MaximumFrameTimeMilliseconds)
+                MinimumFramesPerSecond, MaximumFrameTimeMilliseconds,
+                OnePercentLowFramesPerSecond, PointOnePercentLowFramesPerSecond,
+                HitchCount)
             VALUES (
                 $sessionId, $profileId, $gameDisplayName, $startedAtUtc,
                 $endedAtUtc, $status, $appliedActionCount,
                 $restoredActionCount, $conflictCount, $errorCount,
                 $frameRateSampleCount, $averageFramesPerSecond,
                 $averageFrameTimeMilliseconds, $minimumFramesPerSecond,
-                $maximumFrameTimeMilliseconds)
+                $maximumFrameTimeMilliseconds,
+                $onePercentLowFramesPerSecond, $pointOnePercentLowFramesPerSecond,
+                $hitchCount)
             ON CONFLICT(SessionId) DO NOTHING;
             """;
         command.Parameters.AddWithValue(
@@ -1039,6 +1043,15 @@ public sealed class SqliteUserDataStore :
             frameRate is null
                 ? DBNull.Value
                 : frameRate.MaximumFrameTimeMilliseconds);
+        command.Parameters.AddWithValue(
+            "$onePercentLowFramesPerSecond",
+            (object?)frameRate?.OnePercentLowFramesPerSecond ?? DBNull.Value);
+        command.Parameters.AddWithValue(
+            "$pointOnePercentLowFramesPerSecond",
+            (object?)frameRate?.PointOnePercentLowFramesPerSecond ?? DBNull.Value);
+        command.Parameters.AddWithValue(
+            "$hitchCount",
+            (object?)frameRate?.HitchCount ?? DBNull.Value);
         await command.ExecuteNonQueryAsync(cancellationToken)
             .ConfigureAwait(false);
     }
@@ -1070,7 +1083,8 @@ public sealed class SqliteUserDataStore :
                    RestoredActionCount, ConflictCount, ErrorCount,
                    FrameRateSampleCount, AverageFramesPerSecond,
                    AverageFrameTimeMilliseconds, MinimumFramesPerSecond,
-                   MaximumFrameTimeMilliseconds
+                   MaximumFrameTimeMilliseconds, OnePercentLowFramesPerSecond,
+                   PointOnePercentLowFramesPerSecond, HitchCount
             FROM SessionSummaries
             ORDER BY EndedAtUtc DESC, SessionId
             LIMIT $maximumCount;
@@ -1889,6 +1903,36 @@ public sealed class SqliteUserDataStore :
                 .ConfigureAwait(false);
             existingVersion = 15;
         }
+
+        if (existingVersion < 16)
+        {
+            await using SqliteTransaction transaction =
+                (SqliteTransaction)await connection
+                    .BeginTransactionAsync(IsolationLevel.Serializable, cancellationToken)
+                    .ConfigureAwait(false);
+            await using SqliteCommand schema = connection.CreateCommand();
+            schema.Transaction = transaction;
+            schema.CommandText =
+                """
+                ALTER TABLE SessionSummaries
+                    ADD COLUMN OnePercentLowFramesPerSecond REAL
+                        CHECK (OnePercentLowFramesPerSecond > 0
+                            AND OnePercentLowFramesPerSecond <= 10000);
+                ALTER TABLE SessionSummaries
+                    ADD COLUMN PointOnePercentLowFramesPerSecond REAL
+                        CHECK (PointOnePercentLowFramesPerSecond > 0
+                            AND PointOnePercentLowFramesPerSecond <= 10000);
+                ALTER TABLE SessionSummaries
+                    ADD COLUMN HitchCount INTEGER
+                        CHECK (HitchCount >= 0 AND HitchCount <= FrameRateSampleCount);
+
+                INSERT INTO SchemaMigrations (Version, AppliedAtUtc)
+                VALUES (16, $appliedAtUtc);
+                """;
+            schema.Parameters.AddWithValue("$appliedAtUtc", FormatTimestamp(DateTimeOffset.UtcNow));
+            await schema.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+            await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
+        }
     }
 
     private static async ValueTask VerifyRequiredSchemaAsync(
@@ -1950,7 +1994,9 @@ public sealed class SqliteUserDataStore :
                        AppliedActionCount, RestoredActionCount,
                        ConflictCount, ErrorCount, FrameRateSampleCount,
                        AverageFramesPerSecond, AverageFrameTimeMilliseconds,
-                       MinimumFramesPerSecond, MaximumFrameTimeMilliseconds
+                       MinimumFramesPerSecond, MaximumFrameTimeMilliseconds,
+                       OnePercentLowFramesPerSecond, PointOnePercentLowFramesPerSecond,
+                       HitchCount
                 FROM SessionSummaries
                 LIMIT 0;
 
@@ -2111,7 +2157,10 @@ public sealed class SqliteUserDataStore :
                     reader.GetDouble(11),
                     reader.GetDouble(12),
                     reader.GetDouble(13),
-                    reader.GetDouble(14));
+                    reader.GetDouble(14),
+                    reader.IsDBNull(15) ? null : reader.GetDouble(15),
+                    reader.IsDBNull(16) ? null : reader.GetDouble(16),
+                    reader.IsDBNull(17) ? null : reader.GetInt32(17));
         return new(
             new SessionId(Guid.Parse(reader.GetString(0))),
             new GameProfileId(Guid.Parse(reader.GetString(1))),

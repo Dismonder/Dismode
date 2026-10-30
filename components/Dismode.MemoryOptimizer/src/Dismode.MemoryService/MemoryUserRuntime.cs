@@ -31,6 +31,18 @@ internal sealed class MemoryUserRuntime : IAsyncDisposable
 
     internal string UserSid { get; }
 
+    internal static void RecordIfFinished(
+        AutoOptimizationPolicy policy,
+        OptimizationResult result)
+    {
+        // Kazda zakonczona proba odsuwa automatyczne czyszczenie i harmonogram.
+        if (result.State is OptimizationState.Completed or
+            OptimizationState.PartiallyCompleted or OptimizationState.Failed)
+        {
+            policy.RecordCompleted(result.CompletedAtUtc);
+        }
+    }
+
     internal async Task InitializeAsync(CancellationToken cancellationToken)
     {
         await _store.InitializeAsync(cancellationToken).ConfigureAwait(false);
@@ -43,13 +55,9 @@ internal sealed class MemoryUserRuntime : IAsyncDisposable
             1,
             cancellationToken).ConfigureAwait(false);
         _lastResult = history.Count > 0 ? history[0] : null;
-        if (_lastResult is
-            {
-                State: OptimizationState.Completed or
-                    OptimizationState.PartiallyCompleted,
-            })
+        if (_lastResult is not null)
         {
-            _policy.RecordCompleted(_lastResult.CompletedAtUtc);
+            RecordIfFinished(_policy, _lastResult);
         }
 
         WriteComponentStatus(settings);
@@ -132,21 +140,13 @@ internal sealed class MemoryUserRuntime : IAsyncDisposable
                     settings,
                     cancellationToken).ConfigureAwait(false);
                 _lastResult = result;
+                RecordIfFinished(_policy, result);
                 if (result.State is not OptimizationState.Blocked and
                     not OptimizationState.AlreadyRunning)
                 {
                     await _store.AddHistoryAsync(
                         result,
                         cancellationToken).ConfigureAwait(false);
-                }
-
-                // Failed runs also start the cooldown so a persistently
-                // failing area set is not retried on every poll.
-                if (result.State is OptimizationState.Completed or
-                    OptimizationState.PartiallyCompleted or
-                    OptimizationState.Failed)
-                {
-                    _policy.RecordCompleted(result.CompletedAtUtc);
                 }
             }
 
@@ -209,6 +209,7 @@ internal sealed class MemoryUserRuntime : IAsyncDisposable
             settings,
             cancellationToken).ConfigureAwait(false);
         _lastResult = result;
+        RecordIfFinished(_policy, result);
         await _store.AddHistoryAsync(
             result,
             cancellationToken).ConfigureAwait(false);

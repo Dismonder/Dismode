@@ -41,7 +41,11 @@ public sealed record RestrainedProcessRecord(
     // EcoQoS nalozony przez petle reaktywna (preset agresywny). Odtwarzanie
     // po awarii cofa go ta sama sciezka co EcoQoS aplikacji z planu.
     ActionId? EcoQosActionId = null,
-    IdempotencyKey? EcoQosIdempotencyKey = null);
+    IdempotencyKey? EcoQosIdempotencyKey = null,
+    // Priorytet GPU nalozony przez petle reaktywna. Odtwarzanie po awarii
+    // cofa go ta sama sciezka co priorytet wejscia-wyjscia.
+    ActionId? GpuPriorityActionId = null,
+    IdempotencyKey? GpuPriorityIdempotencyKey = null);
 
 /// <summary>
 /// Where the reactive restraint loop reports what it has restrained and

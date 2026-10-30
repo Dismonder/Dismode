@@ -291,4 +291,92 @@ public sealed class ProBalanceEngineTests
 
         Assert.AreEqual(0, engine.Restrained.Count);
     }
+
+    private static List<ProBalanceDecision> FeedObservation(
+        ProBalanceEngine engine,
+        int samples,
+        ProBalanceObservation observation,
+        ref DateTimeOffset clock)
+    {
+        List<ProBalanceDecision> all = [];
+        for (int index = 0; index < samples; index++)
+        {
+            all.AddRange(engine.Evaluate([observation], 4.0, clock));
+            clock += TimeSpan.FromSeconds(2);
+        }
+
+        return all;
+    }
+
+    [TestMethod]
+    public void ServiceIsNeverRestrained()
+    {
+        ProBalanceEngine engine = new();
+        DateTimeOffset clock = Start;
+
+        List<ProBalanceDecision> decisions = FeedObservation(
+            engine,
+            6,
+            new(Hog, "updater", 1.5, false, false, IsService: true),
+            ref clock);
+
+        Assert.AreEqual(0, decisions.Count);
+        Assert.AreEqual(0, engine.Restrained.Count);
+    }
+
+    [TestMethod]
+    public void ForegroundProcessIsNeverRestrained()
+    {
+        ProBalanceEngine engine = new();
+        DateTimeOffset clock = Start;
+
+        List<ProBalanceDecision> decisions = FeedObservation(
+            engine,
+            6,
+            new(Hog, "browser", 1.5, false, false, IsForeground: true),
+            ref clock);
+
+        Assert.AreEqual(0, decisions.Count);
+    }
+
+    [TestMethod]
+    public void ProcessComingToForegroundIsReleased()
+    {
+        // Przegladarka ograniczona w tle, po czym uzytkownik na nia
+        // przelacza. Zostawienie jej na obnizonym priorytecie to dokladnie
+        // to, czego ta petla ma unikac.
+        ProBalanceEngine engine = new();
+        DateTimeOffset clock = Start;
+        Feed(engine, 3, 1.5, 4.0, ref clock);
+        Assert.AreEqual(1, engine.Restrained.Count);
+
+        IReadOnlyList<ProBalanceDecision> decisions = engine.Evaluate(
+            [new(Hog, "indexer", 1.5, false, false, IsForeground: true)],
+            4.0,
+            clock);
+
+        Assert.AreEqual(1, decisions.Count);
+        Assert.AreEqual(ProBalanceAction.Release, decisions[0].Action);
+        Assert.AreEqual(0, engine.Restrained.Count);
+    }
+
+    [TestMethod]
+    public void ExclusionsCanBeSwitchedOff()
+    {
+        ProBalanceEngine engine = new(new()
+        {
+            ExcludeServices = false,
+            ExcludeForeground = false,
+        });
+        DateTimeOffset clock = Start;
+
+        List<ProBalanceDecision> decisions = FeedObservation(
+            engine,
+            3,
+            new(Hog, "indexer", 1.5, false, false, true, true),
+            ref clock);
+
+        Assert.AreEqual(1, decisions.Count);
+        Assert.AreEqual(ProBalanceAction.Restrain, decisions[0].Action);
+    }
 }
