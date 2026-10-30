@@ -1,3 +1,4 @@
+using System.Reflection;
 using Dismode.MemoryOptimizer.Core.Models;
 using Dismode.MemoryOptimizer.Core.Storage;
 using Microsoft.Data.Sqlite;
@@ -29,6 +30,93 @@ public sealed class MemoryOptimizerStoreTests
             Directory.Delete(_directory, recursive: true);
         }
     }
+
+    [TestMethod]
+    [DataRow(false)]
+    [DataRow(true)]
+    public async Task FailedCachedReadDropsConnectionAndNextReadRecovers(bool failSettingsQuery)
+    {
+        await using MemoryOptimizerStore store = new(_databasePath);
+        await store.InitializeAsync(CancellationToken.None);
+        await store.SaveSettingsAsync(new() { AutomationPaused = true }, CancellationToken.None);
+        Assert.IsTrue((await store.GetSettingsAsync(CancellationToken.None)).AutomationPaused);
+        SqliteConnection previous = CachedConnection(store)!;
+        await using SqliteConnection writer = new($"Data Source={_databasePath};Pooling=False");
+        await writer.OpenAsync();
+        await using SqliteCommand change = writer.CreateCommand();
+        if (failSettingsQuery)
+        {
+            change.CommandText = "ALTER TABLE Settings RENAME TO SettingsBackup;";
+            _ = await change.ExecuteNonQueryAsync();
+        }
+        else
+        {
+            SqliteCommand version = (SqliteCommand)typeof(MemoryOptimizerStore)
+                .GetField("_settingsVersionCommand", BindingFlags.Instance | BindingFlags.NonPublic)!
+                .GetValue(store)!;
+            version.CommandText = "SELECT Json FROM MissingSettingsTable;";
+        }
+
+        await Assert.ThrowsExactlyAsync<SqliteException>(() => store.GetSettingsAsync(CancellationToken.None));
+        Assert.IsNull(CachedConnection(store));
+        Assert.AreEqual(System.Data.ConnectionState.Closed, previous.State);
+        if (failSettingsQuery)
+        {
+            change.CommandText = "ALTER TABLE SettingsBackup RENAME TO Settings;";
+            _ = await change.ExecuteNonQueryAsync();
+        }
+
+        Assert.IsTrue((await store.GetSettingsAsync(CancellationToken.None)).AutomationPaused);
+        Assert.AreNotSame(previous, CachedConnection(store));
+    }
+
+    [TestMethod]
+    public async Task DisposalWaitsForTheActiveSettingsRead()
+    {
+        await using MemoryOptimizerStore store = new(_databasePath);
+        await store.InitializeAsync(CancellationToken.None);
+        _ = await store.GetSettingsAsync(CancellationToken.None);
+        SqliteConnection connection = CachedConnection(store)!;
+        TaskCompletionSource entered = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        using ManualResetEventSlim finish = new();
+        connection.CreateFunction("hold_read", () =>
+        {
+            entered.SetResult();
+            if (!finish.Wait(TimeSpan.FromSeconds(10)))
+            {
+                throw new TimeoutException("Settings read was not released.");
+            }
+
+            return 1L;
+        });
+        SqliteCommand version = (SqliteCommand)typeof(MemoryOptimizerStore)
+            .GetField("_settingsVersionCommand", BindingFlags.Instance | BindingFlags.NonPublic)!
+            .GetValue(store)!;
+        version.CommandText = "SELECT hold_read();";
+        Task read = Task.Run(() => store.GetSettingsAsync(CancellationToken.None));
+        try
+        {
+            await entered.Task.WaitAsync(TimeSpan.FromSeconds(10));
+            Task disposal = store.DisposeAsync().AsTask();
+            Assert.IsFalse(disposal.IsCompleted);
+            Assert.AreEqual(System.Data.ConnectionState.Open, connection.State);
+            finish.Set();
+            await Task.WhenAll(read, disposal);
+            Assert.AreEqual(System.Data.ConnectionState.Closed, connection.State);
+            await Assert.ThrowsExactlyAsync<ObjectDisposedException>(
+                () => store.GetSettingsAsync(CancellationToken.None));
+        }
+        finally
+        {
+            finish.Set();
+            await read;
+        }
+    }
+
+    private static SqliteConnection? CachedConnection(MemoryOptimizerStore store) =>
+        (SqliteConnection?)typeof(MemoryOptimizerStore)
+            .GetField("_settingsConnection", BindingFlags.Instance | BindingFlags.NonPublic)!
+            .GetValue(store);
 
     [TestMethod]
     public async Task PersistsNormalizedSettingsAndHistory()

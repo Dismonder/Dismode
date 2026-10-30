@@ -5,6 +5,10 @@ namespace Dismode.Core.SystemOptimization;
 
 public static class BenchmarkAnalyzer
 {
+    public const string CaptureLossReason =
+        "Utracono zdarzenia lub bufory ETW. Powtórz pomiar.";
+    public const string UnknownCaptureWarning =
+        "Ostrzeżenie: nierozpoznany komunikat PresentMon.";
     public static readonly TimeSpan MinimumStabilizationDuration =
         TimeSpan.FromSeconds(15);
     public static readonly TimeSpan MinimumMeasurementDuration =
@@ -25,6 +29,10 @@ public static class BenchmarkAnalyzer
             .ToArray();
 
         List<string> invalidReasons = [];
+        if (capture.CaptureLoss?.HasConfirmedLoss == true)
+        {
+            invalidReasons.Add(CaptureLossReason);
+        }
         if (capture.StabilizationDuration < MinimumStabilizationDuration)
         {
             invalidReasons.Add("Wymagane jest co najmniej 15 sekund stabilizacji.");
@@ -45,12 +53,19 @@ public static class BenchmarkAnalyzer
             invalidReasons.Add("Brakuje odczytanego stanu profilu.");
         }
 
+        if (invalidReasons.Count > 0 && capture.CaptureLoss?.State == BenchmarkCaptureLossState.Unknown)
+        {
+            invalidReasons.Add(UnknownCaptureWarning);
+        }
+
         if (validFrameTimes.Length == 0)
         {
             return BenchmarkMetrics.Invalid(
                 capture.Variant,
                 string.Join(' ', invalidReasons.DefaultIfEmpty(
-                    "Przechwycenie nie zawiera prawidłowych klatek.")));
+                    "Przechwycenie nie zawiera prawidłowych klatek.")))
+                with
+            { CaptureLoss = capture.CaptureLoss };
         }
 
         Array.Sort(validFrameTimes);
@@ -86,7 +101,8 @@ public static class BenchmarkAnalyzer
             HasStableFiveSecondBlocks: stability.IsStable,
             AverageCpuPercent: capture.AverageCpuPercent,
             AverageGpuBusyPercent: capture.AverageGpuBusyPercent,
-            AverageUsedRamBytes: capture.AverageUsedRamBytes);
+            AverageUsedRamBytes: capture.AverageUsedRamBytes,
+            CaptureLoss: capture.CaptureLoss);
     }
 
     private static BlockStability CalculateBlockStability(
@@ -153,8 +169,15 @@ public sealed record BenchmarkMetrics(
     bool HasStableFiveSecondBlocks,
     double? AverageCpuPercent,
     double? AverageGpuBusyPercent,
-    long? AverageUsedRamBytes)
+    long? AverageUsedRamBytes,
+    [property: System.Text.Json.Serialization.JsonIgnore(
+        Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+    BenchmarkCaptureLoss? CaptureLoss = null)
 {
+    [System.Text.Json.Serialization.JsonIgnore]
+    public string? Warning => CaptureLoss?.State == BenchmarkCaptureLossState.Unknown
+        ? BenchmarkAnalyzer.UnknownCaptureWarning : null;
+
     public static BenchmarkMetrics Invalid(
         BenchmarkVariant variant,
         string reason) =>

@@ -300,6 +300,10 @@ internal sealed class SystemOptimizerCoordinator :
                     BenchmarkVariant.Candidate,
                     cancellationToken)
                 .ConfigureAwait(false);
+        // Nieudana proba zostaje w historii, ale powtorzony czysty pomiar
+        // zajmuje jej miejsce w parze. Liczniki eksperymentu licza tylko takie proby.
+        baseline = baseline.Where(metric => metric.IsValid && metric.CaptureLoss?.HasConfirmedLoss != true).ToArray();
+        candidate = candidate.Where(metric => metric.IsValid && metric.CaptureLoss?.HasConfirmedLoss != true).ToArray();
         BenchmarkDecision decision = baseline.Count == candidate.Count
             ? BenchmarkDecisionEngine.Decide(baseline, candidate)
             : new(
@@ -311,6 +315,11 @@ internal sealed class SystemOptimizerCoordinator :
                 CandidateHitchRatePercent: 0,
                 CompletedPairs: Math.Min(baseline.Count, candidate.Count),
                 "Zarejestrowano pierwszy wariant pary; przejdź do tej samej sceny dla drugiego wariantu.");
+
+        if (metrics.Warning is string warning && !decision.Explanation.Contains(warning, StringComparison.Ordinal))
+        {
+            decision = decision with { Explanation = decision.Explanation + " " + warning };
+        }
 
         if (baseline.Count == candidate.Count)
         {

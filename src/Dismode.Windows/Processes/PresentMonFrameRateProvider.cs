@@ -4,6 +4,7 @@ using System.Globalization;
 using System.Security.Cryptography;
 using System.Security.Principal;
 using System.Text;
+using Dismode.Contracts.SystemOptimization;
 using Dismode.Core.Performance;
 using Dismode.Windows.NativeInterop;
 using Dismode.Windows.Sessions;
@@ -16,6 +17,8 @@ public sealed class PresentMonFrameRateProvider : IFrameRateProvider, ISessionFr
         TimeSpan.FromSeconds(2);
     private static readonly TimeSpan ProcessStopTimeout =
         TimeSpan.FromSeconds(3);
+    private static readonly TimeSpan ReaderDrainGracePeriod =
+        TimeSpan.FromMilliseconds(500);
     private static readonly TimeSpan FirstFrameTimeout =
         TimeSpan.FromSeconds(8);
     private const int MaximumObservationsPerStream = 2_048;
@@ -52,6 +55,7 @@ public sealed class PresentMonFrameRateProvider : IFrameRateProvider, ISessionFr
     private int[] _unexpectedExitTargets = [];
     private DateTimeOffset _unexpectedExitBackoffUntilUtc;
     private BenchmarkFrameCollector? _benchmarkCollector;
+    private BenchmarkCaptureLoss _captureLoss = BenchmarkCaptureLoss.None;
     private SessionFrameRateStatisticsAccumulator? _sessionStatistics;
     private FrameStreamKey? _statisticsStream;
     private readonly Dictionary<FrameStreamKey, PendingStatistics>
@@ -168,6 +172,40 @@ public sealed class PresentMonFrameRateProvider : IFrameRateProvider, ISessionFr
             throw new InvalidOperationException(sample.Message);
         }
 
+        BenchmarkFrameCollector collector = BeginBenchmarkCollection(processId);
+        try
+        {
+            await Task.Delay(
+                    measurementDuration,
+                    _timeProvider,
+                    cancellationToken)
+                .ConfigureAwait(false);
+        }
+        finally
+        {
+            collector.StopCollectingFrames();
+            try
+            {
+                // Ostrzezenia o stracie moga przyjsc dopiero przy zamknieciu.
+                await StopAsync(CancellationToken.None).ConfigureAwait(false);
+            }
+            finally
+            {
+                lock (_observationSync)
+                {
+                    if (ReferenceEquals(_benchmarkCollector, collector))
+                    {
+                        _benchmarkCollector = null;
+                    }
+                }
+            }
+        }
+
+        return collector.SnapshotDominantCapture();
+    }
+
+    internal BenchmarkFrameCollector BeginBenchmarkCollection(int processId)
+    {
         BenchmarkFrameCollector collector = new(processId);
         lock (_observationSync)
         {
@@ -180,27 +218,7 @@ public sealed class PresentMonFrameRateProvider : IFrameRateProvider, ISessionFr
             _benchmarkCollector = collector;
         }
 
-        try
-        {
-            await Task.Delay(
-                    measurementDuration,
-                    _timeProvider,
-                    cancellationToken)
-                .ConfigureAwait(false);
-            return collector.SnapshotDominantCapture();
-        }
-        finally
-        {
-            lock (_observationSync)
-            {
-                if (ReferenceEquals(_benchmarkCollector, collector))
-                {
-                    _benchmarkCollector = null;
-                }
-            }
-
-            await StopAsync(CancellationToken.None).ConfigureAwait(false);
-        }
+        return collector;
     }
 
     public async ValueTask<FrameRateSample> SampleAsync(
@@ -671,14 +689,15 @@ public sealed class PresentMonFrameRateProvider : IFrameRateProvider, ISessionFr
             {
                 _observations.Clear();
                 _lastDiagnostic = null;
+                _captureLoss = BenchmarkCaptureLoss.None;
             }
 
             _standardOutputTask = ReadStandardOutputAsync(
-                process,
+                process.StandardOutput,
                 targets.ToHashSet(),
                 captureCancellation.Token);
             _standardErrorTask = ReadStandardErrorAsync(
-                process,
+                process.StandardError,
                 captureCancellation.Token);
         }
         catch (Exception startupException)
@@ -699,8 +718,8 @@ public sealed class PresentMonFrameRateProvider : IFrameRateProvider, ISessionFr
         }
     }
 
-    private async Task ReadStandardOutputAsync(
-        Process process,
+    internal async Task ReadStandardOutputAsync(
+        TextReader reader,
         HashSet<int> targets,
         CancellationToken cancellationToken)
     {
@@ -709,12 +728,17 @@ public sealed class PresentMonFrameRateProvider : IFrameRateProvider, ISessionFr
         {
             while (true)
             {
-                string? line = await process.StandardOutput
-                    .ReadLineAsync(cancellationToken)
+                string? line = await reader.ReadLineAsync(cancellationToken)
                     .ConfigureAwait(false);
                 if (line is null)
                 {
                     return;
+                }
+
+                if (PresentMonCaptureLossParser.IsWarning(line))
+                {
+                    RecordCaptureDiagnostic(line, "stdout");
+                    continue;
                 }
 
                 if (!parser.TryParse(line, out PresentMonFrame frame)
@@ -744,16 +768,15 @@ public sealed class PresentMonFrameRateProvider : IFrameRateProvider, ISessionFr
         }
     }
 
-    private async Task ReadStandardErrorAsync(
-        Process process,
+    internal async Task ReadStandardErrorAsync(
+        TextReader reader,
         CancellationToken cancellationToken)
     {
         try
         {
             while (true)
             {
-                string? line = await process.StandardError
-                    .ReadLineAsync(cancellationToken)
+                string? line = await reader.ReadLineAsync(cancellationToken)
                     .ConfigureAwait(false);
                 if (line is null)
                 {
@@ -767,19 +790,7 @@ public sealed class PresentMonFrameRateProvider : IFrameRateProvider, ISessionFr
                     continue;
                 }
 
-                lock (_observationSync)
-                {
-                    _lastDiagnostic = line.Trim();
-                }
-
-                // Powtorzona linia (np. utracone zdarzenia co sekunde) idzie
-                // do pliku raz, inaczej zalalaby dziennik.
-                string trimmed = line.Trim();
-                if (trimmed != _lastLoggedStderr)
-                {
-                    _lastLoggedStderr = trimmed;
-                    FrameCaptureLog.Write("presentmon stderr: " + trimmed);
-                }
+                RecordCaptureDiagnostic(line, "stderr");
             }
         }
         catch (OperationCanceledException)
@@ -797,6 +808,26 @@ public sealed class PresentMonFrameRateProvider : IFrameRateProvider, ISessionFr
                 _lastDiagnostic =
                     $"Błąd diagnostyki PresentMon: {exception.Message}";
             }
+        }
+    }
+
+    internal void RecordCaptureDiagnostic(string line, string stream)
+    {
+        string trimmed = line.Trim();
+        lock (_observationSync)
+        {
+            _lastDiagnostic = trimmed;
+            _captureLoss = PresentMonCaptureLossParser.Observe(_captureLoss, line);
+            _benchmarkCollector?.RecordLoss(
+                PresentMonCaptureLossParser.Observe(BenchmarkCaptureLoss.None, line));
+        }
+
+        // Sesyjne FPS pozostaja bez zmian; strata trafia tylko do logu
+        // i do metadanych aktywnego benchmarku.
+        if (trimmed != _lastLoggedStderr)
+        {
+            _lastLoggedStderr = trimmed;
+            FrameCaptureLog.Write("presentmon " + stream + ": " + trimmed);
         }
     }
 
@@ -1160,10 +1191,10 @@ public sealed class PresentMonFrameRateProvider : IFrameRateProvider, ISessionFr
         // narzedzia — widzial pustke. Sesja nie ma prawa przezyc pomiaru.
         _ = EtwSessionCleanup.StopStaleSessions([_sessionName]);
 
-        captureCancellation?.Cancel();
-        Exception? readerFailure = await ObserveReaderCompletionAsync(
+        Exception? readerFailure = await DrainCaptureReadersAsync(
                 standardOutputTask,
-                standardErrorTask)
+                standardErrorTask,
+                captureCancellation)
             .ConfigureAwait(false);
         captureCancellation?.Dispose();
         process.Dispose();
@@ -1406,6 +1437,31 @@ public sealed class PresentMonFrameRateProvider : IFrameRateProvider, ISessionFr
         return process.HasExited;
     }
 
+    internal static async ValueTask<Exception?> DrainCaptureReadersAsync(
+        Task standardOutputTask,
+        Task standardErrorTask,
+        CancellationTokenSource? captureCancellation)
+    {
+        try
+        {
+            await Task.WhenAll(standardOutputTask, standardErrorTask)
+                .WaitAsync(ReaderDrainGracePeriod)
+                .ConfigureAwait(false);
+        }
+        catch (TimeoutException)
+        {
+            // Odziedziczony uchwyt potoku nie moze blokowac zamkniecia.
+        }
+        catch (Exception)
+        {
+            // Bledy czytnikow zbieramy ponizej, po anulowaniu obu zadan.
+        }
+
+        captureCancellation?.Cancel();
+        return await ObserveReaderCompletionAsync(standardOutputTask, standardErrorTask)
+            .ConfigureAwait(false);
+    }
+
     private static async ValueTask<Exception?> ObserveReaderCompletionAsync(
         Task standardOutputTask,
         Task standardErrorTask)
@@ -1465,6 +1521,7 @@ public sealed class PresentMonFrameRateProvider : IFrameRateProvider, ISessionFr
             _pendingStatistics.Clear();
             _observations.Clear();
             _lastDiagnostic = null;
+            _captureLoss = BenchmarkCaptureLoss.None;
         }
     }
 

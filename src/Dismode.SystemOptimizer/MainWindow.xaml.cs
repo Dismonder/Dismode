@@ -474,7 +474,8 @@ public sealed partial class MainWindow : Window
                 cpuPercent,
                 capture.AverageGpuBusyPercent,
                 averageUsedRam,
-                cancellationToken)
+                cancellationToken,
+                capture.CaptureLoss)
             .ConfigureAwait(true);
     }
 

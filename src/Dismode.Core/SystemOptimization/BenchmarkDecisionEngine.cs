@@ -12,6 +12,17 @@ public static class BenchmarkDecisionEngine
         IReadOnlyList<BenchmarkMetrics> baselineCaptures,
         IReadOnlyList<BenchmarkMetrics> candidateCaptures)
     {
+        BenchmarkDecision decision = DecideCore(baselineCaptures, candidateCaptures);
+        return baselineCaptures.Any(capture => capture.Warning is not null)
+                || candidateCaptures.Any(capture => capture.Warning is not null)
+            ? decision with { Explanation = decision.Explanation + " " + BenchmarkAnalyzer.UnknownCaptureWarning }
+            : decision;
+    }
+
+    private static BenchmarkDecision DecideCore(
+        IReadOnlyList<BenchmarkMetrics> baselineCaptures,
+        IReadOnlyList<BenchmarkMetrics> candidateCaptures)
+    {
         ArgumentNullException.ThrowIfNull(baselineCaptures);
         ArgumentNullException.ThrowIfNull(candidateCaptures);
 
@@ -21,8 +32,8 @@ public static class BenchmarkDecisionEngine
                 "Do porównania potrzebny jest baseline i kandydat.");
         }
 
-        if (baselineCaptures.Any(capture => !capture.IsValid)
-            || candidateCaptures.Any(capture => !capture.IsValid))
+        if (baselineCaptures.Any(capture => !capture.IsValid || capture.CaptureLoss?.HasConfirmedLoss == true)
+            || candidateCaptures.Any(capture => !capture.IsValid || capture.CaptureLoss?.HasConfirmedLoss == true))
         {
             return BenchmarkDecision.Invalid(
                 "Co najmniej jedno przechwycenie nie spełnia wymagań jakości.");

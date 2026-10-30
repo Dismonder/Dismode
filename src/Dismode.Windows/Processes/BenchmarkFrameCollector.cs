@@ -1,3 +1,5 @@
+using Dismode.Contracts.SystemOptimization;
+
 namespace Dismode.Windows.Processes;
 
 internal sealed class BenchmarkFrameCollector
@@ -9,6 +11,8 @@ internal sealed class BenchmarkFrameCollector
     private readonly Dictionary<string, List<PresentMonFrame>> _streams =
         new(StringComparer.Ordinal);
     private int _frameCount;
+    private bool _collectFrames = true;
+    private BenchmarkCaptureLoss _captureLoss = BenchmarkCaptureLoss.None;
 
     internal BenchmarkFrameCollector(int targetProcessId)
     {
@@ -25,7 +29,7 @@ internal sealed class BenchmarkFrameCollector
 
         lock (_sync)
         {
-            if (_frameCount >= MaximumFrameCount)
+            if (!_collectFrames || _frameCount >= MaximumFrameCount)
             {
                 return;
             }
@@ -43,6 +47,30 @@ internal sealed class BenchmarkFrameCollector
         }
     }
 
+    internal void StopCollectingFrames()
+    {
+        lock (_sync)
+        {
+            _collectFrames = false;
+        }
+    }
+
+    internal void RecordLoss(BenchmarkCaptureLoss loss)
+    {
+        lock (_sync)
+        {
+            BenchmarkCaptureLossState state = _captureLoss.HasConfirmedLoss || loss.HasConfirmedLoss
+                ? BenchmarkCaptureLossState.Confirmed
+                : _captureLoss.State == BenchmarkCaptureLossState.Unknown
+                    || loss.State == BenchmarkCaptureLossState.Unknown
+                    ? BenchmarkCaptureLossState.Unknown
+                    : BenchmarkCaptureLossState.None;
+            _captureLoss = new(state,
+                Math.Max(_captureLoss.LostEvents, loss.LostEvents),
+                Math.Max(_captureLoss.LostBuffers, loss.LostBuffers));
+        }
+    }
+
     internal IReadOnlyList<double> SnapshotDominantStream()
         => SnapshotDominantCapture().FrameTimesMilliseconds;
 
@@ -57,7 +85,7 @@ internal sealed class BenchmarkFrameCollector
                 .FirstOrDefault();
             if (best is null)
             {
-                return new([], AverageGpuBusyPercent: null);
+                return new([], AverageGpuBusyPercent: null, _captureLoss);
             }
 
             PresentMonFrame[] gpuFrames = best
@@ -73,11 +101,13 @@ internal sealed class BenchmarkFrameCollector
                     100d);
             return new(
                 best.Select(frame => frame.FrameTimeMilliseconds).ToArray(),
-                averageGpuBusyPercent);
+                averageGpuBusyPercent,
+                _captureLoss);
         }
     }
 }
 
 public sealed record PresentMonBenchmarkCapture(
     IReadOnlyList<double> FrameTimesMilliseconds,
-    double? AverageGpuBusyPercent);
+    double? AverageGpuBusyPercent,
+    BenchmarkCaptureLoss? CaptureLoss = null);

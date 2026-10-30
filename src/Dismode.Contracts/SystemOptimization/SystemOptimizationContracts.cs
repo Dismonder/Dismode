@@ -142,7 +142,10 @@ public sealed record BenchmarkCapture(
     double? AverageCpuPercent,
     double? AverageGpuBusyPercent,
     long? AverageUsedRamBytes,
-    string ProfileStateHash);
+    string ProfileStateHash,
+    [property: System.Text.Json.Serialization.JsonIgnore(
+        Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+    BenchmarkCaptureLoss? CaptureLoss = null);
 
 public sealed record BenchmarkResult(
     Guid ExperimentId,

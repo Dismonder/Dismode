@@ -2,6 +2,7 @@ using System.Security.Cryptography;
 using Dismode.Contracts.Commands;
 using Dismode.Contracts.Grpc;
 using Dismode.Contracts.Protocol;
+using Dismode.Contracts.SystemOptimization;
 using Dismode.Core.Domain.Identifiers;
 using Dismode.Windows.Ipc;
 using Grpc.Core;
@@ -176,7 +177,8 @@ internal sealed class SystemOptimizerClient : IDisposable
         double? averageCpuPercent,
         double? averageGpuBusyPercent,
         long? averageUsedRamBytes,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        BenchmarkCaptureLoss? captureLoss = null)
     {
         ArgumentNullException.ThrowIfNull(frameTimesMilliseconds);
         SubmitBenchmarkCaptureRequest request = new()
@@ -190,6 +192,15 @@ internal sealed class SystemOptimizerClient : IDisposable
             MeasurementMilliseconds = checked((int)measurementDuration.TotalMilliseconds),
         };
         request.FrameTimesMilliseconds.AddRange(frameTimesMilliseconds);
+        if (captureLoss is not null)
+        {
+            request.CaptureLoss = new()
+            {
+                State = (BenchmarkCaptureLossStateValue)(int)captureLoss.State,
+                LostEvents = captureLoss.LostEvents,
+                LostBuffers = captureLoss.LostBuffers,
+            };
+        }
         if (averageCpuPercent is double cpuPercent)
         {
             request.AverageCpuPercent = cpuPercent;

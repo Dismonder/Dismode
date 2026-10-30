@@ -72,7 +72,7 @@ public sealed partial class MainWindow : Window
         ConfigureTitleBar();
         AppWindow.Closing += AppWindow_Closing;
         AppWindow.Changed += AppWindow_Changed;
-        _refreshTimer.Interval = TimeSpan.FromSeconds(5);
+        _refreshTimer.Interval = _refreshPolicy.StatusPollInterval;
         _refreshTimer.Tick += RefreshTimer_Tick;
         Closed += (_, _) =>
         {
@@ -112,6 +112,7 @@ public sealed partial class MainWindow : Window
     internal async Task InitializeAsync()
     {
         await RefreshAsync(loadSettings: true).ConfigureAwait(true);
+        _refreshTimer.Interval = _refreshPolicy.StatusPollInterval;
         _refreshTimer.Start();
     }
 
