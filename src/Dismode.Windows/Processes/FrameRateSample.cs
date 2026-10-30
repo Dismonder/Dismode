@@ -5,7 +5,9 @@ public sealed record FrameRateSample(
     double? FramesPerSecond,
     double? FrameTimeMilliseconds,
     int? ProcessId,
-    string Message)
+    string Message,
+    double? DisplayedFramesPerSecond = null,
+    int? DroppedFrames = null)
 {
     public static FrameRateSample MissingComponent(string message) =>
         new(

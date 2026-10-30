@@ -66,6 +66,7 @@ public sealed partial class PerformanceOverlayWindow : Window, IDisposable
     private nint _positionedMonitor;
     private uint _positionedDpi;
     private bool _requestedVisible;
+    private bool _showDisplayedFrames;
     private bool _isShown;
     private bool _layoutDirty = true;
     private bool _disposed;
@@ -156,7 +157,9 @@ public sealed partial class PerformanceOverlayWindow : Window, IDisposable
         string gameName,
         int? processId,
         double? framesPerSecond,
-        double? frameTimeMilliseconds)
+        double? frameTimeMilliseconds,
+        double? displayedFramesPerSecond = null,
+        int? droppedFrames = null)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
 
@@ -201,6 +204,22 @@ public sealed partial class PerformanceOverlayWindow : Window, IDisposable
             SourceStatusText.Text = processId is int id
                 ? $"PID {id}"
                 : string.Empty;
+            // Wyswietlone FPS tylko przy wlaczonym ustawieniu; bez niego
+            // napis zostaje taki jak dotychczas.
+            if (_showDisplayedFrames
+                && displayedFramesPerSecond is double displayedFps)
+            {
+                SourceStatusText.Text +=
+                    (SourceStatusText.Text.Length > 0 ? " | " : string.Empty)
+                    + "wyśw. "
+                    + displayedFps.ToString("0", CultureInfo.CurrentCulture)
+                    + " FPS"
+                    + (droppedFrames is int dropped
+                        ? " | zgub. "
+                            + dropped.ToString(CultureInfo.CurrentCulture)
+                        : string.Empty);
+            }
+
             RefreshVisibility();
             return;
         }
@@ -273,6 +292,7 @@ public sealed partial class PerformanceOverlayWindow : Window, IDisposable
         ApplyWindowOpacity(preferences.OpacityPercent);
         OverlayScaleTransform.ScaleX = _scale;
         OverlayScaleTransform.ScaleY = _scale;
+        _showDisplayedFrames = preferences.IsDisplayTrackingEnabled;
         SetRequestedVisibility(
             preferences.IsEnabled && preferences.IsFpsTrackingEnabled);
     }

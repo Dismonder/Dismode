@@ -139,6 +139,8 @@ public sealed partial class MainWindow : Window, IDisposable
     private bool _isLoadingOptimizationPreferences;
     private bool _isLoadingOverlayPreferences;
     private bool _suppressFpsSettingEvents;
+    // Czytane przez watek pomiaru nakladki przy starcie PresentMon.
+    private volatile bool _displayTrackingEnabled;
     private bool _isOverlaySettingsSaveRunning;
     private int _frameRateTrackingUpdateRevision;
     private bool _isLoadingUpdatePreferences;
@@ -1017,6 +1019,38 @@ public sealed partial class MainWindow : Window, IDisposable
         object sender,
         RoutedEventArgs args) =>
         ApplyFpsOverlaySettingFromToggle(sender);
+
+    private void OnDisplayedFramesSettingChanged(
+        object sender,
+        RoutedEventArgs args)
+    {
+        if (_suppressFpsSettingEvents)
+        {
+            return;
+        }
+
+        _displayTrackingEnabled = DisplayedFramesSettingsToggleSwitch.IsOn;
+        ApplyOverlaySettingsFromControls(scheduleSave: true);
+    }
+
+    private void SetDisplayTrackingToggleValue(bool enabled)
+    {
+        if (DisplayedFramesSettingsToggleSwitch is null)
+        {
+            return;
+        }
+
+        _suppressFpsSettingEvents = true;
+        try
+        {
+            DisplayedFramesSettingsToggleSwitch.IsOn = enabled;
+            _displayTrackingEnabled = enabled;
+        }
+        finally
+        {
+            _suppressFpsSettingEvents = false;
+        }
+    }
 
     /// <summary>
     /// Fills in what the machine actually reports, so the setting below is read
@@ -5639,6 +5673,8 @@ public sealed partial class MainWindow : Window, IDisposable
             _isLoadingOverlayPreferences = true;
             SetFpsTrackingToggleValues(preferences.IsFpsTrackingEnabled);
             SetFpsOverlayToggleValues(preferences.IsEnabled);
+            SetDisplayTrackingToggleValue(
+                preferences.IsDisplayTrackingEnabled);
             OverlayOpacitySlider.Value = preferences.OpacityPercent;
             OverlaySizeSlider.Value = preferences.ScalePercent;
             OverlayCornerSelector.SelectedIndex =
@@ -5744,6 +5780,7 @@ public sealed partial class MainWindow : Window, IDisposable
         new(
             FpsOverlayToggleSwitch.IsOn,
             FpsTrackingToggleSwitch.IsOn,
+            DisplayedFramesSettingsToggleSwitch.IsOn,
             GetOverlayOpacityPercent(),
             GetOverlayScalePercent(),
             GetSelectedOverlayCorner(),
@@ -5843,7 +5880,9 @@ public sealed partial class MainWindow : Window, IDisposable
         _overlayPollInFlight = true;
         try
         {
-            _foregroundGameWatcher ??= new();
+            _foregroundGameWatcher ??= new(
+                displayTrackingSetting: _ =>
+                    ValueTask.FromResult(_displayTrackingEnabled));
             CancellationToken token = _lifetime.Token;
             ForegroundGameSample sample = await _foregroundGameWatcher
                 .SampleAsync(token);
@@ -5857,7 +5896,9 @@ public sealed partial class MainWindow : Window, IDisposable
                 sample.ProcessName,
                 sample.ProcessId,
                 sample.FramesPerSecond,
-                sample.FrameTimeMilliseconds);
+                sample.FrameTimeMilliseconds,
+                sample.DisplayedFramesPerSecond,
+                sample.DroppedFrames);
             _performanceOverlay.ApplyPreferences(
                 CreatePerformanceOverlayPreferencesFromControls());
         }

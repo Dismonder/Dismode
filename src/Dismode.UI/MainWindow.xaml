@@ -3093,6 +3093,29 @@
                             OnContent="WŁ."
                             Toggled="OnFpsOverlaySettingChanged" />
                       </Grid>
+
+                      <Grid ColumnSpacing="12">
+                        <Grid.ColumnDefinitions>
+                          <ColumnDefinition Width="*" />
+                          <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+                        <StackPanel VerticalAlignment="Center" Spacing="2">
+                          <TextBlock FontSize="13" Text="Wyświetlone FPS i zgubione klatki" />
+                          <TextBlock
+                              Foreground="{ThemeResource DismodeMutedTextBrush}"
+                              FontSize="11"
+                              Text="Opcjonalne. Śledzi klatki aż do ekranu, więc pomiar zużywa trochę więcej zasobów. Działa od następnego pomiaru."
+                              TextWrapping="Wrap" />
+                        </StackPanel>
+                        <ToggleSwitch
+                            x:Name="DisplayedFramesSettingsToggleSwitch"
+                            Grid.Column="1"
+                            AutomationProperties.Name="Włącz śledzenie wyświetlonych klatek w ustawieniach"
+                            IsOn="False"
+                            OffContent="WYŁ."
+                            OnContent="WŁ."
+                            Toggled="OnDisplayedFramesSettingChanged" />
+                      </Grid>
                     </StackPanel>
 
                     <!-- Procesor: co Dismode wykrył i co wolno mu z tym

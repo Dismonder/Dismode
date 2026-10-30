@@ -9,6 +9,15 @@ internal sealed class PresentMonCsvParser
     private int _swapChainIndex = -1;
     private int _frameTimeIndex = -1;
     private int _gpuBusyIndex = -1;
+    private int _displayedTimeIndex = -1;
+    private readonly bool _trackDisplay;
+
+    // Kolumny wyswietlania czyta tylko parser utworzony z trackDisplay: przy
+    // wylaczonym ustawieniu ramka ma dokladnie te same pola co dotychczas.
+    internal PresentMonCsvParser(bool trackDisplay = false)
+    {
+        _trackDisplay = trackDisplay;
+    }
 
     internal bool HasValidHeader =>
         _processIdIndex >= 0
@@ -36,7 +45,9 @@ internal sealed class PresentMonCsvParser
             _processIdIndex,
             Math.Max(
                 _swapChainIndex,
-                Math.Max(_frameTimeIndex, _gpuBusyIndex)));
+                Math.Max(
+                    _frameTimeIndex,
+                    Math.Max(_gpuBusyIndex, _displayedTimeIndex))));
         if (fields.Length <= highestIndex
             || !int.TryParse(
                 fields[_processIdIndex],
@@ -69,11 +80,30 @@ internal sealed class PresentMonCsvParser
             gpuBusyMilliseconds = parsedGpuBusy;
         }
 
+        // Ramka bez DisplayedTime (NA, puste albo 0) nie trafila na ekran:
+        // zgubiona. Bez samej kolumny nie wiemy nic, wiec DisplayTracked
+        // zostaje false i liczy sie tylko FPS prezentacji.
+        bool displayTracked = _displayedTimeIndex >= 0;
+        double? displayedTimeMilliseconds = null;
+        if (displayTracked
+            && double.TryParse(
+                fields[_displayedTimeIndex],
+                NumberStyles.Float,
+                CultureInfo.InvariantCulture,
+                out double parsedDisplayed)
+            && double.IsFinite(parsedDisplayed)
+            && parsedDisplayed is > 0 and <= 10_000)
+        {
+            displayedTimeMilliseconds = parsedDisplayed;
+        }
+
         frame = new(
             processId,
             fields[_swapChainIndex],
             frameTimeMilliseconds,
-            gpuBusyMilliseconds);
+            gpuBusyMilliseconds,
+            displayTracked,
+            displayedTimeMilliseconds);
         return true;
     }
 
@@ -128,11 +158,15 @@ internal sealed class PresentMonCsvParser
         _swapChainIndex = FindColumn(fields, "SwapChainAddress");
         _frameTimeIndex = FindColumn(fields, "FrameTime");
         _gpuBusyIndex = FindColumn(fields, "GPUBusy");
+        _displayedTimeIndex = _trackDisplay
+            ? FindColumn(fields, "DisplayedTime")
+            : -1;
         if (!HasValidHeader)
         {
             _processIdIndex = -1;
             _swapChainIndex = -1;
             _frameTimeIndex = -1;
+            _displayedTimeIndex = -1;
         }
     }
 
@@ -156,4 +190,10 @@ internal readonly record struct PresentMonFrame(
     int ProcessId,
     string SwapChainAddress,
     double FrameTimeMilliseconds,
-    double? GpuBusyMilliseconds = null);
+    double? GpuBusyMilliseconds = null,
+    bool DisplayTracked = false,
+    double? DisplayedTimeMilliseconds = null)
+{
+    internal bool IsDropped =>
+        DisplayTracked && DisplayedTimeMilliseconds is null;
+}
