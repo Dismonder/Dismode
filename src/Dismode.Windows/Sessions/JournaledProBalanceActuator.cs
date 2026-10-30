@@ -95,6 +95,12 @@ public sealed class JournaledProBalanceActuator :
     /// </summary>
     private IRestraintLedger? _ledger;
 
+    /// <summary>
+    /// Odczyt i zapis zbiorow CPU; szew dla testow.
+    /// </summary>
+    internal ICpuSetsPort CpuSetsPort { get; init; } =
+        SystemCpuSetsPort.Instance;
+
     public JournaledProBalanceActuator(
         IRecoveryJournal journal,
         SessionId sessionId,
@@ -182,7 +188,7 @@ public sealed class JournaledProBalanceActuator :
                 plannedIo,
                 plannedEcoQos,
                 plannedGpu,
-                steeredCpuSets: false,
+                steer: null,
                 restrainedAtUtc)
             .ConfigureAwait(false))
         {
@@ -271,7 +277,7 @@ public sealed class JournaledProBalanceActuator :
         // z obnizonym priorytetem na zawsze. Reszte robimy wiec bez tokenu,
         // a rekord powstaje w finally z tym, co realnie zdazylo sie nalozyc
         // — albo moglo sie nalozyc, bo niepewnosc tez trzeba pamietac.
-        bool steered = false;
+        CpuSetsSteer? steered = null;
         PinnedAffinity? pinned = null;
         ThrottledEcoQos? ecoQos = null;
         LoweredIo? loweredIo = null;
@@ -281,7 +287,7 @@ public sealed class JournaledProBalanceActuator :
             // Odsuniecie od rdzeni gry. Idzie po ograniczeniu priorytetu,
             // bo tamto jest wazniejsze i nie chcemy, zeby nieudane
             // sterowanie zbiorami przeslonilo udane obnizenie priorytetu.
-            steered = plannedSteer && TrySteerAway(runtimeKey);
+            steered = plannedSteer ? TrySteerAway(runtimeKey) : null;
             pinned = await TryPinAsync(identity, plannedPin)
                 .ConfigureAwait(false);
             ecoQos = await TryApplyEcoQosAsync(identity, plannedEcoQos)
@@ -348,7 +354,7 @@ public sealed class JournaledProBalanceActuator :
             identity,
             actionId,
             idempotencyKey,
-            Steered: false,
+            Steered: null,
             plannedPin,
             plannedIo,
             restrainedAtUtc,
@@ -382,8 +388,9 @@ public sealed class JournaledProBalanceActuator :
         // ten sam proces. Zwolnienie „zniknal z inwentaryzacji" przychodzi
         // wlasnie wtedy, gdy numer mogl juz zmienic wlasciciela, a czyszczenie
         // po samym numerze trafialoby w obcy proces.
-        bool setsCleared = !record.Steered
-            || await TryClearCpuSetsAsync(record.Identity).ConfigureAwait(false);
+        bool setsCleared = record.Steered is not { } steer
+            || await TryRestoreCpuSetsAsync(record.Identity, steer)
+                .ConfigureAwait(false);
 
         // Cala ta sciezka idzie bez tokenu i jest to ta sama zasada, co przy
         // nakladaniu: zwalnianie przerwane w polowie zostawia proces
@@ -465,12 +472,16 @@ public sealed class JournaledProBalanceActuator :
             or ActionRecoveryStatus.MissingPreparation;
 
     /// <summary>
-    /// Clears the default CPU sets of a restrained process, but only when the
-    /// process behind the id is still the one that was restrained. A process
-    /// that has exited has nothing to clear; its number may already belong to
-    /// something else.
+    /// Puts back the CPU sets a restrained process had, but only when the
+    /// process behind the id is still the one that was restrained and its
+    /// assignment is still the one we wrote. A process that has exited has
+    /// nothing to restore; its number may already belong to something else.
+    /// An assignment somebody changed after us is left as it is and counts as
+    /// done.
     /// </summary>
-    private async ValueTask<bool> TryClearCpuSetsAsync(ProcessIdentity identity)
+    private async ValueTask<bool> TryRestoreCpuSetsAsync(
+        ProcessIdentity identity,
+        CpuSetsSteer steer)
     {
         try
         {
@@ -478,7 +489,11 @@ public sealed class JournaledProBalanceActuator :
                 .MatchesRuntimeIdentityAsync(identity, CancellationToken.None)
                 .ConfigureAwait(false);
             return !sameProcess
-                || ProcessCpuSets.TryApply(identity.RuntimeKey.ProcessId, []);
+                || CpuSetsSteering.RestoreIfUnchanged(
+                    CpuSetsPort,
+                    identity.RuntimeKey.ProcessId,
+                    steer.Original,
+                    steer.Applied) != CpuSetsRestoreResult.Failed;
         }
         catch (Exception exception) when (IsExpected(exception))
         {
@@ -586,22 +601,27 @@ public sealed class JournaledProBalanceActuator :
     /// risk stalling something the user never asked us to touch.
     /// </para>
     /// </summary>
-    private bool TrySteerAway(ProcessRuntimeKey runtimeKey)
+    private CpuSetsSteer? TrySteerAway(ProcessRuntimeKey runtimeKey)
     {
         if (_backgroundCpuSetIds.Count == 0)
         {
-            return false;
+            return null;
         }
 
         try
         {
-            return ProcessCpuSets.TryApply(
+            // Cudze przypisanie (launcher, uzytkownik) zostaje; zapis tylko
+            // na pusty stan i potwierdzony odczytem zwrotnym. Do rekordu
+            // trafia wylacznie to, co faktycznie zapisalismy.
+            CpuSetsSteer steer = CpuSetsSteering.Steer(
+                CpuSetsPort,
                 runtimeKey.ProcessId,
                 _backgroundCpuSetIds);
+            return steer.IsApplied ? steer : null;
         }
         catch (Exception exception) when (IsExpected(exception))
         {
-            return false;
+            return null;
         }
     }
 
@@ -672,7 +692,7 @@ public sealed class JournaledProBalanceActuator :
         LoweredIo? loweredIo,
         ThrottledEcoQos? ecoQos,
         LoweredGpu? loweredGpu,
-        bool steeredCpuSets,
+        CpuSetsSteer? steer,
         DateTimeOffset restrainedAtUtc)
     {
         if (_ledger is not { } ledger)
@@ -698,11 +718,13 @@ public sealed class JournaledProBalanceActuator :
                         null,
                         null,
                         restrainedAtUtc,
-                        steeredCpuSets,
+                        steer is not null,
                         ecoQos?.ActionId,
                         ecoQos?.IdempotencyKey,
                         loweredGpu?.ActionId,
-                        loweredGpu?.IdempotencyKey),
+                        loweredGpu?.IdempotencyKey,
+                        steer?.Original.ToArray(),
+                        steer?.Applied.ToArray()),
                     CancellationToken.None)
                 .ConfigureAwait(false);
             return true;
@@ -983,7 +1005,7 @@ public sealed class JournaledProBalanceActuator :
         ProcessIdentity Identity,
         ActionId ActionId,
         IdempotencyKey IdempotencyKey,
-        bool Steered,
+        CpuSetsSteer? Steered,
         PinnedAffinity? Pinned,
         LoweredIo? LoweredIo,
         DateTimeOffset RestrainedAtUtc,

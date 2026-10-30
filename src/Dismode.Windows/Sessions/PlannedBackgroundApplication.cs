@@ -32,4 +32,8 @@ public sealed record PlannedBackgroundApplication(
     // Priorytet GPU nalozony przez petle reaktywna; aplikacje z planu go nie
     // dostaja.
     ActionId? GpuPriorityActionId = null,
-    IdempotencyKey? GpuPriorityIdempotencyKey = null);
+    IdempotencyKey? GpuPriorityIdempotencyKey = null,
+    // Zbiory CPU sprzed zapisu i zapisane; null dla starszych rekordow
+    // (sama flaga SteeredCpuSets), wtedy czyszczenie bezwarunkowe jak dawniej.
+    uint[]? OriginalCpuSetIds = null,
+    uint[]? AppliedCpuSetIds = null);

@@ -20,7 +20,7 @@ public sealed class SqliteUserDataStore :
     IGlobalBackgroundRuleRepository,
     IDisposable
 {
-    private const int CurrentSchemaVersion = 16;
+    private const int CurrentSchemaVersion = 17;
     private const int MaximumGlobalRuleCount = 128;
     private const int MaximumHistoryPageSize = 1000;
 
@@ -369,11 +369,14 @@ public sealed class SqliteUserDataStore :
             SavedGamePriorityMode.Normal;
         DateTimeOffset updatedAtUtc = DateTimeOffset.UtcNow;
         bool autoOptimizeWhenDetected = true;
+        bool pinGameToPreferredCores = true;
+        bool keepAwakeDuringSession = true;
         await using (SqliteCommand preference = connection.CreateCommand())
         {
             preference.CommandText =
                 """
-                SELECT GamePriority, UpdatedAtUtc, AutoOptimizeWhenDetected
+                SELECT GamePriority, UpdatedAtUtc, AutoOptimizeWhenDetected,
+                       PinGameToPreferredCores, KeepAwakeDuringSession
                 FROM GameOptimizationPreferences
                 WHERE ProfileId = $profileId;
                 """;
@@ -390,6 +393,8 @@ public sealed class SqliteUserDataStore :
                     (SavedGamePriorityMode)reader.GetInt32(0);
                 updatedAtUtc = ParseTimestamp(reader.GetString(1));
                 autoOptimizeWhenDetected = reader.GetBoolean(2);
+                pinGameToPreferredCores = reader.GetBoolean(3);
+                keepAwakeDuringSession = reader.GetBoolean(4);
             }
         }
 
@@ -424,7 +429,98 @@ public sealed class SqliteUserDataStore :
             priority,
             rules,
             updatedAtUtc,
-            autoOptimizeWhenDetected);
+            autoOptimizeWhenDetected,
+            pinGameToPreferredCores,
+            keepAwakeDuringSession);
+    }
+
+    /// <summary>
+    /// Zapisuje sam przelacznik utrzymania ekranu i systemu w trakcie sesji,
+    /// nie ruszajac reszty preferencji gry.
+    /// </summary>
+    public async ValueTask SetKeepAwakeForProfileAsync(
+        GameProfileId profileId,
+        bool keepAwakeDuringSession,
+        CancellationToken cancellationToken)
+    {
+        await InitializeAsync(cancellationToken).ConfigureAwait(false);
+        await using SqliteConnection connection = CreateConnection();
+        await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
+        await ConfigureConnectionAsync(connection, cancellationToken)
+            .ConfigureAwait(false);
+
+        await using SqliteCommand command = connection.CreateCommand();
+        command.CommandText =
+            """
+            INSERT INTO GameOptimizationPreferences (
+                ProfileId, GamePriority, UpdatedAtUtc,
+                KeepAwakeDuringSession)
+            VALUES (
+                $profileId, $gamePriority, $updatedAtUtc,
+                $keepAwakeDuringSession)
+            ON CONFLICT(ProfileId) DO UPDATE SET
+                KeepAwakeDuringSession = excluded.KeepAwakeDuringSession,
+                UpdatedAtUtc = excluded.UpdatedAtUtc;
+            """;
+        command.Parameters.AddWithValue(
+            "$profileId",
+            profileId.Value.ToString("D"));
+        command.Parameters.AddWithValue(
+            "$gamePriority",
+            (int)SavedGamePriorityMode.Normal);
+        command.Parameters.AddWithValue(
+            "$updatedAtUtc",
+            FormatTimestamp(DateTimeOffset.UtcNow));
+        command.Parameters.AddWithValue(
+            "$keepAwakeDuringSession",
+            keepAwakeDuringSession ? 1 : 0);
+        await command.ExecuteNonQueryAsync(cancellationToken)
+            .ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Zapisuje sam przelacznik przypinania gry do rdzeni wydajnych, nie
+    /// ruszajac priorytetu ani regul: dziala od razu po kliknieciu, tak jak
+    /// wyjatek automatu.
+    /// </summary>
+    public async ValueTask SetGamePinningForProfileAsync(
+        GameProfileId profileId,
+        bool pinGameToPreferredCores,
+        CancellationToken cancellationToken)
+    {
+        await InitializeAsync(cancellationToken).ConfigureAwait(false);
+        await using SqliteConnection connection = CreateConnection();
+        await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
+        await ConfigureConnectionAsync(connection, cancellationToken)
+            .ConfigureAwait(false);
+
+        await using SqliteCommand command = connection.CreateCommand();
+        command.CommandText =
+            """
+            INSERT INTO GameOptimizationPreferences (
+                ProfileId, GamePriority, UpdatedAtUtc,
+                PinGameToPreferredCores)
+            VALUES (
+                $profileId, $gamePriority, $updatedAtUtc,
+                $pinGameToPreferredCores)
+            ON CONFLICT(ProfileId) DO UPDATE SET
+                PinGameToPreferredCores = excluded.PinGameToPreferredCores,
+                UpdatedAtUtc = excluded.UpdatedAtUtc;
+            """;
+        command.Parameters.AddWithValue(
+            "$profileId",
+            profileId.Value.ToString("D"));
+        command.Parameters.AddWithValue(
+            "$gamePriority",
+            (int)SavedGamePriorityMode.Normal);
+        command.Parameters.AddWithValue(
+            "$updatedAtUtc",
+            FormatTimestamp(DateTimeOffset.UtcNow));
+        command.Parameters.AddWithValue(
+            "$pinGameToPreferredCores",
+            pinGameToPreferredCores ? 1 : 0);
+        await command.ExecuteNonQueryAsync(cancellationToken)
+            .ConfigureAwait(false);
     }
 
     /// <summary>
@@ -625,14 +721,18 @@ public sealed class SqliteUserDataStore :
                 """
                 INSERT INTO GameOptimizationPreferences (
                     ProfileId, GamePriority, UpdatedAtUtc,
-                    AutoOptimizeWhenDetected)
+                    AutoOptimizeWhenDetected, PinGameToPreferredCores,
+                    KeepAwakeDuringSession)
                 VALUES (
                     $profileId, $gamePriority, $updatedAtUtc,
-                    $autoOptimizeWhenDetected)
+                    $autoOptimizeWhenDetected, $pinGameToPreferredCores,
+                    $keepAwakeDuringSession)
                 ON CONFLICT(ProfileId) DO UPDATE SET
                     GamePriority = excluded.GamePriority,
                     UpdatedAtUtc = excluded.UpdatedAtUtc,
-                    AutoOptimizeWhenDetected = excluded.AutoOptimizeWhenDetected;
+                    AutoOptimizeWhenDetected = excluded.AutoOptimizeWhenDetected,
+                    PinGameToPreferredCores = excluded.PinGameToPreferredCores,
+                    KeepAwakeDuringSession = excluded.KeepAwakeDuringSession;
                 """;
             upsert.Parameters.AddWithValue("$profileId", profileId);
             upsert.Parameters.AddWithValue(
@@ -644,6 +744,12 @@ public sealed class SqliteUserDataStore :
             upsert.Parameters.AddWithValue(
                 "$autoOptimizeWhenDetected",
                 preferences.AutoOptimizeWhenDetected ? 1 : 0);
+            upsert.Parameters.AddWithValue(
+                "$pinGameToPreferredCores",
+                preferences.PinGameToPreferredCores ? 1 : 0);
+            upsert.Parameters.AddWithValue(
+                "$keepAwakeDuringSession",
+                preferences.KeepAwakeDuringSession ? 1 : 0);
             await upsert.ExecuteNonQueryAsync(cancellationToken)
                 .ConfigureAwait(false);
         }
@@ -1932,6 +2038,38 @@ public sealed class SqliteUserDataStore :
             schema.Parameters.AddWithValue("$appliedAtUtc", FormatTimestamp(DateTimeOffset.UtcNow));
             await schema.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
             await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
+            existingVersion = 16;
+        }
+
+        if (existingVersion < 17)
+        {
+            // Przypinanie gry do rdzeni wydajnych bylo dotad zawsze wlaczone
+            // razem z ProBalance, a utrzymania ekranu nie bylo wcale; oba
+            // przelaczniki sa domyslnie wlaczone, wiec istniejace wiersze
+            // dostaja 1.
+            await using SqliteTransaction transaction =
+                (SqliteTransaction)await connection
+                    .BeginTransactionAsync(IsolationLevel.Serializable, cancellationToken)
+                    .ConfigureAwait(false);
+            await using SqliteCommand schema = connection.CreateCommand();
+            schema.Transaction = transaction;
+            schema.CommandText =
+                """
+                ALTER TABLE GameOptimizationPreferences
+                    ADD COLUMN PinGameToPreferredCores INTEGER NOT NULL
+                        DEFAULT 1
+                        CHECK (PinGameToPreferredCores IN (0, 1));
+                ALTER TABLE GameOptimizationPreferences
+                    ADD COLUMN KeepAwakeDuringSession INTEGER NOT NULL
+                        DEFAULT 1
+                        CHECK (KeepAwakeDuringSession IN (0, 1));
+
+                INSERT INTO SchemaMigrations (Version, AppliedAtUtc)
+                VALUES (17, $appliedAtUtc);
+                """;
+            schema.Parameters.AddWithValue("$appliedAtUtc", FormatTimestamp(DateTimeOffset.UtcNow));
+            await schema.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+            await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
         }
     }
 
@@ -2001,7 +2139,8 @@ public sealed class SqliteUserDataStore :
                 LIMIT 0;
 
                 SELECT ProfileId, GamePriority, UpdatedAtUtc,
-                       AutoOptimizeWhenDetected
+                       AutoOptimizeWhenDetected, PinGameToPreferredCores,
+                       KeepAwakeDuringSession
                 FROM GameOptimizationPreferences
                 LIMIT 0;
 

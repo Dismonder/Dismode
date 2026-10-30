@@ -5268,7 +5268,9 @@ public sealed partial class MainWindow : Window, IDisposable
                     _loadedPreferences.GamePriority,
                     _loadedPreferences.BackgroundRules,
                     DateTimeOffset.UtcNow,
-                    enabled);
+                    enabled,
+                    _loadedPreferences.PinGameToPreferredCores,
+                    _loadedPreferences.KeepAwakeDuringSession);
             }
         }
         catch (OperationCanceledException)
@@ -5283,6 +5285,102 @@ public sealed partial class MainWindow : Window, IDisposable
                 "Nie zapisano wyjątku automatu dla gry",
                 "Ustawienie działa do ponownego uruchomienia. "
                 + exception.Message);
+        }
+    }
+
+    /// <summary>
+    /// Przypinanie gry do rdzeni wydajnych per gra. Zapis od razu, tak jak
+    /// wyjatek automatu; sesja czyta wartosc przy starcie.
+    /// </summary>
+    private async void OnPinGameToPreferredCoresCheckBoxClicked(
+        object sender,
+        RoutedEventArgs args)
+    {
+        if (ProfilesList.SelectedItem is not ProfileListItem selected
+            || PinGameToPreferredCoresCheckBox is null)
+        {
+            return;
+        }
+
+        bool enabled = PinGameToPreferredCoresCheckBox.IsChecked != false;
+        try
+        {
+            await _userDataStore.SetGamePinningForProfileAsync(
+                selected.Profile.ProfileId,
+                enabled,
+                _lifetime.Token);
+            if (_loadedPreferences is not null
+                && _loadedPreferences.ProfileId == selected.Profile.ProfileId)
+            {
+                _loadedPreferences = new(
+                    _loadedPreferences.ProfileId,
+                    _loadedPreferences.GamePriority,
+                    _loadedPreferences.BackgroundRules,
+                    DateTimeOffset.UtcNow,
+                    _loadedPreferences.AutoOptimizeWhenDetected,
+                    enabled,
+                    _loadedPreferences.KeepAwakeDuringSession);
+            }
+        }
+        catch (OperationCanceledException)
+            when (_lifetime.IsCancellationRequested)
+        {
+        }
+        catch (Exception exception) when (IsExpectedUiFailure(exception))
+        {
+            ShowInfo(
+                PlanInfoBar,
+                InfoBarSeverity.Error,
+                "Nie zapisano przypinania gry do rdzeni",
+                exception.Message);
+        }
+    }
+
+    /// <summary>
+    /// Utrzymanie ekranu i systemu w trakcie sesji, per gra. Zapis od razu;
+    /// sesja czyta wartosc przy starcie.
+    /// </summary>
+    private async void OnKeepAwakeDuringSessionCheckBoxClicked(
+        object sender,
+        RoutedEventArgs args)
+    {
+        if (ProfilesList.SelectedItem is not ProfileListItem selected
+            || KeepAwakeDuringSessionCheckBox is null)
+        {
+            return;
+        }
+
+        bool enabled = KeepAwakeDuringSessionCheckBox.IsChecked != false;
+        try
+        {
+            await _userDataStore.SetKeepAwakeForProfileAsync(
+                selected.Profile.ProfileId,
+                enabled,
+                _lifetime.Token);
+            if (_loadedPreferences is not null
+                && _loadedPreferences.ProfileId == selected.Profile.ProfileId)
+            {
+                _loadedPreferences = new(
+                    _loadedPreferences.ProfileId,
+                    _loadedPreferences.GamePriority,
+                    _loadedPreferences.BackgroundRules,
+                    DateTimeOffset.UtcNow,
+                    _loadedPreferences.AutoOptimizeWhenDetected,
+                    _loadedPreferences.PinGameToPreferredCores,
+                    enabled);
+            }
+        }
+        catch (OperationCanceledException)
+            when (_lifetime.IsCancellationRequested)
+        {
+        }
+        catch (Exception exception) when (IsExpectedUiFailure(exception))
+        {
+            ShowInfo(
+                PlanInfoBar,
+                InfoBarSeverity.Error,
+                "Nie zapisano utrzymania ekranu w trakcie sesji",
+                exception.Message);
         }
     }
 
@@ -6443,6 +6541,10 @@ public sealed partial class MainWindow : Window, IDisposable
             // programowej zmianie, wiec nic sie tu nie zapisuje ponownie.
             AutoOptimizeGameCheckBox.IsChecked =
                 preferences.AutoOptimizeWhenDetected;
+            PinGameToPreferredCoresCheckBox.IsChecked =
+                preferences.PinGameToPreferredCores;
+            KeepAwakeDuringSessionCheckBox.IsChecked =
+                preferences.KeepAwakeDuringSession;
         }
         catch (OperationCanceledException)
             when (_lifetime.IsCancellationRequested)
@@ -6707,7 +6809,11 @@ public sealed partial class MainWindow : Window, IDisposable
             rules,
             DateTimeOffset.UtcNow,
             autoOptimizeWhenDetected:
-                AutoOptimizeGameCheckBox.IsChecked != false);
+                AutoOptimizeGameCheckBox.IsChecked != false,
+            pinGameToPreferredCores:
+                PinGameToPreferredCoresCheckBox.IsChecked != false,
+            keepAwakeDuringSession:
+                KeepAwakeDuringSessionCheckBox.IsChecked != false);
         await _userDataStore.SaveOptimizationPreferencesAsync(
             preferences,
             cancellationToken);

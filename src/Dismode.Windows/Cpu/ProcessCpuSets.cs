@@ -42,6 +42,31 @@ internal static partial class ProcessCpuSets
         && desiredMask != 0
         && (desiredMask & ~currentAffinityMask) != 0;
 
+    /// <summary>
+    /// Trojstanowy odczyt: pusty, niepusty albo nieudany. Sam
+    /// <see cref="TryRead"/> tez to rozroznia (null to porazka), ale wolajacy
+    /// latwo myli null z pustym zbiorem; tu stan jest jawny.
+    /// </summary>
+    internal static CpuSetsQuery Query(int processId)
+    {
+        try
+        {
+            IReadOnlyList<uint>? ids = TryRead(processId);
+            return ids is null
+                ? CpuSetsQuery.Failure
+                : new(
+                    ids.Count == 0
+                        ? CpuSetsQueryState.Empty
+                        : CpuSetsQueryState.NonEmpty,
+                    ids);
+        }
+        catch (Exception exception) when (
+            exception is OverflowException or Win32Exception)
+        {
+            return CpuSetsQuery.Failure;
+        }
+    }
+
     internal static IReadOnlyList<uint>? TryRead(int processId)
     {
         using SafeProcessHandle handle = OpenProcess(

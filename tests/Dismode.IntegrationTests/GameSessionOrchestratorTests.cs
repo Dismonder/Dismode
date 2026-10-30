@@ -11,6 +11,7 @@ using Dismode.Core.Sessions;
 using Dismode.Data.Journal;
 using Dismode.Data.UserData;
 using Dismode.Windows.Cpu;
+using Dismode.Windows.Power;
 using Dismode.Windows.Processes;
 using Dismode.Windows.Profiles;
 using Dismode.Windows.Sessions;
@@ -1428,6 +1429,259 @@ public sealed class GameSessionOrchestratorTests
             journal.Dispose();
             store.Dispose();
             DeleteDirectory(directory);
+        }
+    }
+
+    [TestMethod]
+    [DataRow(true, true, true)]
+    [DataRow(true, false, false)]
+    [DataRow(false, true, false)]
+    [DataRow(false, false, false)]
+    public void GamePinningNeedsRestraintAndThePerGamePreference(
+        bool restraint,
+        bool pinPreference,
+        bool expected) =>
+        Assert.AreEqual(
+            expected,
+            LocalGameSessionOrchestrator.ShouldPinGame(
+                restraint,
+                pinPreference));
+
+    [TestMethod]
+    [DataRow(true, DisplayName = "ProBalance wlaczony")]
+    [DataRow(false, DisplayName = "ProBalance wylaczony")]
+    public async Task PinningOffLeavesTheGameProcessUntouched(bool proBalance)
+    {
+        // Przy wylaczonym przypinaniu zadnego zapisu do procesu gry: ani
+        // zbiorow procesorow, ani maski. ProBalance (zrodlo probek tla) moze
+        // dzialac dalej niezaleznie.
+        string directory = CreateTestDirectory();
+        string readyFile = Path.Combine(directory, "game.ready");
+        int? processId = null;
+        SqliteUserDataStore store = new(Path.Combine(directory, "user.db"));
+        AppendOnlyRecoveryJournal journal =
+            new(Path.Combine(directory, "recovery.jsonl"));
+        int sourceFactoryCalls = 0;
+        LocalGameSessionOrchestrator orchestrator = new(
+            store,
+            store,
+            journal,
+            monitorInterval: TimeSpan.FromMilliseconds(50),
+            frameRateProvider: new ConstantFrameRateProvider(),
+            enableProBalance: proBalance,
+            cpuProcessSourceFactory: () =>
+            {
+                Interlocked.Increment(ref sourceFactoryCalls);
+                return new RecordingCpuProcessSource();
+            },
+            proBalanceActuatorFactory: _ => new RecordingProBalanceActuator());
+
+        try
+        {
+            ManualGameProfile profile = await CreateHarnessProfileAsync(
+                readyFile);
+            await store.UpsertAsync(profile, CancellationToken.None);
+            await store.SaveOptimizationPreferencesAsync(
+                new GameOptimizationPreferences(
+                    profile.ProfileId,
+                    SavedGamePriorityMode.Normal,
+                    backgroundRules: null,
+                    DateTimeOffset.UtcNow,
+                    pinGameToPreferredCores: false),
+                CancellationToken.None);
+            await orchestrator.InitializeAsync(CancellationToken.None);
+            SessionPlanPreview plan = await orchestrator.PrepareAsync(
+                profile.ProfileId,
+                CancellationToken.None);
+            await orchestrator.StartAsync(
+                plan.PlanId,
+                plan.SessionId,
+                CancellationToken.None);
+            await WaitForFileAsync(readyFile);
+            processId = ReadProcessId(readyFile);
+
+            Assert.AreEqual(proBalance ? 1 : 0, sourceFactoryCalls);
+            IReadOnlyList<uint>? cpuSets = ProcessCpuSets.TryRead(processId.Value);
+            Assert.IsNotNull(cpuSets);
+            Assert.IsEmpty(cpuSets, "Gra nie ma dostac zbiorow procesorow.");
+            using Process game = Process.GetProcessById(processId.Value);
+            Assert.AreEqual(
+                Process.GetCurrentProcess().ProcessorAffinity,
+                game.ProcessorAffinity,
+                "Gra nie ma dostac maski affinity.");
+
+            await orchestrator.RestoreAsync(
+                plan.SessionId,
+                CancellationToken.None);
+        }
+        finally
+        {
+            if (processId is not null)
+            {
+                await CloseProcessAsync(processId.Value);
+            }
+
+            await orchestrator.DisposeAsync();
+            journal.Dispose();
+            store.Dispose();
+            DeleteDirectory(directory);
+        }
+    }
+
+    [TestMethod]
+    [DataRow(true, true, DisplayName = "przelacznik wlaczony")]
+    [DataRow(false, false, DisplayName = "przelacznik wylaczony")]
+    public async Task KeepAwakeIsHeldOnlyDuringTheSessionAndOnlyWhenEnabled(
+        bool keepAwake,
+        bool expectedAcquired)
+    {
+        string directory = CreateTestDirectory();
+        string readyFile = Path.Combine(directory, "game.ready");
+        int? processId = null;
+        SqliteUserDataStore store = new(Path.Combine(directory, "user.db"));
+        AppendOnlyRecoveryJournal journal =
+            new(Path.Combine(directory, "recovery.jsonl"));
+        FakeInhibitor inhibitor = new();
+        LocalGameSessionOrchestrator orchestrator = new(
+            store,
+            store,
+            journal,
+            monitorInterval: TimeSpan.FromMilliseconds(50),
+            frameRateProvider: new ConstantFrameRateProvider(),
+            optimizationPreferences: store,
+            keepAwakeFactory: () => inhibitor);
+
+        try
+        {
+            ManualGameProfile profile = await CreateHarnessProfileAsync(
+                readyFile);
+            await store.UpsertAsync(profile, CancellationToken.None);
+            await store.SaveOptimizationPreferencesAsync(
+                new GameOptimizationPreferences(
+                    profile.ProfileId,
+                    SavedGamePriorityMode.Normal,
+                    backgroundRules: null,
+                    DateTimeOffset.UtcNow,
+                    keepAwakeDuringSession: keepAwake),
+                CancellationToken.None);
+            await orchestrator.InitializeAsync(CancellationToken.None);
+            SessionPlanPreview plan = await orchestrator.PrepareAsync(
+                profile.ProfileId,
+                CancellationToken.None);
+            Assert.AreEqual(0, inhibitor.AcquireCalls, "Plan niczego nie bierze.");
+
+            await orchestrator.StartAsync(
+                plan.PlanId,
+                plan.SessionId,
+                CancellationToken.None);
+            await WaitForFileAsync(readyFile);
+            processId = ReadProcessId(readyFile);
+
+            Assert.AreEqual(expectedAcquired ? 1 : 0, inhibitor.AcquireCalls);
+            Assert.AreEqual(expectedAcquired, inhibitor.Held);
+
+            await orchestrator.RestoreAsync(
+                plan.SessionId,
+                CancellationToken.None);
+            Assert.IsFalse(inhibitor.Held, "Po sesji zadanie ma byc zdjete.");
+            Assert.AreEqual(expectedAcquired ? 1 : 0, inhibitor.AcquireCalls);
+
+            await orchestrator.DisposeAsync();
+            Assert.IsFalse(inhibitor.Held);
+        }
+        finally
+        {
+            if (processId is not null)
+            {
+                await CloseProcessAsync(processId.Value);
+            }
+
+            await orchestrator.DisposeAsync();
+            journal.Dispose();
+            store.Dispose();
+            DeleteDirectory(directory);
+        }
+    }
+
+    [TestMethod]
+    public async Task RefusedKeepAwakeDoesNotStopTheSessionAndIsReleased()
+    {
+        string directory = CreateTestDirectory();
+        string readyFile = Path.Combine(directory, "game.ready");
+        int? processId = null;
+        SqliteUserDataStore store = new(Path.Combine(directory, "user.db"));
+        AppendOnlyRecoveryJournal journal =
+            new(Path.Combine(directory, "recovery.jsonl"));
+        FakeInhibitor inhibitor = new() { Refuse = true };
+        LocalGameSessionOrchestrator orchestrator = new(
+            store,
+            store,
+            journal,
+            monitorInterval: TimeSpan.FromMilliseconds(50),
+            frameRateProvider: new ConstantFrameRateProvider(),
+            keepAwakeFactory: () => inhibitor);
+
+        try
+        {
+            ManualGameProfile profile = await CreateHarnessProfileAsync(
+                readyFile);
+            await store.UpsertAsync(profile, CancellationToken.None);
+            await orchestrator.InitializeAsync(CancellationToken.None);
+            SessionPlanPreview plan = await orchestrator.PrepareAsync(
+                profile.ProfileId,
+                CancellationToken.None);
+            await orchestrator.StartAsync(
+                plan.PlanId,
+                plan.SessionId,
+                CancellationToken.None);
+            await WaitForFileAsync(readyFile);
+            processId = ReadProcessId(readyFile);
+
+            Assert.AreEqual(1, inhibitor.AcquireCalls);
+            Assert.IsFalse(inhibitor.Held);
+            Assert.IsTrue(inhibitor.DisposeCalls >= 1);
+            await orchestrator.RestoreAsync(
+                plan.SessionId,
+                CancellationToken.None);
+        }
+        finally
+        {
+            if (processId is not null)
+            {
+                await CloseProcessAsync(processId.Value);
+            }
+
+            await orchestrator.DisposeAsync();
+            journal.Dispose();
+            store.Dispose();
+            DeleteDirectory(directory);
+        }
+    }
+
+    private sealed class FakeInhibitor : IExecutionStateInhibitor
+    {
+        public bool Refuse { get; init; }
+
+        public int AcquireCalls { get; private set; }
+
+        public int DisposeCalls { get; private set; }
+
+        public bool Held { get; private set; }
+
+        public bool TryAcquire(string reason)
+        {
+            Assert.IsFalse(string.IsNullOrWhiteSpace(reason));
+            AcquireCalls++;
+            Held = !Refuse;
+            return !Refuse;
+        }
+
+        public void Release() => Held = false;
+
+        public void Dispose()
+        {
+            DisposeCalls++;
+            Release();
         }
     }
 

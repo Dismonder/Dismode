@@ -1878,6 +1878,26 @@
                           Content="Automatycznie optymalizuj tę grę, gdy wystartuje poza Dismodeem"
                           IsChecked="True"
                           Click="OnAutoOptimizeGameCheckBoxClicked" />
+                      <!-- Przypinanie gry do rdzeni wydajnych osobno od
+                           ograniczania tła: wyłączone zostawia proces gry bez
+                           zmian, a ProBalance działa dalej. Zapis od razu. -->
+                      <CheckBox
+                          x:Name="PinGameToPreferredCoresCheckBox"
+                          AutomationProperties.Name="Przypinaj tę grę do rdzeni wydajnych w trakcie sesji"
+                          Content="Przypinaj tę grę do rdzeni wydajnych w trakcie sesji"
+                          IsChecked="True"
+                          ToolTipService.ToolTip="Wyłączone: Dismode nie zmienia przypisania procesora tej gry. Ograniczanie procesów tła działa dalej."
+                          Click="OnPinGameToPreferredCoresCheckBoxClicked" />
+                      <!-- Zadanie zasilania na czas sesji: ekran i system nie
+                           usypiają przy grze obsługiwanej samym padem ani w
+                           długich scenach. Zapis od razu. -->
+                      <CheckBox
+                          x:Name="KeepAwakeDuringSessionCheckBox"
+                          AutomationProperties.Name="Nie usypiaj ekranu ani systemu w trakcie sesji"
+                          Content="Nie usypiaj ekranu ani systemu w trakcie sesji"
+                          IsChecked="True"
+                          ToolTipService.ToolTip="Na czas sesji Dismode prosi Windows o niewygaszanie ekranu i niewchodzenie w uśpienie. Zadanie znika po zakończeniu sesji."
+                          Click="OnKeepAwakeDuringSessionCheckBoxClicked" />
                     </StackPanel>
                   </Border>
 

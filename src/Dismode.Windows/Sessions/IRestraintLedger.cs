@@ -45,7 +45,13 @@ public sealed record RestrainedProcessRecord(
     // Priorytet GPU nalozony przez petle reaktywna. Odtwarzanie po awarii
     // cofa go ta sama sciezka co priorytet wejscia-wyjscia.
     ActionId? GpuPriorityActionId = null,
-    IdempotencyKey? GpuPriorityIdempotencyKey = null);
+    IdempotencyKey? GpuPriorityIdempotencyKey = null,
+    // Zbiory sprzed naszego zapisu i zapisane przez nas (razem z flaga
+    // powyzej). Odtwarzanie cofa je tylko wtedy, gdy proces nadal ma
+    // dokladnie zapisane zbiory; null przy starszych rekordach, ktore znaja
+    // sama flage i sa czyszczone jak dawniej.
+    uint[]? OriginalCpuSetIds = null,
+    uint[]? AppliedCpuSetIds = null);
 
 /// <summary>
 /// Where the reactive restraint loop reports what it has restrained and
