@@ -1560,8 +1560,17 @@ public sealed partial class MainWindow : Window
         MarkDirty();
     }
 
-    private void RefreshTimer_Tick(object? sender, object e) =>
+    private void RefreshTimer_Tick(object? sender, object e)
+    {
+        // The service handles one request at a time, so polling during a
+        // manual optimization would only time out and show a false offline state.
+        if (_operationGate.IsRunning)
+        {
+            return;
+        }
+
         _ = RefreshAsync(loadSettings: false);
+    }
 
     private async Task<ContentDialogResult?> ShowDialogAsync(
         ContentDialog dialog)
@@ -1598,8 +1607,7 @@ public sealed partial class MainWindow : Window
     }
 
     private static bool IsExpectedClientFailure(Exception exception) =>
-        exception is IOException or InvalidOperationException or
-            TimeoutException or OperationCanceledException;
+        MemoryClientPolicy.IsExpectedClientFailure(exception);
 
     private static bool HasArea(MemoryArea value, MemoryArea area) =>
         (value & area) != 0;
@@ -1622,8 +1630,7 @@ public sealed partial class MainWindow : Window
 
     private static string NormalizeProcessName(string? value)
     {
-        string fileName = Path.GetFileNameWithoutExtension(
-            (value ?? string.Empty).Trim());
+        string fileName = MemoryOptimizerSettings.NormalizeProcessName(value);
         return string.IsNullOrWhiteSpace(fileName)
             ? string.Empty
             : fileName;

@@ -19,6 +19,8 @@ public sealed class GracefulCloseApplicationAction :
     private readonly ApplicationRestartDescriptor _restartDescriptor;
     private readonly IProcessIdentityProvider _identityProvider;
     private readonly TimeSpan _closeTimeout;
+    private readonly Dictionary<(ProcessRuntimeKey Key, string Path), ProcessIdentity>
+        _pollIdentityCache = [];
     private int? _restartedProcessId;
 
     public GracefulCloseApplicationAction(
@@ -175,7 +177,8 @@ public sealed class GracefulCloseApplicationAction :
                         .ConfigureAwait(false);
                 IReadOnlyList<ProcessIdentity> remainingWindows =
                     await FindEquivalentInteractiveProcessesAsync(
-                            closeTimeout.Token)
+                            closeTimeout.Token,
+                            usePollCache: true)
                         .ConfigureAwait(false);
                 if (!targetStillRunning && remainingWindows.Count == 0)
                 {
@@ -194,6 +197,10 @@ public sealed class GracefulCloseApplicationAction :
             throw new TimeoutException(
                 "The application did not exit after the standard close request; "
                 + "it was not force-killed.");
+        }
+        finally
+        {
+            _pollIdentityCache.Clear();
         }
     }
 
@@ -278,7 +285,8 @@ public sealed class GracefulCloseApplicationAction :
             {
                 IReadOnlyList<ProcessIdentity> interactiveProcesses =
                     await FindEquivalentInteractiveProcessesAsync(
-                            observationTimeout.Token)
+                            observationTimeout.Token,
+                            usePollCache: true)
                         .ConfigureAwait(false);
                 if (interactiveProcesses.Count > 0)
                 {
@@ -297,6 +305,10 @@ public sealed class GracefulCloseApplicationAction :
             throw new TimeoutException(
                 "The approved application did not expose a verified window "
                 + "after restart.");
+        }
+        finally
+        {
+            _pollIdentityCache.Clear();
         }
     }
 
@@ -334,7 +346,8 @@ public sealed class GracefulCloseApplicationAction :
 
     private async ValueTask<IReadOnlyList<ProcessIdentity>>
         FindEquivalentInteractiveProcessesAsync(
-            CancellationToken cancellationToken)
+            CancellationToken cancellationToken,
+            bool usePollCache = false)
     {
         string processName = Path.GetFileNameWithoutExtension(
             _expectedIdentity.ExecutablePath);
@@ -349,10 +362,11 @@ public sealed class GracefulCloseApplicationAction :
                     continue;
                 }
 
-                ProcessIdentity? identity =
-                    await _identityProvider
-                        .TryCaptureAsync(process, cancellationToken)
-                        .ConfigureAwait(false);
+                ProcessIdentity? identity = await CaptureForPollAsync(
+                        process,
+                        usePollCache,
+                        cancellationToken)
+                    .ConfigureAwait(false);
                 if (identity is not null
                     && IsEquivalentExecutable(identity))
                 {
@@ -362,6 +376,56 @@ public sealed class GracefulCloseApplicationAction :
         }
 
         return identities;
+    }
+
+    // Poll loops re-check the same live processes every 100 ms. A process
+    // image cannot change under one runtime key (PID + creation time), so the
+    // full executable hash is captured once per process per loop. Pre-mutation
+    // checks go through ProcessTargetGuard and are never cached.
+    private async ValueTask<ProcessIdentity?> CaptureForPollAsync(
+        Process process,
+        bool usePollCache,
+        CancellationToken cancellationToken)
+    {
+        (ProcessRuntimeKey Key, string Path)? cacheKey = null;
+        if (usePollCache)
+        {
+            try
+            {
+                string? path = ProcessImagePath.TryRead(process);
+                if (path is not null)
+                {
+                    cacheKey = (
+                        new ProcessRuntimeKey(
+                            process.Id,
+                            new DateTimeOffset(
+                                process.StartTime.ToUniversalTime(),
+                                TimeSpan.Zero)),
+                        path.ToUpperInvariant());
+                }
+            }
+            catch (Exception exception) when (
+                exception is InvalidOperationException or Win32Exception)
+            {
+                cacheKey = null;
+            }
+        }
+
+        if (cacheKey is { } key
+            && _pollIdentityCache.TryGetValue(key, out ProcessIdentity? cached))
+        {
+            return cached;
+        }
+
+        ProcessIdentity? identity = await _identityProvider
+            .TryCaptureAsync(process, cancellationToken)
+            .ConfigureAwait(false);
+        if (identity is not null && cacheKey is { } storeKey)
+        {
+            _pollIdentityCache[storeKey] = identity;
+        }
+
+        return identity;
     }
 
     private bool IsEquivalentExecutable(ProcessIdentity identity) =>

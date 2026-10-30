@@ -75,7 +75,18 @@ public sealed class MemoryOptimizerEngine : IDisposable
         }
 
         DateTimeOffset startedAtUtc = DateTimeOffset.UtcNow;
-        MemorySnapshot before = _metrics.Capture();
+        MemorySnapshot before;
+        try
+        {
+            before = _metrics.Capture();
+        }
+        catch
+        {
+            // Do not leave the single-flight gate taken if the snapshot fails.
+            _singleFlight.Release();
+            throw;
+        }
+
         List<MemoryAreaResult> results = [];
         try
         {

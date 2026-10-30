@@ -230,6 +230,23 @@ public sealed class DiagnosticsProbeService
                 "Analiza aplikacji w tle przekroczyła limit czasu.");
         }
         catch (RpcException exception)
+            when (cancellationToken.IsCancellationRequested)
+        {
+            // gRPC reports a cancelled call as RpcException, not OCE.
+            throw new OperationCanceledException(
+                exception.Message,
+                exception,
+                cancellationToken);
+        }
+        catch (RpcException exception)
+            when (exception.StatusCode is StatusCode.Cancelled
+                or StatusCode.DeadlineExceeded)
+        {
+            throw new TimeoutException(
+                "Analiza aplikacji w tle przekroczyła limit czasu.",
+                exception);
+        }
+        catch (RpcException exception)
         {
             throw new IOException(
                 "SessionHost nie udostępnił listy procesów.",
@@ -289,6 +306,23 @@ public sealed class DiagnosticsProbeService
         {
             throw new TimeoutException(
                 "Analiza usług przekroczyła limit czasu.");
+        }
+        catch (RpcException exception)
+            when (cancellationToken.IsCancellationRequested)
+        {
+            // gRPC reports a cancelled call as RpcException, not OCE.
+            throw new OperationCanceledException(
+                exception.Message,
+                exception,
+                cancellationToken);
+        }
+        catch (RpcException exception)
+            when (exception.StatusCode is StatusCode.Cancelled
+                or StatusCode.DeadlineExceeded)
+        {
+            throw new TimeoutException(
+                "Analiza usług przekroczyła limit czasu.",
+                exception);
         }
         catch (RpcException exception)
         {

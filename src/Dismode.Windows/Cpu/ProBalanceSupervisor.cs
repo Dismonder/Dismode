@@ -324,16 +324,26 @@ public sealed class ProBalanceSupervisor : IAsyncDisposable
     {
         try
         {
-            _ = decision.Action switch
+            if (decision.Action == ProBalanceAction.Restrain)
             {
-                ProBalanceAction.Restrain => await _actuator
+                if (!await _actuator
                     .RestrainAsync(decision.RuntimeKey, CancellationToken.None)
-                    .ConfigureAwait(false),
-                ProBalanceAction.Release => await _actuator
+                    .ConfigureAwait(false))
+                {
+                    // Aktuator nic nie zmienil (np. priorytet powyzej Normal),
+                    // wiec silnik nie moze dalej liczyc tego procesu jako
+                    // ograniczonego i trzymac przez niego miejsca z limitu.
+                    _engine.AbandonRestraint(
+                        decision.RuntimeKey,
+                        _timeProvider.GetUtcNow());
+                }
+            }
+            else if (decision.Action == ProBalanceAction.Release)
+            {
+                _ = await _actuator
                     .ReleaseAsync(decision.RuntimeKey, CancellationToken.None)
-                    .ConfigureAwait(false),
-                _ => false,
-            };
+                    .ConfigureAwait(false);
+            }
         }
         catch (Exception exception) when (
             exception is InvalidOperationException

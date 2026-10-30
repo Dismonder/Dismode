@@ -555,6 +555,7 @@ public sealed class LocalGameSessionOrchestrator : IAsyncDisposable
                     cancellationToken)
                 .ConfigureAwait(false);
 
+            bool cpuSetsApplied = false;
             try
             {
                 plan.State = SessionStateMachine.Transition(
@@ -621,6 +622,8 @@ public sealed class LocalGameSessionOrchestrator : IAsyncDisposable
                         CancellationToken.None)
                     .ConfigureAwait(false);
                 int affinityActionCount = gameAffinity.AppliedCount;
+                cpuSetsApplied = gameAffinity is
+                { AppliedCount: 1, Journaled: null };
                 metadata = metadata with
                 {
                     GameAffinity = gameAffinity.Journaled,
@@ -742,6 +745,20 @@ public sealed class LocalGameSessionOrchestrator : IAsyncDisposable
                     or TimeoutException)
             {
                 _pendingPlan = null;
+                if (cpuSetsApplied && metadata.RootProcess is { } cpuSetRoot)
+                {
+                    await ClearGameCpuSetsIfSameProcessAsync(cpuSetRoot)
+                        .ConfigureAwait(false);
+                }
+
+                SystemGameProfileOperationResult systemProfileRecovery =
+                    metadata.SystemProfileActive
+                        ? await _systemProfileCoordinator.RestoreAsync(
+                                currentProfile.ProfileId,
+                                CancellationToken.None)
+                            .ConfigureAwait(false)
+                        : SystemGameProfileOperationResult.Skipped(
+                            "Zewnętrzny profil systemowy nie był aktywny.");
                 BackgroundRecoveryTotals priorityRecovery =
                     await RestoreGamePriorityAsync(
                             plan.SessionId,
@@ -767,6 +784,14 @@ public sealed class LocalGameSessionOrchestrator : IAsyncDisposable
                 BackgroundRecoveryTotals recovery = MergeRecoveryTotals(
                     MergeRecoveryTotals(priorityRecovery, affinityRecovery),
                     applicationRecovery);
+                if (!systemProfileRecovery.Succeeded)
+                {
+                    recovery = recovery with
+                    {
+                        ErrorCount = recovery.ErrorCount + 1,
+                    };
+                }
+
                 if (recovery.ErrorCount == 0)
                 {
                     await RecordCheckpointAsync(
@@ -1097,8 +1122,9 @@ public sealed class LocalGameSessionOrchestrator : IAsyncDisposable
         {
             await _monitorTask.ConfigureAwait(false);
         }
-        catch (OperationCanceledException)
+        catch (Exception)
         {
+            // A faulted monitor must not skip disposing the rest.
         }
 
         await _frameRateProvider.DisposeAsync().ConfigureAwait(false);
@@ -1758,6 +1784,40 @@ public sealed class LocalGameSessionOrchestrator : IAsyncDisposable
         string message,
         CancellationToken cancellationToken)
     {
+        try
+        {
+            return await CompleteRuntimeCoreAsync(
+                    runtime,
+                    status,
+                    message,
+                    cancellationToken)
+                .ConfigureAwait(false);
+        }
+        catch (Exception) when (runtime.State is
+            OptimizationSessionState.Restoring
+            or OptimizationSessionState.Reconciling)
+        {
+            // A journal, history or system-agent failure must not leave the
+            // session in a state that Restore rejects: the journal stays open
+            // and "Przywróć teraz" can retry the idempotent restore.
+            runtime.ErrorCount++;
+            runtime.State = SessionStateMachine.Transition(
+                runtime.State,
+                OptimizationSessionState.RecoveryRequired);
+            return ToSnapshot(
+                runtime,
+                "Nie udało się zapisać wyniku przywracania. Dismode "
+                + "zachował journal i ponowi recovery po wybraniu "
+                + "„Przywróć teraz” lub restarcie hosta.");
+        }
+    }
+
+    private async ValueTask<GameSessionSnapshot> CompleteRuntimeCoreAsync(
+        ActiveRuntime runtime,
+        SessionCompletionStatus status,
+        string message,
+        CancellationToken cancellationToken)
+    {
         runtime.State = SessionStateMachine.Transition(
             runtime.State,
             OptimizationSessionState.Restoring);
@@ -1921,7 +1981,8 @@ public sealed class LocalGameSessionOrchestrator : IAsyncDisposable
             recovery.ConflictCount == 0
                 ? OptimizationSessionState.Completed
                 : OptimizationSessionState.CompletedWithWarnings);
-        ClearGameCpuSets(runtime);
+        await ClearGameCpuSetsIfSameProcessAsync(runtime.RootProcess)
+            .ConfigureAwait(false);
         _activeSession = null;
         await TryRefreshCompletedSessionMetadataAsync(
                 runtime.ProfileId,
@@ -2311,10 +2372,32 @@ public sealed class LocalGameSessionOrchestrator : IAsyncDisposable
     /// Gives the game back the whole machine by clearing its default CPU sets.
     /// Cheap and safe to call when nothing was ever assigned.
     /// </summary>
-    private static void ClearGameCpuSets(ActiveRuntime runtime) =>
-        _ = ProcessCpuSets.TryApply(
-            runtime.RootProcess.RuntimeKey.ProcessId,
-            []);
+    private async ValueTask ClearGameCpuSetsIfSameProcessAsync(
+        ProcessIdentity gameIdentity)
+    {
+        // A PID alone never identifies a process: after the game exits the
+        // number can be reused, and that process keeps its own CPU sets.
+        try
+        {
+            if (await _identityProvider
+                    .MatchesRuntimeIdentityAsync(
+                        gameIdentity,
+                        CancellationToken.None)
+                    .ConfigureAwait(false))
+            {
+                _ = ProcessCpuSets.TryApply(
+                    gameIdentity.RuntimeKey.ProcessId,
+                    []);
+            }
+        }
+        catch (Exception exception) when (
+            exception is InvalidOperationException
+                or UnauthorizedAccessException
+                or IOException
+                or Win32Exception)
+        {
+        }
+    }
 
     /// <summary>
     /// Installs default CPU sets matching the wanted mask. Returns false when

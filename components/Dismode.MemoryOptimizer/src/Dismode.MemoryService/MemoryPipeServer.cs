@@ -2,13 +2,15 @@ using System.Diagnostics;
 using System.IO.Pipes;
 using System.Security.AccessControl;
 using System.Security.Principal;
-using System.Text.Json;
 using Dismode.MemoryOptimizer.Core.Ipc;
 
 namespace Dismode.MemoryService;
 
 internal sealed class MemoryPipeServer
 {
+    private static readonly TimeSpan RequestReadTimeout =
+        TimeSpan.FromSeconds(10);
+
     private readonly string _userSid;
     private readonly MemoryUserRuntime _runtime;
     private readonly ReplayProtector _replayProtector = new();
@@ -38,11 +40,12 @@ internal sealed class MemoryPipeServer
                 break;
             }
             catch (Exception exception) when (
-                exception is IOException or InvalidDataException or
-                    JsonException or UnauthorizedAccessException)
+                exception is not OperationCanceledException ||
+                !cancellationToken.IsCancellationRequested)
             {
+                // A single bad request must not stop the pipe loop.
                 Trace.TraceWarning(
-                    "Memory Optimizer pipe request was rejected: {0}",
+                    "Memory Optimizer pipe request failed: {0}",
                     exception.Message);
             }
         }
@@ -52,8 +55,12 @@ internal sealed class MemoryPipeServer
         NamedPipeServerStream pipe,
         CancellationToken cancellationToken)
     {
+        // An idle or half-sent client must not block every later request.
+        using CancellationTokenSource readTimeout =
+            CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        readTimeout.CancelAfter(RequestReadTimeout);
         MemoryOptimizerRequest request = await ProtocolCodec.ReadAsync<
-            MemoryOptimizerRequest>(pipe, cancellationToken).ConfigureAwait(false);
+            MemoryOptimizerRequest>(pipe, readTimeout.Token).ConfigureAwait(false);
 
         string? actualSid = null;
         pipe.RunAsClient(() =>

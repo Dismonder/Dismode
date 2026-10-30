@@ -305,8 +305,22 @@ public sealed partial class PerformanceOverlayWindow : Window, IDisposable
         RefreshVisibility();
     }
 
-    private void OnForegroundTimerTick(object? sender, object args) =>
-        RefreshVisibility();
+    private void OnForegroundTimerTick(object? sender, object args)
+    {
+        try
+        {
+            RefreshVisibility();
+        }
+        catch (Exception exception) when (
+            exception is InvalidOperationException or Win32Exception)
+        {
+            // A monitor or window change can make positioning fail; an
+            // unhandled throw from the timer would end the app. Hide the
+            // overlay and retry on the next tick.
+            HideWindow();
+            _layoutDirty = true;
+        }
+    }
 
     private void RefreshVisibility()
     {

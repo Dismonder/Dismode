@@ -165,6 +165,26 @@ public sealed class ProBalanceEngine
     }
 
     /// <summary>
+    /// Takes back a restraint the actuator refused to apply, so the process
+    /// stops occupying one of the limited slots. The cooldown keeps it from
+    /// being caught again on the very next samples. Does nothing for a
+    /// process that is not currently restrained.
+    /// </summary>
+    public void AbandonRestraint(ProcessRuntimeKey key, DateTimeOffset nowUtc)
+    {
+        if (!_tracked.TryGetValue(key, out TrackedProcess? state)
+            || state.RestrainedSinceUtc is null)
+        {
+            return;
+        }
+
+        state.RestrainedSinceUtc = null;
+        state.CalmSamples = 0;
+        state.HotSamples = 0;
+        state.CooldownUntilUtc = nowUtc + _settings.Cooldown;
+    }
+
+    /// <summary>
     /// Everything currently held back is released. Used when the session ends,
     /// so nothing stays throttled after the game closes.
     /// </summary>

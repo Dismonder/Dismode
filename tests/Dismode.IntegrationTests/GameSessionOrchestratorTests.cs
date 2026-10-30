@@ -670,6 +670,143 @@ public sealed class GameSessionOrchestratorTests
     }
 
     [TestMethod]
+    public async Task HistoryFailureDuringCompletionLeavesSessionRecoverable()
+    {
+        string directory = CreateTestDirectory();
+        string readyFile = Path.Combine(directory, "history-fail.ready");
+        int? processId = null;
+        SqliteUserDataStore store =
+            new(Path.Combine(directory, "user.db"));
+        AppendOnlyRecoveryJournal journal =
+            new(Path.Combine(directory, "recovery.jsonl"));
+        FailOnceHistoryRepository history = new(store);
+        LocalGameSessionOrchestrator orchestrator = new(
+            store,
+            history,
+            journal,
+            monitorInterval: TimeSpan.FromMilliseconds(50));
+
+        try
+        {
+            ManualGameProfile profile = await CreateHarnessProfileAsync(
+                readyFile);
+            await store.UpsertAsync(profile, CancellationToken.None);
+            await orchestrator.InitializeAsync(CancellationToken.None);
+            SessionPlanPreview plan = await orchestrator.PrepareAsync(
+                profile.ProfileId,
+                CancellationToken.None);
+            _ = await orchestrator.StartAsync(
+                plan.PlanId,
+                plan.SessionId,
+                CancellationToken.None,
+                enableFrameRateTracking: false);
+            await WaitForFileAsync(readyFile);
+            processId = ReadProcessId(readyFile);
+
+            await CloseProcessAsync(processId.Value);
+            processId = null;
+            GameSessionSnapshot recoveryRequired =
+                await WaitForActiveStateAsync(
+                    orchestrator,
+                    OptimizationSessionState.RecoveryRequired);
+
+            Assert.IsGreaterThan(0, recoveryRequired.ErrorCount);
+            Assert.IsFalse(
+                (await journal.ReadAllAsync(CancellationToken.None)).Any(
+                    entry => entry.SessionCheckpoint
+                        == SessionCheckpoint.ReconciliationComplete));
+
+            GameSessionSnapshot completed =
+                await orchestrator.RestoreAsync(
+                    plan.SessionId,
+                    CancellationToken.None);
+
+            Assert.AreEqual(
+                OptimizationSessionState.Completed,
+                completed.State);
+            Assert.IsNull(
+                await orchestrator.GetActiveAsync(CancellationToken.None));
+        }
+        finally
+        {
+            if (processId is not null)
+            {
+                await CloseProcessAsync(processId.Value);
+            }
+
+            await orchestrator.DisposeAsync();
+            journal.Dispose();
+            store.Dispose();
+            DeleteDirectory(directory);
+        }
+    }
+
+    [TestMethod]
+    [DataRow(true)]
+    [DataRow(false)]
+    public async Task FailedStartRestoresSystemProfileAndKeepsJournalOpenOnRestoreFailure(
+        bool restoreSucceeds)
+    {
+        string directory = CreateTestDirectory();
+        string readyFile = Path.Combine(directory, "start-fail.ready");
+        int? processId = null;
+        SqliteUserDataStore store =
+            new(Path.Combine(directory, "user.db"));
+        AppendOnlyRecoveryJournal innerJournal =
+            new(Path.Combine(directory, "recovery.jsonl"));
+        FailingCheckpointJournal journal = new(
+            innerJournal,
+            SessionCheckpoint.SessionActivated);
+        RecordingSystemProfileCoordinator systemProfile =
+            new() { RestoreSucceeds = restoreSucceeds };
+        LocalGameSessionOrchestrator orchestrator = new(
+            store,
+            store,
+            journal,
+            monitorInterval: TimeSpan.FromMilliseconds(50),
+            systemProfileCoordinator: systemProfile);
+
+        try
+        {
+            ManualGameProfile profile = await CreateHarnessProfileAsync(
+                readyFile);
+            await store.UpsertAsync(profile, CancellationToken.None);
+            await orchestrator.InitializeAsync(CancellationToken.None);
+            SessionPlanPreview plan = await orchestrator.PrepareAsync(
+                profile.ProfileId,
+                CancellationToken.None);
+
+            _ = await Assert.ThrowsExactlyAsync<IOException>(
+                async () => await orchestrator.StartAsync(
+                    plan.PlanId,
+                    plan.SessionId,
+                    CancellationToken.None,
+                    enableFrameRateTracking: false));
+            await WaitForFileAsync(readyFile);
+            processId = ReadProcessId(readyFile);
+
+            Assert.AreEqual(profile.ProfileId, systemProfile.RestoredProfileId);
+            bool finalized =
+                (await innerJournal.ReadAllAsync(CancellationToken.None)).Any(
+                    entry => entry.SessionCheckpoint
+                        == SessionCheckpoint.ReconciliationComplete);
+            Assert.AreEqual(restoreSucceeds, finalized);
+        }
+        finally
+        {
+            if (processId is int id)
+            {
+                await CloseProcessAsync(id);
+            }
+
+            await orchestrator.DisposeAsync();
+            innerJournal.Dispose();
+            store.Dispose();
+            DeleteDirectory(directory);
+        }
+    }
+
+    [TestMethod]
     public async Task RestartedHostRecoversLiveSessionThenFinalizesOnGameExit()
     {
         string directory = CreateTestDirectory();
@@ -1543,6 +1680,8 @@ public sealed class GameSessionOrchestratorTests
 
         internal GameProfileId? RestoredProfileId { get; private set; }
 
+        internal bool RestoreSucceeds { get; init; } = true;
+
         public ValueTask<SystemGameProfileOperationResult> ActivateAsync(
             GameProfileId profileId,
             ProcessIdentity gameIdentity,
@@ -1561,9 +1700,73 @@ public sealed class GameSessionOrchestratorTests
         {
             RestoredProfileId = profileId;
             return ValueTask.FromResult(
-                SystemGameProfileOperationResult.Restored(
-                    "controlled restore"));
+                RestoreSucceeds
+                    ? SystemGameProfileOperationResult.Restored(
+                        "controlled restore")
+                    : SystemGameProfileOperationResult.Failed(
+                        "controlled restore failure"));
         }
+    }
+
+    private sealed class FailOnceHistoryRepository : ISessionHistoryRepository
+    {
+        private readonly ISessionHistoryRepository _inner;
+        private int _failed;
+
+        internal FailOnceHistoryRepository(ISessionHistoryRepository inner)
+        {
+            _inner = inner;
+        }
+
+        public ValueTask InitializeAsync(CancellationToken cancellationToken) =>
+            _inner.InitializeAsync(cancellationToken);
+
+        public ValueTask AddAsync(
+            SessionSummary summary,
+            CancellationToken cancellationToken)
+        {
+            if (Interlocked.Exchange(ref _failed, 1) == 0)
+            {
+                throw new IOException("Controlled history failure.");
+            }
+
+            return _inner.AddAsync(summary, cancellationToken);
+        }
+
+        public ValueTask<IReadOnlyList<SessionSummary>> ListRecentAsync(
+            int maximumCount,
+            CancellationToken cancellationToken) =>
+            _inner.ListRecentAsync(maximumCount, cancellationToken);
+
+        public ValueTask<int> DeleteEndedBeforeAsync(
+            DateTimeOffset cutoffUtc,
+            CancellationToken cancellationToken) =>
+            _inner.DeleteEndedBeforeAsync(cutoffUtc, cancellationToken);
+    }
+
+    private sealed class FailingCheckpointJournal : IRecoveryJournal
+    {
+        private readonly IRecoveryJournal _inner;
+        private readonly SessionCheckpoint _failingCheckpoint;
+
+        internal FailingCheckpointJournal(
+            IRecoveryJournal inner,
+            SessionCheckpoint failingCheckpoint)
+        {
+            _inner = inner;
+            _failingCheckpoint = failingCheckpoint;
+        }
+
+        public ValueTask<RecoveryJournalEntry> AppendDurableAsync(
+            RecoveryJournalDraft draft,
+            CancellationToken cancellationToken) =>
+            draft.SessionCheckpoint == _failingCheckpoint
+                ? throw new IOException("Controlled journal failure.")
+                : _inner.AppendDurableAsync(draft, cancellationToken);
+
+        public ValueTask<IReadOnlyList<RecoveryJournalEntry>> ReadAllAsync(
+            CancellationToken cancellationToken) =>
+            _inner.ReadAllAsync(cancellationToken);
     }
 
     private sealed class ConstantFrameRateProvider : IFrameRateProvider

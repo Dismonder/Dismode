@@ -1,3 +1,4 @@
+using Dismode.Core.Domain.Identifiers;
 using Dismode.Core.Profiles;
 
 namespace Dismode.Windows.Profiles;
@@ -62,6 +63,7 @@ public sealed class GameLibrarySyncService
         int addedCount = 0;
         int updatedCount = 0;
         int errorCount = 0;
+        HashSet<GameProfileId> relocatedProfileIds = [];
         foreach (DetectedGame game in detected)
         {
             cancellationToken.ThrowIfCancellationRequested();
@@ -75,9 +77,11 @@ public sealed class GameLibrarySyncService
                 if (existing is null)
                 {
                     ManualGameProfile[] relocationCandidates =
-                        existingProfiles
+                        existingByPath.Values
                             .Where(profile =>
-                                (!File.Exists(profile.ExecutablePath)
+                                !relocatedProfileIds.Contains(
+                                    profile.ProfileId)
+                                && (!File.Exists(profile.ExecutablePath)
                                     || IsKnownVersionedRelocation(
                                         game,
                                         profile.ExecutablePath,
@@ -91,6 +95,7 @@ public sealed class GameLibrarySyncService
                     if (relocationCandidates.Length == 1)
                     {
                         existing = relocationCandidates[0];
+                        relocatedProfileIds.Add(existing.ProfileId);
                     }
                 }
 

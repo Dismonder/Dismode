@@ -20,7 +20,9 @@ internal sealed class WindowsSystemTweakRuntime :
     ISystemTweakRuntime,
     IDisposable
 {
-    private const int MaximumProcessesToInspect = 512;
+    // Well above any realistic process count: a new game tends to get one of
+    // the highest PIDs, so a low cap would hide exactly the process we need.
+    private const int MaximumProcessesToInspect = 4096;
     private static readonly JsonSerializerOptions SerializerOptions = new(
         JsonSerializerDefaults.General);
 

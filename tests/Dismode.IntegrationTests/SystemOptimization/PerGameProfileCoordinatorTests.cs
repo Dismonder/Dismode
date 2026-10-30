@@ -115,6 +115,151 @@ public sealed class PerGameProfileCoordinatorTests
     }
 
     [TestMethod]
+    public async Task CancelledActivationStillRecordsAppliedSelection()
+    {
+        using CoordinatorContext context = new();
+        await context.SeedProfileAsync();
+        using CancellationTokenSource cancellation = new();
+        context.Runtime.CancelAfterApply = cancellation;
+
+        _ = await Assert.ThrowsExactlyAsync<OperationCanceledException>(
+            async () => await context.Coordinator.ActivatePerGameProfileAsync(
+                OwnerSid,
+                "game-a",
+                ExecutableHash,
+                cancellation.Token));
+        ActiveGameOptimizationSession? active =
+            await context.Store.GetActiveGameSessionAsync(
+                CancellationToken.None);
+
+        Assert.IsNotNull(active);
+        Assert.AreEqual(1, active.AppliedSelectionCount);
+        SystemOptimizerOperationResult restored =
+            await context.Coordinator.RestoreActiveGameProfileAsync(
+                OwnerSid,
+                CancellationToken.None);
+        Assert.IsTrue(restored.Succeeded);
+        Assert.HasCount(1, context.Runtime.Restored);
+        Assert.AreEqual(0, context.Runtime.Restored[0].Index);
+    }
+
+    [TestMethod]
+    public async Task CancelAfterInvalidCandidateCaptureRestoresCandidate()
+    {
+        using CoordinatorContext context = new();
+        await context.Store.SetConsentAsync(
+            OwnerSid,
+            accepted: true,
+            DateTimeOffset.UtcNow,
+            CancellationToken.None);
+        ExperimentPlan experiment =
+            await context.Coordinator.PrepareExperimentAsync(
+                OwnerSid,
+                "game-a",
+                ExecutableHash,
+                HardwareHash,
+                new("process.game.priority", 1, "above-normal"),
+                CancellationToken.None);
+        if (experiment.FirstVariant == BenchmarkVariant.Baseline)
+        {
+            await AdvanceAsync(
+                context,
+                experiment,
+                Dismode.Contracts.Grpc.ExperimentControlAction
+                    .BeginStabilization);
+            await AdvanceAsync(
+                context,
+                experiment,
+                Dismode.Contracts.Grpc.ExperimentControlAction.BeginCapture);
+            CoordinatorBenchmarkResult valid =
+                await context.Coordinator.SubmitCaptureAsync(
+                    OwnerSid,
+                    experiment.ExperimentId,
+                    CreateCapture(
+                        BenchmarkVariant.Baseline,
+                        Enumerable.Repeat(16.67d, 6_000).ToArray()),
+                    CancellationToken.None);
+            Assert.AreNotEqual(BenchmarkVerdict.Invalid, valid.Decision.Verdict);
+        }
+
+        await AdvanceAsync(
+            context,
+            experiment,
+            Dismode.Contracts.Grpc.ExperimentControlAction.BeginStabilization);
+        await AdvanceAsync(
+            context,
+            experiment,
+            Dismode.Contracts.Grpc.ExperimentControlAction.BeginCapture);
+        CoordinatorBenchmarkResult invalid =
+            await context.Coordinator.SubmitCaptureAsync(
+                OwnerSid,
+                experiment.ExperimentId,
+                CreateCapture(
+                    BenchmarkVariant.Candidate,
+                    Enumerable.Repeat(16.67d, 1_200).ToArray()),
+                CancellationToken.None);
+        Assert.AreEqual(BenchmarkVerdict.Invalid, invalid.Decision.Verdict);
+        Assert.AreEqual(
+            ExperimentState.WaitingForScene,
+            invalid.Experiment.State);
+        context.Runtime.Restored.Clear();
+
+        _ = await AdvanceAsync(
+            context,
+            experiment,
+            Dismode.Contracts.Grpc.ExperimentControlAction.CancelAndRestore);
+
+        Assert.AreEqual(1, context.Runtime.Restored.Count);
+        Assert.AreEqual(0, context.Runtime.Restored[0].Index);
+    }
+
+    [TestMethod]
+    public async Task CancelBeforeCandidateWasAppliedDoesNotRestore()
+    {
+        using CoordinatorContext context = new();
+        await context.Store.SetConsentAsync(
+            OwnerSid,
+            accepted: true,
+            DateTimeOffset.UtcNow,
+            CancellationToken.None);
+        ExperimentPlan experiment =
+            await context.Coordinator.PrepareExperimentAsync(
+                OwnerSid,
+                "game-a",
+                ExecutableHash,
+                HardwareHash,
+                new("process.game.priority", 1, "above-normal"),
+                CancellationToken.None);
+        if (experiment.FirstVariant == BenchmarkVariant.Baseline)
+        {
+            await AdvanceAsync(
+                context,
+                experiment,
+                Dismode.Contracts.Grpc.ExperimentControlAction
+                    .BeginStabilization);
+            await AdvanceAsync(
+                context,
+                experiment,
+                Dismode.Contracts.Grpc.ExperimentControlAction.BeginCapture);
+            _ = await context.Coordinator.SubmitCaptureAsync(
+                OwnerSid,
+                experiment.ExperimentId,
+                CreateCapture(
+                    BenchmarkVariant.Baseline,
+                    Enumerable.Repeat(16.67d, 6_000).ToArray()),
+                CancellationToken.None);
+        }
+
+        CoordinatorExperimentResult cancelled = await AdvanceAsync(
+            context,
+            experiment,
+            Dismode.Contracts.Grpc.ExperimentControlAction.CancelAndRestore);
+
+        Assert.AreEqual(ExperimentState.Failed, cancelled.Experiment.State);
+        Assert.AreEqual(0, context.Runtime.Restored.Count);
+    }
+
+    [TestMethod]
     public async Task BenchmarkCaptureUsesServerVerifiedStateHash()
     {
         using CoordinatorContext context = new();
@@ -327,6 +472,31 @@ public sealed class PerGameProfileCoordinatorTests
         Assert.IsFalse(recovery.IsJournalClean);
     }
 
+    private static ValueTask<CoordinatorExperimentResult> AdvanceAsync(
+        CoordinatorContext context,
+        ExperimentPlan experiment,
+        Dismode.Contracts.Grpc.ExperimentControlAction action) =>
+        context.Coordinator.AdvanceExperimentAsync(
+            OwnerSid,
+            experiment.ExperimentId,
+            action,
+            CancellationToken.None);
+
+    private static BenchmarkCapture CreateCapture(
+        BenchmarkVariant variant,
+        double[] frameTimes) =>
+        new(
+            Guid.NewGuid(),
+            variant,
+            DateTimeOffset.UtcNow,
+            TimeSpan.FromSeconds(15),
+            TimeSpan.FromSeconds(90),
+            frameTimes,
+            AverageCpuPercent: 20,
+            AverageGpuBusyPercent: 80,
+            AverageUsedRamBytes: 8L * 1024 * 1024 * 1024,
+            ProfileStateHash: string.Empty);
+
     private sealed class CoordinatorContext : IDisposable
     {
         private readonly string _directory = Path.Combine(
@@ -424,6 +594,8 @@ public sealed class PerGameProfileCoordinatorTests
 
         internal int? FailApplyAtIndex { get; set; }
 
+        internal CancellationTokenSource? CancelAfterApply { get; set; }
+
         internal bool IsOperationTargetActive { get; set; }
 
         internal int StateHashRequests { get; private set; }
@@ -440,6 +612,7 @@ public sealed class PerGameProfileCoordinatorTests
             }
 
             Applied.Add((request, applicationIndex));
+            CancelAfterApply?.Cancel();
             return ValueTask.FromResult(
                 SystemTweakRuntimeResult.Success("applied"));
         }

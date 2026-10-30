@@ -104,8 +104,12 @@ public static class ProcessWindowHelper
                 }
             }
 
+            // The main window is usually among the enumerated windows and has
+            // just received WM_CLOSE; a second request would re-prompt apps
+            // that ask to save changes.
             process.Refresh();
-            if (process.MainWindowHandle != IntPtr.Zero)
+            nint mainWindow = process.MainWindowHandle;
+            if (mainWindow != IntPtr.Zero && !windows.Contains(mainWindow))
             {
                 if (process.CloseMainWindow())
                 {

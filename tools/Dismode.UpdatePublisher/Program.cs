@@ -180,10 +180,15 @@ static async Task<int> StageReleaseAsync(string[] arguments)
                 packageTarget,
                 packagesRoot,
                 normalizedVersion);
-            Directory.Delete(packageTarget, recursive: true);
+            PackageRestagePolicy.EnsureIdenticalPackage(
+                packageTarget,
+                packageTemporary);
+        }
+        else
+        {
+            Directory.Move(packageTemporary, packageTarget);
         }
 
-        Directory.Move(packageTemporary, packageTarget);
         string channelDirectory = EnsureChildPath(channelsRoot, channel);
         Directory.CreateDirectory(channelDirectory);
         string manifestPath = EnsureChildPath(

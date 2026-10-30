@@ -9,6 +9,10 @@ internal static class TrustedSignerConfiguration
 {
     private const int MaximumConfigurationBytes = 64 * 1024;
 
+    // Build-LocalRelease.ps1 writes camelCase keys.
+    private static readonly JsonSerializerOptions SerializerOptions = new(
+        JsonSerializerDefaults.Web);
+
     internal static IReadOnlyList<string> Load()
     {
         List<string> thumbprints = [];
@@ -21,13 +25,7 @@ internal static class TrustedSignerConfiguration
                 && IsOwnedByAdministratorsOrSystem(file))
             {
                 byte[] payload = File.ReadAllBytes(path);
-                TrustedSignerDocument? document =
-                    JsonSerializer.Deserialize<TrustedSignerDocument>(payload);
-                if (document?.SchemaVersion == 1)
-                {
-                    thumbprints.AddRange(
-                        document.Thumbprints.Where(IsThumbprint));
-                }
+                thumbprints.AddRange(ParseThumbprints(payload));
             }
         }
         catch (Exception exception) when (
@@ -53,6 +51,27 @@ internal static class TrustedSignerConfiguration
         return thumbprints
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .ToArray();
+    }
+
+    internal static IReadOnlyList<string> ParseThumbprints(byte[] payload)
+    {
+        try
+        {
+            TrustedSignerDocument? document =
+                JsonSerializer.Deserialize<TrustedSignerDocument>(
+                    payload,
+                    SerializerOptions);
+            return document?.SchemaVersion == 1 && document.Thumbprints is not null
+                ? document.Thumbprints
+                    .OfType<string>()
+                    .Where(IsThumbprint)
+                    .ToArray()
+                : [];
+        }
+        catch (JsonException)
+        {
+            return [];
+        }
     }
 
     /// <summary>
@@ -88,5 +107,5 @@ internal static class TrustedSignerConfiguration
 
     private sealed record TrustedSignerDocument(
         int SchemaVersion,
-        IReadOnlyList<string> Thumbprints);
+        IReadOnlyList<string?>? Thumbprints);
 }

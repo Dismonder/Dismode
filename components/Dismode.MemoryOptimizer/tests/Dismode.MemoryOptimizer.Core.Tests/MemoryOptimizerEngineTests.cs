@@ -87,6 +87,30 @@ public sealed class MemoryOptimizerEngineTests
         Assert.AreEqual(OptimizationState.AlreadyRunning, second.State);
     }
 
+    [TestMethod]
+    public async Task FailedSnapshotDoesNotWedgeSingleFlightGate()
+    {
+        ThrowOnceMetrics metrics = new();
+        using MemoryOptimizerEngine engine = new(
+            new FakeOperations(),
+            metrics,
+            new AllowAllGameActivityGuard());
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            engine.OptimizeAsync(
+                OptimizationTrigger.Manual,
+                MemoryOptimizerSettings.BasicAreas,
+                new(),
+                CancellationToken.None));
+        OptimizationResult second = await engine.OptimizeAsync(
+            OptimizationTrigger.Manual,
+            MemoryOptimizerSettings.BasicAreas,
+            new(),
+            CancellationToken.None);
+
+        Assert.AreEqual(OptimizationState.Completed, second.State);
+    }
+
     private sealed class FakeOperations : IMemoryAreaOperations
     {
         internal List<MemoryArea> Executed { get; } = [];
@@ -111,6 +135,21 @@ public sealed class MemoryOptimizerEngineTests
             2000,
             1000,
             50);
+    }
+
+    private sealed class ThrowOnceMetrics : IMemoryMetricsSource
+    {
+        private int _calls;
+
+        public MemorySnapshot Capture()
+        {
+            if (Interlocked.Increment(ref _calls) == 1)
+            {
+                throw new InvalidOperationException("snapshot failed");
+            }
+
+            return new(DateTimeOffset.UtcNow, 1000, 500, 2000, 1000, 50);
+        }
     }
 
     private sealed class BlockingDecisionGuard : IGameActivityGuard

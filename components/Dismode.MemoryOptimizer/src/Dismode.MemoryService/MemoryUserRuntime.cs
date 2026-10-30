@@ -140,8 +140,11 @@ internal sealed class MemoryUserRuntime : IAsyncDisposable
                         cancellationToken).ConfigureAwait(false);
                 }
 
+                // Failed runs also start the cooldown so a persistently
+                // failing area set is not retried on every poll.
                 if (result.State is OptimizationState.Completed or
-                    OptimizationState.PartiallyCompleted)
+                    OptimizationState.PartiallyCompleted or
+                    OptimizationState.Failed)
                 {
                     _policy.RecordCompleted(result.CompletedAtUtc);
                 }

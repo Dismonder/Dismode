@@ -66,6 +66,24 @@ public sealed class OptiScalerInstallationSurveyTests
         StringAssert.Contains(described, "nieznana gra");
     }
 
+    [TestMethod]
+    [DataRow("""{ "targetExecutablePath": 5 }""")]
+    [DataRow("""{ "targetExecutablePath": {} }""")]
+    [DataRow("[]")]
+    public void AManifestOfTheWrongShapeIsStillCountedAndNeverThrows(
+        string manifest)
+    {
+        using TemporaryDirectory directory = new();
+        File.WriteAllText(Path.Combine(directory.Path, "odd.json"), manifest);
+
+        string? described =
+            OptiScalerInstallationSurvey.Describe(directory.Path);
+
+        Assert.IsNotNull(described);
+        StringAssert.Contains(described, "nieznana gra");
+        StringAssert.Contains(described, "(1)");
+    }
+
     private static void WriteManifest(
         string directory,
         string name,

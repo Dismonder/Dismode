@@ -179,6 +179,65 @@ public sealed class PresentMonFrameRateProviderTests
         Assert.IsFalse(IsProcessRunning(captureProcessId));
     }
 
+    [TestMethod]
+    public async Task CaptureThatExitsWithoutFramesIsReportedAndNotRespawnedImmediately()
+    {
+        await using ProcessHarnessFixture harness =
+            await ProcessHarnessFixture.StartAsync();
+        string executablePath = FindPinnedPresentMonExecutable();
+        ManualTimeProvider time = new();
+        await using PresentMonFrameRateProvider provider = new(
+            executablePath,
+            $"integration-test-{Guid.NewGuid():N}",
+            time);
+
+        _ = await provider.SampleAsync(
+            [harness.Process.Id],
+            CancellationToken.None);
+        int captureProcessId = provider.ActiveCaptureProcessId
+            ?? throw new AssertFailedException(
+                "Provider nie zapisał własnego procesu capture.");
+        try
+        {
+            using System.Diagnostics.Process capture =
+                System.Diagnostics.Process.GetProcessById(captureProcessId);
+            capture.Kill();
+            await capture.WaitForExitAsync();
+        }
+        catch (ArgumentException)
+        {
+            // PresentMon already exited on its own, which is the same case.
+        }
+
+        FrameRateSample first = await provider.SampleAsync(
+            [harness.Process.Id],
+            CancellationToken.None);
+        FrameRateSample second = await provider.SampleAsync(
+            [harness.Process.Id],
+            CancellationToken.None);
+
+        Assert.AreEqual(FrameRateStatus.Failed, first.Status);
+        Assert.AreEqual(FrameRateStatus.Failed, second.Status);
+        Assert.IsNull(provider.ActiveCaptureProcessId);
+
+        time.Advance(TimeSpan.FromSeconds(11));
+        FrameRateSample retried = await provider.SampleAsync(
+            [harness.Process.Id],
+            CancellationToken.None);
+
+        Assert.AreEqual(FrameRateStatus.Starting, retried.Status);
+        Assert.IsNotNull(provider.ActiveCaptureProcessId);
+    }
+
+    private sealed class ManualTimeProvider : TimeProvider
+    {
+        private DateTimeOffset _now = new(2026, 1, 1, 0, 0, 0, TimeSpan.Zero);
+
+        public override DateTimeOffset GetUtcNow() => _now;
+
+        public void Advance(TimeSpan by) => _now += by;
+    }
+
     private static string FindPinnedPresentMonExecutable()
     {
         DirectoryInfo? directory = new(AppContext.BaseDirectory);

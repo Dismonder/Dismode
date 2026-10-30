@@ -262,7 +262,12 @@ public sealed class OptiScalerManager : IDisposable
         await _operationLock.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
-            return await InstallCoreAsync(request, progress, cancellationToken)
+            // The preflight, hashing and file copies are synchronous; keep
+            // them off a UI caller's thread.
+            return await Task.Run(
+                    () => InstallCoreAsync(request, progress, cancellationToken)
+                        .AsTask(),
+                    cancellationToken)
                 .ConfigureAwait(false);
         }
         finally
@@ -277,6 +282,25 @@ public sealed class OptiScalerManager : IDisposable
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(profileId);
         await _operationLock.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            // Hashing, snapshots and restores are synchronous; keep them off
+            // a UI caller's thread.
+            return await Task.Run(
+                    () => RemoveCore(profileId, cancellationToken),
+                    cancellationToken)
+                .ConfigureAwait(false);
+        }
+        finally
+        {
+            _operationLock.Release();
+        }
+    }
+
+    private OptiScalerOperationResult RemoveCore(
+        string profileId,
+        CancellationToken cancellationToken)
+    {
         try
         {
             OptiScalerInstallationManifest? manifest = ReadManifest(profileId);
@@ -391,10 +415,6 @@ public sealed class OptiScalerManager : IDisposable
             or JsonException)
         {
             return new(false, $"Nie udało się usunąć OptiScaler: {exception.Message}");
-        }
-        finally
-        {
-            _operationLock.Release();
         }
     }
 
@@ -646,6 +666,7 @@ public sealed class OptiScalerManager : IDisposable
         }
 
         string extractionDirectory = CreateTemporaryDirectory("extract");
+        string? companionDirectory = null;
         try
         {
             IReadOnlyList<OptiScalerPackageDescriptor> releases =
@@ -777,14 +798,44 @@ public sealed class OptiScalerManager : IDisposable
                     file => new PayloadFile(file.FullPath, file.FileName)));
             }
 
+            if (companionToInstall is null
+                && requirement?.CompanionAutoInstallable == true
+                && requirement.CompanionFileName is { } installedCompanion
+                && ReadManifest(request.ProfileId) is { } previousInstall
+                && previousInstall.Files.Any(file => string.Equals(
+                    file.RelativePath,
+                    installedCompanion,
+                    StringComparison.OrdinalIgnoreCase))
+                && File.Exists(Path.Combine(
+                    Path.GetDirectoryName(targetExecutable)!,
+                    installedCompanion)))
+            {
+                // Dismode put this companion there on an earlier install.
+                // Without it in the payload Deploy would treat the file as
+                // obsolete and delete it, so carry a copy forward; Deploy
+                // then keeps it in the manifest with its original backup.
+                companionDirectory = CreateTemporaryDirectory("companion");
+                string keptCompanion = Path.Combine(
+                    companionDirectory,
+                    installedCompanion);
+                File.Copy(
+                    Path.Combine(
+                        Path.GetDirectoryName(targetExecutable)!,
+                        installedCompanion),
+                    keptCompanion,
+                    overwrite: true);
+                additionalFiles.Add(new(keptCompanion, installedCompanion));
+            }
+
             if (companionToInstall is not null)
             {
                 progress?.Report(new(
                     OptiScalerInstallStage.Downloading,
                     $"Pobieranie {companionToInstall.CompanionName}…"));
+                companionDirectory = CreateTemporaryDirectory("companion");
                 CompanionDownloadResult companion = await _companionSource
                     .DownloadAsync(
-                        CreateTemporaryDirectory("companion"),
+                        companionDirectory,
                         companionToInstall.CompanionFileName!,
                         cancellationToken)
                     .ConfigureAwait(false);
@@ -844,6 +895,10 @@ public sealed class OptiScalerManager : IDisposable
         finally
         {
             TryDeleteDirectory(extractionDirectory);
+            if (companionDirectory is not null)
+            {
+                TryDeleteDirectory(companionDirectory);
+            }
         }
     }
 
@@ -1266,10 +1321,19 @@ public sealed class OptiScalerManager : IDisposable
             if (snapshot is null)
             {
                 TryDeleteFile(destination);
+                continue;
             }
-            else
+
+            // Best effort: one locked file must not stop the remaining files
+            // from being restored or replace the error that started the
+            // rollback.
+            try
             {
                 AtomicCopy(snapshot, destination);
+            }
+            catch (Exception exception) when (
+                exception is IOException or UnauthorizedAccessException)
+            {
             }
         }
     }

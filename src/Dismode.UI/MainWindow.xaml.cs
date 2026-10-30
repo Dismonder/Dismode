@@ -3214,13 +3214,17 @@ public sealed partial class MainWindow : Window, IDisposable
                 _lifetime.Token);
             ClearPreparedPlan();
             ApplyCompletedSession(completed);
-            await RefreshDashboardRecoveryStatusAsync(_lifetime.Token);
-            await LoadHistoryAsync(_lifetime.Token);
+            bool refreshed = await TryRefreshAfterSessionEndAsync(
+                _lifetime.Token);
             ShowInfo(
                 PlanInfoBar,
-                InfoBarSeverity.Success,
+                refreshed
+                    ? InfoBarSeverity.Success
+                    : InfoBarSeverity.Warning,
                 "Aplikacje przywrócone",
-                completed.Message);
+                refreshed
+                    ? completed.Message
+                    : completed.Message + HistoryRefreshFailedSuffix);
         }
         catch (OperationCanceledException)
             when (_lifetime.IsCancellationRequested)
@@ -3268,13 +3272,17 @@ public sealed partial class MainWindow : Window, IDisposable
                 active.ProfileId,
                 _lifetime.Token);
             ApplyCompletedSession(result);
-            await RefreshDashboardRecoveryStatusAsync(_lifetime.Token);
-            await LoadHistoryAsync(_lifetime.Token);
+            bool refreshed = await TryRefreshAfterSessionEndAsync(
+                _lifetime.Token);
             ShowInfo(
                 PlanInfoBar,
-                InfoBarSeverity.Success,
+                refreshed
+                    ? InfoBarSeverity.Success
+                    : InfoBarSeverity.Warning,
                 "Gra zakończona natychmiast",
-                result.Message);
+                refreshed
+                    ? result.Message
+                    : result.Message + HistoryRefreshFailedSuffix);
         }
         catch (OperationCanceledException)
             when (_lifetime.IsCancellationRequested)
@@ -3314,12 +3322,25 @@ public sealed partial class MainWindow : Window, IDisposable
                 UpdateDashboardSystemMetrics();
             }
 
-            await RefreshActiveSessionCoreAsync(_lifetime.Token);
-            await OptimizeDetectedGameAutomaticallyAsync(_lifetime.Token);
+            // Read once: after Dispose the source no longer hands out a token.
+            CancellationToken token = _lifetime.Token;
+            await RefreshActiveSessionCoreAsync(token);
+            await OptimizeDetectedGameAutomaticallyAsync(token);
         }
         catch (OperationCanceledException)
             when (_lifetime.IsCancellationRequested)
         {
+        }
+        catch (ObjectDisposedException) when (_disposed)
+        {
+        }
+        catch (Exception exception) when (IsExpectedUiFailure(exception))
+        {
+            ShowInfo(
+                PlanInfoBar,
+                InfoBarSeverity.Warning,
+                "Nie odświeżono stanu sesji",
+                exception.Message);
         }
         finally
         {
@@ -4339,6 +4360,29 @@ public sealed partial class MainWindow : Window, IDisposable
         UpdateDashboardRecoveryState(_activeSession);
     }
 
+    private const string HistoryRefreshFailedSuffix =
+        " Historia nie została odświeżona.";
+
+    /// <summary>
+    /// Refreshes recovery status and history after a session has already
+    /// ended. A failure here must not be reported as a failed session end.
+    /// </summary>
+    private async Task<bool> TryRefreshAfterSessionEndAsync(
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            await RefreshDashboardRecoveryStatusAsync(cancellationToken);
+            await LoadHistoryAsync(cancellationToken);
+            return true;
+        }
+        catch (Exception exception) when (IsExpectedUiFailure(exception)
+            && exception is not ObjectDisposedException)
+        {
+            return false;
+        }
+    }
+
     private async Task RefreshActiveSessionCoreAsync(
         CancellationToken cancellationToken)
     {
@@ -4386,8 +4430,15 @@ public sealed partial class MainWindow : Window, IDisposable
                 await SuppressRunningInstancesOfEndedSessionAsync(
                     previous.ProfileId,
                     cancellationToken);
-                await RefreshDashboardRecoveryStatusAsync(cancellationToken);
-                await LoadHistoryAsync(cancellationToken);
+                if (!await TryRefreshAfterSessionEndAsync(cancellationToken))
+                {
+                    ShowInfo(
+                        PlanInfoBar,
+                        InfoBarSeverity.Warning,
+                        "Sesja zakończona",
+                        HistoryRefreshFailedSuffix.TrimStart());
+                }
+
                 _ = CompleteDeferredStartupAsync(cancellationToken);
                 _ = CompleteDeferredAutomaticUpdateAsync(cancellationToken);
             }
@@ -5695,8 +5746,13 @@ public sealed partial class MainWindow : Window, IDisposable
         try
         {
             _foregroundGameWatcher ??= new();
+            CancellationToken token = _lifetime.Token;
             ForegroundGameSample sample = await _foregroundGameWatcher
-                .SampleAsync(_lifetime.Token);
+                .SampleAsync(token);
+            if (_disposed || token.IsCancellationRequested)
+            {
+                return;
+            }
 
             _performanceOverlay ??= new();
             _performanceOverlay.Update(

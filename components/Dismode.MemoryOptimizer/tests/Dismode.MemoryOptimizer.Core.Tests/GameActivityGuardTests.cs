@@ -93,4 +93,33 @@ public sealed class GameActivityGuardTests
 
         Assert.IsFalse(result.IsBlocked);
     }
+
+    [TestMethod]
+    public void DottedProcessNamesMatchKnownGamesAndLaunchers()
+    {
+        KnownGamesDocument known = new(
+            1,
+            Now,
+            [new("warframe", "Warframe", ["Warframe.x64.exe"])]);
+
+        GuardDecision game = GameActivityEvaluator.Evaluate(
+            null,
+            known,
+            [new(1, "Warframe.x64", false, false)],
+            Now);
+        GuardDecision launcher = GameActivityEvaluator.Evaluate(
+            null,
+            null,
+            [new(2, "Battle.net", false, false)],
+            Now);
+        GuardDecision ownUi = GameActivityEvaluator.Evaluate(
+            null,
+            null,
+            [new(3, "Dismode.UI", true, true)],
+            Now);
+
+        Assert.AreEqual("known-game-process", game.Code);
+        Assert.AreEqual("protected-game-process", launcher.Code);
+        Assert.IsFalse(ownUi.IsBlocked);
+    }
 }

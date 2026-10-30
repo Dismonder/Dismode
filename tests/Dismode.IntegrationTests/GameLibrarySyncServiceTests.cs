@@ -447,6 +447,67 @@ public sealed class GameLibrarySyncServiceTests
     }
 
     [TestMethod]
+    public async Task OneMissingProfileIsRelocatedToOnlyOneSameNamedExecutable()
+    {
+        using UserDataTestContext context = new();
+        DateTimeOffset now = new(2026, 8, 23, 10, 0, 0, TimeSpan.Zero);
+        string missingPath = Path.Combine(
+            context.DirectoryPath,
+            "Old",
+            "Game.exe");
+        string firstPath = CreateFile(
+            context.DirectoryPath,
+            Path.Combine("A", "Game.exe"));
+        string secondPath = CreateFile(
+            context.DirectoryPath,
+            Path.Combine("B", "Game.exe"));
+        ManualGameProfile profile = new(
+            GameProfileId.Create(),
+            "Game",
+            missingPath,
+            new string('0', 64),
+            Path.GetDirectoryName(missingPath)!,
+            launchArguments: [],
+            OptimizationPreset.Balanced,
+            isEnabled: true,
+            now.AddDays(-2),
+            now.AddDays(-2),
+            artworkPath: null);
+        await context.Store.UpsertAsync(profile, CancellationToken.None);
+        FixedTimeProvider timeProvider = new(now);
+        LocalGameArtworkResolver resolver = new(
+            [],
+            Path.Combine(context.DirectoryPath, "ArtworkCache"));
+        DetectedGame[] detected =
+        [
+            new("Manual", "a", "Game A", firstPath, [], 100),
+            new("Manual", "b", "Game B", secondPath, [], 100),
+        ];
+        GameLibrarySyncService service = new(
+            new(timeProvider, resolver),
+            timeProvider,
+            resolver,
+            _ => Task.FromResult(detected),
+            new([], timeProvider, TimeSpan.FromHours(6)));
+
+        GameLibrarySyncResult first = await service.SyncAsync(
+            context.Store,
+            CancellationToken.None);
+        IReadOnlyList<ManualGameProfile> afterFirst =
+            await context.Store.ListAsync(CancellationToken.None);
+
+        Assert.AreEqual(0, first.ErrorCount);
+        Assert.AreEqual(1, first.AddedCount);
+        Assert.AreEqual(2, afterFirst.Count);
+        Assert.IsTrue(afterFirst.Any(item =>
+            item.ProfileId == profile.ProfileId
+            && item.ExecutablePath == firstPath));
+        Assert.IsTrue(afterFirst.Any(item =>
+            item.ProfileId != profile.ProfileId
+            && item.ExecutablePath == secondPath));
+    }
+
+    [TestMethod]
     public async Task ExistingRobloxTextureArtworkIsReplacedWithExeThumbnail()
     {
         using UserDataTestContext context = new();

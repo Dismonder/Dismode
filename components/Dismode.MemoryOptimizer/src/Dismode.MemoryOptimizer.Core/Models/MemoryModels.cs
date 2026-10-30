@@ -272,6 +272,19 @@ public sealed record MemoryOptimizerSettings
 
     public bool CompactAlwaysOnTop { get; init; }
 
+    /// <summary>
+    /// Reduces a process name or path to the form used by
+    /// <c>Process.ProcessName</c>: the file name with only a trailing
+    /// ".exe" removed, so dotted names such as "Battle.net" stay intact.
+    /// </summary>
+    public static string NormalizeProcessName(string? value)
+    {
+        string name = Path.GetFileName((value ?? string.Empty).Trim());
+        return name.EndsWith(".exe", StringComparison.OrdinalIgnoreCase)
+            ? name[..^4]
+            : name;
+    }
+
     public static MemoryOptimizerSettings Normalize(
         MemoryOptimizerSettings settings)
     {
@@ -294,8 +307,7 @@ public sealed record MemoryOptimizerSettings
             : new ReadOnlyCollection<string>(
                 settings.ExcludedProcesses
                     .Where(static name => !string.IsNullOrWhiteSpace(name))
-                    .Select(static name => Path.GetFileNameWithoutExtension(
-                        name.Trim()))
+                    .Select(static name => NormalizeProcessName(name))
                     .Where(static name => !string.IsNullOrWhiteSpace(name))
                     .Distinct(StringComparer.OrdinalIgnoreCase)
                     .Order(StringComparer.OrdinalIgnoreCase)

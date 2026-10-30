@@ -19,6 +19,8 @@ public sealed class PresentMonFrameRateProvider : IFrameRateProvider
     private const int MaximumObservationsPerStream = 2_048;
     private const int MaximumInitialCaptureRestarts = 1;
     private const int PresentEventBufferSize = 8_192;
+    private static readonly TimeSpan UnexpectedExitBackoff =
+        TimeSpan.FromSeconds(10);
 
     private readonly string _executablePath;
     private readonly string _sessionName;
@@ -39,6 +41,10 @@ public sealed class PresentMonFrameRateProvider : IFrameRateProvider
     private DateTimeOffset? _captureStartedAtUtc;
     private int _initialCaptureRestartCount;
     private bool _captureProducedFrame;
+    private string? _stoppedCaptureDiagnostic;
+    private string? _unexpectedExitMessage;
+    private int[] _unexpectedExitTargets = [];
+    private DateTimeOffset _unexpectedExitBackoffUntilUtc;
     private BenchmarkFrameCollector? _benchmarkCollector;
     private bool _disposed;
 
@@ -186,6 +192,34 @@ public sealed class PresentMonFrameRateProvider : IFrameRateProvider
         try
         {
             ThrowIfDisposed();
+            DateTimeOffset nowUtc = _timeProvider.GetUtcNow();
+            if (_captureProcess is { HasExited: true }
+                && captureTargets.SequenceEqual(_targetProcessIds)
+                && !_captureProducedFrame
+                && !HasObservations())
+            {
+                // PresentMon died on its own before delivering a frame (no
+                // elevation, lost ETW session, crash). Keep its last words and
+                // back off instead of respawning it on every poll.
+                await StopCaptureCoreAsync().ConfigureAwait(false);
+                _unexpectedExitMessage =
+                    string.IsNullOrWhiteSpace(_stoppedCaptureDiagnostic)
+                        ? "PresentMon zakończył pomiar bez danych klatek."
+                        : _stoppedCaptureDiagnostic;
+                _unexpectedExitTargets = captureTargets;
+                _unexpectedExitBackoffUntilUtc =
+                    nowUtc + UnexpectedExitBackoff;
+                return FrameRateSample.Failed(_unexpectedExitMessage);
+            }
+
+            if (_unexpectedExitMessage is not null
+                && _captureProcess is null
+                && nowUtc < _unexpectedExitBackoffUntilUtc
+                && captureTargets.SequenceEqual(_unexpectedExitTargets))
+            {
+                return FrameRateSample.Failed(_unexpectedExitMessage);
+            }
+
             if (_captureProcess is not null
                 && !_captureProcess.HasExited
                 && captureTargets.SequenceEqual(_targetProcessIds))
@@ -194,6 +228,7 @@ public sealed class PresentMonFrameRateProvider : IFrameRateProvider
                 if (sample.Status == FrameRateStatus.Measuring)
                 {
                     _captureProducedFrame = true;
+                    _unexpectedExitMessage = null;
                     return sample;
                 }
 
@@ -298,11 +333,20 @@ public sealed class PresentMonFrameRateProvider : IFrameRateProvider
             .ConfigureAwait(false);
         try
         {
+            _unexpectedExitMessage = null;
             await StopCaptureCoreAsync().ConfigureAwait(false);
         }
         finally
         {
             _lifecycleGate.Release();
+        }
+    }
+
+    private bool HasObservations()
+    {
+        lock (_observationSync)
+        {
+            return _observations.Values.Any(stream => stream.Count > 0);
         }
     }
 
@@ -351,6 +395,22 @@ public sealed class PresentMonFrameRateProvider : IFrameRateProvider
             ("FrameView", "NVIDIA FrameView"),
         ];
 
+    private static bool IsProcessRunning(string processName)
+    {
+        Process[] processes = Process.GetProcessesByName(processName);
+        try
+        {
+            return processes.Length > 0;
+        }
+        finally
+        {
+            foreach (Process process in processes)
+            {
+                process.Dispose();
+            }
+        }
+    }
+
     /// <summary>
     /// Explains a capture that runs but never produces a frame. Guessing is
     /// worse than useless here, so the message names what is actually running
@@ -365,13 +425,7 @@ public sealed class PresentMonFrameRateProvider : IFrameRateProvider
         }
 
         string[] found = CompetingCaptureTools
-            .Where(tool => Process
-                .GetProcessesByName(tool.ProcessName)
-                .Any(process =>
-                {
-                    process.Dispose();
-                    return true;
-                }))
+            .Where(tool => IsProcessRunning(tool.ProcessName))
             .Select(tool => tool.Owner)
             .Distinct(StringComparer.Ordinal)
             .ToArray();
@@ -875,6 +929,13 @@ public sealed class PresentMonFrameRateProvider : IFrameRateProvider
             .ConfigureAwait(false);
         captureCancellation?.Dispose();
         process.Dispose();
+        lock (_observationSync)
+        {
+            // Readers have drained, so this is PresentMon's final word;
+            // ResetCaptureState is about to clear it.
+            _stoppedCaptureDiagnostic = _lastDiagnostic;
+        }
+
         ResetCaptureState();
         if (readerFailure is not null)
         {

@@ -41,16 +41,40 @@ internal sealed class SystemOptimizerRecoveryHostedService : BackgroundService
     protected override async Task ExecuteAsync(
         CancellationToken stoppingToken)
     {
-        await _maintenance.RecoverAfterUnexpectedRestartAsync(stoppingToken)
+        await RunGuardedAsync(
+                _maintenance.RecoverAfterUnexpectedRestartAsync,
+                stoppingToken)
             .ConfigureAwait(false);
 
         using PeriodicTimer timer = new(_checkInterval);
         while (await timer.WaitForNextTickAsync(stoppingToken)
                    .ConfigureAwait(false))
         {
-            await _maintenance
-                .RecoverTimedOutRebootExperimentAsync(stoppingToken)
+            await RunGuardedAsync(
+                    _maintenance.RecoverTimedOutRebootExperimentAsync,
+                    stoppingToken)
                 .ConfigureAwait(false);
+        }
+    }
+
+    // A transient store or journal failure must not stop the host (the
+    // default BackgroundService behaviour) and take the pipe down with it;
+    // the next tick retries.
+    private static async Task RunGuardedAsync(
+        Func<CancellationToken, ValueTask> operation,
+        CancellationToken stoppingToken)
+    {
+        try
+        {
+            await operation(stoppingToken).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException)
+            when (stoppingToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception)
+        {
         }
     }
 }

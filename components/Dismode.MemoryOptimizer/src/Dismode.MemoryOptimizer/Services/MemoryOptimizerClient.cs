@@ -1,6 +1,7 @@
 using System.IO.Pipes;
 using System.Security.Principal;
 using Dismode.MemoryOptimizer.Core.Ipc;
+using Dismode.MemoryOptimizer.Presentation;
 
 namespace Dismode.MemoryOptimizer.Services;
 
@@ -35,8 +36,9 @@ internal sealed class MemoryOptimizerClient
             TokenImpersonationLevel.Impersonation);
         using CancellationTokenSource timeout =
             CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-        timeout.CancelAfter(TimeSpan.FromSeconds(3));
+        timeout.CancelAfter(MemoryClientPolicy.ConnectTimeout);
         await pipe.ConnectAsync(timeout.Token).ConfigureAwait(false);
+        timeout.CancelAfter(MemoryClientPolicy.ExchangeTimeoutFor(command));
         await ProtocolCodec.WriteAsync(
             pipe,
             request,
