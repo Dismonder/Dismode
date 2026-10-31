@@ -1075,6 +1075,16 @@ public sealed partial class MainWindow : Window, IDisposable
             return;
         }
 
+        CpuAffinityDecision decision = CpuAffinityPolicy.Decide(
+            topology,
+            CpuAffinityRole.Foreground);
+        if (topology.HasSeparateCacheGroups
+            || decision.Decline == CpuAffinityDecline.AmbiguousCacheGroups)
+        {
+            CpuTopologyText.Text = decision.Explanation;
+            return;
+        }
+
         int physical = CpuTopology.CountPhysicalCores(topology.Processors);
         if (!topology.IsHybrid)
         {
@@ -1101,9 +1111,6 @@ public sealed partial class MainWindow : Window, IDisposable
             CpuTopology.CountPhysicalCores(topology.PerformanceCores);
         int efficiency =
             CpuTopology.CountPhysicalCores(topology.EfficiencyCores);
-        CpuAffinityDecision decision = CpuAffinityPolicy.Decide(
-            topology,
-            CpuAffinityRole.Foreground);
         CpuTopologyText.Text =
             $"{performance} rdzeni wydajnych i {efficiency} energooszczędnych, "
             + $"{topology.Processors.Count} wątków. {decision.Explanation}";

@@ -228,23 +228,36 @@ public sealed class CpuAffinityPolicyTests
     }
 
     /// <summary>
-    /// Ryzen 9 9950X: sixteen cores with SMT across two CCDs, every core the
-    /// same efficiency class, but two separate last-level caches.
+    /// Dwa CCD z SMT; rozmiary L3 i liczby rdzeni sa niezalezne.
     /// </summary>
-    private static CpuTopology DualCcdRyzen()
+    private static CpuTopology DualCcdRyzen(
+        uint? firstL3 = null,
+        uint? secondL3 = null,
+        int secondCores = 8)
     {
         List<CpuLogicalProcessor> processors = [];
         byte index = 0;
-        for (uint core = 0; core < 32; core += 2)
+        for (uint core = 0; core < (8 + secondCores) * 2; core += 2)
         {
             byte cache = (byte)(core < 16 ? 0 : 1);
-            processors.Add(new(index, 0, index, core, 0, false, true, cache));
+            processors.Add(new(index, 0, index, core, 0, false, true, cache, 0));
             index++;
-            processors.Add(new(index, 0, index, core, 0, false, true, cache));
+            processors.Add(new(index, 0, index, core, 0, false, true, cache, 0));
             index++;
         }
 
-        return new(processors);
+        return new(processors)
+        {
+            ProcessorPackages = [new([.. processors.Select(processor => processor.Id)])],
+            L3CacheGroups = firstL3.HasValue && secondL3.HasValue
+                ? [new(firstL3.Value * 1024 * 1024,
+                       [.. processors.Where(processor => processor.LastLevelCacheIndex == 0)
+                           .Select(processor => processor.Id)]),
+                   new(secondL3.Value * 1024 * 1024,
+                       [.. processors.Where(processor => processor.LastLevelCacheIndex == 1)
+                           .Select(processor => processor.Id)])]
+                : [],
+        };
     }
 
     [TestMethod]
@@ -256,16 +269,12 @@ public sealed class CpuAffinityPolicyTests
         Assert.IsFalse(ryzen.IsHybrid);
         Assert.IsTrue(ryzen.HasSeparateCacheGroups);
         Assert.AreEqual(32, ryzen.Processors.Count);
-        Assert.AreEqual(
-            8,
-            CpuTopology.CountPhysicalCores(ryzen.LargestCacheGroup));
+        Assert.AreEqual(16, CpuTopology.CountPhysicalCores(ryzen.Processors));
     }
 
     [TestMethod]
-    public void GameIsKeptInsideOneCacheGroup()
+    public void MissingCacheSizesAreRefused()
     {
-        // Watki rozrzucone po obu CCD rozmawiaja przez pamiec zamiast przez
-        // wspolny cache. Wczesniej polityka odmawiala tu calkowicie.
         CpuAffinityDecision game = CpuAffinityPolicy.Decide(
             DualCcdRyzen(),
             CpuAffinityRole.Foreground);
@@ -273,11 +282,243 @@ public sealed class CpuAffinityPolicyTests
             DualCcdRyzen(),
             CpuAffinityRole.Background);
 
+        Assert.IsFalse(game.ShouldApply, game.Explanation);
+        Assert.IsFalse(background.ShouldApply, background.Explanation);
+        Assert.AreEqual(0UL, game.Mask);
+        Assert.AreEqual(0UL, background.Mask);
+        Assert.AreEqual(CpuAffinityDecline.AmbiguousCacheGroups, game.Decline);
+        Assert.AreEqual(CpuAffinityDecline.AmbiguousCacheGroups, background.Decline);
+    }
+
+    [TestMethod]
+    [DataRow(32u, 96u, 8, 0xFFFF0000UL)]
+    [DataRow(96u, 32u, 8, 0x0000FFFFUL)]
+    [DataRow(32u, 48u, 8, 0xFFFF0000UL)]
+    [DataRow(32u, 96u, 4, 0x00FF0000UL)]
+    public void AsymmetricL3SelectsCacheCapacityInsteadOfIndexOrCoreCount(
+        uint firstL3, uint secondL3, int secondCores, ulong expectedGameMask)
+    {
+        CpuTopology topology = DualCcdRyzen(firstL3, secondL3, secondCores);
+        CpuAffinityDecision game = CpuAffinityPolicy.Decide(topology, CpuAffinityRole.Foreground);
+        CpuAffinityDecision background = CpuAffinityPolicy.Decide(topology, CpuAffinityRole.Background);
+
         Assert.IsTrue(game.ShouldApply, game.Explanation);
         Assert.IsTrue(background.ShouldApply, background.Explanation);
-        Assert.AreEqual(0x0000FFFFUL, game.Mask);
-        Assert.AreEqual(0xFFFF0000UL, background.Mask);
-        Assert.AreEqual(0UL, game.Mask & background.Mask);
+        Assert.AreEqual(expectedGameMask, game.Mask);
+        Assert.AreEqual(CpuAffinityPolicy.BuildMask(topology.Processors) ^ game.Mask, background.Mask);
+    }
+
+    [TestMethod]
+    [DataRow(32u, 32u)]
+    [DataRow(96u, 96u)]
+    [DataRow(32u, 47u)]
+    [DataRow(0u, 96u)]
+    public void EqualInsufficientlyDifferentOrUnknownL3IsRefused(uint firstL3, uint secondL3)
+    {
+        AssertCacheRefused(DualCcdRyzen(firstL3, secondL3));
+    }
+
+    [TestMethod]
+    public void X3dCacheSelectionTakesPrecedenceOverDifferentCcdEfficiencyClasses()
+    {
+        CpuTopology topology = DualCcdRyzen(32, 96);
+        topology = topology with
+        {
+            Processors = [.. topology.Processors.Select(processor => processor with
+            {
+                EfficiencyClass = (byte)(processor.LastLevelCacheIndex == 0 ? 1 : 0),
+            })],
+        };
+
+        CpuAffinityDecision game = CpuAffinityPolicy.Decide(topology, CpuAffinityRole.Foreground);
+
+        Assert.IsTrue(game.ShouldApply, game.Explanation);
+        Assert.AreEqual(0xFFFF0000UL, game.Mask);
+    }
+
+    [TestMethod]
+    public void L3MasksAreAuthoritativeEvenWithoutDistinctCpuSetCacheIndices()
+    {
+        CpuTopology topology = DualCcdRyzen(32, 96);
+        topology = topology with
+        {
+            Processors = [.. topology.Processors.Select(processor => processor with { LastLevelCacheIndex = 0 })],
+        };
+
+        CpuAffinityDecision game = CpuAffinityPolicy.Decide(topology, CpuAffinityRole.Foreground);
+
+        Assert.IsTrue(topology.HasSeparateCacheGroups);
+        Assert.IsTrue(game.ShouldApply, game.Explanation);
+        Assert.AreEqual(0xFFFF0000UL, game.Mask);
+    }
+
+    [TestMethod]
+    [DataRow("packages")]
+    [DataRow("numa")]
+    [DataRow("partial")]
+    [DataRow("overlap")]
+    [DataRow("unknown")]
+    [DataRow("empty group")]
+    [DataRow("uncached")]
+    [DataRow("split core")]
+    [DataRow("package coverage")]
+    public void IncompleteOrInconsistentCacheTopologyIsRefused(string missing)
+    {
+        CpuTopology topology = DualCcdRyzen(32, 96);
+        CpuCacheGroup first = topology.L3CacheGroups[0];
+        CpuCacheGroup second = topology.L3CacheGroups[1];
+        topology = missing switch
+        {
+            "packages" => topology with { ProcessorPackages = [] },
+            "numa" => topology with
+            {
+                Processors = [.. topology.Processors.Select(processor => processor with { NumaNodeIndex = null })],
+            },
+            "partial" => topology with
+            {
+                L3CacheGroups = [first, second with { ProcessorIds = [.. second.ProcessorIds.Skip(1)] }],
+            },
+            "overlap" => topology with
+            {
+                L3CacheGroups = [first, second with { ProcessorIds = [.. second.ProcessorIds, first.ProcessorIds[0]] }],
+            },
+            "unknown" => topology with
+            {
+                L3CacheGroups = [first, second with { ProcessorIds = [.. second.ProcessorIds, 999] }],
+            },
+            "empty group" => topology with
+            {
+                L3CacheGroups = [first, second with { ProcessorIds = [] }],
+            },
+            "uncached" => topology with
+            {
+                L3CacheGroups = [first, second with { ProcessorIds = [.. second.ProcessorIds.Skip(1)] }],
+                Processors = [.. topology.Processors.Select(processor => processor with { LastLevelCacheIndex = 0 })],
+            },
+            "split core" => topology with
+            {
+                Processors = [.. topology.Processors.Select(processor => processor.Id == 16
+                    ? processor with { CoreIndex = 0 } : processor)],
+            },
+            "package coverage" => topology with { ProcessorPackages = [new(first.ProcessorIds)] },
+            _ => throw new ArgumentOutOfRangeException(nameof(missing)),
+        };
+
+        AssertCacheRefused(topology);
+    }
+
+    [TestMethod]
+    public void MultiplePackagesOrNumaNodesAreRefused()
+    {
+        CpuTopology topology = DualCcdRyzen(32, 96);
+        AssertCacheRefused(topology with
+        {
+            ProcessorPackages = [new(topology.L3CacheGroups[0].ProcessorIds), new(topology.L3CacheGroups[1].ProcessorIds)],
+        });
+        AssertCacheRefused(topology with
+        {
+            Processors = [.. topology.Processors.Select(processor => processor with
+            {
+                NumaNodeIndex = processor.LastLevelCacheIndex,
+            })],
+        });
+    }
+
+    [TestMethod]
+    public void SingleCcd9800X3dKeepsExistingUniformPolicy()
+    {
+        CpuTopology topology = RocketLake();
+        topology = topology with
+        {
+            Processors = [.. topology.Processors.Select(processor => processor with { NumaNodeIndex = 0 })],
+            L3CacheGroups = [new(96 * 1024 * 1024, [.. topology.Processors.Select(processor => processor.Id)])],
+            ProcessorPackages = [new([.. topology.Processors.Select(processor => processor.Id)])],
+        };
+
+        CpuAffinityDecision game = CpuAffinityPolicy.Decide(topology, CpuAffinityRole.Foreground);
+        CpuAffinityDecision background = CpuAffinityPolicy.Decide(topology, CpuAffinityRole.Background);
+
+        Assert.IsFalse(game.ShouldApply);
+        Assert.AreEqual(CpuAffinityDecline.UniformTopology, game.Decline);
+        Assert.IsTrue(background.ShouldApply, background.Explanation);
+        Assert.AreEqual(0xFUL, background.Mask);
+    }
+
+    [TestMethod]
+    [DataRow(12, 8)]
+    [DataRow(13, 16)]
+    [DataRow(14, 16)]
+    public void AlderRaptorLakeHybridKeepsPerformanceAndEfficiencyMasks(int generation, int efficiencyCores)
+    {
+        List<CpuLogicalProcessor> processors = [];
+        for (byte index = 0; index < 16 + efficiencyCores; index++)
+        {
+            processors.Add(new(index, 0, index,
+                (uint)(index < 16 ? index / 2 : index - 8),
+                (byte)(index < 16 ? 1 : 0), false, true, 0, 0));
+        }
+
+        CpuTopology topology = new(processors)
+        {
+            L3CacheGroups = [new((generation == 12 ? 30u : 36u) * 1024 * 1024,
+                [.. processors.Select(processor => processor.Id)])],
+            ProcessorPackages = [new([.. processors.Select(processor => processor.Id)])],
+        };
+        CpuAffinityDecision game = CpuAffinityPolicy.Decide(topology, CpuAffinityRole.Foreground);
+        CpuAffinityDecision background = CpuAffinityPolicy.Decide(topology, CpuAffinityRole.Background);
+
+        Assert.IsTrue(game.ShouldApply, game.Explanation);
+        Assert.IsTrue(background.ShouldApply, background.Explanation);
+        Assert.AreEqual(0xFFFFUL, game.Mask);
+        Assert.AreEqual(((1UL << efficiencyCores) - 1) << 16, background.Mask);
+    }
+
+    [TestMethod]
+    [DataRow(0)]
+    [DataRow(1)]
+    public void MeteorLakeHybridKeepsExistingMasksWithLpECoresOutsideItsOnlyL3(int lpCacheIndex)
+    {
+        List<CpuLogicalProcessor> processors = [];
+        for (byte index = 0; index < 22; index++)
+        {
+            processors.Add(new(index, 0, index,
+                (uint)(index < 12 ? index / 2 : index - 6),
+                (byte)(index < 12 ? 1 : 0), false, true, 0, 0));
+        }
+
+        CpuTopology reference = new(processors)
+        {
+            ProcessorPackages = [new([.. processors.Select(processor => processor.Id)])],
+        };
+        CpuTopology meteorLake = reference with
+        {
+            Processors = [.. processors.Select(processor => processor.LogicalProcessorIndex >= 20
+                ? processor with { LastLevelCacheIndex = (byte)lpCacheIndex } : processor)],
+            L3CacheGroups = [new(24 * 1024 * 1024,
+                [.. processors.Where(processor => processor.LogicalProcessorIndex < 20)
+                    .Select(processor => processor.Id)])],
+        };
+
+        foreach (CpuAffinityRole role in Enum.GetValues<CpuAffinityRole>())
+        {
+            CpuAffinityDecision expected = CpuAffinityPolicy.Decide(reference, role);
+            CpuAffinityDecision actual = CpuAffinityPolicy.Decide(meteorLake, role);
+
+            Assert.IsTrue(expected.ShouldApply, expected.Explanation);
+            Assert.AreEqual(role == CpuAffinityRole.Foreground ? 0xFFFUL : 0x3FF000UL, expected.Mask);
+            Assert.AreEqual(expected, actual);
+        }
+    }
+
+    private static void AssertCacheRefused(CpuTopology topology)
+    {
+        foreach (CpuAffinityRole role in Enum.GetValues<CpuAffinityRole>())
+        {
+            CpuAffinityDecision decision = CpuAffinityPolicy.Decide(topology, role);
+            Assert.IsFalse(decision.ShouldApply, decision.Explanation);
+            Assert.AreEqual(0UL, decision.Mask);
+            Assert.AreEqual(CpuAffinityDecline.AmbiguousCacheGroups, decision.Decline);
+        }
     }
 
     [TestMethod]

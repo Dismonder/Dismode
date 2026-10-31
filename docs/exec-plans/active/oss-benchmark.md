@@ -99,6 +99,7 @@ Uwaga do stanu repo: na gałęzi `fix/bug-hunt-2026-10-08` są niezacommitowane 
 - **Ryzyko:** niskie. **Nakład:** M (głównie UI). **Pewność:** MEDIUM. Nie zależy od pozycji 5.
 
 ### 11. Bez automatycznego wyboru CCD na podstawie liczby rdzeni (X3D)
+- **Stan (2026-10-31):** zrobione — rzeczywiste maski i rozmiary L3, pakiety oraz NUMA; wybór L3 ≥1,5×, odmowa przy równych/niepełnych danych wielu grup L3 i wielu pakietach/węzłach NUMA. Pojedyncze L3 omija wybór CCD także wtedy, gdy LP E są poza nim (Meteor Lake); pełne pokrycie wymagane przy ≥2 L3. Zachowano politykę jednego CCD i Intel P/E oraz istniejące journal/restore/crash replay. Testy syntetyczne topologii i buforów Win32; bez weryfikacji na rzeczywistych X3D/CCD i Meteor Lake, wpływ na FPS i opóźnienia niezmierzony.
 - **Dlaczego:** na 7950X3D i podobnych procesorach Dismode wybiera CCD0 według indeksu, a nie według L3.
 - **Źródła:** ThreadPilot (`GameBoostPolicy.cs:44,54,79,158`). Dismode: `CpuTopology.cs:62-69`, `CpuAffinityPolicy.cs:170,188-190,276-307`, `SystemCpuTopologyProvider.cs:85-134`.
 - **Pliki:** `SystemCpuTopologyProvider.cs` (`GetLogicalProcessorInformationEx`: RelationCache i RelationProcessorPackage, do tego `NumaNodeIndex`), `CpuTopology.cs`, `CpuAffinityPolicy.cs` (nowy powód odmowy `AmbiguousCacheGroups`).
