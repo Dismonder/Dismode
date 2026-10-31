@@ -1,6 +1,7 @@
 using Dismode.Contracts.Protocol;
 using Dismode.Core.Domain.Identifiers;
 using Dismode.Core.Domain.Processes;
+using Dismode.Windows.Processes;
 
 namespace Dismode.Windows.Sessions;
 
@@ -34,9 +35,8 @@ public sealed record RestrainedProcessRecord(
     // ktore swoj stan wybraly same, zanim rodzic zostal ograniczony.
     DateTimeOffset? RestrainedAtUtc = null,
     // Czy proces dostal domyslne zbiory procesorow (miekkie sterowanie).
-    // Zbiory nie sa dziennikowane, bo nie ograniczaja, tylko podpowiadaja —
-    // ale po awarii hosta zostalyby na procesie do jego konca, wiec
-    // odtwarzanie ma je wyczyscic.
+    // Starsze rekordy opieraja odtwarzanie na tej fladze i listach ID.
+    // Nowe maja tez identyfikatory akcji dziennikowanej przed zapisem.
     bool SteeredCpuSets = false,
     // EcoQoS nalozony przez petle reaktywna (preset agresywny). Odtwarzanie
     // po awarii cofa go ta sama sciezka co EcoQoS aplikacji z planu.
@@ -51,7 +51,8 @@ public sealed record RestrainedProcessRecord(
     // dokladnie zapisane zbiory; null przy starszych rekordach, ktore znaja
     // sama flage i sa czyszczone jak dawniej.
     uint[]? OriginalCpuSetIds = null,
-    uint[]? AppliedCpuSetIds = null);
+    uint[]? AppliedCpuSetIds = null,
+    ProcessCpuSetsTransaction? CpuSetsTransaction = null);
 
 /// <summary>
 /// Where the reactive restraint loop reports what it has restrained and

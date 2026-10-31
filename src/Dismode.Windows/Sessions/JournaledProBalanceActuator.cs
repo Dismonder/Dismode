@@ -167,6 +167,9 @@ public sealed class JournaledProBalanceActuator :
             ? new(new(Guid.NewGuid()), IdempotencyKey.Create())
             : null;
         bool plannedSteer = _backgroundCpuSetIds.Count > 0;
+        ProcessCpuSetsTransaction? cpuSetsTransaction = plannedSteer
+            ? ProcessCpuSetsTransaction.Create(_sessionId)
+            : null;
         DateTimeOffset restrainedAtUtc = _timeProvider.GetUtcNow();
 
         // Meldunek do ksiegi PRZED pierwsza zmiana i tylko potwierdzony.
@@ -176,11 +179,8 @@ public sealed class JournaledProBalanceActuator :
         // ograniczenie jest opcjonalne, odtwarzalnosc po awarii nie.
         // Wczesniej nieudany zapis byl polykany i proces byl zmieniany
         // bez sladu w punkcie kontrolnym.
-        // Zbiory CPU meldujemy dopiero po nalozeniu (drugi meldunek nizej):
-        // nie sa dziennikowane, wiec odtwarzanie po awarii czysciloby je na
-        // podstawie samego planu — takze procesowi, ktory mial wlasne zbiory
-        // i ktorego host nie zdazyl ruszyc. Awaria miedzy nalozeniem a drugim
-        // meldunkiem zostawia preferencje, nie ograniczenie.
+        // Identyfikatory CPU Sets tez wyprzedzaja mutacje. Dziennik rozstrzyga,
+        // czy zapis zdazyl sie rozpoczac przed awaria hosta.
         if (!await ReportRestraintAsync(
                 identity,
                 actionId,
@@ -190,7 +190,8 @@ public sealed class JournaledProBalanceActuator :
                 plannedEcoQos,
                 plannedGpu,
                 steer: null,
-                restrainedAtUtc)
+                restrainedAtUtc,
+                cpuSetsTransaction)
             .ConfigureAwait(false))
         {
             // Ksiega po swojej stronie cofa nieudany wpis; to wywolanie jest
@@ -238,7 +239,8 @@ public sealed class JournaledProBalanceActuator :
                 plannedIo,
                 plannedEcoQos,
                 plannedGpu,
-                restrainedAtUtc);
+                restrainedAtUtc,
+                cpuSetsTransaction);
             return true;
         }
 
@@ -252,6 +254,7 @@ public sealed class JournaledProBalanceActuator :
                 return false;
             case ActionExecutionStatus.AppliedAndVerified:
             case ActionExecutionStatus.AlreadyCompleted:
+            case ActionExecutionStatus.Unchanged:
                 break;
             default:
                 // RecoveryRequired albo VerificationFailed: proces mogl
@@ -267,18 +270,18 @@ public sealed class JournaledProBalanceActuator :
                     plannedIo,
                     plannedEcoQos,
                     plannedGpu,
-                    restrainedAtUtc);
+                    restrainedAtUtc,
+                    cpuSetsTransaction);
                 return true;
         }
 
-        // Od tego miejsca proces JEST juz zmieniony: priorytet lezy na nim
-        // i tylko nasz rekord pamieta, ze to my. Anulowanie nie moze nas tu
+        // Od tego miejsca priorytet jest zgodny z celem. Anulowanie nie moze nas tu
         // wyrzucic, bo wyjatek przeskoczylby zapis do _applied, ReleaseAll
         // nie mialoby czego zwalniac i proces zostalby w cwiartce
         // z obnizonym priorytetem na zawsze. Reszte robimy wiec bez tokenu,
         // a rekord powstaje w finally z tym, co realnie zdazylo sie nalozyc
         // — albo moglo sie nalozyc, bo niepewnosc tez trzeba pamietac.
-        CpuSetsSteer? steered = null;
+        CpuSetsAssignment? steered = null;
         PinnedAffinity? pinned = null;
         ThrottledEcoQos? ecoQos = null;
         LoweredIo? loweredIo = null;
@@ -288,7 +291,9 @@ public sealed class JournaledProBalanceActuator :
             // Odsuniecie od rdzeni gry. Idzie po ograniczeniu priorytetu,
             // bo tamto jest wazniejsze i nie chcemy, zeby nieudane
             // sterowanie zbiorami przeslonilo udane obnizenie priorytetu.
-            steered = plannedSteer ? TrySteerAway(runtimeKey) : null;
+            steered = cpuSetsTransaction is { } transaction
+                ? await TrySteerAwayAsync(identity, transaction).ConfigureAwait(false)
+                : null;
             pinned = await TryPinAsync(identity, plannedPin)
                 .ConfigureAwait(false);
             ecoQos = await TryApplyEcoQosAsync(identity, plannedEcoQos)
@@ -312,7 +317,9 @@ public sealed class JournaledProBalanceActuator :
                 loweredIo,
                 restrainedAtUtc,
                 ecoQos,
-                loweredGpu);
+                loweredGpu,
+                PriorityChanged: result.Status != ActionExecutionStatus.Unchanged,
+                cpuSetsTransaction);
         }
 
         // Drugi meldunek, z tym, co realnie sie nalozylo. Pierwszy szedl
@@ -329,7 +336,8 @@ public sealed class JournaledProBalanceActuator :
                 ecoQos,
                 loweredGpu,
                 steered,
-                restrainedAtUtc)
+                restrainedAtUtc,
+                cpuSetsTransaction)
             .ConfigureAwait(false);
         return true;
     }
@@ -350,7 +358,8 @@ public sealed class JournaledProBalanceActuator :
         LoweredIo? plannedIo,
         ThrottledEcoQos? plannedEcoQos,
         LoweredGpu? plannedGpu,
-        DateTimeOffset restrainedAtUtc) =>
+        DateTimeOffset restrainedAtUtc,
+        ProcessCpuSetsTransaction? cpuSetsTransaction) =>
         _applied[runtimeKey] = new(
             identity,
             actionId,
@@ -360,7 +369,8 @@ public sealed class JournaledProBalanceActuator :
             plannedIo,
             restrainedAtUtc,
             plannedEcoQos,
-            plannedGpu);
+            plannedGpu,
+            CpuSetsTransaction: cpuSetsTransaction);
 
     /// <summary>
     /// Zdejmuje ograniczenia z procesu.
@@ -389,9 +399,8 @@ public sealed class JournaledProBalanceActuator :
         // ten sam proces. Zwolnienie „zniknal z inwentaryzacji" przychodzi
         // wlasnie wtedy, gdy numer mogl juz zmienic wlasciciela, a czyszczenie
         // po samym numerze trafialoby w obcy proces.
-        bool setsCleared = record.Steered is not { } steer
-            || await TryRestoreCpuSetsAsync(record.Identity, steer)
-                .ConfigureAwait(false);
+        bool setsCleared = record.CpuSetsTransaction is not { } transaction
+            || await TryRestoreCpuSetsAsync(record.Identity, transaction).ConfigureAwait(false);
 
         // Cala ta sciezka idzie bez tokenu i jest to ta sama zasada, co przy
         // nakladaniu: zwalnianie przerwane w polowie zostawia proces
@@ -482,19 +491,15 @@ public sealed class JournaledProBalanceActuator :
     /// </summary>
     private async ValueTask<bool> TryRestoreCpuSetsAsync(
         ProcessIdentity identity,
-        CpuSetsSteer steer)
+        ProcessCpuSetsTransaction transaction)
     {
         try
         {
-            bool sameProcess = await _identityProvider
-                .MatchesRuntimeIdentityAsync(identity, CancellationToken.None)
+            ActionRecoveryResult result = await transaction
+                .RecoverAsync(_journal, identity, _identityProvider, CpuSetsPort, CancellationToken.None)
                 .ConfigureAwait(false);
-            return !sameProcess
-                || CpuSetsSteering.RestoreIfUnchanged(
-                    CpuSetsPort,
-                    identity.RuntimeKey.ProcessId,
-                    steer.Original,
-                    steer.Applied) != CpuSetsRestoreResult.Failed;
+            return IsRestored(result.Status)
+                || result.Status == ActionRecoveryStatus.ConflictRequiresDecision;
         }
         catch (Exception exception) when (IsExpected(exception))
         {
@@ -519,7 +524,7 @@ public sealed class JournaledProBalanceActuator :
             record.Pinned is null ? 0 : _backgroundAffinityMask,
             resetIoPriority: record.LoweredIo is not null,
             resetMemoryPriority: false,
-            resetPriorityClass: true);
+            resetPriorityClass: record.PriorityChanged);
         return sweep.Complete;
     }
 
@@ -602,7 +607,8 @@ public sealed class JournaledProBalanceActuator :
     /// risk stalling something the user never asked us to touch.
     /// </para>
     /// </summary>
-    private CpuSetsSteer? TrySteerAway(ProcessRuntimeKey runtimeKey)
+    private async ValueTask<CpuSetsAssignment?> TrySteerAwayAsync(
+        ProcessIdentity identity, ProcessCpuSetsTransaction transaction)
     {
         if (_backgroundCpuSetIds.Count == 0)
         {
@@ -611,14 +617,13 @@ public sealed class JournaledProBalanceActuator :
 
         try
         {
-            // Cudze przypisanie (launcher, uzytkownik) zostaje; zapis tylko
-            // na pusty stan i potwierdzony odczytem zwrotnym. Do rekordu
-            // trafia wylacznie to, co faktycznie zapisalismy.
-            CpuSetsSteer steer = CpuSetsSteering.Steer(
-                CpuSetsPort,
-                runtimeKey.ProcessId,
-                _backgroundCpuSetIds);
-            return steer.IsApplied ? steer : null;
+            ActionExecutionResult result = await new TransactionCoordinator<ProcessCpuSetsState>(_journal)
+                .ExecuteAsync(new ProcessCpuSetsAction(new(transaction.ActionId), identity,
+                        _backgroundCpuSetIds, _identityProvider, CpuSetsPort),
+                    transaction.Context, CancellationToken.None).ConfigureAwait(false);
+            return result.Status is ActionExecutionStatus.AppliedAndVerified or ActionExecutionStatus.AlreadyCompleted
+                ? new([], [.. _backgroundCpuSetIds])
+                : null;
         }
         catch (Exception exception) when (IsExpected(exception))
         {
@@ -662,7 +667,7 @@ public sealed class JournaledProBalanceActuator :
             // wynik — takze VerificationFailed i wyjatek po ApplyAsync —
             // zostawia identyfikatory w rekordzie, bo zmiana mogla zajsc,
             // a odtwarzanie akcji nierozpoczetej jest nieszkodliwe.
-            return result.Status == ActionExecutionStatus.Blocked
+            return result.Status is ActionExecutionStatus.Blocked or ActionExecutionStatus.Unchanged
                 ? null
                 : planned;
         }
@@ -693,8 +698,9 @@ public sealed class JournaledProBalanceActuator :
         LoweredIo? loweredIo,
         ThrottledEcoQos? ecoQos,
         LoweredGpu? loweredGpu,
-        CpuSetsSteer? steer,
-        DateTimeOffset restrainedAtUtc)
+        CpuSetsAssignment? steer,
+        DateTimeOffset restrainedAtUtc,
+        ProcessCpuSetsTransaction? cpuSetsTransaction)
     {
         if (_ledger is not { } ledger)
         {
@@ -725,7 +731,8 @@ public sealed class JournaledProBalanceActuator :
                         loweredGpu?.ActionId,
                         loweredGpu?.IdempotencyKey,
                         steer?.Original.ToArray(),
-                        steer?.Applied.ToArray()),
+                        steer?.Applied.ToArray(),
+                        cpuSetsTransaction),
                     CancellationToken.None)
                 .ConfigureAwait(false);
             return true;
@@ -781,7 +788,7 @@ public sealed class JournaledProBalanceActuator :
                     .ConfigureAwait(false);
             // Jak przy wejsciu-wyjsciu: tylko odmowa walidacji znaczy, ze nic
             // nie nalozono. Reszta zostawia identyfikatory w rekordzie.
-            return result.Status == ActionExecutionStatus.Blocked
+            return result.Status is ActionExecutionStatus.Blocked or ActionExecutionStatus.Unchanged
                 ? null
                 : planned;
         }
@@ -849,7 +856,7 @@ public sealed class JournaledProBalanceActuator :
                     .ConfigureAwait(false);
             // Jak przy masce: tylko odmowa walidacji znaczy, ze nic nie
             // nalozono. Reszta zostawia identyfikatory w rekordzie.
-            return result.Status == ActionExecutionStatus.Blocked
+            return result.Status is ActionExecutionStatus.Blocked or ActionExecutionStatus.Unchanged
                 ? null
                 : planned;
         }
@@ -887,7 +894,7 @@ public sealed class JournaledProBalanceActuator :
                     .ConfigureAwait(false);
             // Jak przy wejsciu-wyjsciu: tylko odmowa walidacji znaczy, ze nic
             // nie nalozono. Reszta zostawia identyfikatory w rekordzie.
-            return result.Status == ActionExecutionStatus.Blocked
+            return result.Status is ActionExecutionStatus.Blocked or ActionExecutionStatus.Unchanged
                 ? null
                 : planned;
         }
@@ -1006,10 +1013,14 @@ public sealed class JournaledProBalanceActuator :
         ProcessIdentity Identity,
         ActionId ActionId,
         IdempotencyKey IdempotencyKey,
-        CpuSetsSteer? Steered,
+        CpuSetsAssignment? Steered,
         PinnedAffinity? Pinned,
         LoweredIo? LoweredIo,
         DateTimeOffset RestrainedAtUtc,
         ThrottledEcoQos? EcoQos = null,
-        LoweredGpu? LoweredGpu = null);
+        LoweredGpu? LoweredGpu = null,
+        bool PriorityChanged = true,
+        ProcessCpuSetsTransaction? CpuSetsTransaction = null);
+
+    private sealed record CpuSetsAssignment(uint[] Original, uint[] Applied);
 }

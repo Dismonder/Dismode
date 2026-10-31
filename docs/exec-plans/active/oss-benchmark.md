@@ -50,10 +50,11 @@ Uwaga do stanu repo: na gałęzi `fix/bug-hunt-2026-10-08` są niezacommitowane 
 - **Ryzyko:** A niskie; B średnie (gałąź rejestru SID użytkownika, bo usługa działa jako SYSTEM). **Nakład:** A S, B M. **Pewność:** HIGH.
 
 ### 5. CPU Sets: trójstanowy odczyt, weryfikacja po zapisie, warunkowe przywracanie (wersja okrojona)
+- **Stan (2026-10-31):** zrobione — pelna integracja wybrana przez wlasciciela: `ProcessCpuSetsAction`, transakcje tla i gry, checkpoint przed mutacja, odczyt trojstanowy, porownanie zbiorow i ThreeWayReconciler przy przywracaniu/replay. Niepuste cudze przypisanie jest pomijane. Opcjonalne pola JSON zachowuja odczyt starszych rekordow; bez migracji SQLite. Testy na atrapach; bez weryfikacji sterowania na rzeczywistym sprzecie i bez pomiarow FPS/latencji.
 - **Dlaczego:** dziś Dismode nadpisuje ustawienie launchera lub użytkownika, a potem je czyści do pustego. To błąd poprawności; nie ma dowodu, że wpływa na FPS.
 - **Źródła:** ThreadPilot (`ProcessCpuSetHandler.cs:259,352,397`, `GameSessionService.cs:1004`) i ProcGovernor (`apply.rs:341-428`; braku przywracania z ProcGovernor nie przejmujemy). Dismode: `ProcessCpuSets.cs:59-113`, `LocalGameSessionOrchestrator.cs:2227-2229,2391,2951`, `JournaledProBalanceActuator.cs:473-481,598-600,675-701`.
 - **Pliki:** `src/Dismode.Windows/Cpu/ProcessCpuSets.cs`, `LocalGameSessionOrchestrator.cs`, `JournaledProBalanceActuator.cs` (oryginalne ID w istniejącym rekordzie zamiast samej flagi `steeredCpuSets`).
-- **Zakres:** bez nowego `ProcessCpuSetsAction` i bez ThreeWayReconciler.
+- **Zakres (decyzja 2026-10-31):** pelna integracja z `ProcessCpuSetsAction`, TransactionCoordinator i ThreeWayReconciler; stary format odtwarzania pozostaje czytelny.
 - **Test:** oryginał pusty lub niepusty, cel równy oryginałowi (no-op), błąd zapytania, niezgodny odczyt po zapisie, zmiana zewnętrzna, ponowne użycie PID, przywrócenie tylko gdy bieżące ID = zastosowane ID (porównanie jako zbiory).
 - **Ryzyko:** średnie (wiele wywołań, schemat journala ProBalance). **Nakład:** M. **Pewność:** MEDIUM–HIGH.
 
@@ -158,6 +159,7 @@ Uwaga do stanu repo: na gałęzi `fix/bug-hunt-2026-10-08` są niezacommitowane 
 - **Ryzyko:** niskie w fazie 1. **Nakład:** M (faza 1), L (całość). **Pewność:** MEDIUM.
 
 ### 18. Pomijanie zapisu priorytetu, gdy jest już taki sam
+- **Stan (2026-10-31):** zrobione — `Unchanged` po ponownej walidacji, bez settera i wpisow akcji; wywolania i przywracanie potomkow uwzgledniaja brak zmiany. Testy syntetyczne i integracyjne; bez pomiarow FPS/latencji na sprzecie.
 - **Dlaczego:** usuwa jedno wywołanie SetPriorityClass i około 3 zdarzeń journala na proces. Korzyść czysto księgowa, dla gracza znikoma.
 - **Źródła:** System Informer (`main.c:2623-2688`). Dismode: `RuntimeProcessPriorityAction.cs:82-127`, `TransactionCoordinator.cs:61-191`.
 - **Pliki:** `TransactionCoordinator.cs` (nowy status `Unchanged`), `RuntimeProcessPriorityAction.cs`, wywołania w `JournaledProBalanceActuator.cs:238` i `LocalGameSessionOrchestrator.cs:2266,2473,2714,3385`.
@@ -181,7 +183,7 @@ Pozycje #1 i #3 zmieniają ten sam plik (`LocalGameSessionOrchestrator.cs`), ale
 - **#4B Zapis `HistoricalCaptureEnabled=0` — decyzja 2026-10-31:** ręczny opt-in, informacja o utracie powtórek, istniejąca bramka A/B przed jawnym utrwaleniem globalnym. Zaimplementowane w punkcie 4; bez domyślnego stosowania.
 - **#2 Stare rekordy EcoQoS.** Proponuję: stary `false` traktować jako SystemManaged, stary `true` jako On. Akceptacja?
 - **#3 Definicja hitcha.** Zostać przy definicji z `BenchmarkAnalyzer` (> max(50 ms, 3× mediana)) czy przejść na udział przycięć z CapFrameX (2,5× ruchomej linii bazowej)? Rekomendacja: jedna definicja, z BenchmarkAnalyzer.
-- **#5 Zakres CPU Sets.** Wersja okrojona (rekomendowana) czy pełna integracja z TransactionCoordinator i ThreeWayReconciler? Czy niepuste, obce przypisanie CPU Sets ma domyślnie oznaczać pominięcie?
+- **#5 Zakres CPU Sets — decyzja 2026-10-31:** pełna integracja z TransactionCoordinator i ThreeWayReconciler. Niepuste, obce przypisanie CPU Sets domyślnie oznacza pominięcie procesu przy sterowaniu zbiorami.
 - **#8 Śledzenie wyświetlania w PresentMon.** Na razie tylko opt-in; włączenie domyślne dopiero po pomiarze narzutu.
 - **#9 Utrzymanie ekranu.** Domyślnie włączone z możliwością wyłączenia czy wyłączone z możliwością włączenia? Czy pomijać grę, która sama zgłasza żądanie?
 - **#10 Domyślne przypinanie gry.** Proponuję „włączone” przy migracji, czyli bez zmiany zachowania.

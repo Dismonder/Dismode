@@ -390,11 +390,14 @@ internal sealed class WindowsSystemTweakRuntime :
             identity,
             ProcessPriorityClass.AboveNormal,
             _processIdentityProvider);
+        // Priorytet juz rowny celowi konczy sie Unchanged bez wpisow w
+        // journalu, wiec recovery nie ma czego przywracac.
         return await RecoverAsync(
                 action,
                 CreateContext(
                     request.OperationId,
                     applicationIndex),
+                acceptMissingPreparation: true,
                 cancellationToken)
             .ConfigureAwait(false);
     }
@@ -518,7 +521,8 @@ internal sealed class WindowsSystemTweakRuntime :
             .ConfigureAwait(false);
         bool succeeded = result.Status is
                 ActionExecutionStatus.AppliedAndVerified
-                or ActionExecutionStatus.AlreadyCompleted;
+                or ActionExecutionStatus.AlreadyCompleted
+                or ActionExecutionStatus.Unchanged;
         if (succeeded)
         {
             SessionCheckpointWriter checkpointWriter = new(_journal);
@@ -541,6 +545,19 @@ internal sealed class WindowsSystemTweakRuntime :
         IReversibleAction<TState> action,
         ActionExecutionContext context,
         CancellationToken cancellationToken)
+        where TState : notnull =>
+        await RecoverAsync(
+                action,
+                context,
+                acceptMissingPreparation: false,
+                cancellationToken)
+            .ConfigureAwait(false);
+
+    private async ValueTask<SystemTweakRuntimeResult> RecoverAsync<TState>(
+        IReversibleAction<TState> action,
+        ActionExecutionContext context,
+        bool acceptMissingPreparation,
+        CancellationToken cancellationToken)
         where TState : notnull
     {
         ActionRecoveryCoordinator<TState> coordinator = new(_journal);
@@ -549,10 +566,9 @@ internal sealed class WindowsSystemTweakRuntime :
                 context,
                 cancellationToken)
             .ConfigureAwait(false);
-        bool succeeded = result.Status is
-                ActionRecoveryStatus.Restored
-                or ActionRecoveryStatus.AlreadyRestored
-                or ActionRecoveryStatus.NotRequired;
+        bool succeeded = IsRecoverySuccess(
+            result.Status,
+            acceptMissingPreparation);
         if (succeeded)
         {
             SessionCheckpointWriter checkpointWriter = new(_journal);
@@ -574,6 +590,15 @@ internal sealed class WindowsSystemTweakRuntime :
                     == ActionRecoveryStatus.ConflictRequiresDecision,
                 result.Details ?? $"Recovery zakończyło się stanem {result.Status}.");
     }
+
+    internal static bool IsRecoverySuccess(
+        ActionRecoveryStatus status,
+        bool acceptMissingPreparation) =>
+        status is ActionRecoveryStatus.Restored
+            or ActionRecoveryStatus.AlreadyRestored
+            or ActionRecoveryStatus.NotRequired
+        || (acceptMissingPreparation
+            && status == ActionRecoveryStatus.MissingPreparation);
 
     private static ActionExecutionContext CreateContext(
         Guid experimentId,

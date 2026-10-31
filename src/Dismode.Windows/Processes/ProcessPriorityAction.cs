@@ -50,7 +50,8 @@ public sealed class ProcessPriorityAction :
         return new(
             originalState,
             new ProcessPriorityState(_desiredPriority),
-            DateTimeOffset.UtcNow);
+            DateTimeOffset.UtcNow)
+        { IsUnchanged = originalState.PriorityClass == _desiredPriority };
     }
 
     public async ValueTask<ActionValidationResult> ValidateAsync(
