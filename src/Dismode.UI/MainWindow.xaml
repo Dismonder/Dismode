@@ -3128,6 +3128,29 @@
                             OnContent="WŁ."
                             Toggled="OnDisplayedFramesSettingChanged" />
                       </Grid>
+
+                      <Grid ColumnSpacing="12">
+                        <Grid.ColumnDefinitions>
+                          <ColumnDefinition Width="*" />
+                          <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+                        <StackPanel VerticalAlignment="Center" Spacing="2">
+                          <TextBlock FontSize="13" Text="Dane z biblioteki producenta GPU" />
+                          <TextBlock
+                              Foreground="{ThemeResource DismodeMutedTextBrush}"
+                              FontSize="11"
+                              Text="Temperatura, zegar i moc GPU. Opcja ładuje podpisaną bibliotekę sterownika."
+                              TextWrapping="Wrap" />
+                        </StackPanel>
+                        <ToggleSwitch
+                            x:Name="VendorTelemetrySettingsToggleSwitch"
+                            Grid.Column="1"
+                            AutomationProperties.Name="Włącz dane z biblioteki producenta GPU w ustawieniach"
+                            IsOn="False"
+                            OffContent="WYŁ."
+                            OnContent="WŁ."
+                            Toggled="OnVendorTelemetrySettingChanged" />
+                      </Grid>
                     </StackPanel>
 
                     <!-- Procesor: co Dismode wykrył i co wolno mu z tym

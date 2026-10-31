@@ -1,5 +1,5 @@
 <!-- Wynik workflow 2026-10-29/30: 19 projektow open source przeczytanych (Codex), porownanych z kodem Dismode (Codex), sprawdzonych przez sceptykow (Sonnet), uszeregowanych (Opus). -->
-> **Stan wdrozenia (2026-10-31):** partia 1 (2026-10-30) plus #5, #7, #8, #9, #10 (PR #11/#12) i #11-#17 (#17 tylko faza 1, PR #13) wdrozone w 0.9.0. Otwarte: #4B, #17 faza 2, #18 oraz decyzje z sekcji "Needs owner decision".
+> **Stan wdrozenia (2026-10-31):** partia 1 (2026-10-30) plus #5, #7, #8, #9, #10 (PR #11/#12) i #11-#17 (#17 faza 1, PR #13) wdrozone w 0.9.0. #17 faza 2 zaimplementowana w galezi zadaniowej. Otwarte: #4B, #18 oraz decyzje z sekcji "Needs owner decision".
 
 # Dismode: ranking propozycji z analizy projektów open source
 
@@ -148,6 +148,7 @@ Uwaga do stanu repo: na gałęzi `fix/bug-hunt-2026-10-08` są niezacommitowane 
 - **Ryzyko:** średnie. **Nakład:** M. **Pewność:** LOW–MEDIUM.
 
 ### 17. Telemetria GPU, faza 1: tylko API systemu
+- **Stan (2026-10-31):** zrobione — faza 2: NVML i ADL2 C API tylko w procesie UI, opcja domyslnie OFF (migracja 22), podpis Authenticode i dokladna nazwa wydawcy NVIDIA/AMD przed LoadLibraryEx z pelnej sciezki System32. Temperatura, zegar, moc calej karty i wentylator sa pokazywane tylko po udanym odczycie i jednoznacznym mapowaniu PCI adaptera PDH; brak mapowania lub adapter polaczony daje null. Worker 1 Hz tylko przy widocznej nakladce, shutdown/unload po ukryciu lub wylaczeniu; awaria biblioteki wylacza zrodlo bez ponawiania. Testy z atrapami obejmuja brak DLL, podpis, inicjalizacje, brak czujnika, usuniecie i wiele GPU oraz wylaczenie podczas odczytu. Perf z atrapami: 0 B/probke; pelna sesja CPU + PDH + czujniki ok. 0,111 ms/probke przy 1 Hz (bez kosztu prawdziwego API producenta). Wlasny test Live na RX 9070 XT: ADL odczytal 31 C, 15 MHz, 20 W BOARD_POWER i 0% wentylatora; NVML nieobecny, poprawnie niedostepny. Nie sprawdzono NVIDIA na sprzecie, wyboru adaptera podczas gry, wygladu nakladki w grze ani wplywu na FPS/latencje; nie deklarujemy takiego zysku.
 - **Stan (2026-10-31):** zrobione — faza 1 przez PDH `GPU Engine`, `GPU Adapter Memory` i `GPU Process Memory`: systemowe liczniki WDDM bez elevacji i DLL producenta; angielskie sciezki dzialaja niezaleznie od jezyka Windows. Jedno zapytanie, bufory wielokrotnego uzytku, 1 Hz tylko przy widocznej nakladce; po ukryciu zapytanie jest zamykane. Nakladka pokazuje 3D i dedykowana pamiec adaptera gry (jednoznaczna aktywnosc/pamiec PID, inaczej najwyzsze 3D; remis daje null). Testy syntetyczne obejmuja brak API, reset/wrap, usuniecie adaptera, wiele GPU i stabilnosc uchwytow. Perf: 128 instancji silnikow + 2 adaptery + 64 instancje pamieci procesow, 10 000 iteracji, 0 B/wywolanie i B/s, ok. 0,161 ms/wywolanie i ms/s przy 1 Hz (limit 8 B). Replay obejmuje parser i obliczenia, bez kosztu rzeczywistego API; nie sprawdzono GPU, dostepu zwyklego konta ani rozkladow PresentMon na sprzecie i nie deklarujemy zysku FPS/latencji.
 - **Dlaczego:** pozwala zestawić skoki czasu klatki z obciążeniem silników GPU i zajętością VRAM.
 - **Źródła:** LibreHardwareMonitor (`D3DDisplayDevice.cs:175-247`). Dismode nie ma telemetrii GPU (tylko priorytet w `GpuPriorityNativeMethods.cs:35,40`).
@@ -187,7 +188,7 @@ Pozycje #1 i #3 zmieniają ten sam plik (`LocalGameSessionOrchestrator.cs`), ale
 - **#14 Odświeżanie.** Mignięcie ekranu i wiele monitorów. Czy w ogóle chcemy tej funkcji?
 - **#15 Czas gry.** Czy liczyć do wyjścia z gry, a nie do końca przywracania? Jak godzić wartość z ogólnym czasem gry raportowanym przez provider (np. Steam)?
 - **#16 Watcher reguł tła.** Opt-in, odpytywanie co ustalony interwał.
-- **#17 Faza 2 telemetrii GPU** (NVML, potem ADL/IGCL). Ładowanie DLL dostawców do procesu Dismode to nowa powierzchnia zaufania i ryzyko wizerunkowe przy anti-cheatach. Osobna zgoda.
+- **#17 Faza 2 telemetrii GPU:** zgoda wlasciciela 2026-10-31 na NVML i ADL2: opt-in OFF, tylko podpisane biblioteki NVIDIA/AMD z System32, tylko proces UI i widoczna nakladka. Zaimplementowano; Intel IGCL poza zakresem.
 
 ## What we could not cover
 
