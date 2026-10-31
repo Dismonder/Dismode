@@ -79,7 +79,7 @@ public sealed class EdgePanelStateMachine(TimeProvider clock)
         {
             Transition(EdgePanelState.Opening);
         }
-        else if (State == EdgePanelState.Open && _leavePending && !_inside && dwell >= 400)
+        else if (State == EdgePanelState.Open && _leavePending && !_inside && dwell >= 700)
         {
             Transition(EdgePanelState.Closing);
         }

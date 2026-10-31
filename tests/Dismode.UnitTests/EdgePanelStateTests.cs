@@ -21,7 +21,7 @@ public sealed class EdgePanelStateTests
         panel.Tick();
         Assert.AreEqual(EdgePanelState.Open, panel.State);
         panel.SetPointerInside(false);
-        clock.Advance(399);
+        clock.Advance(699);
         panel.Tick();
         Assert.AreEqual(EdgePanelState.Open, panel.State);
         clock.Advance(1);
@@ -30,6 +30,30 @@ public sealed class EdgePanelStateTests
         clock.Advance(180);
         panel.Tick();
         Assert.AreEqual(EdgePanelState.Closed, panel.State);
+    }
+
+    [TestMethod]
+    public void EdgeStripCoversTheMiddleOfTheRightEdgeAndLeavesCornersFree()
+    {
+        EdgePanelRect strip = EdgePanelHotZone.EdgeStrip(new(0, 0, 2560, 1440));
+        Assert.AreEqual(new EdgePanelRect(2558, 288, 2, 864), strip);
+        Assert.IsTrue(strip.Contains(2559, 720));
+        Assert.IsTrue(strip.Contains(2558, 288));
+        Assert.IsFalse(strip.Contains(2557, 720));
+        Assert.IsFalse(strip.Contains(2559, 100));
+        Assert.IsFalse(strip.Contains(2559, 1400));
+        Assert.AreEqual(
+            new EdgePanelRect(-2, 216, 2, 648),
+            EdgePanelHotZone.EdgeStrip(new(-1920, 0, 1920, 1080)));
+    }
+
+    [TestMethod]
+    public void LeaveBoundsForgiveSmallOvershoot()
+    {
+        EdgePanelRect leave = new EdgePanelRect(2220, 296, 340, 800).Inflate(32);
+        Assert.AreEqual(new EdgePanelRect(2188, 264, 404, 864), leave);
+        Assert.IsTrue(leave.Contains(2188, 700));
+        Assert.IsFalse(leave.Contains(2187, 700));
     }
 
     [TestMethod]
@@ -97,7 +121,10 @@ public sealed class EdgePanelStateTests
         Assert.AreEqual(EdgePanelState.Open, panel.State);
         panel.SetPointerInside(true);
         panel.SetPointerInside(false);
-        clock.Advance(400);
+        clock.Advance(699);
+        panel.Tick();
+        Assert.AreEqual(EdgePanelState.Open, panel.State);
+        clock.Advance(1);
         panel.Tick();
         Assert.AreEqual(EdgePanelState.Closing, panel.State);
     }
