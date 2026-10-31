@@ -18,6 +18,8 @@ public sealed class TacticalAudioService
     private readonly byte[] _toggleSfx;
     private readonly byte[] _successSfx;
     private readonly byte[] _warningSfx;
+    private readonly byte[] _panelOpenSfx;
+    private readonly byte[] _panelCloseSfx;
 
     public bool IsEnabled { get; set; } = true;
 
@@ -29,6 +31,8 @@ public sealed class TacticalAudioService
         _toggleSfx = PinForPlayback(SynthesizeToggleWav());
         _successSfx = PinForPlayback(SynthesizeSuccessWav());
         _warningSfx = PinForPlayback(SynthesizeWarningWav());
+        _panelOpenSfx = PinForPlayback(SynthesizePanelOpenWav());
+        _panelCloseSfx = PinForPlayback(SynthesizePanelCloseWav());
     }
 
     public void PlaySessionStart() => Play(_sessionStartSfx);
@@ -37,6 +41,8 @@ public sealed class TacticalAudioService
     public void PlayToggle() => Play(_toggleSfx);
     public void PlaySuccess() => Play(_successSfx);
     public void PlayWarning() => Play(_warningSfx);
+    public void PlayPanelOpen() => Play(_panelOpenSfx);
+    public void PlayPanelClose() => Play(_panelCloseSfx);
 
     /// <summary>
     /// PlaySound with SND_ASYNC|SND_MEMORY keeps reading the buffer after the
@@ -71,140 +77,166 @@ public sealed class TacticalAudioService
 
     private static byte[] SynthesizeSessionStartWav()
     {
-        // Cyber engage: rising frequency 350Hz -> 900Hz with power ramp and exponential decay
-        const int sampleRate = 44100;
-        const double duration = 0.22;
-        int sampleCount = (int)(sampleRate * duration);
-        short[] samples = new short[sampleCount];
-
-        for (int i = 0; i < sampleCount; i++)
-        {
-            double t = (double)i / sampleRate;
-            double progress = t / duration;
-            double freq = 350.0 + (550.0 * Math.Pow(progress, 1.5));
-            double env = progress < 0.15
-                ? progress / 0.15
-                : Math.Exp(-5.0 * (progress - 0.15));
-
-            double sample = Math.Sin(2.0 * Math.PI * freq * t) * env;
-            samples[i] = (short)(sample * short.MaxValue * 0.45);
-        }
-
-        return CreateWavFromSamples(samples, sampleRate);
+        // Cieply wzlot z oddechem szumu i rozwiazaniem w kwincie.
+        return SynthesizeWav(0.38, 0.16, true,
+            new(0, 0.30, 261.63, 392, 0.70),
+            new(0.075, 0.305, 523.25, 523.25, 0.48),
+            new(0.13, 0.25, 784, 784, 0.22));
     }
 
     private static byte[] SynthesizeSessionStopWav()
     {
-        // Disengage: descending resolve sweep 650Hz -> 280Hz
-        const int sampleRate = 44100;
-        const double duration = 0.26;
-        int sampleCount = (int)(sampleRate * duration);
-        short[] samples = new short[sampleCount];
-
-        for (int i = 0; i < sampleCount; i++)
-        {
-            double t = (double)i / sampleRate;
-            double progress = t / duration;
-            double freq = 650.0 - (370.0 * progress);
-            double env = progress < 0.1
-                ? progress / 0.1
-                : Math.Exp(-4.0 * (progress - 0.1));
-
-            double sample = Math.Sin(2.0 * Math.PI * freq * t) * env;
-            samples[i] = (short)(sample * short.MaxValue * 0.40);
-        }
-
-        return CreateWavFromSamples(samples, sampleRate);
+        // Lagodne opadanie do toniki zamiast alarmowego zjazdu.
+        return SynthesizeWav(0.34, 0.10, false,
+            new(0, 0.28, 523.25, 392, 0.55),
+            new(0.055, 0.285, 261.63, 261.63, 0.65));
     }
 
     private static byte[] SynthesizeClickWav()
     {
-        // Subtle tactical micro-click
-        const int sampleRate = 44100;
-        const double duration = 0.018;
-        int sampleCount = (int)(sampleRate * duration);
-        short[] samples = new short[sampleCount];
-
-        for (int i = 0; i < sampleCount; i++)
-        {
-            double t = (double)i / sampleRate;
-            double progress = t / duration;
-            double env = Math.Exp(-20.0 * progress);
-            double sample = Math.Sin(2.0 * Math.PI * 1400.0 * t) * env;
-            samples[i] = (short)(sample * short.MaxValue * 0.25);
-        }
-
-        return CreateWavFromSamples(samples, sampleRate);
+        return SynthesizeWav(0.026, 0.035, false,
+            new Voice(0, 0.026, 1050, 720, 1, 0.18));
     }
 
     private static byte[] SynthesizeToggleWav()
     {
-        // Tactile short blip
-        const int sampleRate = 44100;
-        const double duration = 0.035;
-        int sampleCount = (int)(sampleRate * duration);
-        short[] samples = new short[sampleCount];
-
-        for (int i = 0; i < sampleCount; i++)
-        {
-            double t = (double)i / sampleRate;
-            double progress = t / duration;
-            double env = Math.Sin(progress * Math.PI);
-            double sample = Math.Sin(2.0 * Math.PI * 880.0 * t) * env;
-            samples[i] = (short)(sample * short.MaxValue * 0.30);
-        }
-
-        return CreateWavFromSamples(samples, sampleRate);
+        return SynthesizeWav(0.065, 0.025, true,
+            new(0, 0.065, 660, 880, 0.85, 0.25),
+            new(0.012, 0.053, 1320, 1320, 0.15, 0.20));
     }
 
     private static byte[] SynthesizeSuccessWav()
     {
-        // Futuristic double chime (D5 -> A5)
+        // Nakladajace sie glosy akordu C-dur, bez przeskoku fazy miedzy nutami.
+        return SynthesizeWav(0.46, 0, true,
+            new(0, 0.40, 523.25, 523.25, 0.55),
+            new(0.045, 0.415, 659.25, 659.25, 0.40),
+            new(0.09, 0.37, 784, 784, 0.35));
+    }
+
+    private static byte[] SynthesizeWarningWav()
+    {
+        // Dwa miekkie pukniecia: czytelne ostrzezenie bez ostrego buzzera.
+        return SynthesizeWav(0.30, 0, false,
+            new(0, 0.14, 392, 369.99, 0.75, 0.30),
+            new(0.14, 0.16, 329.63, 329.63, 0.65, 0.30));
+    }
+
+    private static byte[] SynthesizePanelOpenWav() =>
+        SynthesizeWav(0.18, 0.65, true, new Voice(0, 0.18, 330, 494, 0.20));
+
+    private static byte[] SynthesizePanelCloseWav() =>
+        SynthesizeWav(0.18, 0.65, false, new Voice(0, 0.18, 494, 330, 0.20));
+
+    private readonly record struct Voice(
+        double Start, double Duration, double Frequency, double EndFrequency, double Gain, double Sustain = 0.40);
+
+    private static byte[] SynthesizeWav(double duration, double noiseGain, bool rising, params Voice[] voices)
+    {
         const int sampleRate = 44100;
-        const double duration = 0.28;
-        int sampleCount = (int)(sampleRate * duration);
-        short[] samples = new short[sampleCount];
+        double[] mix = new double[(int)(duration * sampleRate)];
+        double[] fades = new double[mix.Length];
+        uint noiseState = 0xD15C0DE;
+        double lowPass = 0;
+        double softLowPass = 0;
+        double highPassState = 0;
+        double sum = 0;
+        double fadeSum = 0;
 
-        for (int i = 0; i < sampleCount; i++)
+        for (int i = 0; i < mix.Length; i++)
         {
-            double t = (double)i / sampleRate;
-            double sample;
-            if (t < 0.12)
+            double time = (double)i / sampleRate;
+            double sample = 0;
+            foreach (Voice voice in voices)
             {
-                double env1 = Math.Exp(-8.0 * (t / 0.12));
-                sample = Math.Sin(2.0 * Math.PI * 587.33 * t) * env1;
-            }
-            else
-            {
-                double t2 = t - 0.12;
-                double env2 = Math.Exp(-6.0 * (t2 / 0.16));
-                sample = Math.Sin(2.0 * Math.PI * 880.0 * t2) * env2;
+                double localTime = time - voice.Start;
+                double progress = localTime / voice.Duration;
+                if (progress < 0 || progress >= 1)
+                {
+                    continue;
+                }
+
+                // Calkowanie liniowej zmiany czestotliwosci zachowuje ciaglosc fazy.
+                double phase = 2 * Math.PI * ((voice.Frequency * localTime)
+                    + ((voice.EndFrequency - voice.Frequency) * localTime * localTime / (2 * voice.Duration)));
+                double tone = (0.72 * Math.Sin(phase))
+                    + (0.16 * Math.Sin((phase * 1.003) + (0.04 * Math.Sin(2 * Math.PI * 4 * localTime))))
+                    + (0.09 * Math.Sin(2 * phase))
+                    + (0.03 * Math.Sin(3 * phase));
+                sample += tone * Envelope(progress, voice.Sustain) * voice.Gain;
             }
 
-            samples[i] = (short)(sample * short.MaxValue * 0.35);
+            // Staly PRNG, dwustopniowy dolnoprzepust i odciecie basu zmiekczaja szum.
+            noiseState ^= noiseState << 13;
+            noiseState ^= noiseState >> 17;
+            noiseState ^= noiseState << 5;
+            double noise = (noiseState / (double)uint.MaxValue * 2) - 1;
+            double sweep = rising ? time / duration : 1 - (time / duration);
+            double cutoff = 550 + (1450 * sweep);
+            double lowPassCoefficient = 1 - Math.Exp(-2 * Math.PI * cutoff / sampleRate);
+            lowPass += lowPassCoefficient * (noise - lowPass);
+            softLowPass += lowPassCoefficient * (lowPass - softLowPass);
+            highPassState += (1 - Math.Exp(-2 * Math.PI * 350 / sampleRate)) * (softLowPass - highPassState);
+            double noiseProgress = time / Math.Min(duration, 0.16);
+            sample += (softLowPass - highPassState) * noiseGain * Envelope(noiseProgress, 0.55);
+
+            double fade = SmoothStep(Math.Min(time, (double)(mix.Length - 1 - i) / sampleRate) / 0.004);
+            fades[i] = fade;
+            mix[i] = sample * fade;
+            sum += mix[i];
+            fadeSum += fade;
+        }
+
+        // Usuwanie DC z zachowaniem zer na brzegach, potem wspolny RMS i zapas szczytowy.
+        double dc = sum / fadeSum;
+        double peak = 0;
+        double sumSquares = 0;
+        for (int i = 0; i < mix.Length; i++)
+        {
+            mix[i] -= dc * fades[i];
+            if (!double.IsFinite(mix[i]))
+            {
+                throw new InvalidOperationException("Nieprawidłowa próbka syntezy audio.");
+            }
+
+            peak = Math.Max(peak, Math.Abs(mix[i]));
+            sumSquares += mix[i] * mix[i];
+        }
+
+        double gain = Math.Min(0.11 / Math.Sqrt(sumSquares / mix.Length), 0.49 / peak);
+        short[] samples = new short[mix.Length];
+        for (int i = 0; i < samples.Length; i++)
+        {
+            samples[i] = (short)Math.Round(mix[i] * gain * short.MaxValue);
         }
 
         return CreateWavFromSamples(samples, sampleRate);
     }
 
-    private static byte[] SynthesizeWarningWav()
+    private static double Envelope(double progress, double sustain)
     {
-        // Tactical alert tone
-        const int sampleRate = 44100;
-        const double duration = 0.20;
-        int sampleCount = (int)(sampleRate * duration);
-        short[] samples = new short[sampleCount];
-
-        for (int i = 0; i < sampleCount; i++)
+        if (progress < 0 || progress >= 1)
         {
-            double t = (double)i / sampleRate;
-            double progress = t / duration;
-            double env = Math.Sin(progress * Math.PI);
-            double sample = (Math.Sin(2.0 * Math.PI * 260.0 * t) + 0.5 * Math.Sin(2.0 * Math.PI * 520.0 * t)) / 1.5 * env;
-            samples[i] = (short)(sample * short.MaxValue * 0.40);
+            return 0;
         }
 
-        return CreateWavFromSamples(samples, sampleRate);
+        if (progress < 0.06)
+        {
+            return SmoothStep(progress / 0.06);
+        }
+
+        if (progress < 0.28)
+        {
+            return 1 - ((1 - sustain) * SmoothStep((progress - 0.06) / 0.22));
+        }
+
+        return progress < 0.55 ? sustain : sustain * SmoothStep((1 - progress) / 0.45);
+    }
+
+    private static double SmoothStep(double value)
+    {
+        value = Math.Clamp(value, 0, 1);
+        return value * value * (3 - (2 * value));
     }
 
     private static byte[] CreateWavFromSamples(short[] samples, int sampleRate)
