@@ -12,13 +12,6 @@ public sealed class UiResourceReferenceTests
     private static readonly string[] ExpectedMissingNestedResourceKeys =
         ["DismodeMissingBrush"];
 
-    private static readonly string[] ExpectedOverlayModes =
-    [
-        "MinimalText|Tylko FPS",
-        "CompactBar|FPS + ms",
-        "FullDeck|Wszystkie szczegóły",
-    ];
-
     private static readonly string[] ExpectedDashboardRows = ["Auto", "*"];
 
     private static readonly string[] ExpectedBannerTitleColumns = ["Auto", "*"];
@@ -105,32 +98,28 @@ public sealed class UiResourceReferenceTests
     }
 
     [TestMethod]
-    public void PerformanceOverlayHasOneLayoutAndNoAccentPalette()
+    public void PerformanceOverlayHasStyleRowsWithTextShadowsAndVisibleGraph()
     {
-        // Trzy uklady i siedem nazwanych kolorow akcentu byly wyborem bez
-        // znaczenia: nie zmienialy tego, co panel pokazuje, ani czy dziala.
-        string settings = LoadUiSource("MainWindow.xaml");
-
-        Assert.IsFalse(
-            settings.Contains("OverlayThemeSelector", StringComparison.Ordinal),
-            "Paleta kolorow akcentu powinna byc usunieta.");
-        Assert.IsFalse(
-            settings.Contains("OverlayStyleSelector", StringComparison.Ordinal),
-            "Wybor ukladu nakladki powinien byc usuniety.");
-
         XDocument overlay = LoadUiXaml("PerformanceOverlayWindow.xaml");
-        foreach (string gone in new[]
+        foreach (string name in new[]
         {
+            "FpsRow",
+            "FrameTimeRow",
+            "OnePercentLowRow",
             "CompactBarLayout",
-            "MinimalTextLayout",
-            "CompactFpsValueText",
+            "CompactTelemetryText",
+            "CompactTelemetryShadowText",
+            "FpsShadowText",
+            "FrameTimeShadowText",
+            "OnePercentLowShadowText",
+            "FrameGraphShadowLine",
         })
         {
-            Assert.IsNull(
-                overlay.Descendants().FirstOrDefault(element =>
-                    (string?)element.Attribute(XamlNamespace + "Name") == gone),
-                $"Element {gone} nalezy do usunietych ukladow.");
+            Assert.IsNotNull(FindNamedElement(overlay, name));
         }
+
+        Assert.AreNotEqual("Collapsed",
+            (string?)FindNamedElement(overlay, "FrameGraphLine").Attribute("Visibility"));
     }
 
     [TestMethod]

@@ -414,7 +414,11 @@ public sealed class UserDataStoreTests
     }
 
     [TestMethod]
-    public async Task PerformanceOverlayPreferencesRoundTripAndHaveDefaults()
+    [DataRow(1)]
+    [DataRow(2)]
+    [DataRow(3)]
+    [DataRow(4)]
+    public async Task PerformanceOverlayPreferencesRoundTripAndHaveDefaults(int style)
     {
         using UserDataTestContext testContext = new();
 
@@ -447,7 +451,7 @@ public sealed class UserDataStoreTests
             opacityPercent: 65,
             scalePercent: 125,
             PerformanceOverlayCorner.BottomLeft,
-            PerformanceOverlayStyle.MinimalText,
+            (PerformanceOverlayStyle)style,
             PerformanceOverlayTheme.CrimsonRed,
             updatedAtUtc);
         await testContext.Store.SavePerformanceOverlayPreferencesAsync(
@@ -465,7 +469,7 @@ public sealed class UserDataStoreTests
             PerformanceOverlayCorner.BottomLeft,
             loaded.Corner);
         Assert.AreEqual(
-            PerformanceOverlayStyle.MinimalText,
+            (PerformanceOverlayStyle)style,
             loaded.Style);
         Assert.AreEqual(
             PerformanceOverlayTheme.CrimsonRed,
