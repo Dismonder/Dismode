@@ -101,8 +101,8 @@ Samodzielny instalator dla Windows 11 x64 powstaje komendą:
 Wynik:
 
 ```text
-artifacts\installer\Dismode-Setup-0.10.1-win-x64.exe
-artifacts\installer\Dismode-Setup-0.10.1-win-x64.exe.sha256
+artifacts\installer\Dismode-Setup-0.11.0-win-x64.exe
+artifacts\installer\Dismode-Setup-0.11.0-win-x64.exe.sha256
 ```
 
 Instalator zawiera .NET, Windows App Runtime, wszystkie cztery komponenty
@@ -116,20 +116,20 @@ albo jego PresentMon; celowo nie kończy ich automatycznie. Deinstalacja nie
 usuwa `%LOCALAPPDATA%\Dismode`, ponieważ znajdują się tam profile, historia
 i niezależny journal recovery.
 
-Wydanie 0.10.1 ma podpis testowy certyfikatem „GameShift Development”, a nie
+Wydanie 0.11.0 ma podpis testowy certyfikatem „GameShift Development”, a nie
 zaufany podpis produkcyjny. Ostrzeżenie SmartScreen jest więc oczekiwane. Przed
 uruchomieniem można porównać SHA-256:
 
 ```powershell
 Get-FileHash `
-  .\artifacts\installer\Dismode-Setup-0.10.1-win-x64.exe `
+  .\artifacts\installer\Dismode-Setup-0.11.0-win-x64.exe `
   -Algorithm SHA256
 ```
 
 Oczekiwana suma bieżącego artefaktu:
 
 ```text
-ED2FCE89F9361D0223FC6D5F1EC20878F1A8770D1254405516325787302A5D66
+9786550BA14212604EAB8A66E2BC2360A559FAA37CC959365D7173A819E244DA
 ```
 
 ## Zakres bieżącego wydania
