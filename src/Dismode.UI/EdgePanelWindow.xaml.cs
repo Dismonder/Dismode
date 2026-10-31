@@ -23,6 +23,8 @@ public sealed partial class EdgePanelWindow : Window, IDisposable
     private readonly OverlayTelemetrySampler _telemetry = new();
     private readonly DispatcherTimer _timer = new() { Interval = TimeSpan.FromMilliseconds(32) };
     private RectInt32 _bounds;
+    private EdgePanelRect _hoverStrip;
+    private EdgePanelRect _leaveBounds;
     private EdgePanelState _drawnState;
     private Storyboard? _slide;
     private DateTimeOffset _nextContentUpdate;
@@ -75,6 +77,9 @@ public sealed partial class EdgePanelWindow : Window, IDisposable
         int width = (int)Math.Ceiling(340 * scale);
         int height = Math.Min((int)Math.Ceiling(800 * scale), work.Height - (int)(32 * scale));
         RectInt32 bounds = new(work.X + work.Width - width, work.Y + (work.Height - height) / 2, width, height);
+        RectInt32 monitor = EdgePanelNativeWindow.PrimaryBounds;
+        _hoverStrip = EdgePanelHotZone.EdgeStrip(new(monitor.X, monitor.Y, monitor.Width, monitor.Height));
+        _leaveBounds = new EdgePanelRect(bounds.X, bounds.Y, bounds.Width, bounds.Height).Inflate((int)Math.Ceiling(32 * scale));
         if (bounds != _bounds)
         {
             _bounds = bounds;
@@ -86,7 +91,8 @@ public sealed partial class EdgePanelWindow : Window, IDisposable
     {
         bool visible = _state.State != EdgePanelState.Closed;
         _state.SetPointerInside(_dialogOpen || EdgePanelNativeWindow.PointerInside(_handle.HandleBounds)
-            || (visible && EdgePanelNativeWindow.PointerInside(_bounds)));
+            || EdgePanelNativeWindow.PointerInside(_hoverStrip)
+            || (visible && EdgePanelNativeWindow.PointerInside(_leaveBounds)));
         _state.Tick();
         DrawState();
         if (DateTimeOffset.UtcNow >= _nextContentUpdate)

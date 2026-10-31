@@ -1,5 +1,6 @@
 using System.ComponentModel;
 using System.Runtime.InteropServices;
+using Dismode.Core.Interaction;
 using Microsoft.UI.Windowing;
 using Microsoft.UI.Xaml;
 using Windows.Graphics;
@@ -78,12 +79,11 @@ internal sealed class EdgePanelNativeWindow : IDisposable
         }
     }
 
-    internal static bool PointerInside(RectInt32 bounds)
-    {
-        return GetCursorPos(out NativePoint point)
-            && point.X >= bounds.X && point.X < bounds.X + bounds.Width
-            && point.Y >= bounds.Y && point.Y < bounds.Y + bounds.Height;
-    }
+    internal static bool PointerInside(RectInt32 bounds) =>
+        PointerInside(new EdgePanelRect(bounds.X, bounds.Y, bounds.Width, bounds.Height));
+
+    internal static bool PointerInside(EdgePanelRect area) =>
+        GetCursorPos(out NativePoint point) && area.Contains(point.X, point.Y);
 
     private nint OnMessage(nint window, uint message, nuint wParam, nint lParam, nuint id, nuint data)
     {
