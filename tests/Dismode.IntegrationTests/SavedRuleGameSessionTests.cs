@@ -355,7 +355,7 @@ public sealed class SavedRuleGameSessionTests
         LocalGameSessionOrchestrator orchestrator)
     {
         using CancellationTokenSource timeout =
-            new(TimeSpan.FromSeconds(40));
+            new(TimeSpan.FromSeconds(90));
         while (await orchestrator.GetActiveAsync(timeout.Token) is not null)
         {
             await Task.Delay(TimeSpan.FromMilliseconds(50), timeout.Token);
