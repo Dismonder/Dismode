@@ -14,6 +14,7 @@ using Dismode.Core.Recovery;
 using Dismode.Core.Sessions;
 using Dismode.Core.Transactions;
 using Dismode.Windows.Cpu;
+using Dismode.Windows.Display;
 using Dismode.Windows.NativeInterop;
 using Dismode.Windows.Power;
 using Dismode.Windows.Processes;
@@ -30,7 +31,6 @@ public sealed class LocalGameSessionOrchestrator : IAsyncDisposable
         TimeSpan.FromSeconds(1);
     private static readonly TimeSpan ForcedGameExitTimeout =
         TimeSpan.FromSeconds(3);
-    private const int RequiredMissingProcessObservations = 3;
     private const int MaximumBackgroundApplications = 64;
     private static readonly JsonSerializerOptions SerializerOptions =
         new(JsonSerializerDefaults.General);
@@ -41,6 +41,9 @@ public sealed class LocalGameSessionOrchestrator : IAsyncDisposable
     private readonly SessionCheckpointWriter _checkpointWriter;
     private readonly ManualGameProfileLauncher _launcher;
     private readonly IProcessIdentityProvider _identityProvider;
+    private readonly IProcessInventory _processInventory;
+    private ICpuProcessSource? _lateProcessSource;
+    private readonly object _processSetLock = new();
     private readonly IProcessParentMapProvider _processParentMapProvider;
     private readonly IFrameRateProvider _frameRateProvider;
     private readonly BackgroundApplicationGuard _backgroundApplicationGuard;
@@ -52,6 +55,8 @@ public sealed class LocalGameSessionOrchestrator : IAsyncDisposable
     private readonly GameMetadataRefreshService? _metadataRefreshService;
     private readonly ISystemGameProfileCoordinator _systemProfileCoordinator;
     private readonly TimeProvider _timeProvider;
+    private readonly TimeProvider _gameplayClock;
+    private readonly IDisplayApi _displayApi;
     private readonly TimeSpan _monitorInterval;
     private readonly bool _proBalanceEnabled;
     private readonly ProBalanceSettings? _proBalanceSettings;
@@ -70,6 +75,17 @@ public sealed class LocalGameSessionOrchestrator : IAsyncDisposable
     /// </summary>
     internal ICpuSetsPort CpuSetsPort { get; init; } =
         SystemCpuSetsPort.Instance;
+    internal Func<int> ForegroundProcessId { get; init; } = ForegroundProcess.GetProcessId;
+    internal Action<Exception> LateRuleError { get; init; } =
+        exception => Trace.TraceError("Wylaczono reguly tla po bledzie: {0}", exception);
+    internal Func<GameProcessTreeSessionTracker, ProcessIdentity, bool> HandoffAdopter { get; init; } =
+        static (tree, identity) => tree.Adopt(identity);
+    internal Func<BackgroundApplicationSelection, string, CancellationToken,
+        ValueTask<PlannedBackgroundApplication>>? LateRuleApprover
+    { get; init; }
+    internal Func<PlannedBackgroundApplication,
+        IReversibleAction<RuntimeProcessPriorityState>>? BackgroundPriorityActionFactory
+    { get; init; }
     private readonly SemaphoreSlim _gate = new(1, 1);
 
     // Migawka metadanych i jej zapis ida pod jedna bramka: monitor i ksiega
@@ -107,9 +123,13 @@ public sealed class LocalGameSessionOrchestrator : IAsyncDisposable
         Func<ICpuProcessSource>? cpuProcessSourceFactory = null,
         Func<SessionId, IProBalanceActuator>? proBalanceActuatorFactory = null,
         IGlobalBackgroundRuleRepository? globalBackgroundRules = null,
-        Func<IExecutionStateInhibitor>? keepAwakeFactory = null)
+        Func<IExecutionStateInhibitor>? keepAwakeFactory = null,
+        IProcessInventory? processInventory = null,
+        TimeProvider? gameplayClock = null,
+        IDisplayApi? displayApi = null)
     {
         _profiles = profiles;
+        _processInventory = processInventory ?? new ProcessInventory();
         _keepAwakeFactory = keepAwakeFactory
             ?? (static () => new WindowsExecutionStateInhibitor());
         _globalBackgroundRules = globalBackgroundRules;
@@ -137,6 +157,8 @@ public sealed class LocalGameSessionOrchestrator : IAsyncDisposable
         _systemProfileCoordinator =
             systemProfileCoordinator ?? NullSystemGameProfileCoordinator.Instance;
         _timeProvider = timeProvider ?? TimeProvider.System;
+        _gameplayClock = gameplayClock ?? AwakeTimeProvider.Instance;
+        _displayApi = displayApi ?? new WindowsDisplayApi();
         _monitorInterval = monitorInterval ?? DefaultMonitorInterval;
 
         // Domyslnie wylaczone. Reszta tego, co Dismode rusza, przechodzi
@@ -322,6 +344,7 @@ public sealed class LocalGameSessionOrchestrator : IAsyncDisposable
                     "The game executable changed after profile approval.");
             }
 
+            DateTimeOffset rulesResolvedAtUtc = _timeProvider.GetUtcNow();
             IReadOnlyList<BackgroundApplicationSelection>
                 selectionsToApprove = backgroundApplications;
             SavedRulePlanSummary? savedRuleSummary = null;
@@ -428,7 +451,8 @@ public sealed class LocalGameSessionOrchestrator : IAsyncDisposable
                 desiredGamePriority,
                 savedRuleSummary,
                 state,
-                now + PlanLifetime);
+                now + PlanLifetime,
+                rulesResolvedAtUtc);
             return ToPreview(_pendingPlan);
         }
         finally
@@ -553,11 +577,13 @@ public sealed class LocalGameSessionOrchestrator : IAsyncDisposable
             // Przelaczniki per gra (przypinanie do rdzeni wydajnych, ekran i
             // system bez usypiania) czytane przy starcie, zeby klikniecie po
             // przygotowaniu planu tez sie liczylo.
-            (bool pinGame, bool keepAwake) =
+            (bool pinGame, bool keepAwake, bool maximizeRefreshRate) =
                 await LoadGameSwitchesAsync(
                         plan.Profile.ProfileId,
                         cancellationToken)
                     .ConfigureAwait(false);
+            GameOptimizationPreferences? lateRules = await LoadLateRulesAsync(
+                plan.Profile.ProfileId, cancellationToken).ConfigureAwait(false);
 
             plan.State = SessionStateMachine.Transition(
                 plan.State,
@@ -599,6 +625,9 @@ public sealed class LocalGameSessionOrchestrator : IAsyncDisposable
                     plan.State,
                     OptimizationSessionState.LaunchingGame);
 
+                // Bazowy zbior kopii gry zbieramy przed uruchomieniem: launcher
+                // moze uruchomic wlasciwa gre, zanim sesja zostanie aktywowana.
+                IReadOnlyList<ProcessSnapshot> preLaunchProcesses = _processInventory.Capture();
                 LaunchedGameProcess launched =
                     await _launcher.LaunchOrAttachAfterVerificationAsync(
                             currentProfile,
@@ -606,8 +635,13 @@ public sealed class LocalGameSessionOrchestrator : IAsyncDisposable
                             attachOnly,
                             _lifetime.Token)
                         .ConfigureAwait(false);
+                startedAtUtc = _timeProvider.GetUtcNow();
+                GameplayDuration gameplay = new(_gameplayClock);
                 metadata = metadata with
                 {
+                    StartedAtUtc = startedAtUtc,
+                    DurationSeconds = 0,
+                    DurationCheckpointAtUtc = startedAtUtc,
                     RootProcess = launched.Identity,
                     TrackedGameProcesses = [launched.Identity],
                     GamePriority = plan.GamePriority is null
@@ -733,6 +767,11 @@ public sealed class LocalGameSessionOrchestrator : IAsyncDisposable
                     backgroundAffinityMask: backgroundMask,
                     gameAffinity: metadata.GameAffinity,
                     gameCpuSets: metadata.GameCpuSets);
+                runtime.Duration = gameplay;
+                runtime.HandoffIdentity = CaptureHandoffIdentity(launched.Identity,
+                    currentProfile.ExecutablePath, currentHash, preLaunchProcesses);
+                runtime.DisplayRefresh = metadata.DisplayRefresh;
+                runtime.RefreshRatePending = maximizeRefreshRate;
                 runtime.FrameRate = enableFrameRateTracking
                     ? await SampleFrameRateAsync(
                             runtime,
@@ -740,6 +779,13 @@ public sealed class LocalGameSessionOrchestrator : IAsyncDisposable
                             CancellationToken.None)
                         .ConfigureAwait(false)
                     : FrameRateSample.Disabled();
+                if (lateRules is not null)
+                {
+                    runtime.LateRules = lateRules;
+                    runtime.LateRuleTracker = new(plan.RulesResolvedAtUtc);
+                }
+                await RecordRuntimeCheckpointAsync(runtime, SessionCheckpoint.SessionActivated,
+                    CancellationToken.None).ConfigureAwait(false);
                 _activeSession = runtime;
                 _pendingPlan = null;
                 StartProBalance(
@@ -830,6 +876,8 @@ public sealed class LocalGameSessionOrchestrator : IAsyncDisposable
                 BackgroundRecoveryTotals recovery = MergeRecoveryTotals(
                     MergeRecoveryTotals(priorityRecovery, affinityRecovery),
                     applicationRecovery);
+                recovery = MergeRecoveryTotals(recovery, await RestoreDisplayRefreshAsync(
+                    plan.SessionId, metadata.DisplayRefresh, startedAtUtc).ConfigureAwait(false));
                 if (!systemProfileRecovery.Succeeded)
                 {
                     recovery = recovery with
@@ -983,6 +1031,14 @@ public sealed class LocalGameSessionOrchestrator : IAsyncDisposable
         {
             DateTimeOffset now = _timeProvider.GetUtcNow();
             ExpireShutdownReservation(now);
+            if (_activeSession is { Handoff: not null, State: OptimizationSessionState.Active } waiting)
+            {
+                waiting.State = SessionStateMachine.Transition(
+                    waiting.State, OptimizationSessionState.UserRestoreRequested);
+                await CompleteRuntimeAsync(waiting, SessionCompletionStatus.Completed,
+                    "Gra została zamknięta; Dismode przywrócił aplikacje w tle.", CancellationToken.None)
+                    .ConfigureAwait(false);
+            }
             bool hasActiveSession = _activeSession is not null;
             if (_pendingPlan is not null && _pendingPlan.ExpiresAtUtc < now)
             {
@@ -1001,7 +1057,7 @@ public sealed class LocalGameSessionOrchestrator : IAsyncDisposable
                         : "An approved session plan is waiting to start.");
             }
 
-            _shutdownReservedUntilUtc = now + ShutdownReservationLifetime;
+            _shutdownReservedUntilUtc = _timeProvider.GetUtcNow() + ShutdownReservationLifetime;
             return new(
                 true,
                 false,
@@ -1171,6 +1227,12 @@ public sealed class LocalGameSessionOrchestrator : IAsyncDisposable
 
         _lifetime.Cancel();
 
+        if (_activeSession is { Handoff: not null } waiting)
+        {
+            await RestoreAsync(waiting.SessionId, CancellationToken.None)
+                .ConfigureAwait(false);
+        }
+
         // Nadzorca ma wlasny cykl zycia i nie sluchа tokenu sesji. Bez tego
         // jego petla przezywa orkiestrator, a to, co obnizyl, zostaje
         // obnizone — widoczne, gdy sesja konczy sie inaczej niz przez
@@ -1192,6 +1254,10 @@ public sealed class LocalGameSessionOrchestrator : IAsyncDisposable
         }
 
         await _frameRateProvider.DisposeAsync().ConfigureAwait(false);
+        lock (_processSetLock)
+        {
+            (_lateProcessSource as IDisposable)?.Dispose();
+        }
         _lifetime.Dispose();
         _gate.Dispose();
         _checkpointGate.Dispose();
@@ -1274,6 +1340,8 @@ public sealed class LocalGameSessionOrchestrator : IAsyncDisposable
                             group.Key,
                             restrainedProcesses.Concat(backgroundApplications))
                         ?? 0;
+                    BackgroundRecoveryTotals displayRecovery = await RestoreDisplayRefreshAsync(
+                        sessionId, metadata.DisplayRefresh, metadata.StartedAtUtc).ConfigureAwait(false);
                     BackgroundRecoveryTotals liveRestraintRecovery =
                         restrainedProcesses.Length > 0
                             ? await RestoreBackgroundApplicationsAsync(
@@ -1313,6 +1381,24 @@ public sealed class LocalGameSessionOrchestrator : IAsyncDisposable
                         backgroundAffinityMask: recoveredMask,
                         gameAffinity: metadata.GameAffinity,
                         gameCpuSets: metadata.GameCpuSets);
+                    recovered.Duration = metadata.DurationSeconds is long recoveredSeconds
+                        ? new(_gameplayClock, recoveredSeconds) : null;
+                    recovered.LastAliveAtUtc = metadata.DurationCheckpointAtUtc ?? metadata.StartedAtUtc;
+                    recovered.DisplayRefresh = metadata.DisplayRefresh;
+                    recovered.RefreshRatePending = metadata.RefreshRatePending && metadata.DisplayRefresh is null;
+                    recovered.LateRulesDisabled = metadata.LateRulesDisabled;
+                    recovered.HandoffIdentity = metadata.HandoffIdentity
+                        ?? CaptureHandoffIdentity(metadata.RootProcess,
+                            metadata.RootProcess.ExecutablePath, metadata.RootProcess.ExecutableSha256);
+                    recovered.ErrorCount += displayRecovery.ErrorCount;
+                    recovered.ConflictCount += displayRecovery.ConflictCount;
+                    if (metadata.LateRules is { } lateRules)
+                    {
+                        recovered.LateRules = new(metadata.ProfileId, SavedGamePriorityMode.Normal,
+                            lateRules.Rules.Select(rule => new SavedBackgroundProcessRule(rule.Path, rule.Mode)),
+                            metadata.StartedAtUtc, applyBackgroundRulesDuringSession: true);
+                        recovered.LateRuleTracker = new(lateRules.ActivatedAtUtc, lateRules.Attempted);
+                    }
                     recovered.FrameRate = metadata.FrameRateTrackingEnabled
                         ? await SampleFrameRateAsync(
                                 recovered,
@@ -1378,6 +1464,8 @@ public sealed class LocalGameSessionOrchestrator : IAsyncDisposable
             BackgroundRecoveryTotals recovery = MergeRecoveryTotals(
                 MergeRecoveryTotals(priorityRecovery, restraintRecovery),
                 applicationRecovery);
+            recovery = MergeRecoveryTotals(recovery, await RestoreDisplayRefreshAsync(
+                sessionId, metadata.DisplayRefresh, metadata.StartedAtUtc).ConfigureAwait(false));
             if (recovery.ErrorCount > 0)
             {
                 continue;
@@ -1414,7 +1502,12 @@ public sealed class LocalGameSessionOrchestrator : IAsyncDisposable
                 metadata,
                 cancellationToken)
             .ConfigureAwait(false);
-        DateTimeOffset endedAtUtc = ResolveSessionEnd(metadata.StartedAtUtc);
+        DateTimeOffset endedAtUtc = metadata.PlayEndedAtUtc
+            ?? metadata.DurationCheckpointAtUtc ?? ResolveSessionEnd(metadata.StartedAtUtc);
+        if (endedAtUtc < metadata.StartedAtUtc)
+        {
+            endedAtUtc = metadata.StartedAtUtc;
+        }
         await _history.AddAsync(
                 new(
                     sessionId,
@@ -1431,7 +1524,8 @@ public sealed class LocalGameSessionOrchestrator : IAsyncDisposable
                     errorCount: recovery.ErrorCount
                         + (status == SessionCompletionStatus.FailedBeforeApply
                             ? 1
-                            : 0)),
+                            : 0),
+                    durationSeconds: metadata.DurationSeconds),
                 cancellationToken)
             .ConfigureAwait(false);
         await RecordCheckpointAsync(
@@ -1492,6 +1586,7 @@ public sealed class LocalGameSessionOrchestrator : IAsyncDisposable
                 () => runtime.ProcessTree
                     .GetKnownProcesses()
                     .Select(identity => identity.RuntimeKey.ProcessId)
+                    .Concat(runtime.LateRuleTracker?.SnapshotAttempted().Select(key => key.ProcessId) ?? [])
                     .ToHashSet(),
                 settings: _proBalanceSettings,
                 timeProvider: _timeProvider);
@@ -1533,8 +1628,6 @@ public sealed class LocalGameSessionOrchestrator : IAsyncDisposable
         ActiveRuntime runtime,
         CancellationToken cancellationToken)
     {
-        int missingObservations = 0;
-
         while (true)
         {
             if (!ReferenceEquals(_activeSession, runtime))
@@ -1542,12 +1635,52 @@ public sealed class LocalGameSessionOrchestrator : IAsyncDisposable
                 return;
             }
 
+            long observedAwakeAt = _gameplayClock.GetTimestamp();
+            DateTimeOffset observedAtUtc = _timeProvider.GetUtcNow();
+            IReadOnlyList<CpuProcessSample>? processSet = CaptureLateProcessSet(runtime, cancellationToken);
             GameProcessTreeObservation observation =
-                await runtime.ProcessTree.ObserveAsync(cancellationToken)
+                await runtime.ProcessTree.ObserveAsync(processSet, cancellationToken)
                     .ConfigureAwait(false);
             if (!ReferenceEquals(_activeSession, runtime))
             {
                 return;
+            }
+
+            await _gate.WaitAsync(cancellationToken).ConfigureAwait(false);
+            try
+            {
+                if (!ReferenceEquals(_activeSession, runtime) || runtime.State != OptimizationSessionState.Active)
+                {
+                    return;
+                }
+                if (observation.HasRunningProcess)
+                {
+                    runtime.Duration?.ObserveAlive(observedAwakeAt);
+                    runtime.LastAliveAtUtc = observedAtUtc < runtime.StartedAtUtc ? runtime.StartedAtUtc : observedAtUtc;
+                    runtime.PlayEndedAtUtc = null;
+                }
+                else if (observation.IsReliable)
+                {
+                    runtime.Duration?.PauseAtLastAlive();
+                    runtime.PlayEndedAtUtc ??= runtime.LastAliveAtUtc;
+                }
+
+                if (runtime.Duration is { } duration
+                    && duration.CheckpointSeconds >= runtime.NextDurationCheckpointSeconds)
+                {
+                    await RecordRuntimeCheckpointAsync(runtime, SessionCheckpoint.GameplayDurationObserved,
+                        cancellationToken).ConfigureAwait(false);
+                    runtime.NextDurationCheckpointSeconds = duration.CheckpointSeconds + 15;
+                }
+            }
+            finally
+            {
+                _gate.Release();
+            }
+
+            if (observation.HasRunningProcess)
+            {
+                await TryApplyDisplayRefreshAsync(runtime, observation, cancellationToken).ConfigureAwait(false);
             }
 
             if (!runtime.FrameRateCaptureFaulted)
@@ -1624,21 +1757,15 @@ public sealed class LocalGameSessionOrchestrator : IAsyncDisposable
 
             if (observation.HasRunningProcess)
             {
-                missingObservations = 0;
+                runtime.Handoff = null;
+                await ApplyLateBackgroundRulesAsync(runtime, observation, processSet, cancellationToken)
+                    .ConfigureAwait(false);
                 await Task.Delay(_monitorInterval, cancellationToken)
                     .ConfigureAwait(false);
                 continue;
             }
 
             if (!observation.IsReliable)
-            {
-                await Task.Delay(_monitorInterval, cancellationToken)
-                    .ConfigureAwait(false);
-                continue;
-            }
-
-            missingObservations++;
-            if (missingObservations < RequiredMissingProcessObservations)
             {
                 await Task.Delay(_monitorInterval, cancellationToken)
                     .ConfigureAwait(false);
@@ -1653,23 +1780,255 @@ public sealed class LocalGameSessionOrchestrator : IAsyncDisposable
                     return;
                 }
 
-                runtime.State = SessionStateMachine.Transition(
-                    runtime.State,
-                    OptimizationSessionState.GameExited);
-                await CompleteRuntimeAsync(
-                        runtime,
-                        runtime.RecoveredFromHostCrash
-                            ? SessionCompletionStatus.RecoveredAfterCrash
-                            : SessionCompletionStatus.Completed,
-                        "Gra została zamknięta; Dismode przywrócił aplikacje w tle.",
-                        cancellationToken)
-                    .ConfigureAwait(false);
-                return;
+                if (runtime.Handoff is null)
+                {
+                    runtime.Handoff = new(_timeProvider.GetUtcNow(), _timeProvider.GetTimestamp());
+                    await RecordRuntimeCheckpointAsync(runtime,
+                            SessionCheckpoint.GameHandoffWaiting, CancellationToken.None)
+                        .ConfigureAwait(false);
+                }
+
+                List<ProcessIdentity> candidates = [];
+                foreach (ProcessSnapshot process in _processInventory.Capture())
+                {
+                    if (process.SessionId != runtime.RootProcess.SessionId
+                        || !(ExecutablePathIdentity.AreSameExecutable(
+                                process.ExecutablePath, runtime.RootProcess.ExecutablePath)
+                            || runtime.HandoffIdentity is { } approved
+                                && ExecutablePathIdentity.AreSameExecutable(process.ExecutablePath, approved.ExecutablePath)))
+                    {
+                        continue;
+                    }
+
+                    ProcessIdentity? identity = await _identityProvider
+                        .TryCaptureAsync(process.ProcessId, cancellationToken).ConfigureAwait(false);
+                    if (identity is not null)
+                    {
+                        candidates.Add(identity);
+                    }
+                }
+
+                ProcessIdentity? replacement = runtime.Handoff.Select(runtime.RootProcess,
+                    runtime.ProcessTree.GetKnownProcesses(), candidates,
+                    _timeProvider.GetElapsedTime(runtime.Handoff.Timestamp),
+                    _timeProvider.GetUtcNow(), runtime.HandoffIdentity);
+                if (replacement is not null)
+                {
+                    // Zapis przed przejeciem: recovery musi znac nowy proces.
+                    bool adopted;
+                    await _checkpointGate.WaitAsync(CancellationToken.None).ConfigureAwait(false);
+                    try
+                    {
+                        SessionRecoveryMetadata prepared = CreateRecoveryMetadata(runtime) with
+                        {
+                            PendingHandoffProcess = replacement,
+                        };
+                        await RecordCheckpointAsync(runtime.SessionId, SessionCheckpoint.GameHandoffAdoptionPrepared,
+                            prepared, CancellationToken.None).ConfigureAwait(false);
+                        try
+                        {
+                            adopted = HandoffAdopter(runtime.ProcessTree, replacement);
+                        }
+                        catch (Exception exception) when (exception is ArgumentException or InvalidOperationException)
+                        {
+                            adopted = false;
+                        }
+                        if (adopted)
+                        {
+                            runtime.PlayEndedAtUtc = null;
+                            await RecordCheckpointAsync(runtime.SessionId, SessionCheckpoint.GameHandoffAdopted,
+                                CreateRecoveryMetadata(runtime), CancellationToken.None).ConfigureAwait(false);
+                            ClearInheritedCornerFromGame(runtime, [replacement]);
+                        }
+                        else
+                        {
+                            runtime.Handoff.Refuse();
+                            await RecordCheckpointAsync(runtime.SessionId, SessionCheckpoint.GameHandoffRefused,
+                                CreateRecoveryMetadata(runtime), CancellationToken.None).ConfigureAwait(false);
+                        }
+                    }
+                    finally
+                    {
+                        _checkpointGate.Release();
+                    }
+                    if (adopted)
+                    {
+                        runtime.Handoff = null;
+                        continue;
+                    }
+                }
+
+                if (runtime.Handoff.Finished)
+                {
+                    runtime.State = SessionStateMachine.Transition(
+                        runtime.State,
+                        OptimizationSessionState.GameExited);
+                    await CompleteRuntimeAsync(
+                            runtime,
+                            runtime.RecoveredFromHostCrash
+                                ? SessionCompletionStatus.RecoveredAfterCrash
+                                : SessionCompletionStatus.Completed,
+                            "Gra została zamknięta; Dismode przywrócił aplikacje w tle.",
+                            cancellationToken)
+                        .ConfigureAwait(false);
+                    return;
+                }
             }
             finally
             {
                 _gate.Release();
             }
+
+            await Task.Delay(_monitorInterval, cancellationToken).ConfigureAwait(false);
+        }
+    }
+
+    private async ValueTask TryApplyDisplayRefreshAsync(ActiveRuntime runtime,
+        GameProcessTreeObservation observation, CancellationToken cancellationToken)
+    {
+        if (!runtime.RefreshRatePending) { return; }
+        await _gate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            if (!ReferenceEquals(_activeSession, runtime) || runtime.State != OptimizationSessionState.Active) { return; }
+            string? monitor = _displayApi.FindGameMonitor(observation.RunningProcesses
+                .Select(identity => identity.RuntimeKey.ProcessId).ToArray());
+            if (monitor is null) { return; }
+            runtime.RefreshRatePending = false;
+            DisplayRefreshRateAction? action = DisplayRefreshRateAction.TryCreateForMonitor(ActionId.Create(), monitor, _displayApi);
+            if (action is null)
+            {
+                await RecordRuntimeCheckpointAsync(runtime, SessionCheckpoint.GameProcessTreeObserved,
+                    CancellationToken.None).ConfigureAwait(false);
+                return;
+            }
+            IdempotencyKey key = IdempotencyKey.Create();
+            runtime.DisplayRefresh = new(action.Descriptor.ActionId.Value, key.Value, action.Target);
+            await RecordRuntimeCheckpointAsync(runtime, SessionCheckpoint.GameProcessTreeObserved,
+                CancellationToken.None).ConfigureAwait(false);
+            ActionExecutionResult result = await new TransactionCoordinator<DisplayMode>(_journal)
+                .ExecuteAsync(action, new(runtime.SessionId, action.Descriptor.ActionId, key, runtime.StartedAtUtc),
+                    CancellationToken.None).ConfigureAwait(false);
+            if (result.Status == ActionExecutionStatus.AppliedAndVerified) { runtime.AppliedActionCount++; }
+            await RecordRuntimeCheckpointAsync(runtime, SessionCheckpoint.GameProcessTreeObserved,
+                CancellationToken.None).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { throw; }
+        catch (Exception exception)
+        {
+            runtime.RefreshRatePending = false;
+            Trace.TraceError("Nie zastosowano odswiezania sesji: {0}", exception);
+        }
+        finally { _gate.Release(); }
+    }
+
+    private IReadOnlyList<CpuProcessSample>? CaptureLateProcessSet(ActiveRuntime runtime, CancellationToken cancellationToken)
+    {
+        if (runtime.LateRules is null || runtime.LateRulesDisabled) { return null; }
+        try
+        {
+            lock (_processSetLock)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                _lateProcessSource ??= _cpuProcessSourceFactory();
+                return _lateProcessSource.Capture();
+            }
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { throw; }
+        catch (Exception exception)
+        {
+            runtime.LateRulesDisabled = true;
+            LateRuleError(exception);
+            return null;
+        }
+    }
+
+    private async ValueTask ApplyLateBackgroundRulesAsync(ActiveRuntime runtime,
+        GameProcessTreeObservation observation, IReadOnlyList<CpuProcessSample>? processSet, CancellationToken cancellationToken)
+    {
+        if (runtime.LateRules is null || runtime.LateRuleTracker is null || runtime.LateRulesDisabled || processSet is null)
+        {
+            return;
+        }
+        LateBackgroundRuleTracker tracker = runtime.LateRuleTracker;
+
+        await _gate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            if (!ReferenceEquals(_activeSession, runtime)
+                || runtime.State != OptimizationSessionState.Active)
+            {
+                return;
+            }
+            if (!tracker.ObserveProcessSet(processSet)) { return; }
+
+            SavedBackgroundRuleResolution resolution = _savedRuleResolver.Resolve(
+                runtime.LateRules, runtime.RootProcess.ExecutablePath,
+                runtime.RootProcess.SessionId, MaximumBackgroundApplications,
+                process => process.ProcessId > 0
+                    && process.StartedAtUtc is DateTimeOffset started
+                    && started > tracker.ActivatedAtUtc
+                    && !tracker.Contains(new(process.ProcessId, started))
+                    && !observation.KnownProcesses.Any(game =>
+                        game.RuntimeKey == new ProcessRuntimeKey(process.ProcessId, started)));
+            foreach (BackgroundApplicationSelection selection in resolution.Selections)
+            {
+                ProcessIdentity? identity = await _identityProvider.TryCaptureAsync(
+                    selection.ProcessId, cancellationToken).ConfigureAwait(false);
+                if (identity is null || identity.SessionId != runtime.RootProcess.SessionId
+                    || !StringComparer.OrdinalIgnoreCase.Equals(identity.UserSid, runtime.RootProcess.UserSid)
+                    || runtime.BackgroundApplications.Concat(runtime.SnapshotDynamicRestraints())
+                        .Any(existing => existing.Identity.RuntimeKey == identity.RuntimeKey)
+                    )
+                {
+                    continue;
+                }
+                bool wasAttempted = tracker.Contains(identity.RuntimeKey);
+                if (!runtime.TryClaimLateRule(identity, observation.KnownProcesses, ForegroundProcessId()))
+                {
+                    if (!wasAttempted && tracker.Contains(identity.RuntimeKey))
+                    {
+                        await RecordRuntimeCheckpointAsync(runtime,
+                            SessionCheckpoint.BackgroundRestraintChanged, CancellationToken.None).ConfigureAwait(false);
+                    }
+                    continue;
+                }
+                PlannedBackgroundApplication application = await (LateRuleApprover
+                    ?? _backgroundApplicationGuard.ApproveAsync)(selection, runtime.RootProcess.ExecutablePath, cancellationToken)
+                    .ConfigureAwait(false);
+                if (!identity.MatchesExecutable(application.Identity)
+                    || ForegroundProcessId() == identity.RuntimeKey.ProcessId)
+                {
+                    continue;
+                }
+
+                // Zapis zamiaru przed akcjami; ten sam tor co recovery tla.
+                runtime.AddDynamicRestraint(application, fromSavedRule: true);
+                await RecordRuntimeCheckpointAsync(runtime,
+                    SessionCheckpoint.BackgroundRestraintChanged, CancellationToken.None).ConfigureAwait(false);
+                BackgroundBundleOutcome result = await ApplyBackgroundApplicationsAsync(
+                    runtime.SessionId, [application], runtime.StartedAtUtc,
+                    runtime.BackgroundAffinityMask, CancellationToken.None).ConfigureAwait(false);
+                runtime.AppliedActionCount += result.AppliedCount;
+                await RecordRuntimeCheckpointAsync(runtime,
+                    SessionCheckpoint.BackgroundRestraintChanged, CancellationToken.None).ConfigureAwait(false);
+            }
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { throw; }
+        catch (Exception exception)
+        {
+            runtime.LateRulesDisabled = true;
+            LateRuleError(exception);
+            try
+            {
+                await RecordRuntimeCheckpointAsync(runtime, SessionCheckpoint.BackgroundRuleMonitorDisabled,
+                    CancellationToken.None).ConfigureAwait(false);
+            }
+            catch (Exception journalException) { LateRuleError(journalException); }
+        }
+        finally
+        {
+            _gate.Release();
         }
     }
 
@@ -1905,6 +2264,8 @@ public sealed class LocalGameSessionOrchestrator : IAsyncDisposable
         string message,
         CancellationToken cancellationToken)
     {
+        runtime.Duration?.Pause();
+        runtime.PlayEndedAtUtc ??= ResolveSessionEnd(runtime.StartedAtUtc);
         runtime.State = SessionStateMachine.Transition(
             runtime.State,
             OptimizationSessionState.Restoring);
@@ -1983,6 +2344,8 @@ public sealed class LocalGameSessionOrchestrator : IAsyncDisposable
         BackgroundRecoveryTotals recovery = MergeRecoveryTotals(
             MergeRecoveryTotals(priorityRecovery, restraintRecovery),
             applicationRecovery);
+        recovery = MergeRecoveryTotals(recovery, await RestoreDisplayRefreshAsync(
+            runtime.SessionId, runtime.DisplayRefresh, runtime.StartedAtUtc).ConfigureAwait(false));
         if (recovery.ErrorCount == 0)
         {
             // Lista zostaje przy bledzie, zeby „Przywroc teraz" objelo takze
@@ -2038,7 +2401,7 @@ public sealed class LocalGameSessionOrchestrator : IAsyncDisposable
                 metadata,
                 CancellationToken.None)
             .ConfigureAwait(false);
-        DateTimeOffset endedAtUtc = ResolveSessionEnd(runtime.StartedAtUtc);
+        DateTimeOffset endedAtUtc = runtime.PlayEndedAtUtc.Value;
         SessionCompletionStatus finalStatus =
             recovery.ConflictCount == 0
                 ? status
@@ -2055,7 +2418,8 @@ public sealed class LocalGameSessionOrchestrator : IAsyncDisposable
                     runtime.RestoredActionCount,
                     runtime.ConflictCount,
                     runtime.ErrorCount,
-                    runtime.FrameRateStatistics),
+                    runtime.FrameRateStatistics,
+                    runtime.Duration?.Seconds),
                 CancellationToken.None)
             .ConfigureAwait(false);
         await RecordCheckpointAsync(
@@ -2154,7 +2518,18 @@ public sealed class LocalGameSessionOrchestrator : IAsyncDisposable
                 .ToArray(),
             runtime.BackgroundAffinityMask,
             runtime.GameAffinity,
-            runtime.GameCpuSets);
+            runtime.GameCpuSets,
+            runtime.Duration?.CheckpointSeconds,
+            runtime.PlayEndedAtUtc,
+            runtime.PlayEndedAtUtc ?? runtime.DurationCheckpointAtUtc,
+            runtime.DisplayRefresh,
+            runtime.LateRules is { } rules && runtime.LateRuleTracker is { } tracker
+                ? new(tracker.ActivatedAtUtc,
+                    rules.BackgroundRules.Select(rule => new LateRuleRecoveryMetadata(rule.ExecutablePath, rule.ActionMode)).ToArray(),
+                    tracker.SnapshotAttempted()) : null,
+            runtime.HandoffIdentity,
+            LateRulesDisabled: runtime.LateRulesDisabled,
+            RefreshRatePending: runtime.RefreshRatePending);
 
     /// <summary>
     /// Writes the session checkpoint that carries the current set of reactive
@@ -2191,6 +2566,7 @@ public sealed class LocalGameSessionOrchestrator : IAsyncDisposable
         await _checkpointGate.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
+            runtime.DurationCheckpointAtUtc = _timeProvider.GetUtcNow();
             await RecordCheckpointAsync(
                     runtime.SessionId,
                     checkpoint,
@@ -2282,19 +2658,49 @@ public sealed class LocalGameSessionOrchestrator : IAsyncDisposable
         bool pinPreference) =>
         restraintEnabled && pinPreference;
 
-    /// <summary>
-    /// Per-game switches read at session start. Both default to on: without a
-    /// repository, or when the preferences cannot be read, the session
-    /// behaves as it did before the switches existed.
-    /// </summary>
-    private async ValueTask<(bool PinGame, bool KeepAwake)>
+    private GameHandoffIdentity CaptureHandoffIdentity(ProcessIdentity root, string profilePath, string profileHash,
+        IReadOnlyList<ProcessSnapshot>? processes = null) =>
+        new(profilePath, profileHash, (processes ?? _processInventory.Capture())
+            .Where(process => process.ProcessId > 0 && process.StartedAtUtc is not null
+                && process.SessionId == root.SessionId
+                && (ExecutablePathIdentity.AreSameExecutable(process.ExecutablePath, root.ExecutablePath)
+                    || ExecutablePathIdentity.AreSameExecutable(process.ExecutablePath, profilePath)))
+            .Select(process => new ProcessRuntimeKey(process.ProcessId, process.StartedAtUtc!.Value)).ToArray());
+
+    private async ValueTask<GameOptimizationPreferences?> LoadLateRulesAsync(
+        GameProfileId profileId, CancellationToken cancellationToken)
+    {
+        if (_optimizationPreferences is null)
+        {
+            return null;
+        }
+        try
+        {
+            GameOptimizationPreferences saved = await _optimizationPreferences
+                .LoadOptimizationPreferencesAsync(profileId, cancellationToken).ConfigureAwait(false);
+            if (!saved.ApplyBackgroundRulesDuringSession || saved.ProfileId != profileId)
+            {
+                return null;
+            }
+            return _globalBackgroundRules is null ? saved : saved.WithGlobalRules(
+                await _globalBackgroundRules.LoadGlobalBackgroundRulesAsync(cancellationToken).ConfigureAwait(false));
+        }
+        catch (Exception exception) when (exception is InvalidOperationException
+            or InvalidDataException or IOException or DbException)
+        {
+            return null;
+        }
+    }
+
+    // Odczyt przed zmianami; brak preferencji nie wlacza nowych funkcji.
+    private async ValueTask<(bool PinGame, bool KeepAwake, bool MaximizeRefreshRate)>
         LoadGameSwitchesAsync(
             GameProfileId profileId,
             CancellationToken cancellationToken)
     {
         if (_optimizationPreferences is null)
         {
-            return (true, true);
+            return (true, true, false);
         }
 
         try
@@ -2307,7 +2713,8 @@ public sealed class LocalGameSessionOrchestrator : IAsyncDisposable
                     .ConfigureAwait(false);
             return (
                 preferences.PinGameToPreferredCores,
-                preferences.KeepAwakeDuringSession);
+                preferences.KeepAwakeDuringSession,
+                preferences.MaximizeRefreshRateDuringSession);
         }
         catch (Exception exception) when (
             exception is InvalidOperationException
@@ -2315,7 +2722,7 @@ public sealed class LocalGameSessionOrchestrator : IAsyncDisposable
                 or IOException
                 or DbException)
         {
-            return (true, true);
+            return (true, true, false);
         }
     }
 
@@ -2518,6 +2925,28 @@ public sealed class LocalGameSessionOrchestrator : IAsyncDisposable
         }
         catch (Exception exception) when (
             IsExpectedRecoveryFailure(exception))
+        {
+            return new(0, 0, 1);
+        }
+    }
+
+    private async ValueTask<BackgroundRecoveryTotals> RestoreDisplayRefreshAsync(SessionId sessionId,
+        DisplayRefreshRecoveryMetadata? display, DateTimeOffset requestedAtUtc)
+    {
+        if (display is null)
+        {
+            return new(0, 0, 0);
+        }
+        try
+        {
+            ActionId id = new(display.ActionId);
+            ActionRecoveryResult result = await new ActionRecoveryCoordinator<DisplayMode>(_journal)
+                .RecoverAsync(DisplayRefreshRateAction.ForRecovery(id, display.Target, _displayApi),
+                    new(sessionId, id, new(display.IdempotencyKey), requestedAtUtc), CancellationToken.None)
+                .ConfigureAwait(false);
+            return ToRecoveryTotals(result);
+        }
+        catch (Exception exception) when (IsExpectedRecoveryFailure(exception))
         {
             return new(0, 0, 1);
         }
@@ -2780,10 +3209,7 @@ public sealed class LocalGameSessionOrchestrator : IAsyncDisposable
                 continue;
             }
 
-            RuntimeProcessPriorityAction priorityAction = new(
-                application.ActionId,
-                application.Identity,
-                ProcessPriorityClass.BelowNormal);
+            IReversibleAction<RuntimeProcessPriorityState> priorityAction = CreateBackgroundPriorityAction(application);
             ActionExecutionResult priorityResult =
                 await new TransactionCoordinator<
                         RuntimeProcessPriorityState>(_journal)
@@ -3214,10 +3640,7 @@ public sealed class LocalGameSessionOrchestrator : IAsyncDisposable
             }
             else
             {
-                RuntimeProcessPriorityAction action = new(
-                    application.ActionId,
-                    application.Identity,
-                    ProcessPriorityClass.BelowNormal);
+                IReversibleAction<RuntimeProcessPriorityState> action = CreateBackgroundPriorityAction(application);
                 result =
                     await new ActionRecoveryCoordinator<
                             RuntimeProcessPriorityState>(_journal)
@@ -3611,6 +4034,11 @@ public sealed class LocalGameSessionOrchestrator : IAsyncDisposable
             + (result.Details
                 ?? "bezpieczna transakcja nie została zweryfikowana."));
     }
+
+    private IReversibleAction<RuntimeProcessPriorityState> CreateBackgroundPriorityAction(PlannedBackgroundApplication application) =>
+        BackgroundPriorityActionFactory?.Invoke(application)
+        ?? new RuntimeProcessPriorityAction(application.ActionId, application.Identity,
+            ProcessPriorityClass.BelowNormal, _identityProvider);
 
     private static BackgroundRecoveryTotals ToRecoveryTotals(
         ActionRecoveryResult result) =>
@@ -4071,8 +4499,9 @@ public sealed class LocalGameSessionOrchestrator : IAsyncDisposable
         ProcessPriorityClass? desiredGamePriority,
         SavedRulePlanSummary? savedRuleSummary,
         OptimizationSessionState state,
-        DateTimeOffset expiresAtUtc)
+        DateTimeOffset expiresAtUtc, DateTimeOffset rulesResolvedAtUtc)
     {
+        internal DateTimeOffset RulesResolvedAtUtc { get; } = rulesResolvedAtUtc;
         internal Guid PlanId { get; } = planId;
 
         internal SessionId SessionId { get; } = sessionId;
@@ -4187,6 +4616,26 @@ public sealed class LocalGameSessionOrchestrator : IAsyncDisposable
 
         internal ProcessIdentity RootProcess { get; } = rootProcess;
 
+        internal GameProcessHandoff? Handoff { get; set; }
+        internal GameHandoffIdentity? HandoffIdentity { get; set; }
+
+        internal GameplayDuration? Duration { get; set; }
+
+        internal DisplayRefreshRecoveryMetadata? DisplayRefresh { get; set; }
+        internal bool RefreshRatePending { get; set; }
+
+        internal DateTimeOffset? PlayEndedAtUtc { get; set; }
+        internal DateTimeOffset LastAliveAtUtc { get; set; } = startedAtUtc;
+
+        internal DateTimeOffset? DurationCheckpointAtUtc { get; set; }
+
+        internal long NextDurationCheckpointSeconds { get; set; } = 15;
+
+        internal GameOptimizationPreferences? LateRules { get; set; }
+
+        internal LateBackgroundRuleTracker? LateRuleTracker { get; set; }
+        internal bool LateRulesDisabled { get; set; }
+
         internal GameProcessTreeSessionTracker ProcessTree { get; } =
             processTree;
 
@@ -4217,10 +4666,14 @@ public sealed class LocalGameSessionOrchestrator : IAsyncDisposable
         /// replaced, so a failed checkpoint write can put it back.
         /// </summary>
         internal PlannedBackgroundApplication? AddDynamicRestraint(
-            PlannedBackgroundApplication restraint)
+            PlannedBackgroundApplication restraint, bool fromSavedRule = false)
         {
             lock (_restraintLock)
             {
+                if (!fromSavedRule && LateRuleTracker?.Contains(restraint.Identity.RuntimeKey) == true)
+                {
+                    throw new InvalidOperationException("Proces ma już zapisaną regułę tła.");
+                }
                 PlannedBackgroundApplication? previous =
                     _dynamicRestraints.Find(existing =>
                         existing.Identity.RuntimeKey
@@ -4237,6 +4690,10 @@ public sealed class LocalGameSessionOrchestrator : IAsyncDisposable
         {
             lock (_restraintLock)
             {
+                if (LateRuleTracker?.Contains(runtimeKey) == true)
+                {
+                    return false;
+                }
                 return _dynamicRestraints.RemoveAll(existing =>
                     existing.Identity.RuntimeKey == runtimeKey) > 0;
             }
@@ -4275,7 +4732,16 @@ public sealed class LocalGameSessionOrchestrator : IAsyncDisposable
         internal GamePriorityRecoveryMetadata? GamePriority { get; } =
             gamePriority;
 
-        internal int AppliedActionCount { get; } = appliedActionCount;
+        internal bool TryClaimLateRule(ProcessIdentity identity, IReadOnlyList<ProcessIdentity> gameTree, int foreground)
+        {
+            lock (_restraintLock)
+            {
+                return !_dynamicRestraints.Any(item => item.Identity.RuntimeKey == identity.RuntimeKey)
+                    && LateRuleTracker?.TryClaim(identity, gameTree, foreground) == true;
+            }
+        }
+
+        internal int AppliedActionCount { get; set; } = appliedActionCount;
 
         internal int RestoredActionCount { get; set; }
 
@@ -4383,7 +4849,23 @@ public sealed class LocalGameSessionOrchestrator : IAsyncDisposable
         // Odtwarzanie cofa je tylko, gdy proces nadal ma zapisane zbiory.
         // Na koncu i z domyslnym null, zeby starsze punkty kontrolne nadal
         // sie odczytywaly.
-        GameCpuSetsRecoveryMetadata? GameCpuSets = null);
+        GameCpuSetsRecoveryMetadata? GameCpuSets = null,
+        long? DurationSeconds = null,
+        DateTimeOffset? PlayEndedAtUtc = null,
+        DateTimeOffset? DurationCheckpointAtUtc = null,
+        DisplayRefreshRecoveryMetadata? DisplayRefresh = null,
+        LateRulesRecoveryMetadata? LateRules = null,
+        GameHandoffIdentity? HandoffIdentity = null,
+        ProcessIdentity? PendingHandoffProcess = null,
+        bool LateRulesDisabled = false,
+        bool RefreshRatePending = false);
+
+    private sealed record DisplayRefreshRecoveryMetadata(Guid ActionId, Guid IdempotencyKey, DisplayMode Target);
+
+    private sealed record LateRuleRecoveryMetadata(string Path, SavedBackgroundActionMode Mode);
+
+    private sealed record LateRulesRecoveryMetadata(DateTimeOffset ActivatedAtUtc,
+        IReadOnlyList<LateRuleRecoveryMetadata> Rules, IReadOnlyList<ProcessRuntimeKey> Attempted);
 
     private sealed record BackgroundApplicationRecoveryMetadata(
         Guid ActionId,

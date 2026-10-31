@@ -40,6 +40,9 @@ public enum CpuAffinityDecline
 
     /// <summary>Nothing was read from the system.</summary>
     TopologyUnavailable = 5,
+
+    /// <summary>Brak jednoznacznego wyboru L3 w jednym pakiecie i wezle NUMA.</summary>
+    AmbiguousCacheGroups = 7,
 }
 
 public sealed record CpuAffinityDecision(
@@ -178,18 +181,23 @@ public static class CpuAffinityPolicy
                     + "rdzeni, bo jedna maska nie opisuje całej maszyny.");
         }
 
+        if (topology.ProcessorPackages.Count > 1
+            || topology.Processors.Select(processor => processor.NumaNodeIndex)
+                .Where(node => node.HasValue).Distinct().Count() > 1)
+        {
+            return DeclineAmbiguousCacheGroups();
+        }
+
+        // Granica L3 ma pierwszenstwo przed klasa wydajnosci CCD.
+        // Intel P/E ze wspolnym L3 zachowuje dotychczasowa polityke.
+        // Jeden L3 nie wymaga wyboru CCD; rdzenie LP E moga byc poza nim.
+        if (topology.L3CacheGroups.Count != 1 && topology.HasSeparateCacheGroups)
+        {
+            return DecideByCacheGroup(topology, role);
+        }
+
         if (!topology.IsHybrid)
         {
-            // Rdzenie tej samej klasy nadal moga byc podzielone cache'em
-            // ostatniego poziomu — tak wyglada Ryzen z kilkoma CCD. Watki
-            // rozrzucone po obu stronach tej granicy rozmawiaja przez pamiec
-            // zamiast przez wspolny cache, a klasa wydajnosci nic o tym nie
-            // mowi.
-            if (topology.HasSeparateCacheGroups)
-            {
-                return DecideByCacheGroup(topology, role);
-            }
-
             // Dla gry to koniec: gdy rdzenie sa identyczne i dziela cache,
             // przypiecie jej gdziekolwiek niczego nie zmienia. Dla tla jest
             // odwrotnie i dlugo mialem to zle. Chodzi nie o lokalnosc cache'u,
@@ -268,16 +276,32 @@ public static class CpuAffinityPolicy
     }
 
     /// <summary>
-    /// Keeps the game inside one cache group and pushes background work to the
-    /// rest. On a machine whose cores are all the same speed this is the only
-    /// boundary that means anything, and on a multi-CCD part it is a sharper
-    /// one than the performance tiers ever are.
+    /// Wybiera wyraznie wieksze L3, bez zgadywania po indeksie lub liczbie rdzeni.
     /// </summary>
     private static CpuAffinityDecision DecideByCacheGroup(
         CpuTopology topology,
         CpuAffinityRole role)
     {
-        IReadOnlyList<CpuLogicalProcessor> largest = topology.LargestCacheGroup;
+        IReadOnlyList<CpuCacheGroup> groups = [.. topology.L3CacheGroups
+            .OrderByDescending(group => group.SizeBytes)];
+        if (groups.Count < 2
+            || !HasCompleteCacheTopology(topology)
+            || 2UL * groups[0].SizeBytes < 3UL * groups[1].SizeBytes)
+        {
+            return DeclineAmbiguousCacheGroups();
+        }
+
+        HashSet<uint> selectedIds = [.. groups[0].ProcessorIds];
+        IReadOnlyList<CpuLogicalProcessor> largest = [.. topology.Processors
+            .Where(processor => selectedIds.Contains(processor.Id))];
+        // Nie rozdzielamy watkow jednego rdzenia nawet przy blednych danych L3.
+        if (topology.Processors.GroupBy(processor => (processor.Group, processor.CoreIndex))
+            .Any(core => core.Any(processor => selectedIds.Contains(processor.Id))
+                && core.Any(processor => !selectedIds.Contains(processor.Id))))
+        {
+            return DeclineAmbiguousCacheGroups();
+        }
+
         int cores = CpuTopology.CountPhysicalCores(largest);
         if (cores < MinimumPerformancePhysicalCores)
         {
@@ -322,6 +346,26 @@ public static class CpuAffinityPolicy
                     : "Procesy tła trafią poza grupę cache gry "
                         + $"({target.Count} procesorów logicznych).");
     }
+
+    private static bool HasCompleteCacheTopology(CpuTopology topology)
+    {
+        uint[] processorIds = [.. topology.Processors.Select(processor => processor.Id)];
+        uint[] cacheIds = [.. topology.L3CacheGroups.SelectMany(group => group.ProcessorIds)];
+        return topology.L3CacheGroups.Count > 0
+            && topology.L3CacheGroups.All(group => group.SizeBytes > 0 && group.ProcessorIds.Count > 0)
+            && topology.ProcessorPackages.Count == 1
+            && topology.Processors.All(processor => processor.NumaNodeIndex.HasValue)
+            && processorIds.Distinct().Count() == processorIds.Length
+            && cacheIds.Distinct().Count() == cacheIds.Length
+            && processorIds.Order().SequenceEqual(cacheIds.Order())
+            && processorIds.Order().SequenceEqual(topology.ProcessorPackages[0].ProcessorIds.Order());
+    }
+
+    private static CpuAffinityDecision DeclineAmbiguousCacheGroups() => new(
+        false,
+        0,
+        CpuAffinityDecline.AmbiguousCacheGroups,
+        "Nie można jednoznacznie wybrać grupy L3. Dismode nie zmienia przypisania rdzeni.");
 
     /// <summary>
     /// Turns logical processor ids into the bitmask Windows expects. Ids at or

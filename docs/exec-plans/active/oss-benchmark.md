@@ -99,6 +99,7 @@ Uwaga do stanu repo: na gałęzi `fix/bug-hunt-2026-10-08` są niezacommitowane 
 - **Ryzyko:** niskie. **Nakład:** M (głównie UI). **Pewność:** MEDIUM. Nie zależy od pozycji 5.
 
 ### 11. Bez automatycznego wyboru CCD na podstawie liczby rdzeni (X3D)
+- **Stan (2026-10-31):** zrobione — rzeczywiste maski i rozmiary L3, pakiety oraz NUMA; wybór L3 ≥1,5×, odmowa przy równych/niepełnych danych wielu grup L3 i wielu pakietach/węzłach NUMA. Pojedyncze L3 omija wybór CCD także wtedy, gdy LP E są poza nim (Meteor Lake); pełne pokrycie wymagane przy ≥2 L3. Zachowano politykę jednego CCD i Intel P/E oraz istniejące journal/restore/crash replay. Testy syntetyczne topologii i buforów Win32; bez weryfikacji na rzeczywistych X3D/CCD i Meteor Lake, wpływ na FPS i opóźnienia niezmierzony.
 - **Dlaczego:** na 7950X3D i podobnych procesorach Dismode wybiera CCD0 według indeksu, a nie według L3.
 - **Źródła:** ThreadPilot (`GameBoostPolicy.cs:44,54,79,158`). Dismode: `CpuTopology.cs:62-69`, `CpuAffinityPolicy.cs:170,188-190,276-307`, `SystemCpuTopologyProvider.cs:85-134`.
 - **Pliki:** `SystemCpuTopologyProvider.cs` (`GetLogicalProcessorInformationEx`: RelationCache i RelationProcessorPackage, do tego `NumaNodeIndex`), `CpuTopology.cs`, `CpuAffinityPolicy.cs` (nowy powód odmowy `AmbiguousCacheGroups`).
@@ -106,6 +107,7 @@ Uwaga do stanu repo: na gałęzi `fix/bug-hunt-2026-10-08` są niezacommitowane 
 - **Ryzyko:** niskie, bo polityka robi się ostrożniejsza. **Nakład:** M. **Pewność:** MEDIUM. Bez pomiaru na sprzęcie nie twierdzimy, że daje FPS.
 
 ### 12. Obciążenie pojedynczych procesorów logicznych (diagnostyka)
+- **Stan (2026-10-31):** zrobione — `LogicalProcessorLoadSampler` (NtQuerySystemInformation, jedna grupa) pokazuje CPU i maksimum procesora logicznego; wspolne obliczanie delt usuwa duplikacje w dotychczasowych samplerach. Probkowanie tylko przy widocznej nakladce, 1 Hz, bufory wielokrotnego uzytku; syntetyczne testy idle, regresji, krotkiego okna i wielu grup. Perf: 64 procesory, 100 000 iteracji, 0 B/wywolanie i B/s, ok. 0,0046 ms/wywolanie i ms/s przy 1 Hz (limit 8 B dla wyniku zerowego). Nie sprawdzono obciazenia jednego rdzenia na prawdziwym sprzecie ani wplywu na FPS.
 - **Dlaczego:** jeden nasycony rdzeń ginie w średnim obciążeniu CPU.
 - **Źródła:** LibreHardwareMonitor (`CpuLoad.cs:52,167`). Dismode: `SystemCpuLoadSampler.cs:13,21`, duplikat w `LocalSystemMetricsSampler.cs:25,113`, P/Invoke w `CpuProcessSampler.cs:36,118`.
 - **Pliki:** nowy `src/Dismode.Windows/Cpu/LogicalProcessorLoadSampler.cs` (`NtQuerySystemInformation(SystemProcessorPerformanceInformation)`, jedna grupa procesorów), `LocalSystemMetricsSampler.cs`, `PerformanceOverlayWindow.xaml.cs`.
@@ -113,6 +115,7 @@ Uwaga do stanu repo: na gałęzi `fix/bug-hunt-2026-10-08` są niezacommitowane 
 - **Ryzyko:** niskie. **Nakład:** M. **Pewność:** MEDIUM.
 
 ### 13. Przejęcie gry po przekazaniu przez launcher lub DRM
+**Stan (2026-10-31):** zrobione — okno 30 s, migawka instancji przy aktywacji, nastepca urodzony po starcie korzenia (takze przed jego wyjsciem), tozsamosc korzenia lub odrebnego EXE profilu z wlasnym hashem. Journal zamiaru przed przejeciem, osobny wynik odmowy i natychmiastowe przywracanie. Testy syntetyczne; bez weryfikacji z prawdziwym launcherem/DRM.
 - **Dlaczego:** gdy DRM uruchomi grę ponownie poza obserwowanym drzewem procesów, Dismode przedwcześnie przywraca ustawienia.
 - **Źródła:** Playnite (`GenericGameController.cs:696-728`, `ProcessMonitor.cs:119-164`). Dismode: `LocalGameSessionOrchestrator.cs:1539-1581`, `GameProcessTreeSessionTracker.cs:74-96`, `ManualGameProfileLauncher.cs:194-223`.
 - **Pliki:** `LocalGameSessionOrchestrator.cs` (stan „czekam na przekazanie” przed GameExited), `ManualGameProfileLauncher.cs`, tracker.
@@ -120,6 +123,7 @@ Uwaga do stanu repo: na gałęzi `fix/bug-hunt-2026-10-08` są niezacommitowane 
 - **Ryzyko:** średnie. **Nakład:** M. **Pewność:** MEDIUM.
 
 ### 14. Przełączenie częstotliwości odświeżania na czas sesji
+**Stan (2026-10-31):** zrobione — opt-in (migracja 21), najwyzsze Hz przy biezacej rozdzielczosci i glebi koloru dopiero po pojawieniu sie widocznego okna drzewa gry; male i niewidoczne okna sa pomijane. Bez okna nie ma zmiany; monitor glowny tylko przy nieudanym mapowaniu istniejacego okna. Journal i recovery w SessionHost; oryginalny tryb juz przywrocony przez gre to przywrocenie bez konfliktu. Testy z falszywym API; bez przelaczania prawdziwego monitora.
 - **Dlaczego:** pomaga, gdy monitor 144/240 Hz został na 60 Hz w grze bez trybu wyłącznego. Przypadek węższy, niż deklaruje propozycja.
 - **Źródła:** AutoActions (`DisplayManagerBase.cs:293-312`; jako antywzorzec, bo zapisuje trwale i nie przywraca). Dismode nie ma tej funkcji.
 - **Pliki:** nowy `Display/DisplayRefreshRateAction.cs`, `OptimizationActionKind.cs`, `AppendOnlyRecoveryJournal`, `SystemOptimizerRecoveryHostedService.cs`, wykonanie w sesji użytkownika (`DesktopUserProcessStarter` albo UI).
@@ -127,6 +131,7 @@ Uwaga do stanu repo: na gałęzi `fix/bug-hunt-2026-10-08` są niezacommitowane 
 - **Ryzyko:** średnie (mignięcie obrazu, wiele monitorów). **Nakład:** M. **Pewność:** MEDIUM.
 
 ### 15. Rzeczywisty czas gry bez uśpienia i czasu przygotowania
+**Stan (2026-10-31):** zrobione — czas aktywnego systemu do ostatniej obserwacji zywego drzewa, bez opoznienia wykrycia wyjscia, oczekiwania na przekazanie i przywracania. Checkpoint co 15 s, nullable DurationSeconds (migracja 20), stare rekordy bez przeliczenia; bez mieszania z czasem dostawcy. Usunieto nieuzywana detekcje skokow UTC; czas pochodzi z zegara bez uspienia. Testy deterministyczne; bez fizycznego uspienia komputera.
 - **Dlaczego:** sen systemu, korekty zegara i zaokrąglanie w górę każdej sesji zawyżają czas gry.
 - **Źródła:** Playnite (`GenericGameController.cs:686-693,748-772`). Dismode: `GameMetadataRefreshService.cs:219-221,265-275`, `HistoryListItem.cs:15-16`, `MainWindow.xaml.cs:6099`, `SqliteUserDataStore.cs:1288-1289`.
 - **Pliki:** te same oraz `LocalGameSessionOrchestrator.cs` i migracja (`DurationSeconds` nullable).
@@ -134,6 +139,8 @@ Uwaga do stanu repo: na gałęzi `fix/bug-hunt-2026-10-08` są niezacommitowane 
 - **Ryzyko:** niskie. **Nakład:** L. **Pewność:** MEDIUM.
 
 ### 16. Zatwierdzone reguły tła dla procesów uruchomionych w trakcie gry
+**Stan (2026-10-31):** zrobione — opt-in (migracja 19), pelne rozpoznawanie tylko po pojawieniu sie nowych kluczy PID + czas startu w taniej migawce uzytej tez przez tracker. Granica czasu to rozpoznanie planu; pierwszy plan jest zapamietywany jako proba bez przyszlego ograniczania. Blad wylacza tylko reguly tla i jest logowany. Journal, recovery i wzajemne wykluczanie z ProBalance objete testami. Pomiar Perf: 300 procesow, 1 Hz, budzet 64 B/tick bez nowych procesow; bez pomiaru zysku FPS na grze.
+**Perf (2026-10-31, dane sztuczne):** przed 70 176 B i 0,452536 ms/tick; po 0 B i 0,034387 ms/tick. Pomiar nie obejmuje zysku w grze ani rzeczywistego przechwytywania inwentarza Windows.
 - **Dlaczego:** aplikacja, która zrestartuje się w trakcie gry, nie dostaje ograniczeń. Zysk niepotwierdzony pomiarem.
 - **Źródła:** System Informer (`UserNotes/main.c:2599-2688`). Dismode: `LocalGameSessionOrchestrator.cs:299,335`, `SavedBackgroundRuleResolver.cs:16`.
 - **Pliki:** pętla monitora w `LocalGameSessionOrchestrator.cs` (bez osobnego watchera), `SavedBackgroundRuleResolver.cs`, `JournaledProBalanceActuator.cs`.
@@ -141,6 +148,7 @@ Uwaga do stanu repo: na gałęzi `fix/bug-hunt-2026-10-08` są niezacommitowane 
 - **Ryzyko:** średnie. **Nakład:** M. **Pewność:** LOW–MEDIUM.
 
 ### 17. Telemetria GPU, faza 1: tylko API systemu
+- **Stan (2026-10-31):** zrobione — faza 1 przez PDH `GPU Engine`, `GPU Adapter Memory` i `GPU Process Memory`: systemowe liczniki WDDM bez elevacji i DLL producenta; angielskie sciezki dzialaja niezaleznie od jezyka Windows. Jedno zapytanie, bufory wielokrotnego uzytku, 1 Hz tylko przy widocznej nakladce; po ukryciu zapytanie jest zamykane. Nakladka pokazuje 3D i dedykowana pamiec adaptera gry (jednoznaczna aktywnosc/pamiec PID, inaczej najwyzsze 3D; remis daje null). Testy syntetyczne obejmuja brak API, reset/wrap, usuniecie adaptera, wiele GPU i stabilnosc uchwytow. Perf: 128 instancji silnikow + 2 adaptery + 64 instancje pamieci procesow, 10 000 iteracji, 0 B/wywolanie i B/s, ok. 0,161 ms/wywolanie i ms/s przy 1 Hz (limit 8 B). Replay obejmuje parser i obliczenia, bez kosztu rzeczywistego API; nie sprawdzono GPU, dostepu zwyklego konta ani rozkladow PresentMon na sprzecie i nie deklarujemy zysku FPS/latencji.
 - **Dlaczego:** pozwala zestawić skoki czasu klatki z obciążeniem silników GPU i zajętością VRAM.
 - **Źródła:** LibreHardwareMonitor (`D3DDisplayDevice.cs:175-247`). Dismode nie ma telemetrii GPU (tylko priorytet w `GpuPriorityNativeMethods.cs:35,40`).
 - **Pliki:** nowy `GpuTelemetrySampler` w `src/Dismode.Windows/` (D3DKMTQueryStatistics albo PDH „GPU Engine”), `PerformanceOverlayWindow.xaml.cs`.

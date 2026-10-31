@@ -1075,6 +1075,16 @@ public sealed partial class MainWindow : Window, IDisposable
             return;
         }
 
+        CpuAffinityDecision decision = CpuAffinityPolicy.Decide(
+            topology,
+            CpuAffinityRole.Foreground);
+        if (topology.HasSeparateCacheGroups
+            || decision.Decline == CpuAffinityDecline.AmbiguousCacheGroups)
+        {
+            CpuTopologyText.Text = decision.Explanation;
+            return;
+        }
+
         int physical = CpuTopology.CountPhysicalCores(topology.Processors);
         if (!topology.IsHybrid)
         {
@@ -1101,9 +1111,6 @@ public sealed partial class MainWindow : Window, IDisposable
             CpuTopology.CountPhysicalCores(topology.PerformanceCores);
         int efficiency =
             CpuTopology.CountPhysicalCores(topology.EfficiencyCores);
-        CpuAffinityDecision decision = CpuAffinityPolicy.Decide(
-            topology,
-            CpuAffinityRole.Foreground);
         CpuTopologyText.Text =
             $"{performance} rdzeni wydajnych i {efficiency} energooszczędnych, "
             + $"{topology.Processors.Count} wątków. {decision.Explanation}";
@@ -5294,7 +5301,9 @@ public sealed partial class MainWindow : Window, IDisposable
                     DateTimeOffset.UtcNow,
                     enabled,
                     _loadedPreferences.PinGameToPreferredCores,
-                    _loadedPreferences.KeepAwakeDuringSession);
+                    _loadedPreferences.KeepAwakeDuringSession,
+                    _loadedPreferences.ApplyBackgroundRulesDuringSession,
+                    _loadedPreferences.MaximizeRefreshRateDuringSession);
             }
         }
         catch (OperationCanceledException)
@@ -5343,7 +5352,9 @@ public sealed partial class MainWindow : Window, IDisposable
                     DateTimeOffset.UtcNow,
                     _loadedPreferences.AutoOptimizeWhenDetected,
                     enabled,
-                    _loadedPreferences.KeepAwakeDuringSession);
+                    _loadedPreferences.KeepAwakeDuringSession,
+                    _loadedPreferences.ApplyBackgroundRulesDuringSession,
+                    _loadedPreferences.MaximizeRefreshRateDuringSession);
             }
         }
         catch (OperationCanceledException)
@@ -5391,7 +5402,9 @@ public sealed partial class MainWindow : Window, IDisposable
                     DateTimeOffset.UtcNow,
                     _loadedPreferences.AutoOptimizeWhenDetected,
                     _loadedPreferences.PinGameToPreferredCores,
-                    enabled);
+                    enabled,
+                    _loadedPreferences.ApplyBackgroundRulesDuringSession,
+                    _loadedPreferences.MaximizeRefreshRateDuringSession);
             }
         }
         catch (OperationCanceledException)
@@ -5405,6 +5418,38 @@ public sealed partial class MainWindow : Window, IDisposable
                 InfoBarSeverity.Error,
                 "Nie zapisano utrzymania ekranu w trakcie sesji",
                 exception.Message);
+        }
+    }
+
+    private async void OnLateBackgroundRulesCheckBoxClicked(object sender, RoutedEventArgs args)
+        => await SaveSessionSwitchesAsync();
+
+    private async void OnMaximizeRefreshRateCheckBoxClicked(object sender, RoutedEventArgs args)
+        => await SaveSessionSwitchesAsync();
+
+    private async Task SaveSessionSwitchesAsync()
+    {
+        if (ProfilesList.SelectedItem is not ProfileListItem selected)
+        {
+            return;
+        }
+
+        try
+        {
+            GameOptimizationPreferences saved = await _userDataStore.LoadOptimizationPreferencesAsync(
+                selected.Profile.ProfileId, _lifetime.Token);
+            _loadedPreferences = new(saved.ProfileId, saved.GamePriority, saved.BackgroundRules,
+                DateTimeOffset.UtcNow, saved.AutoOptimizeWhenDetected, saved.PinGameToPreferredCores,
+                saved.KeepAwakeDuringSession, LateBackgroundRulesCheckBox.IsChecked == true,
+                MaximizeRefreshRateCheckBox.IsChecked == true);
+            await _userDataStore.SaveOptimizationPreferencesAsync(_loadedPreferences, _lifetime.Token);
+        }
+        catch (OperationCanceledException) when (_lifetime.IsCancellationRequested)
+        {
+        }
+        catch (Exception exception) when (IsExpectedUiFailure(exception))
+        {
+            ShowInfo(PlanInfoBar, InfoBarSeverity.Error, "Nie zapisano ustawień sesji", exception.Message);
         }
     }
 
@@ -6253,7 +6298,7 @@ public sealed partial class MainWindow : Window, IDisposable
         foreach (HistoryListItem item in _history)
         {
             Core.History.SessionSummary summary = item.Summary;
-            played += summary.EndedAtUtc - summary.StartedAtUtc;
+            played += summary.Duration;
             appliedActions += summary.AppliedActionCount;
             if (summary.ErrorCount > 0 || summary.ConflictCount > 0)
             {
@@ -6604,6 +6649,8 @@ public sealed partial class MainWindow : Window, IDisposable
                 preferences.PinGameToPreferredCores;
             KeepAwakeDuringSessionCheckBox.IsChecked =
                 preferences.KeepAwakeDuringSession;
+            LateBackgroundRulesCheckBox.IsChecked = preferences.ApplyBackgroundRulesDuringSession;
+            MaximizeRefreshRateCheckBox.IsChecked = preferences.MaximizeRefreshRateDuringSession;
         }
         catch (OperationCanceledException)
             when (_lifetime.IsCancellationRequested)
@@ -6872,7 +6919,11 @@ public sealed partial class MainWindow : Window, IDisposable
             pinGameToPreferredCores:
                 PinGameToPreferredCoresCheckBox.IsChecked != false,
             keepAwakeDuringSession:
-                KeepAwakeDuringSessionCheckBox.IsChecked != false);
+                KeepAwakeDuringSessionCheckBox.IsChecked != false,
+            applyBackgroundRulesDuringSession:
+                LateBackgroundRulesCheckBox.IsChecked == true,
+            maximizeRefreshRateDuringSession:
+                MaximizeRefreshRateCheckBox.IsChecked == true);
         await _userDataStore.SaveOptimizationPreferencesAsync(
             preferences,
             cancellationToken);

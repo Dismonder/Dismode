@@ -4,11 +4,14 @@ using System.Reflection;
 using System.Runtime.InteropServices;
 using Dismode.Core.Cpu;
 using Dismode.Core.Domain.Processes;
+using Dismode.IntegrationTests.Cpu;
 using Dismode.MemoryOptimizer.Core.Models;
 using Dismode.MemoryOptimizer.Core.Storage;
 using Dismode.MemoryOptimizer.Presentation;
 using Dismode.UI.Services;
 using Dismode.Windows.Cpu;
+using Dismode.Windows.Gpu;
+using Dismode.Windows.Performance;
 using Dismode.Windows.Processes;
 using Dismode.Windows.Sessions;
 
@@ -25,6 +28,123 @@ public sealed class OwnOverheadMeasurements
         "\"Game, \"\"Test\"\".exe\",42,0xAABBCCDD,DXGI,0,512,1,Hardware: Independent Flip,Application,123.456,4.1667,2.1,2.0667,0.2,3.5,3.0,0.5,4.0,4.1667,NA,NA,NA,NA";
 
     public TestContext TestContext { get; set; } = null!;
+
+    [TestMethod]
+    public void Item12LogicalProcessorLoadReusesBuffersAtOneHertz()
+    {
+        LogicalProcessorLoadSamplerTests.FakeProcessorTimes source = new(64);
+        LogicalProcessorLoadSampler sampler = new(source);
+        Measurement result = Measure(() =>
+        {
+            source.Advance();
+            _ = sampler.Sample();
+        }, 100_000, 1);
+        Report("12 CPU 64 logical processors at 1 Hz (fixed source)", result);
+        source.Advance();
+        Assert.AreEqual(50d, sampler.Sample()!.Value.CpuPercent);
+        Assert.IsLessThanOrEqualTo(8d, result.Bytes);
+    }
+
+    [TestMethod]
+    public void Item17GpuTelemetryReusesPdhQueryAndBuffersAtOneHertz()
+    {
+        ReplayPdhGpuApi api = new();
+        using PdhGpuCounterSource source = new(api);
+        using GpuTelemetrySampler sampler = new(source);
+        Measurement result = Measure(() => _ = sampler.Sample(42), 10_000, 1);
+        Report("17 GPU 128 engines + 2 adapters + 64 process memory at 1 Hz (fixed PDH)", result);
+        Assert.AreEqual(32d, sampler.Sample(42)!.Value.ThreeDPercent);
+        Assert.AreEqual(1, api.Opens);
+        Assert.AreEqual(0, api.Closes);
+        Assert.IsLessThanOrEqualTo(8d, result.Bytes);
+    }
+
+    [TestMethod]
+    public void Items12And17HiddenOverlayDoesNotSample()
+    {
+        LogicalProcessorLoadSamplerTests.FakeProcessorTimes cpu = new();
+        using GpuTelemetrySamplerTests.FakeGpuCounters gpu = new();
+        using OverlayTelemetrySampler sampler = new(new(cpu), new(gpu), TimeProvider.System);
+        Measurement result = Measure(() =>
+        {
+            sampler.SetActive(false, 42);
+            _ = sampler.Snapshot;
+        }, 100_000, 5);
+        Report("12+17 hidden consumer at existing 5 Hz foreground cadence", result);
+        Assert.AreEqual(0, cpu.Reads);
+        Assert.AreEqual(0, gpu.Reads);
+        Assert.IsLessThanOrEqualTo(8d, result.Bytes);
+    }
+
+    [TestMethod]
+    public async Task Items12And17WorkerSessionAndSnapshotDoNotAllocatePerTick()
+    {
+        LogicalProcessorLoadSamplerTests.FakeProcessorTimes cpu = new(64);
+        ReplayPdhGpuApi api = new();
+        using PdhGpuCounterSource source = new(api);
+        OverlayTelemetrySamplerTests.TestClock clock = new();
+        using OverlayTelemetrySession session = new(new(cpu), new(source), clock);
+        Measurement result = Measure(() =>
+        {
+            cpu.Advance();
+            clock.Advance(TimeSpan.FromSeconds(1));
+            _ = session.Sample(true, 42);
+        }, 10_000, 1);
+        Report("12+17 worker session CPU + PDH at 1 Hz (fixed source)", result);
+        Assert.IsLessThanOrEqualTo(8d, result.Bytes);
+
+        await using OverlayTelemetrySampler worker = new(new(new LogicalProcessorLoadSamplerTests.FakeProcessorTimes()),
+            new(new GpuTelemetrySamplerTests.FakeGpuCounters()), TimeProvider.System);
+        worker.SetActive(true, 42);
+        Measurement ui = Measure(() =>
+        {
+            worker.SetActive(true, 42);
+            _ = worker.Snapshot;
+        }, 100_000, 5);
+        Report("12+17 active UI snapshot read at existing 5 Hz cadence", ui);
+        Assert.IsLessThanOrEqualTo(8d, ui.Bytes);
+    }
+
+    [TestMethod]
+    public void Item16UnchangedLateRuleTickDoesNotResolveInventory()
+    {
+        LateInventory inventory = new();
+        SavedBackgroundRuleResolver resolver = new(inventory);
+        Dismode.Core.Profiles.GameOptimizationPreferences preferences = new(
+            Dismode.Core.Domain.Identifiers.GameProfileId.Create(),
+            Dismode.Core.Profiles.SavedGamePriorityMode.Normal,
+            [new(@"C:\Apps\late.exe", Dismode.Core.Profiles.SavedBackgroundActionMode.LowerPriority)],
+            DateTimeOffset.UnixEpoch);
+        Measurement before = Measure(() => resolver.Resolve(preferences,
+            @"C:\Games\Example\game.exe", 1, 64), 200, 1);
+        LateBackgroundRuleTracker tracker = new(DateTimeOffset.UnixEpoch);
+        _ = tracker.ObserveProcessSet(inventory.Samples);
+        void Tick()
+        {
+            if (tracker.ObserveProcessSet(inventory.Samples))
+            {
+                _ = resolver.Resolve(preferences, @"C:\Games\Example\game.exe", 1, 64);
+            }
+        }
+        int capturesBefore = inventory.Captures;
+        Measurement after = Measure(Tick, 1000, 1);
+        Report("16 before: full resolver, 300 processes, 1 Hz", before);
+        Report("16 after: unchanged process set, 300 processes, 1 Hz", after);
+        Assert.AreEqual(capturesBefore, inventory.Captures);
+        Assert.IsLessThanOrEqualTo(64d, after.Bytes);
+        Assert.IsLessThan(before.Bytes, after.Bytes);
+    }
+
+    private sealed class LateInventory : IProcessInventory
+    {
+        private readonly ProcessSnapshot[] _processes = Enumerable.Range(1000, 300)
+            .Select(pid => new ProcessSnapshot(pid, "LateBackground", DateTimeOffset.UnixEpoch.AddSeconds(1),
+                @"C:\Apps\late.exe", 1, 0, TimeSpan.Zero, false, "Normal")).ToArray();
+        internal CpuProcessSample[] Samples { get; } = Enumerable.Range(1000, 300)
+            .Select(pid => new CpuProcessSample(pid, "LateBackground", DateTimeOffset.UnixEpoch.AddSeconds(1), TimeSpan.Zero)).ToArray();
+        internal int Captures { get; private set; }
+        public IReadOnlyList<ProcessSnapshot> Capture() { Captures++; return _processes; }
+    }
 
     [TestMethod]
     public async Task Item1StoppedOverlayDoesNotConsumeFrames()
