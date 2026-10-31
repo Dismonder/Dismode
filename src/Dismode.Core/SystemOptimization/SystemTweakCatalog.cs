@@ -238,15 +238,16 @@ public static class SystemTweakCatalog
             RestartRequirement.GameRestart,
             ["windows-default", "enabled", "disabled"],
             GameModeSource),
-        Unsupported(
+        Supported(
             "gaming.background-capture",
             "Przechwytywanie w tle Game DVR",
             "Tryb gry i przechwytywanie",
-            "Testuje wpływ nagrywania w tle; nie usuwa aplikacji ani danych użytkownika.",
+            "Wyłącza nagrywanie w tle dla bieżącego użytkownika. Tracisz powtórki z nagrywania w tle. Włącz ręcznie i sprawdź wynik A/B.",
             SystemTweakRisk.Experimental,
             SystemTweakScope.Global,
             RestartRequirement.GameRestart,
-            ["windows-default", "enabled", "disabled"],
+            ["disabled"],
+            "windows.game-capture",
             GameModeSource),
         UnsupportedNetwork(
             "network.rss",

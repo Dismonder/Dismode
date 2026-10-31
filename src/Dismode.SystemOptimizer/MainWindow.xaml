@@ -367,12 +367,14 @@
                 </Border>
                 <Border Grid.Column="1" Style="{StaticResource OptimizerCardStyle}">
                   <StackPanel Spacing="10">
-                    <TextBlock Text="Pojedyncza bezpieczna zmiana" Style="{StaticResource OptimizerSectionTitleStyle}" />
+                    <TextBlock Text="Pojedynczy test A/B" Style="{StaticResource OptimizerSectionTitleStyle}" />
                     <ComboBox
                         x:Name="SafeTweakComboBox"
                         MinWidth="260"
                         HorizontalAlignment="Stretch"
-                        PlaceholderText="Wybierz pozycję Safe" />
+                        PlaceholderText="Wybierz zmianę do testu"
+                        SelectionChanged="SafeTweakComboBox_SelectionChanged" />
+                    <TextBlock x:Name="SelectedTweakDescriptionText" Style="{StaticResource OptimizerMutedTextStyle}" />
                     <Button
                         x:Name="PrepareExperimentButton"
                         Width="180"

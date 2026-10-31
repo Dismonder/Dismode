@@ -424,7 +424,11 @@ public sealed class PerGameProfileCoordinatorTests
     }
 
     [TestMethod]
-    public async Task WinningDangerousExperimentRequiresExplicitGlobalPromotion()
+    [DataRow("power.hibernate", "enabled", true, true)]
+    [DataRow("gaming.background-capture", "disabled", false, true)]
+    [DataRow("gaming.background-capture", "disabled", false, false)]
+    public async Task GlobalExperimentRequiresWinningBenchmarkAndExplicitPromotion(
+        string tweakId, string value, bool dangerous, bool candidateWins)
     {
         using CoordinatorContext context = new();
         await context.Store.SetConsentAsync(
@@ -439,17 +443,24 @@ public sealed class PerGameProfileCoordinatorTests
                 ExecutableHash,
                 HardwareHash,
                 new(
-                    "power.hibernate",
+                    tweakId,
                     1,
-                    "enabled",
+                    value,
                     DangerousConfirmation:
-                        SystemTweakSelectionValidator.DangerousConfirmationText),
+                        dangerous ? SystemTweakSelectionValidator.DangerousConfirmationText : null),
                 CancellationToken.None);
 
         BenchmarkDecision? finalDecision = null;
-        for (int captureIndex = 0; captureIndex < 2; captureIndex++)
+        _ = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            context.Coordinator.AdvanceExperimentAsync(
+                OwnerSid,
+                experiment.ExperimentId,
+                Dismode.Contracts.Grpc.ExperimentControlAction.KeepGlobally,
+                CancellationToken.None).AsTask());
+        int captureCount = candidateWins ? 2 : 4;
+        for (int captureIndex = 0; captureIndex < captureCount; captureIndex++)
         {
-            BenchmarkVariant variant = captureIndex == 0
+            BenchmarkVariant variant = captureIndex % 2 == 0
                 ? experiment.FirstVariant
                 : experiment.FirstVariant == BenchmarkVariant.Baseline
                     ? BenchmarkVariant.Candidate
@@ -475,7 +486,7 @@ public sealed class PerGameProfileCoordinatorTests
                         TimeSpan.FromSeconds(15),
                         TimeSpan.FromSeconds(90),
                         Enumerable.Repeat(
-                                variant == BenchmarkVariant.Candidate
+                                candidateWins && variant == BenchmarkVariant.Candidate
                                     ? 15.5d
                                     : 16.67d,
                                 6_000)
@@ -490,9 +501,20 @@ public sealed class PerGameProfileCoordinatorTests
         }
 
         Assert.IsNotNull(finalDecision);
-        Assert.AreEqual(BenchmarkVerdict.CandidateWins, finalDecision.Verdict);
+        Assert.AreEqual(candidateWins ? BenchmarkVerdict.CandidateWins : BenchmarkVerdict.KeepBaseline, finalDecision.Verdict);
         Assert.IsNull(await context.Store.GetActiveGlobalProfileAsync(
             CancellationToken.None));
+
+        if (!candidateWins)
+        {
+            _ = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+                context.Coordinator.AdvanceExperimentAsync(
+                    OwnerSid,
+                    experiment.ExperimentId,
+                    Dismode.Contracts.Grpc.ExperimentControlAction.KeepGlobally,
+                    CancellationToken.None).AsTask());
+            return;
+        }
 
         _ = await context.Coordinator.AdvanceExperimentAsync(
             OwnerSid,

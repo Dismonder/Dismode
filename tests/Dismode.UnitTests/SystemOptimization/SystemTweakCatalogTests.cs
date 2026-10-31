@@ -39,6 +39,23 @@ public sealed class SystemTweakCatalogTests
     }
 
     [TestMethod]
+    public void BackgroundCaptureIsAnExplicitExperimentalGlobalDisableOnly()
+    {
+        IReadOnlyList<TweakDefinition> catalog = SystemTweakCatalog.CreateDefault();
+        TweakDefinition definition = catalog.Single(item => item.Id == "gaming.background-capture");
+        Assert.AreEqual(SystemTweakAvailability.Supported, definition.Availability);
+        Assert.AreEqual(SystemTweakRisk.Experimental, definition.Risk);
+        Assert.AreEqual(SystemTweakScope.Global, definition.Scope);
+        Assert.AreEqual("windows.game-capture", definition.ExecutionAdapterId);
+        Assert.HasCount(1, definition.AllowedValues);
+        Assert.AreEqual("disabled", definition.AllowedValues[0]);
+        StringAssert.Contains(definition.Description, "powtórki");
+        SystemTweakSelectionValidator validator = new(catalog);
+        Assert.IsTrue(validator.Validate([new(definition.Id, definition.Revision, "disabled")], false).IsValid);
+        Assert.IsFalse(validator.Validate([new(definition.Id, definition.Revision, "enabled")], false).IsValid);
+    }
+
+    [TestMethod]
     public void HardSafetyTargetsAreVisibleButNeverExecutable()
     {
         Dictionary<string, TweakDefinition> catalog =

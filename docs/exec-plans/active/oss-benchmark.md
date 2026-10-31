@@ -40,6 +40,7 @@ Uwaga do stanu repo: na gałęzi `fix/bug-hunt-2026-10-08` są niezacommitowane 
 - **Ryzyko:** niskie, bo to tylko odczyt. **Nakład:** M. **Pewność:** HIGH.
 
 ### 4. Poprawna diagnostyka nagrywania w tle oraz odwracalny zapis Game DVR
+- **Stan (2026-10-31):** zrobione — część B: ręczny opt-in Experimental w System Optimizer, wyłącznie `HistoricalCaptureEnabled=0` w `HKEY_USERS\<SID>\Software\Microsoft\Windows\CurrentVersion\GameDVR` uwierzytelnionego użytkownika (ta sama ścieżka co diagnostyka; bez zmian `System\GameConfigStore`). Opis ostrzega o utracie powtórek. Istniejąca bramka `BenchmarkDecisionEngine` / `KeepGloballyAsync` wymaga wygranej A/B i jawnego utrwalenia; brak automatycznego presetu. Snapshot obecności, typu i wartości, durable journal przed zapisem, restore przez usunięcie pierwotnie nieobecnej wartości, crash replay i zachowanie zmian zewnętrznych; polityka `AllowGameDVR=0`, niejednoznaczna polityka oraz błędy dostępu blokują zapis. Bez migracji. Testy syntetyczne, bez zapisu do rzeczywistego rejestru, bez weryfikacji na sprzęcie i bez pomiaru FPS lub opóźnień.
 - **Dlaczego:** obecna diagnostyka myli dostępność przechwytywania (`AppCaptureEnabled`) z nagrywaniem w tle (`HistoricalCaptureEnabled`) i wprowadza użytkownika w błąd. Zapis tej wartości jest prostą poprawką, ale przez kompromis trafia do decyzji właściciela.
 - **Źródła:** Optimizer/hellzerg (`OptimizeHelper.cs:1214-1233`) i winutil (`tweaks.json:1883`) jako przykłady, czego nie robić (brak backupu). Dismode: `WindowsGamingEnvironmentDiagnostic.cs:77-114`, `SystemTweakCatalog.cs:231-250`.
 - **Pliki, część A (diagnostyka):** `src/Dismode.Windows/Platform/WindowsGamingEnvironmentDiagnostic.cs`, tekst w `src/Dismode.UI/MainWindow.xaml.cs:7121`.
@@ -176,7 +177,7 @@ Pozycje #1 i #3 zmieniają ten sam plik (`LocalGameSessionOrchestrator.cs`), ale
 
 ## Needs owner decision
 
-- **#4B Zapis `HistoricalCaptureEnabled=0`.** Gracz traci powtórki z nagrywania w tle. Czy zapis ma być włączany ręcznie (opt-in) i dopiero po bramce A/B (`BenchmarkDecisionEngine.cs:7`)?
+- **#4B Zapis `HistoricalCaptureEnabled=0` — decyzja 2026-10-31:** ręczny opt-in, informacja o utracie powtórek, istniejąca bramka A/B przed jawnym utrwaleniem globalnym. Zaimplementowane w punkcie 4; bez domyślnego stosowania.
 - **#2 Stare rekordy EcoQoS.** Proponuję: stary `false` traktować jako SystemManaged, stary `true` jako On. Akceptacja?
 - **#3 Definicja hitcha.** Zostać przy definicji z `BenchmarkAnalyzer` (> max(50 ms, 3× mediana)) czy przejść na udział przycięć z CapFrameX (2,5× ruchomej linii bazowej)? Rekomendacja: jedna definicja, z BenchmarkAnalyzer.
 - **#5 Zakres CPU Sets.** Wersja okrojona (rekomendowana) czy pełna integracja z TransactionCoordinator i ThreeWayReconciler? Czy niepuste, obce przypisanie CPU Sets ma domyślnie oznaczać pominięcie?
