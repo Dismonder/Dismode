@@ -1,5 +1,5 @@
 <!-- Wynik workflow 2026-10-29/30: 19 projektow open source przeczytanych (Codex), porownanych z kodem Dismode (Codex), sprawdzonych przez sceptykow (Sonnet), uszeregowanych (Opus). -->
-> **Stan wdrozenia (2026-10-31):** partia 1 (2026-10-30) plus #5, #7, #8, #9, #10 (PR #11/#12) i #11-#17 (#17 faza 1, PR #13) wdrozone w 0.9.0. #17 faza 2 zaimplementowana w galezi zadaniowej. Otwarte: #4B, #18 oraz decyzje z sekcji "Needs owner decision".
+> **Stan wdrozenia (2026-10-31):** wszystkie pozycje #1-#18 wdrozone: partia 1 i #5, #7-#17 (faza 1) w 0.9.0 (PR #11-#13), #4B, #17 faza 2, #18, pelne #5 i szybsze przywracanie tla w 0.10.0 (PR #15). Pozycje odrzucone do ponownej oceny po pomiarze: sekcja "What we could not cover".
 
 # Dismode: ranking propozycji z analizy projektów open source
 
@@ -10,6 +10,7 @@ Uwaga do stanu repo: na gałęzi `fix/bug-hunt-2026-10-08` są niezacommitowane 
 ## Ranking
 
 ### 1. Monitor procesu gry ma działać dalej, gdy przechwytywanie FPS zawiedzie
+- **Stan (2026-10-31):** zrobione w partii 1 (0.9.0, commit 9351846) — monitor sesji obserwuje gre dalej po awarii przechwytywania FPS i wznawia pomiar po ponownym wlaczeniu.
 - **Dlaczego:** to realny błąd. Wyjątek podczas sprzątania PresentMon kończy cicho zadanie `_monitorTask`. Dismode przestaje wtedy wykrywać wyjście z gry, a aplikacje w tle zostają ograniczone po jej zamknięciu.
 - **Źródła:** Playnite (`GenericGameController.cs:731-760`, `ExtensionFactory.cs:652-689`). Błąd jest potwierdzony w kodzie Dismode: wywołania bez osłony w `LocalGameSessionOrchestrator.cs:1479-1507`, a jedyny catch jest w `:1839`.
 - **Pliki:** `src/Dismode.Windows/Sessions/LocalGameSessionOrchestrator.cs` (`MonitorAsync`, blok `:1487-1512`, nowa flaga `FrameRateCaptureFaulted` w runtime).
@@ -18,6 +19,7 @@ Uwaga do stanu repo: na gałęzi `fix/bug-hunt-2026-10-08` są niezacommitowane 
 - **Ryzyko:** niskie. **Nakład:** S–M. **Pewność:** HIGH.
 
 ### 2. Pełny stan EcoQoS (SystemManaged / On / Off) przy przywracaniu
+- **Stan (2026-10-31):** zrobione w partii 1 (0.9.0) — trojstanowy EcoQoS (SystemManaged / On / Off) przywracany dokladnie; stary `false` w journalu = SystemManaged.
 - **Dlaczego:** dotyczy każdej sesji. Proces, którym przed sesją zarządzał Windows, zostaje po niej z jawnie wyłączonym throttlingiem, a niezwiązane bity maski są nadpisywane.
 - **Źródła:** ThreadPilot (`ProcessMemoryPriorityService.cs:327,377`). Dismode: `ProcessPowerThrottlingController.cs:27-44`, `ProcessEcoQosState.cs:3`, `RuntimeProcessEcoQosAction.cs:136-194`.
 - **Pliki:** `src/Dismode.Windows/Processes/ProcessPowerThrottlingController.cs`, `ProcessEcoQosState.cs`, `RuntimeProcessEcoQosAction.cs`, `ProcessEcoQosAction.cs`. Interop się nie zmienia, bo struktura ma już `ControlMask`.
@@ -26,6 +28,7 @@ Uwaga do stanu repo: na gałęzi `fix/bug-hunt-2026-10-08` są niezacommitowane 
 - **Ryzyko:** niskie–średnie (migracja journala). **Nakład:** M. **Pewność:** HIGH.
 
 ### 3. Statystyki sesji z pojedynczych klatek: prawdziwa średnia, 1% / 0.1% low, hitche
+- **Stan (2026-10-31):** zrobione w partii 1 (0.9.0) — statystyki z pojedynczych klatek (srednia, 1% / 0.1% low, hitche) z definicja BenchmarkAnalyzer; migracja przez dodanie kolumn.
 - **Dlaczego:** dziś średnia jest liczona z okien jednosekundowych, a krótkie przycięcia znikają. Overlay liczy inny „1%” niż `BenchmarkAnalyzer`. Dla gracza to najbardziej widoczna poprawa pomiaru.
 - **Źródła:** CapFrameX (`FrametimeStatisticProvider.cs:334,316,374,384`), OCAT (`PresentMon.cpp:950-960`). Dismode: `SessionFrameRateStatisticsAccumulator.cs:39-76`, `BenchmarkAnalyzer.cs:56-118`, `PerformanceOverlayWindow.xaml.cs:240-254`.
 - **Pliki:**
@@ -59,6 +62,7 @@ Uwaga do stanu repo: na gałęzi `fix/bug-hunt-2026-10-08` są niezacommitowane 
 - **Ryzyko:** średnie (wiele wywołań, schemat journala ProBalance). **Nakład:** M. **Pewność:** MEDIUM–HIGH.
 
 ### 6. Cooldown automatycznego czyszczenia pamięci także po czyszczeniu ręcznym
+- **Stan (2026-10-31):** zrobione w partii 1 (0.9.0) — reczne czyszczenie pamieci uruchamia cooldown automatu (`MemoryCleanupCooldownTests`).
 - **Dlaczego:** automatyczne czyszczenie potrafi ruszyć kilka sekund po ręcznym. Zysk jest mały, ale zmiana prawie darmowa.
 - **Źródła:** Mem Reduct (`main.c:475-476,680-684`). Dismode: `MemoryUserRuntime.cs:46-53,145-150,196-216`, `AutoOptimizationPolicy.cs:17-90`.
 - **Pliki:** `components/Dismode.MemoryOptimizer/src/Dismode.MemoryService/MemoryUserRuntime.cs` (helper `RecordIfFinished`) i `AutoOptimizationPolicy.cs` (lock).
@@ -67,6 +71,7 @@ Uwaga do stanu repo: na gałęzi `fix/bug-hunt-2026-10-08` są niezacommitowane 
 - **Uwaga:** ten plik ma teraz niezacommitowane zmiany na gałęzi.
 
 ### 7. Utrata zdarzeń ETW ma unieważniać wynik benchmarku
+- **Stan (2026-10-31):** zrobione w 0.9.0 (commit 126bb9c) — utrata zdarzen lub buforow ETW w oknie pomiaru uniewaznia wynik benchmarku.
 - **Zrobione:** `CaptureLoss` (None / Confirmed z osobnymi licznikami zdarzeń i buforów / Unknown) przechodzi z PresentMon przez collector, gRPC, analizator i zapis JSON. Confirmed daje `IsValid=false` oraz blokuje decyzję o poprawie; Unknown tylko ostrzega. Późniejsze czyste linie i restart czytnika nie kasują straty w tym samym benchmarku. Sesyjne FPS nadal działają; diagnostyka trafia do logu.
 - **Potwierdzone w przypiętej binarce 2.5.1:** SHA-256 `9BEC3083069F58F911E6A512F4806DB51A27BD096103087BC1D05EF54C80A191`; napisy UTF-16LE `warning: %lu ETW buffers were lost.\n` (offset `0xc4e80`) i `warning: %lu ETW events were lost.\n` (`0xc4ed0`). Pole CSV `Dropped` nie oznacza utraty ETW. Oba strumienie tekstowe obsługują potwierdzone formaty.
 - **Okno pomiaru:** collector zaczyna bez strat z ładowania, stabilizacji i poprzedniego celu; późniejsze komunikaty aktualizują go niezależnie od sesyjnego licznika. Koniec: zamrożenie klatek → do 500 ms na EOF po wyjściu procesu → anulowanie czytników → snapshot (z ostrzeżeniami końcowymi). Otwarty odziedziczony potok nie powoduje błędu zamknięcia. Nieprawidłowa próba zostaje w historii; czysty retry dostarcza nową próbę do porównania.
@@ -80,6 +85,7 @@ Uwaga do stanu repo: na gałęzi `fix/bug-hunt-2026-10-08` są niezacommitowane 
 - **Ryzyko:** nierozpoznane ostrzeżenie daje tylko Unknown zgodnie z decyzją właściciela; brak wymuszonej utraty na żywym ETW.
 
 ### 8. Wyświetlone FPS i zgubione klatki, nie tylko FPS prezentacji (opt-in)
+- **Stan (2026-10-31):** zrobione w 0.9.0 (commit e3389f5) — opt-in: wyswietlone FPS i zgubione klatki przez PresentMon display tracking.
 - **Dlaczego:** przy tearingu, kompozycji okienkowej albo frame generation FPS prezentacji może zawyżać to, co faktycznie widać na ekranie.
 - **Źródła:** PresentMon Intel (`MetricsCalculatorDisplay.cpp:27,149`), OCAT (`Recording.cpp:624-634`). Dismode: `PresentMonFrameRateProvider.cs:547` (`--no_track_display`), `PresentMonCsvParser.cs:125-130`.
 - **Pliki:** `PresentMonFrameRateProvider.cs`, `PresentMonCsvParser.cs`, akumulator sesji, `PerformanceOverlayWindow.xaml.cs`.
@@ -87,6 +93,7 @@ Uwaga do stanu repo: na gałęzi `fix/bug-hunt-2026-10-08` są niezacommitowane 
 - **Ryzyko:** średnie (narzut ETW, nazwy kolumn w 2.5.1). **Nakład:** M. **Pewność:** MEDIUM.
 
 ### 9. Ekran i system nie usypiają w trakcie sesji (PowerRequest)
+- **Stan (2026-10-31):** zrobione w 0.9.0 (commit fe26ecd) — PowerRequest utrzymuje ekran i system w trakcie sesji.
 - **Dlaczego:** gry obsługiwane samym padem i długie cutscenki mogą wygasić ekran. Część gier sama już zgłasza takie żądanie.
 - **Źródła:** Feral GameMode (`gamemode-dbus.c:741,802`; dowód z Linuksa). Dismode: brak tej funkcji, plan `docs/exec-plans/active/cpu-module.md:145-146` (item 16).
 - **Pliki:** nowy `IExecutionStateInhibitor` w `src/Dismode.Windows/Power/`, `PowerNativeMethods.cs`, właściciel w procesie sesji (`LocalGameSessionOrchestrator.cs`), ustawienie. Połączyć z item 16.
@@ -94,6 +101,7 @@ Uwaga do stanu repo: na gałęzi `fix/bug-hunt-2026-10-08` są niezacommitowane 
 - **Ryzyko:** niskie. **Nakład:** S. **Pewność:** MEDIUM (wartość zależy od gry).
 
 ### 10. Rozdzielenie „gra na rdzeniach P” od ProBalance, per gra
+- **Stan (2026-10-31):** zrobione w 0.9.0 (commit fe26ecd) — przelacznik przypinania gry do rdzeni per gra, niezalezny od ProBalance; migracja zachowuje dotychczasowe zachowanie.
 - **Dlaczego:** gracz może zostawić ograniczanie tła, a wyłączyć przypinanie gry tam, gdzie szkodzi.
 - **Źródła:** GameShift (`GameProfile.cs:398-420`, `OptimizationEngine.cs:142`). Dismode: `LocalGameSessionOrchestrator.cs:607-611,704`, `GameOptimizationPreferences.cs` (brak pola), `MainWindow.xaml.cs:2931,3128,4692,4815`.
 - **Pliki:** `GameOptimizationPreferences.cs`, `SqliteUserDataStore.cs`, `LocalGameSessionOrchestrator.cs`, `MainWindow.xaml.cs`.
