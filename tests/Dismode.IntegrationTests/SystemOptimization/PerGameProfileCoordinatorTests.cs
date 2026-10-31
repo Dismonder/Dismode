@@ -144,6 +144,45 @@ public sealed class PerGameProfileCoordinatorTests
     }
 
     [TestMethod]
+    public async Task LossCannotCompleteExperimentAndACleanRetryUsesOnlyValidCaptures()
+    {
+        using CoordinatorContext context = new();
+        await context.Store.SetConsentAsync(OwnerSid, true, DateTimeOffset.UtcNow, CancellationToken.None);
+        ExperimentPlan experiment = await context.Coordinator.PrepareExperimentAsync(OwnerSid,
+            "game-a", ExecutableHash, HardwareHash, new("process.game.priority", 1, "above-normal"), CancellationToken.None);
+        await AdvanceAsync(context, experiment, Dismode.Contracts.Grpc.ExperimentControlAction.BeginStabilization);
+        await AdvanceAsync(context, experiment, Dismode.Contracts.Grpc.ExperimentControlAction.BeginCapture);
+        CoordinatorBenchmarkResult invalid = await context.Coordinator.SubmitCaptureAsync(OwnerSid,
+            experiment.ExperimentId, CreateCapture(experiment.FirstVariant, Enumerable.Repeat(15d, 6_000).ToArray()) with
+            {
+                CaptureLoss = new(BenchmarkCaptureLossState.Confirmed, LostEvents: 24000),
+            }, CancellationToken.None);
+        Assert.AreEqual(BenchmarkVerdict.Invalid, invalid.Decision.Verdict);
+        StringAssert.Contains(invalid.Decision.Explanation, BenchmarkAnalyzer.CaptureLossReason);
+        Assert.AreEqual(ExperimentState.WaitingForScene, invalid.Experiment.State);
+        Assert.AreEqual(0, invalid.Experiment.CompletedBaselineCaptures);
+        Assert.AreEqual(0, invalid.Experiment.CompletedCandidateCaptures);
+        BenchmarkVariant other = experiment.FirstVariant == BenchmarkVariant.Baseline
+            ? BenchmarkVariant.Candidate : BenchmarkVariant.Baseline;
+        CoordinatorBenchmarkResult result = invalid;
+        foreach (BenchmarkVariant variant in new[] { experiment.FirstVariant, other })
+        {
+            await AdvanceAsync(context, experiment, Dismode.Contracts.Grpc.ExperimentControlAction.BeginStabilization);
+            await AdvanceAsync(context, experiment, Dismode.Contracts.Grpc.ExperimentControlAction.BeginCapture);
+            result = await context.Coordinator.SubmitCaptureAsync(OwnerSid, experiment.ExperimentId,
+                CreateCapture(variant, Enumerable.Repeat(variant == BenchmarkVariant.Baseline ? 16.67d : 15d, 6_000).ToArray()),
+                CancellationToken.None);
+        }
+
+        Assert.AreEqual(BenchmarkVerdict.CandidateWins, result.Decision.Verdict);
+        Assert.AreEqual(ExperimentState.Completed, result.Experiment.State);
+        IReadOnlyList<BenchmarkMetrics> history = await context.Store.ListBenchmarkMetricsAsync(
+            experiment.ExperimentId, experiment.FirstVariant, CancellationToken.None);
+        Assert.HasCount(2, history);
+        Assert.AreEqual(1, history.Count(metrics => !metrics.IsValid));
+    }
+
+    [TestMethod]
     public async Task CancelAfterInvalidCandidateCaptureRestoresCandidate()
     {
         using CoordinatorContext context = new();

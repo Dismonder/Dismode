@@ -1,6 +1,7 @@
 using System.ComponentModel;
 using System.Diagnostics;
 using System.Runtime.InteropServices;
+using Microsoft.Win32.SafeHandles;
 
 namespace Dismode.Windows.Cpu;
 
@@ -52,8 +53,25 @@ public interface ICpuProcessSource
 /// by equality of that value.
 /// </para>
 /// </summary>
-public sealed partial class CpuProcessSampler : ICpuProcessSource
+public sealed partial class CpuProcessSampler : ICpuProcessSource, IDisposable
 {
+    internal delegate int SystemInformationQuery(
+        int informationClass, nint buffer, uint length, out uint required);
+
+    private readonly SystemInformationQuery _query;
+    private readonly object _sync = new();
+    private readonly Dictionary<(int Pid, long Created), string> _names = [];
+    private readonly HashSet<(int Pid, long Created)> _seenNames = [];
+    private SafeHGlobalBuffer? _buffer;
+    private int _sampleCapacity;
+    private bool _disposed;
+
+    public CpuProcessSampler() : this(NtQuerySystemInformation)
+    {
+    }
+
+    internal CpuProcessSampler(SystemInformationQuery query) => _query = query;
+
     // Rozmiar bufora z poprzedniego udanego odczytu. Bez niego kazde
     // przejscie placi dwa wywolania: pierwsze konczy sie "za malo", drugie
     // dopiero czyta. Instancja zyje przez cala sesje, wiec od drugiego
@@ -106,51 +124,61 @@ public sealed partial class CpuProcessSampler : ICpuProcessSource
     /// </summary>
     internal IReadOnlyList<CpuProcessSample>? TryCaptureViaSystemInformation()
     {
+        lock (_sync)
+        {
+            ObjectDisposedException.ThrowIf(_disposed, this);
+            return CaptureSystemInformationCore();
+        }
+    }
+
+    private List<CpuProcessSample>? CaptureSystemInformationCore()
+    {
         // Bufor rosnie do skutku: liczba procesow zmienia sie miedzy pytaniem
         // o rozmiar a odczytem, wiec jadro potrafi odpowiedziec "za malo"
         // takze na bufor o rozmiarze, ktory samo przed chwila podalo.
         uint length = _bufferLength;
         for (int attempt = 0; attempt < MaximumAttempts; attempt++)
         {
-            nint buffer = Marshal.AllocHGlobal(checked((int)length));
-            try
+            if (_buffer is null || length > _bufferLength)
             {
-                int status = NtQuerySystemInformation(
-                    SystemProcessInformationClass,
-                    buffer,
-                    length,
-                    out uint required);
-                if (status == StatusInfoLengthMismatch
-                    || status == StatusBufferTooSmall)
-                {
-                    length = Math.Max(
-                        checked(required + SlackBytes),
-                        checked(length * 2));
-                    continue;
-                }
-
-                if (status != StatusSuccess)
-                {
-                    return null;
-                }
-
+                SafeHGlobalBuffer replacement = new(length);
+                _buffer?.Dispose();
+                _buffer = replacement;
                 _bufferLength = length;
-                return ReadSamples(buffer, Math.Min(required, length));
             }
-            finally
+
+            nint buffer = _buffer.DangerousGetHandle();
+            int status = _query(
+                SystemProcessInformationClass,
+                buffer,
+                length,
+                out uint required);
+            if (status == StatusInfoLengthMismatch
+                || status == StatusBufferTooSmall)
             {
-                Marshal.FreeHGlobal(buffer);
+                length = Math.Max(
+                    checked(required + SlackBytes),
+                    checked(length * 2));
+                continue;
             }
+
+            if (status != StatusSuccess)
+            {
+                return null;
+            }
+
+            return ReadSamples(buffer, Math.Min(required, length));
         }
 
         return null;
     }
 
-    private static unsafe List<CpuProcessSample> ReadSamples(
+    private unsafe List<CpuProcessSample> ReadSamples(
         nint buffer,
         uint length)
     {
-        List<CpuProcessSample> samples = [];
+        List<CpuProcessSample> samples = new(_sampleCapacity);
+        _seenNames.Clear();
         uint offset = 0;
         uint entrySize = (uint)sizeof(SystemProcessInformation);
         while (offset + entrySize <= length)
@@ -170,10 +198,19 @@ public sealed partial class CpuProcessSampler : ICpuProcessSource
             offset = checked(offset + entry.NextEntryOffset);
         }
 
+        _sampleCapacity = samples.Count;
+        foreach ((int Pid, long Created) key in _names.Keys)
+        {
+            if (!_seenNames.Contains(key))
+            {
+                _names.Remove(key);
+            }
+        }
+
         return samples;
     }
 
-    private static void TryAdd(
+    private void TryAdd(
         List<CpuProcessSample> samples,
         in SystemProcessInformation entry)
     {
@@ -203,7 +240,13 @@ public sealed partial class CpuProcessSampler : ICpuProcessSource
             return;
         }
 
-        string name = ReadImageName(entry);
+        (int, long) nameKey = ((int)processId, entry.CreateTime);
+        _seenNames.Add(nameKey);
+        if (!_names.TryGetValue(nameKey, out string? name))
+        {
+            name = ReadImageName(entry);
+            _names[nameKey] = name;
+        }
         if (name.Length == 0)
         {
             // Jedyny proces z pustym obrazem, ktory ma czas utworzenia, to
@@ -245,9 +288,38 @@ public sealed partial class CpuProcessSampler : ICpuProcessSource
             entry.ImageNameBuffer,
             entry.ImageNameLength / sizeof(char));
 
-        // Process.ProcessName to nazwa obrazu bez rozszerzenia — i tego
-        // samego oczekuja listy procesow chronionych.
-        return Path.GetFileNameWithoutExtension(image);
+        // Process.ProcessName usuwa tylko .exe; .scr i inne rozszerzenia
+        // zostaja czescia nazwy, takze w cache po tozsamosci procesu.
+        string fileName = Path.GetFileName(image);
+        return fileName.EndsWith(".exe", StringComparison.OrdinalIgnoreCase)
+            ? fileName[..^4]
+            : fileName;
+    }
+
+    public void Dispose()
+    {
+        lock (_sync)
+        {
+            _disposed = true;
+            _buffer?.Dispose();
+            _names.Clear();
+            _seenNames.Clear();
+        }
+
+        GC.SuppressFinalize(this);
+    }
+
+    // SafeHandle zwolni pamiec takze wtedy, gdy odbiorca zapomni o Dispose.
+    private sealed class SafeHGlobalBuffer : SafeHandleZeroOrMinusOneIsInvalid
+    {
+        internal SafeHGlobalBuffer(uint length) : base(ownsHandle: true) =>
+            SetHandle(Marshal.AllocHGlobal(checked((int)length)));
+
+        protected override bool ReleaseHandle()
+        {
+            Marshal.FreeHGlobal(handle);
+            return true;
+        }
     }
 
     private const int SystemProcessInformationClass = 5;

@@ -12,6 +12,12 @@ public sealed class MemoryOptimizerStore : IAsyncDisposable
     private const int CurrentDatabaseSchema = 1;
     private readonly string _connectionString;
     private readonly SemaphoreSlim _writer = new(1, 1);
+    private readonly SemaphoreSlim _settingsReader = new(1, 1);
+    private SqliteConnection? _settingsConnection;
+    private SqliteCommand? _settingsVersionCommand;
+    private MemoryOptimizerSettings? _settingsSnapshot;
+    private long _settingsVersion;
+    private bool _disposed;
 
     public MemoryOptimizerStore(string databasePath)
     {
@@ -116,8 +122,45 @@ public sealed class MemoryOptimizerStore : IAsyncDisposable
     public async Task<MemoryOptimizerSettings> GetSettingsAsync(
         CancellationToken cancellationToken)
     {
-        await using SqliteConnection connection = await OpenAsync(
-            cancellationToken).ConfigureAwait(false);
+        await _settingsReader.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            ObjectDisposedException.ThrowIf(_disposed, this);
+            if (_settingsConnection is null)
+            {
+                _settingsConnection = await OpenAsync(cancellationToken).ConfigureAwait(false);
+                _settingsVersionCommand = _settingsConnection.CreateCommand();
+                _settingsVersionCommand.CommandText = "PRAGMA data_version;";
+            }
+
+            // data_version belongs to a connection: keep this reader open so
+            // commits by every other connection/process invalidate the snapshot.
+            long version = (long)(await _settingsVersionCommand!
+                .ExecuteScalarAsync(cancellationToken).ConfigureAwait(false))!;
+            if (_settingsSnapshot is null || version != _settingsVersion)
+            {
+                _settingsSnapshot = await ReadSettingsAsync(
+                    _settingsConnection, cancellationToken).ConfigureAwait(false);
+                _settingsVersion = version;
+            }
+
+            return _settingsSnapshot;
+        }
+        catch
+        {
+            await DropSettingsConnectionAsync().ConfigureAwait(false);
+            throw;
+        }
+        finally
+        {
+            _settingsReader.Release();
+        }
+    }
+
+    private static async Task<MemoryOptimizerSettings> ReadSettingsAsync(
+        SqliteConnection connection,
+        CancellationToken cancellationToken)
+    {
         await using SqliteCommand command = connection.CreateCommand();
         command.CommandText = "SELECT Json FROM Settings WHERE Id = 1;";
         object? value = await command.ExecuteScalarAsync(
@@ -168,6 +211,15 @@ public sealed class MemoryOptimizerStore : IAsyncDisposable
                 DateTimeOffset.UtcNow.ToString("O"));
             _ = await command.ExecuteNonQueryAsync(
                 cancellationToken).ConfigureAwait(false);
+            await _settingsReader.WaitAsync(CancellationToken.None).ConfigureAwait(false);
+            try
+            {
+                _settingsSnapshot = null;
+            }
+            finally
+            {
+                _settingsReader.Release();
+            }
         }
         finally
         {
@@ -282,11 +334,47 @@ public sealed class MemoryOptimizerStore : IAsyncDisposable
         return results;
     }
 
-    public ValueTask DisposeAsync()
+    public async ValueTask DisposeAsync()
     {
-        _writer.Dispose();
-        SqliteConnection.ClearAllPools();
-        return ValueTask.CompletedTask;
+        await _settingsReader.WaitAsync().ConfigureAwait(false);
+        try
+        {
+            if (_disposed)
+            {
+                return;
+            }
+
+            _disposed = true;
+            await DropSettingsConnectionAsync().ConfigureAwait(false);
+            _writer.Dispose();
+            SqliteConnection.ClearAllPools();
+        }
+        finally
+        {
+            // Keep the managed gate usable so queued readers observe _disposed.
+            _settingsReader.Release();
+        }
+    }
+
+    private async ValueTask DropSettingsConnectionAsync()
+    {
+        SqliteCommand? command = _settingsVersionCommand;
+        SqliteConnection? connection = _settingsConnection;
+        _settingsVersionCommand = null;
+        _settingsConnection = null;
+        _settingsSnapshot = null;
+        _settingsVersion = 0;
+        try
+        {
+            command?.Dispose();
+        }
+        finally
+        {
+            if (connection is not null)
+            {
+                await connection.DisposeAsync().ConfigureAwait(false);
+            }
+        }
     }
 
     private async Task<SqliteConnection> OpenAsync(

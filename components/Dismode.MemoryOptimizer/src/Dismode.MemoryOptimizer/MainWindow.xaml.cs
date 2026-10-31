@@ -72,7 +72,7 @@ public sealed partial class MainWindow : Window
         ConfigureTitleBar();
         AppWindow.Closing += AppWindow_Closing;
         AppWindow.Changed += AppWindow_Changed;
-        _refreshTimer.Interval = TimeSpan.FromSeconds(5);
+        _refreshTimer.Interval = _refreshPolicy.StatusPollInterval;
         _refreshTimer.Tick += RefreshTimer_Tick;
         Closed += (_, _) =>
         {
@@ -112,6 +112,7 @@ public sealed partial class MainWindow : Window
     internal async Task InitializeAsync()
     {
         await RefreshAsync(loadSettings: true).ConfigureAwait(true);
+        _refreshTimer.Interval = _refreshPolicy.StatusPollInterval;
         _refreshTimer.Start();
     }
 
@@ -193,6 +194,7 @@ public sealed partial class MainWindow : Window
     internal void ShowFromTray()
     {
         _refreshPolicy.IsVisible = true;
+        _refreshTimer.Interval = _refreshPolicy.StatusPollInterval;
         _ = ShowWindow(WindowHandle, 9);
         _ = SetForegroundWindow(WindowHandle);
         _ = RefreshAsync(loadSettings: false);
@@ -201,6 +203,7 @@ public sealed partial class MainWindow : Window
     internal void HideToTray()
     {
         _refreshPolicy.IsVisible = false;
+        _refreshTimer.Interval = _refreshPolicy.StatusPollInterval;
         _ = ShowWindow(WindowHandle, 0);
     }
 

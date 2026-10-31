@@ -1,4 +1,6 @@
+using System.Text.Json;
 using Dismode.Contracts.SystemOptimization;
+using Dismode.Core.SystemOptimization;
 using Dismode.Data.SystemOptimization;
 using Microsoft.Data.Sqlite;
 
@@ -276,6 +278,43 @@ public sealed class SystemOptimizerStoreTests
             await context.Store.GetRuntimeTargetAsync(
                 experimentId,
                 CancellationToken.None));
+    }
+
+    [TestMethod]
+    public async Task BenchmarkLossRoundTripsAndLegacyJsonNeedsNoMigration()
+    {
+        using StoreContext context = new();
+        ExperimentPlan experiment = CreateExperiment(OwnerSid, "game-loss");
+        await context.Store.UpsertExperimentAsync(experiment, CancellationToken.None);
+        BenchmarkCapture capture = new(Guid.NewGuid(), BenchmarkVariant.Candidate, DateTimeOffset.UtcNow,
+            TimeSpan.FromSeconds(15), TimeSpan.FromSeconds(90), Enumerable.Repeat(15d, 6_000).ToArray(),
+            null, null, null, "fixture", new(BenchmarkCaptureLossState.Confirmed, LostEvents: 24000));
+        await context.Store.AddBenchmarkCaptureAsync(experiment.ExperimentId, capture,
+            BenchmarkAnalyzer.Analyze(capture), CancellationToken.None);
+        context.Reopen();
+        BenchmarkMetrics loaded = (await context.Store.ListBenchmarkMetricsAsync(
+            experiment.ExperimentId, BenchmarkVariant.Candidate, CancellationToken.None)).Single();
+        Assert.IsFalse(loaded.IsValid);
+        Assert.AreEqual(24000L, loaded.CaptureLoss!.LostEvents);
+        await using SqliteConnection connection = new($"Data Source={context.DatabasePath};Pooling=False");
+        await connection.OpenAsync();
+        await using SqliteCommand command = connection.CreateCommand();
+        command.CommandText = "SELECT CaptureJson FROM BenchmarkCaptures;";
+        string json = (string)(await command.ExecuteScalarAsync())!;
+        JsonSerializerOptions options = new(JsonSerializerDefaults.Web);
+        Assert.AreEqual(capture.CaptureLoss, JsonSerializer.Deserialize<BenchmarkCapture>(json, options)!.CaptureLoss);
+
+        BenchmarkCapture legacy = capture with { CaptureId = Guid.NewGuid(), CaptureLoss = null };
+        BenchmarkMetrics legacyMetrics = BenchmarkAnalyzer.Analyze(legacy);
+        await context.Store.AddBenchmarkCaptureAsync(experiment.ExperimentId, legacy, legacyMetrics, CancellationToken.None);
+        command.CommandText = "SELECT CaptureJson, MetricsJson FROM BenchmarkCaptures WHERE CaptureId = $id;";
+        command.Parameters.AddWithValue("$id", legacy.CaptureId.ToString("D"));
+        await using SqliteDataReader reader = await command.ExecuteReaderAsync();
+        Assert.IsTrue(await reader.ReadAsync());
+        Assert.IsFalse(reader.GetString(0).Contains("captureLoss", StringComparison.Ordinal));
+        Assert.IsFalse(reader.GetString(1).Contains("captureLoss", StringComparison.Ordinal));
+        Assert.IsNull(JsonSerializer.Deserialize<BenchmarkCapture>(reader.GetString(0), options)!.CaptureLoss);
+        Assert.IsTrue(JsonSerializer.Deserialize<BenchmarkMetrics>(reader.GetString(1), options)!.IsValid);
     }
 
     private static ExperimentPlan CreateExperiment(

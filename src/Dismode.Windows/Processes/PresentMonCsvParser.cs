@@ -11,6 +11,7 @@ internal sealed class PresentMonCsvParser
     private int _gpuBusyIndex = -1;
     private int _displayedTimeIndex = -1;
     private readonly bool _trackDisplay;
+    private string? _lastSwapChain;
 
     // Kolumny wyswietlania czyta tylko parser utworzony z trackDisplay: przy
     // wylaczonym ustawieniu ramka ma dokladnie te same pola co dotychczas.
@@ -34,10 +35,9 @@ internal sealed class PresentMonCsvParser
             return false;
         }
 
-        string[] fields = SplitCsv(line);
         if (!HasValidHeader)
         {
-            ReadHeader(fields);
+            ReadHeader(SplitCsv(line));
             return false;
         }
 
@@ -48,16 +48,51 @@ internal sealed class PresentMonCsvParser
                 Math.Max(
                     _frameTimeIndex,
                     Math.Max(_gpuBusyIndex, _displayedTimeIndex))));
-        if (fields.Length <= highestIndex
-            || !int.TryParse(
-                fields[_processIdIndex],
+        ReadOnlySpan<char> processField = default;
+        ReadOnlySpan<char> chainField = default;
+        ReadOnlySpan<char> timeField = default;
+        ReadOnlySpan<char> gpuField = default;
+        ReadOnlySpan<char> displayedField = default;
+        int offset = 0;
+        for (int column = 0; column <= highestIndex; column++)
+        {
+            if (offset > line.Length)
+            {
+                return false;
+            }
+
+            ReadOnlySpan<char> field = ReadField(line.AsSpan(), ref offset);
+            if (column == _processIdIndex)
+            {
+                processField = DecodeField(field, column == 0);
+            }
+            else if (column == _swapChainIndex)
+            {
+                chainField = DecodeField(field, column == 0);
+            }
+            else if (column == _frameTimeIndex)
+            {
+                timeField = DecodeField(field, column == 0);
+            }
+            else if (column == _gpuBusyIndex)
+            {
+                gpuField = DecodeField(field, column == 0);
+            }
+            else if (column == _displayedTimeIndex)
+            {
+                displayedField = DecodeField(field, column == 0);
+            }
+        }
+
+        if (!int.TryParse(
+                processField,
                 NumberStyles.None,
                 CultureInfo.InvariantCulture,
                 out int processId)
             || processId <= 0
-            || string.IsNullOrWhiteSpace(fields[_swapChainIndex])
+            || chainField.IsWhiteSpace()
             || !double.TryParse(
-                fields[_frameTimeIndex],
+                timeField,
                 NumberStyles.Float,
                 CultureInfo.InvariantCulture,
                 out double frameTimeMilliseconds)
@@ -70,7 +105,7 @@ internal sealed class PresentMonCsvParser
         double? gpuBusyMilliseconds = null;
         if (_gpuBusyIndex >= 0
             && double.TryParse(
-                fields[_gpuBusyIndex],
+                gpuField,
                 NumberStyles.Float,
                 CultureInfo.InvariantCulture,
                 out double parsedGpuBusy)
@@ -88,7 +123,7 @@ internal sealed class PresentMonCsvParser
         double? displayedTimeMilliseconds = null;
         if (displayTracked
             && double.TryParse(
-                fields[_displayedTimeIndex],
+                displayedField,
                 NumberStyles.Float,
                 CultureInfo.InvariantCulture,
                 out double parsedDisplayed)
@@ -98,14 +133,85 @@ internal sealed class PresentMonCsvParser
             displayedTimeMilliseconds = parsedDisplayed;
         }
 
+        // Zachowujemy doslowny klucz (takze nienumeryczny), bez nowego napisu
+        // dla kolejnych klatek tego samego swapchaina.
+        if (!chainField.SequenceEqual(_lastSwapChain.AsSpan()))
+        {
+            _lastSwapChain = chainField.ToString();
+        }
+
         frame = new(
             processId,
-            fields[_swapChainIndex],
+            _lastSwapChain!,
             frameTimeMilliseconds,
             gpuBusyMilliseconds,
             displayTracked,
             displayedTimeMilliseconds);
         return true;
+    }
+
+    private static ReadOnlySpan<char> ReadField(ReadOnlySpan<char> line, scoped ref int offset)
+    {
+        int start = offset;
+        bool quoted = false;
+        while (offset < line.Length)
+        {
+            char character = line[offset++];
+            if (character == '"')
+            {
+                if (quoted && offset < line.Length && line[offset] == '"')
+                {
+                    offset++;
+                }
+                else
+                {
+                    quoted = !quoted;
+                }
+            }
+            else if (character == ',' && !quoted)
+            {
+                return line[start..(offset - 1)];
+            }
+        }
+
+        offset = line.Length + 1;
+        return line[start..];
+    }
+
+    private static ReadOnlySpan<char> DecodeField(ReadOnlySpan<char> field, bool trimBom)
+    {
+        if (field.Length >= 2 && field[0] == '"' && field[^1] == '"'
+            && !field[1..^1].Contains('"'))
+        {
+            field = field[1..^1];
+        }
+        else if (field.Contains('"'))
+        {
+            // Rzadkie escapowanie tylko w potrzebnej kolumnie. Ta sama
+            // tolerancja niezamknietych cudzyslowow co w parserze naglowka.
+            StringBuilder decoded = new();
+            bool quoted = false;
+            for (int index = 0; index < field.Length; index++)
+            {
+                if (field[index] != '"')
+                {
+                    decoded.Append(field[index]);
+                }
+                else if (quoted && index + 1 < field.Length && field[index + 1] == '"')
+                {
+                    decoded.Append('"');
+                    index++;
+                }
+                else
+                {
+                    quoted = !quoted;
+                }
+            }
+
+            field = decoded.ToString().AsSpan();
+        }
+
+        return trimBom ? field.TrimStart('\uFEFF') : field;
     }
 
     internal static string[] SplitCsv(string line)

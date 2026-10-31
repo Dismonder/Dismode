@@ -98,6 +98,9 @@ public sealed partial class MainWindow : Window, IDisposable
     private readonly string _userSid;
     private readonly ImageSource? _dashboardFallbackArtwork;
     private readonly ObservableCollection<ProfileListItem> _profiles = [];
+    private readonly GameDetectionProfileIndex<ProfileListItem> _gameDetectionIndex = new(
+        static profile => profile.Profile.IsEnabled,
+        static profile => profile.ExecutablePath);
     private readonly ObservableCollection<ProfileListItem> _libraryView = [];
     private readonly ObservableCollection<LibraryShelf> _libraryShelves = [];
     private ProfileListItem? _libraryHero;
@@ -229,7 +232,7 @@ public sealed partial class MainWindow : Window, IDisposable
     private static readonly TimeSpan UnoptimizedGameScanInterval =
         TimeSpan.FromSeconds(6);
 
-    private DateTimeOffset _lastUnoptimizedGameScanUtc;
+    private readonly GameDetectionScanCadence _gameScanCadence = new();
 
     /// <summary>
     /// Jak czesto pytamy usluge o stan sesji, gdy okno jest widoczne, a jak
@@ -311,7 +314,11 @@ public sealed partial class MainWindow : Window, IDisposable
         _memoryOptimizerGameStateExporter = new(_userSid);
         LibraryShelvesSource.Source = _libraryShelves;
         ProfilesList.ItemsSource = LibraryShelvesSource.View;
-        _profiles.CollectionChanged += (_, _) => ApplyLibraryFilter();
+        _profiles.CollectionChanged += (_, _) =>
+        {
+            _gameDetectionIndex.Invalidate();
+            ApplyLibraryFilter();
+        };
         ApplyLibraryFilter();
         DashboardGameRail.ItemsSource = _profiles;
         GameProfileSelector.ItemsSource = _profiles;
@@ -505,6 +512,7 @@ public sealed partial class MainWindow : Window, IDisposable
 
         _hiddenInTray = false;
         _sessionPollTimer.Interval = SessionPollWhileVisible;
+        RenderDashboardFrameTimeGraph();
         // Natychmiast, bo inaczej uzytkownik zobaczylby stan sprzed
         // kilkunastu sekund i uznal go za zepsuty.
         OnSessionPollTick(this, EventArgs.Empty);
@@ -4509,13 +4517,11 @@ public sealed partial class MainWindow : Window, IDisposable
         }
 
         DateTimeOffset now = DateTimeOffset.UtcNow;
-        if (now - _lastUnoptimizedGameScanUtc
-            < UnoptimizedGameScanInterval - UnoptimizedGameScanTolerance)
+        if (!_gameScanCadence.TryBegin(
+                now, UnoptimizedGameScanInterval - UnoptimizedGameScanTolerance))
         {
             return;
         }
-
-        _lastUnoptimizedGameScanUtc = now;
 
         try
         {
@@ -4524,27 +4530,7 @@ public sealed partial class MainWindow : Window, IDisposable
             // z ~250 procesow kosztowal 50 ms na skan. Sama nazwa to 4 ms,
             // a sciezke trzeba sprawdzac tylko tam, gdzie nazwa juz pasuje —
             // wynik jest ten sam, bo dopasowanie po nazwie i tak wystarczalo.
-            Dictionary<string, List<ProfileListItem>> profilesByName =
-                new(StringComparer.OrdinalIgnoreCase);
-            foreach (ProfileListItem profile in _profiles)
-            {
-                if (!profile.Profile.IsEnabled)
-                {
-                    continue;
-                }
-
-                string name = Path.GetFileNameWithoutExtension(
-                    profile.ExecutablePath);
-                if (!profilesByName.TryGetValue(
-                        name,
-                        out List<ProfileListItem>? sameName))
-                {
-                    sameName = [];
-                    profilesByName[name] = sameName;
-                }
-
-                sameName.Add(profile);
-            }
+            Dictionary<string, List<ProfileListItem>> profilesByName = _gameDetectionIndex.Get(_profiles);
 
             RunningGameScanResult scan = profilesByName.Count == 0
                 ? RunningGameScanResult.Empty
@@ -4684,6 +4670,10 @@ public sealed partial class MainWindow : Window, IDisposable
         }
         catch
         {
+        }
+        finally
+        {
+            _gameScanCadence.End();
         }
     }
 
@@ -5053,7 +5043,7 @@ public sealed partial class MainWindow : Window, IDisposable
 
         // Baner ma pokazac te gre od razu, wiec najblizszy takt skanuje
         // bez czekania na odstep.
-        _lastUnoptimizedGameScanUtc = default;
+        _gameScanCadence.Request();
     }
 
     private static List<(int ProcessId, DateTime? StartTime)>
@@ -5446,7 +5436,7 @@ public sealed partial class MainWindow : Window, IDisposable
             }
 
             _lastForegroundWakeUtc = now;
-            _lastUnoptimizedGameScanUtc = default;
+            _gameScanCadence.Request();
             OnSessionPollTick(this, EventArgs.Empty);
         });
 
@@ -5631,6 +5621,11 @@ public sealed partial class MainWindow : Window, IDisposable
 
     private void RenderDashboardFrameTimeGraph()
     {
+        if (_hiddenInTray)
+        {
+            return;
+        }
+
         double width = DashboardFrameTimeCanvas.ActualWidth;
         double height = DashboardFrameTimeCanvas.ActualHeight;
         if (width <= 1 || height <= 1 || _dashboardFrameTimes.Count < 2)
@@ -5833,6 +5828,7 @@ public sealed partial class MainWindow : Window, IDisposable
             || FpsOverlayToggleSwitch.IsOn is false)
         {
             _overlayPollTimer.Stop();
+            _ = SetForegroundCaptureEnabledAsync(false);
             HidePerformanceOverlay();
             return;
         }
@@ -5842,11 +5838,13 @@ public sealed partial class MainWindow : Window, IDisposable
         // wtedy myslnikow czyta sie jako zepsute i bylo zepsute.
         if (_activeSession is null)
         {
+            _ = SetForegroundCaptureEnabledAsync(true);
             _overlayPollTimer.Start();
             return;
         }
 
         _overlayPollTimer.Stop();
+        _ = SetForegroundCaptureEnabledAsync(false);
         try
         {
             _performanceOverlay ??= new();
@@ -5864,6 +5862,23 @@ public sealed partial class MainWindow : Window, IDisposable
         }
     }
 
+    private async Task SetForegroundCaptureEnabledAsync(bool enabled)
+    {
+        if (_foregroundGameWatcher is null)
+        {
+            return;
+        }
+
+        try
+        {
+            await _foregroundGameWatcher.SetEnabledAsync(enabled);
+        }
+        catch (Exception exception) when (IsExpectedUiFailure(exception))
+        {
+            Debug.WriteLine("Overlay capture transition failed: " + exception.Message);
+        }
+    }
+
     /// <summary>
     /// Feeds the overlay from whatever is in the foreground when no session is
     /// running. One sample at a time: PresentMon takes a moment to answer, and
@@ -5872,7 +5887,8 @@ public sealed partial class MainWindow : Window, IDisposable
     /// </summary>
     private async void OnOverlayPollTick(object? sender, object args)
     {
-        if (_overlayPollInFlight || _lifetime.IsCancellationRequested)
+        if (_overlayPollInFlight || _lifetime.IsCancellationRequested
+            || !_overlayPollTimer.IsEnabled || _activeSession is not null)
         {
             return;
         }
@@ -5886,7 +5902,8 @@ public sealed partial class MainWindow : Window, IDisposable
             CancellationToken token = _lifetime.Token;
             ForegroundGameSample sample = await _foregroundGameWatcher
                 .SampleAsync(token);
-            if (_disposed || token.IsCancellationRequested)
+            if (_disposed || token.IsCancellationRequested
+                || !_overlayPollTimer.IsEnabled || _activeSession is not null)
             {
                 return;
             }
@@ -5909,6 +5926,7 @@ public sealed partial class MainWindow : Window, IDisposable
             exception is InvalidOperationException or COMException)
         {
             _overlayPollTimer.Stop();
+            _ = SetForegroundCaptureEnabledAsync(false);
             _performanceOverlay?.Dispose();
             _performanceOverlay = null;
         }

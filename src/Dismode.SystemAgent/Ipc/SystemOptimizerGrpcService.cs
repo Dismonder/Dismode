@@ -245,7 +245,8 @@ internal sealed class SystemOptimizerGrpcService :
                         capture.AverageCpuPercent,
                         capture.AverageGpuBusyPercent,
                         capture.AverageUsedRamBytes,
-                        capture.ProfileStateHash),
+                        capture.ProfileStateHash,
+                        capture.CaptureLoss),
                     async () =>
                     {
                         CoordinatorBenchmarkResult result =
@@ -696,6 +697,20 @@ internal sealed class SystemOptimizerGrpcService :
                 nameof(request));
         }
 
+        BenchmarkCaptureLoss? captureLoss = null;
+        if (request.CaptureLoss is { } loss)
+        {
+            BenchmarkCaptureLossState state = (BenchmarkCaptureLossState)(int)loss.State;
+            if (!Enum.IsDefined(state) || loss.LostEvents is < 0 or > uint.MaxValue
+                || loss.LostBuffers is < 0 or > uint.MaxValue
+                || (state == BenchmarkCaptureLossState.Confirmed) != (loss.LostEvents > 0 || loss.LostBuffers > 0))
+            {
+                throw new ArgumentOutOfRangeException(nameof(request));
+            }
+
+            captureLoss = new(state, loss.LostEvents, loss.LostBuffers);
+        }
+
         return new(
             ParseGuid(request.CaptureId, nameof(request.CaptureId)),
             (BenchmarkVariant)(int)request.Variant,
@@ -710,7 +725,8 @@ internal sealed class SystemOptimizerGrpcService :
             request.HasAverageUsedRamBytes
                 ? request.AverageUsedRamBytes
                 : null,
-            request.ProfileStateHash);
+            request.ProfileStateHash,
+            captureLoss);
     }
 
     private static TweakSelection[] ParseSelections(

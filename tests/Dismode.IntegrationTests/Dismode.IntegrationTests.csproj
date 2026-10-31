@@ -14,12 +14,17 @@
 
   <ItemGroup>
     <FrameworkReference Include="Microsoft.AspNetCore.App" />
+    <Compile Include="..\..\src\Dismode.UI\Services\ForegroundGameWatcher.cs" Link="UI\ForegroundGameWatcher.cs" />
+    <Compile Include="..\..\src\Dismode.UI\Services\OverlayTargetWindow.cs" Link="UI\OverlayTargetWindow.cs" />
+    <Compile Include="..\..\src\Dismode.UI\Services\GameDetectionProfileIndex.cs" Link="UI\GameDetectionProfileIndex.cs" />
+    <Compile Include="..\..\components\Dismode.MemoryOptimizer\src\Dismode.MemoryOptimizer\Presentation\MemoryRefreshPolicy.cs" Link="Memory\MemoryRefreshPolicy.cs" />
   </ItemGroup>
 
   <ItemGroup>
     <ProjectReference Include="..\..\src\Dismode.Data\Dismode.Data.csproj" />
     <ProjectReference Include="..\..\src\Dismode.SystemAgent\Dismode.SystemAgent.csproj" />
     <ProjectReference Include="..\..\src\Dismode.Windows\Dismode.Windows.csproj" />
+    <ProjectReference Include="..\..\components\Dismode.MemoryOptimizer\src\Dismode.MemoryOptimizer.Core\Dismode.MemoryOptimizer.Core.csproj" />
     <ProjectReference
       Include="..\..\tools\Dismode.ProcessTestHarness\Dismode.ProcessTestHarness.csproj"
       ReferenceOutputAssembly="false" />

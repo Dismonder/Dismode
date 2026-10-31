@@ -431,6 +431,18 @@ message SystemExperimentReply {
   string message = 14;
 }
 
+enum BenchmarkCaptureLossStateValue {
+  BENCHMARK_CAPTURE_LOSS_STATE_NONE = 0;
+  BENCHMARK_CAPTURE_LOSS_STATE_CONFIRMED = 1;
+  BENCHMARK_CAPTURE_LOSS_STATE_UNKNOWN = 2;
+}
+
+message BenchmarkCaptureLossMessage {
+  BenchmarkCaptureLossStateValue state = 1;
+  int64 lost_events = 2;
+  int64 lost_buffers = 3;
+}
+
 message SubmitBenchmarkCaptureRequest {
   RpcRequestMetadata metadata = 1;
   string experiment_id = 2;
@@ -444,6 +456,7 @@ message SubmitBenchmarkCaptureRequest {
   optional double average_gpu_busy_percent = 10;
   optional int64 average_used_ram_bytes = 11;
   string profile_state_hash = 12;
+  BenchmarkCaptureLossMessage capture_loss = 13;
 }
 
 message BenchmarkDecisionReply {

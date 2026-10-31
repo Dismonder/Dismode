@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.ComponentModel;
 using Dismode.Core.Domain.Processes;
 
@@ -14,6 +15,8 @@ public sealed class GameProcessTreeSessionTracker
     private readonly object _stateLock = new();
     private readonly Dictionary<ProcessRuntimeKey, ProcessIdentity> _known = [];
     private readonly HashSet<ProcessRuntimeKey> _consumedMissingSeeds = [];
+    private readonly ConcurrentBag<ObservationScratch> _scratch = [];
+    private IReadOnlyList<ProcessIdentity>? _knownSnapshot;
 
     public GameProcessTreeSessionTracker(
         ProcessIdentity root,
@@ -44,19 +47,39 @@ public sealed class GameProcessTreeSessionTracker
     {
         lock (_stateLock)
         {
-            return _known.Values
+            return _knownSnapshot ??= Array.AsReadOnly(_known.Values
                 .OrderBy(identity => identity.RuntimeKey.StartedAtUtc)
                 .ThenBy(identity => identity.RuntimeKey.ProcessId)
-                .ToArray();
+                .ToArray());
         }
     }
 
     public async ValueTask<GameProcessTreeObservation> ObserveAsync(
         CancellationToken cancellationToken)
     {
-        ProcessIdentity[] known = GetKnownProcesses().ToArray();
-        Dictionary<int, ProcessIdentity> trustedSeeds = [];
-        List<ProcessIdentity> running = [];
+        if (!_scratch.TryTake(out ObservationScratch? scratch))
+        {
+            scratch = new();
+        }
+
+        try
+        {
+            return await ObserveCoreAsync(scratch, cancellationToken).ConfigureAwait(false);
+        }
+        finally
+        {
+            scratch.Clear();
+            _scratch.Add(scratch);
+        }
+    }
+
+    private async ValueTask<GameProcessTreeObservation> ObserveCoreAsync(
+        ObservationScratch scratch,
+        CancellationToken cancellationToken)
+    {
+        IReadOnlyList<ProcessIdentity> known = GetKnownProcesses();
+        Dictionary<int, ProcessIdentity> trustedSeeds = scratch.TrustedSeeds;
+        List<ProcessIdentity> running = scratch.Running;
 
         foreach (ProcessIdentity identity in known)
         {
@@ -115,7 +138,8 @@ public sealed class GameProcessTreeSessionTracker
                 IsReliable: false);
         }
 
-        Dictionary<int, List<int>> childrenByParent = [];
+        Dictionary<int, List<int>> childrenByParent = scratch.ChildrenByParent;
+        int childListIndex = 0;
         foreach ((int processId, int parentProcessId) in parents)
         {
             if (processId <= 0
@@ -129,15 +153,21 @@ public sealed class GameProcessTreeSessionTracker
                     parentProcessId,
                     out List<int>? children))
             {
-                children = [];
+                if (childListIndex == scratch.ChildLists.Count)
+                {
+                    scratch.ChildLists.Add([]);
+                }
+
+                children = scratch.ChildLists[childListIndex++];
                 childrenByParent[parentProcessId] = children;
             }
 
             children.Add(processId);
         }
 
-        Queue<(int ProcessId, int ParentProcessId)> pending = new();
-        HashSet<int> visited = [.. trustedSeeds.Keys];
+        Queue<(int ProcessId, int ParentProcessId)> pending = scratch.Pending;
+        HashSet<int> visited = scratch.Visited;
+        visited.UnionWith(trustedSeeds.Keys);
         foreach (int seedProcessId in trustedSeeds.Keys)
         {
             EnqueueChildren(
@@ -147,9 +177,8 @@ public sealed class GameProcessTreeSessionTracker
                 pending);
         }
 
-        Dictionary<int, ProcessIdentity> acceptedByProcessId =
-            new(trustedSeeds);
-        List<ProcessIdentity> newlyDiscovered = [];
+        Dictionary<int, ProcessIdentity> acceptedByProcessId = trustedSeeds;
+        int newlyDiscovered = 0;
         int examinedCandidateCount = 0;
 
         while (pending.TryDequeue(
@@ -163,7 +192,7 @@ public sealed class GameProcessTreeSessionTracker
                 return new(
                     GetKnownProcesses(),
                     running.ToArray(),
-                    newlyDiscovered.Count,
+                    newlyDiscovered,
                     IsReliable: false);
             }
 
@@ -195,7 +224,7 @@ public sealed class GameProcessTreeSessionTracker
             acceptedByProcessId[candidate.ProcessId] = childIdentity;
             if (AddKnown(childIdentity))
             {
-                newlyDiscovered.Add(childIdentity);
+                newlyDiscovered++;
             }
 
             if (!running.Any(identity =>
@@ -211,13 +240,15 @@ public sealed class GameProcessTreeSessionTracker
                 pending);
         }
 
+        running.Sort(static (left, right) =>
+        {
+            int started = left.RuntimeKey.StartedAtUtc.CompareTo(right.RuntimeKey.StartedAtUtc);
+            return started != 0 ? started : left.RuntimeKey.ProcessId.CompareTo(right.RuntimeKey.ProcessId);
+        });
         return new(
             GetKnownProcesses(),
-            running
-                .OrderBy(identity => identity.RuntimeKey.StartedAtUtc)
-                .ThenBy(identity => identity.RuntimeKey.ProcessId)
-                .ToArray(),
-            newlyDiscovered.Count,
+            running.ToArray(),
+            newlyDiscovered,
             IsReliable: true);
     }
 
@@ -250,7 +281,34 @@ public sealed class GameProcessTreeSessionTracker
             }
 
             _known.Add(identity.RuntimeKey, identity);
+            _knownSnapshot = null;
             return true;
+        }
+    }
+
+    // Osobny zestaw na rownolegle wywolanie; wyniki nigdy nie wskazuja
+    // buforow zwracanych do puli. Kontrola tozsamosci pozostaje bez zmian.
+    private sealed class ObservationScratch
+    {
+        internal Dictionary<int, ProcessIdentity> TrustedSeeds { get; } = [];
+        internal List<ProcessIdentity> Running { get; } = [];
+        internal Dictionary<int, List<int>> ChildrenByParent { get; } = [];
+        internal List<List<int>> ChildLists { get; } = [];
+        internal Queue<(int ProcessId, int ParentProcessId)> Pending { get; } = new();
+        internal HashSet<int> Visited { get; } = [];
+
+        internal void Clear()
+        {
+            TrustedSeeds.Clear();
+            Running.Clear();
+            ChildrenByParent.Clear();
+            foreach (List<int> children in ChildLists)
+            {
+                children.Clear();
+            }
+
+            Pending.Clear();
+            Visited.Clear();
         }
     }
 

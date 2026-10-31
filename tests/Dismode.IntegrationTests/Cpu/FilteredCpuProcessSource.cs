@@ -14,9 +14,11 @@ namespace Dismode.IntegrationTests.Cpu;
 /// </para>
 /// </summary>
 internal sealed class FilteredCpuProcessSource(
-    Func<IEnumerable<int>> ownedProcessIds) : ICpuProcessSource
+    Func<IEnumerable<int>> ownedProcessIds) : ICpuProcessSource, IDisposable
 {
     private readonly CpuProcessSampler _sampler = new();
+
+    public void Dispose() => _sampler.Dispose();
 
     public IReadOnlyList<CpuProcessSample> Capture()
     {

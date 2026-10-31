@@ -60,6 +60,8 @@ public sealed class ProBalanceEngine
     private readonly ProBalanceSettings _settings;
     private readonly Dictionary<ProcessRuntimeKey, TrackedProcess> _tracked =
         [];
+    private readonly HashSet<ProcessRuntimeKey> _seen = [];
+    private readonly List<(ProBalanceObservation Observation, int Ordinal)> _ordered = [];
 
     public ProBalanceEngine(ProBalanceSettings? settings = null)
     {
@@ -72,6 +74,8 @@ public sealed class ProBalanceEngine
             .Where(entry => entry.Value.RestrainedSinceUtc is not null)
             .Select(entry => entry.Key)];
 
+    public int RestrainedCount => CountRestrained();
+
     public IReadOnlyList<ProBalanceDecision> Evaluate(
         IReadOnlyList<ProBalanceObservation> observations,
         double backgroundCores,
@@ -80,13 +84,25 @@ public sealed class ProBalanceEngine
         ArgumentNullException.ThrowIfNull(observations);
 
         List<ProBalanceDecision> decisions = [];
-        HashSet<ProcessRuntimeKey> seen = [];
+        HashSet<ProcessRuntimeKey> seen = _seen;
+        seen.Clear();
+        _ordered.Clear();
+        for (int index = 0; index < observations.Count; index++)
+        {
+            _ordered.Add((observations[index], index));
+        }
+
+        // Przy rownym obciazeniu kolejnosc pozostaje stabilna jak w OrderBy.
+        _ordered.Sort(static (left, right) =>
+        {
+            int load = right.Observation.CpuCores.CompareTo(left.Observation.CpuCores);
+            return load != 0 ? load : left.Ordinal.CompareTo(right.Ordinal);
+        });
 
         // Najciezsi pierwsi. Gdy kandydatow jest wiecej niz wolno ograniczyc,
         // to oni maja zajac miejsca — a nie ten, kto trafil sie wczesniej
         // w kolejnosci inwentaryzacji.
-        foreach (ProBalanceObservation observation in observations
-            .OrderByDescending(candidate => candidate.CpuCores))
+        foreach ((ProBalanceObservation observation, _) in _ordered)
         {
             seen.Add(observation.RuntimeKey);
             if (observation.IsProtected
@@ -153,7 +169,7 @@ public sealed class ProBalanceEngine
         // zawsze, bo nikt juz nie wydalby polecenia zwolnienia. Dlatego
         // wychodzac, emitujemy zwolnienie; jesli proces naprawde zniknal,
         // aktuator nieszkodliwie nic nie zrobi.
-        foreach (ProcessRuntimeKey key in _tracked.Keys.ToArray())
+        foreach (ProcessRuntimeKey key in _tracked.Keys)
         {
             if (seen.Contains(key))
             {
