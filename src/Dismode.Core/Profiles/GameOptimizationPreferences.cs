@@ -72,7 +72,9 @@ public sealed record GameOptimizationPreferences
         DateTimeOffset updatedAtUtc,
         bool autoOptimizeWhenDetected = true,
         bool pinGameToPreferredCores = true,
-        bool keepAwakeDuringSession = true)
+        bool keepAwakeDuringSession = true,
+        bool applyBackgroundRulesDuringSession = false,
+        bool maximizeRefreshRateDuringSession = false)
     {
         if (!Enum.IsDefined(gamePriority))
         {
@@ -110,6 +112,8 @@ public sealed record GameOptimizationPreferences
         AutoOptimizeWhenDetected = autoOptimizeWhenDetected;
         PinGameToPreferredCores = pinGameToPreferredCores;
         KeepAwakeDuringSession = keepAwakeDuringSession;
+        ApplyBackgroundRulesDuringSession = applyBackgroundRulesDuringSession;
+        MaximizeRefreshRateDuringSession = maximizeRefreshRateDuringSession;
     }
 
     public GameProfileId ProfileId { get; }
@@ -145,6 +149,10 @@ public sealed record GameOptimizationPreferences
     /// the system no input to count as activity. On by default.
     /// </summary>
     public bool KeepAwakeDuringSession { get; }
+
+    public bool ApplyBackgroundRulesDuringSession { get; }
+
+    public bool MaximizeRefreshRateDuringSession { get; }
 
     public static GameOptimizationPreferences CreateDefault(
         GameProfileId profileId) =>
@@ -195,6 +203,8 @@ public sealed record GameOptimizationPreferences
                 UpdatedAtUtc,
                 AutoOptimizeWhenDetected,
                 PinGameToPreferredCores,
-                KeepAwakeDuringSession);
+                KeepAwakeDuringSession,
+                ApplyBackgroundRulesDuringSession,
+                MaximizeRefreshRateDuringSession);
     }
 }

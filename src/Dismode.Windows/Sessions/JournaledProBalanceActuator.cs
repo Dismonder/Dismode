@@ -100,6 +100,7 @@ public sealed class JournaledProBalanceActuator :
     /// </summary>
     internal ICpuSetsPort CpuSetsPort { get; init; } =
         SystemCpuSetsPort.Instance;
+    internal Func<ProcessRuntimeKey, bool> CanLowerPriority { get; init; } = IsWorthLowering;
 
     public JournaledProBalanceActuator(
         IRecoveryJournal journal,
@@ -143,7 +144,7 @@ public sealed class JournaledProBalanceActuator :
         ProcessIdentity? identity =
             await TryResolveAsync(runtimeKey, cancellationToken)
                 .ConfigureAwait(false);
-        if (identity is null || !IsWorthLowering(runtimeKey))
+        if (identity is null || !CanLowerPriority(runtimeKey))
         {
             return false;
         }

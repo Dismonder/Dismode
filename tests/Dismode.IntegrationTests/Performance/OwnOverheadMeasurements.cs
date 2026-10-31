@@ -106,6 +106,47 @@ public sealed class OwnOverheadMeasurements
     }
 
     [TestMethod]
+    public void Item16UnchangedLateRuleTickDoesNotResolveInventory()
+    {
+        LateInventory inventory = new();
+        SavedBackgroundRuleResolver resolver = new(inventory);
+        Dismode.Core.Profiles.GameOptimizationPreferences preferences = new(
+            Dismode.Core.Domain.Identifiers.GameProfileId.Create(),
+            Dismode.Core.Profiles.SavedGamePriorityMode.Normal,
+            [new(@"C:\Apps\late.exe", Dismode.Core.Profiles.SavedBackgroundActionMode.LowerPriority)],
+            DateTimeOffset.UnixEpoch);
+        Measurement before = Measure(() => resolver.Resolve(preferences,
+            @"C:\Games\Example\game.exe", 1, 64), 200, 1);
+        LateBackgroundRuleTracker tracker = new(DateTimeOffset.UnixEpoch);
+        _ = tracker.ObserveProcessSet(inventory.Samples);
+        void Tick()
+        {
+            if (tracker.ObserveProcessSet(inventory.Samples))
+            {
+                _ = resolver.Resolve(preferences, @"C:\Games\Example\game.exe", 1, 64);
+            }
+        }
+        int capturesBefore = inventory.Captures;
+        Measurement after = Measure(Tick, 1000, 1);
+        Report("16 before: full resolver, 300 processes, 1 Hz", before);
+        Report("16 after: unchanged process set, 300 processes, 1 Hz", after);
+        Assert.AreEqual(capturesBefore, inventory.Captures);
+        Assert.IsLessThanOrEqualTo(64d, after.Bytes);
+        Assert.IsLessThan(before.Bytes, after.Bytes);
+    }
+
+    private sealed class LateInventory : IProcessInventory
+    {
+        private readonly ProcessSnapshot[] _processes = Enumerable.Range(1000, 300)
+            .Select(pid => new ProcessSnapshot(pid, "LateBackground", DateTimeOffset.UnixEpoch.AddSeconds(1),
+                @"C:\Apps\late.exe", 1, 0, TimeSpan.Zero, false, "Normal")).ToArray();
+        internal CpuProcessSample[] Samples { get; } = Enumerable.Range(1000, 300)
+            .Select(pid => new CpuProcessSample(pid, "LateBackground", DateTimeOffset.UnixEpoch.AddSeconds(1), TimeSpan.Zero)).ToArray();
+        internal int Captures { get; private set; }
+        public IReadOnlyList<ProcessSnapshot> Capture() { Captures++; return _processes; }
+    }
+
+    [TestMethod]
     public async Task Item1StoppedOverlayDoesNotConsumeFrames()
     {
         await using FakeFrames frames = new();

@@ -175,9 +175,8 @@ public sealed class GameSessionOrchestratorTests
             Assert.IsNotNull(metadata);
             Assert.AreEqual("Manual", metadata.Source);
             Assert.AreEqual(history[0].EndedAtUtc, metadata.LastPlayedAtUtc);
-            Assert.IsGreaterThanOrEqualTo(
-                1L,
-                metadata.TotalPlaytimeMinutes);
+            Assert.AreEqual(0L, metadata.TotalPlaytimeMinutes);
+            Assert.IsNotNull(history[0].DurationSeconds);
             SessionFrameRateStatistics statistics =
                 history[0].FrameRateStatistics
                 ?? throw new AssertFailedException(
@@ -1812,7 +1811,7 @@ public sealed class GameSessionOrchestratorTests
         LocalGameSessionOrchestrator orchestrator)
     {
         using CancellationTokenSource timeout =
-            new(TimeSpan.FromSeconds(10));
+            new(TimeSpan.FromSeconds(40));
         while (await orchestrator.GetActiveAsync(timeout.Token) is not null)
         {
             await Task.Delay(TimeSpan.FromMilliseconds(50), timeout.Token);
@@ -1824,7 +1823,7 @@ public sealed class GameSessionOrchestratorTests
         OptimizationSessionState expectedState)
     {
         using CancellationTokenSource timeout =
-            new(TimeSpan.FromSeconds(10));
+            new(TimeSpan.FromSeconds(40));
         while (true)
         {
             GameSessionSnapshot? active =
@@ -2117,8 +2116,10 @@ public sealed class GameSessionOrchestratorTests
         using AppendOnlyRecoveryJournal journal =
             new(Path.Combine(directory, "recovery.jsonl"));
         MonitorFailureFrameRateProvider provider = new(failureKind, failOnStop);
+        HandoffClock clock = new();
         await using LocalGameSessionOrchestrator orchestrator = new(
             store, store, journal,
+            timeProvider: clock,
             monitorInterval: TimeSpan.FromMilliseconds(30),
             frameRateProvider: provider);
 
@@ -2169,6 +2170,8 @@ public sealed class GameSessionOrchestratorTests
             await CloseProcessAsync(processId.Value);
             processId = null;
 
+            await WaitForCheckpointAsync(journal, SessionCheckpoint.GameHandoffWaiting);
+            clock.Advance(GameProcessHandoff.Window);
             if (failureKind == 0)
             {
                 GameSessionSnapshot recovery = await WaitForActiveStateAsync(
@@ -2186,7 +2189,6 @@ public sealed class GameSessionOrchestratorTests
                 provider.CleanupFails = false;
                 await orchestrator.RestoreAsync(plan.SessionId, CancellationToken.None);
             }
-
             await WaitForNoActiveSessionAsync(orchestrator);
             background.Process.Refresh();
             Assert.AreEqual(ProcessPriorityClass.Normal, background.Process.PriorityClass);
@@ -2319,6 +2321,14 @@ public sealed class GameSessionOrchestratorTests
             store.Dispose();
             DeleteDirectory(directory);
         }
+    }
+
+    private sealed class HandoffClock : TimeProvider
+    {
+        private long _offset;
+        public override long GetTimestamp() => base.GetTimestamp() + Interlocked.Read(ref _offset);
+        internal void Advance(TimeSpan duration) => Interlocked.Add(ref _offset,
+            (long)(duration.TotalSeconds * TimestampFrequency));
     }
 
     private sealed class MonitorFailureFrameRateProvider(

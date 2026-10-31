@@ -140,7 +140,6 @@ public sealed class GameMetadataRefreshService
                 existing,
                 providerResult,
                 now,
-                observedSessionMinutes: null,
                 observedLastPlayedAtUtc: null);
             await metadataRepository.UpsertMetadataAsync(
                     refreshed,
@@ -216,9 +215,6 @@ public sealed class GameMetadataRefreshService
             providerResult = null;
         }
 
-        long observedMinutes = Math.Max(
-            1,
-            (long)Math.Ceiling((ended - started).TotalMinutes));
         GameMetadata refreshed = CreateMetadata(
             profile,
             source,
@@ -226,7 +222,6 @@ public sealed class GameMetadataRefreshService
             existing,
             providerResult,
             _timeProvider.GetUtcNow(),
-            observedMinutes,
             ended);
         await metadataRepository.UpsertMetadataAsync(
                 refreshed,
@@ -259,21 +254,11 @@ public sealed class GameMetadataRefreshService
         GameMetadata? existing,
         GameMetadataProviderResult? providerResult,
         DateTimeOffset refreshedAtUtc,
-        long? observedSessionMinutes,
         DateTimeOffset? observedLastPlayedAtUtc)
     {
         long totalPlaytime = providerResult?.TotalPlaytimeMinutes
             ?? existing?.TotalPlaytimeMinutes
             ?? 0;
-        if (observedSessionMinutes is long observed)
-        {
-            long priorWithObservedSession = SaturatingAdd(
-                existing?.TotalPlaytimeMinutes ?? 0,
-                observed);
-            totalPlaytime = Math.Max(
-                totalPlaytime,
-                priorWithObservedSession);
-        }
 
         DateTimeOffset? lastPlayedAtUtc = MaxTimestamp(
             existing?.LastPlayedAtUtc,
@@ -332,11 +317,6 @@ public sealed class GameMetadataRefreshService
             : second is null || first >= second
                 ? first
                 : second;
-
-    private static long SaturatingAdd(long first, long second) =>
-        first > long.MaxValue - second
-            ? long.MaxValue
-            : first + second;
 }
 
 public sealed record GameMetadataRefreshResult(

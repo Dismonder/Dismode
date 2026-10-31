@@ -20,7 +20,7 @@ public sealed class SqliteUserDataStore :
     IGlobalBackgroundRuleRepository,
     IDisposable
 {
-    private const int CurrentSchemaVersion = 18;
+    private const int CurrentSchemaVersion = 21;
     private const int MaximumGlobalRuleCount = 128;
     private const int MaximumHistoryPageSize = 1000;
 
@@ -371,12 +371,15 @@ public sealed class SqliteUserDataStore :
         bool autoOptimizeWhenDetected = true;
         bool pinGameToPreferredCores = true;
         bool keepAwakeDuringSession = true;
+        bool applyBackgroundRulesDuringSession = false;
+        bool maximizeRefreshRateDuringSession = false;
         await using (SqliteCommand preference = connection.CreateCommand())
         {
             preference.CommandText =
                 """
                 SELECT GamePriority, UpdatedAtUtc, AutoOptimizeWhenDetected,
-                       PinGameToPreferredCores, KeepAwakeDuringSession
+                       PinGameToPreferredCores, KeepAwakeDuringSession,
+                       ApplyBackgroundRulesDuringSession, MaximizeRefreshRateDuringSession
                 FROM GameOptimizationPreferences
                 WHERE ProfileId = $profileId;
                 """;
@@ -395,6 +398,8 @@ public sealed class SqliteUserDataStore :
                 autoOptimizeWhenDetected = reader.GetBoolean(2);
                 pinGameToPreferredCores = reader.GetBoolean(3);
                 keepAwakeDuringSession = reader.GetBoolean(4);
+                applyBackgroundRulesDuringSession = reader.GetBoolean(5);
+                maximizeRefreshRateDuringSession = reader.GetBoolean(6);
             }
         }
 
@@ -431,7 +436,9 @@ public sealed class SqliteUserDataStore :
             updatedAtUtc,
             autoOptimizeWhenDetected,
             pinGameToPreferredCores,
-            keepAwakeDuringSession);
+            keepAwakeDuringSession,
+            applyBackgroundRulesDuringSession,
+            maximizeRefreshRateDuringSession);
     }
 
     /// <summary>
@@ -722,17 +729,19 @@ public sealed class SqliteUserDataStore :
                 INSERT INTO GameOptimizationPreferences (
                     ProfileId, GamePriority, UpdatedAtUtc,
                     AutoOptimizeWhenDetected, PinGameToPreferredCores,
-                    KeepAwakeDuringSession)
+                    KeepAwakeDuringSession, ApplyBackgroundRulesDuringSession, MaximizeRefreshRateDuringSession)
                 VALUES (
                     $profileId, $gamePriority, $updatedAtUtc,
                     $autoOptimizeWhenDetected, $pinGameToPreferredCores,
-                    $keepAwakeDuringSession)
+                    $keepAwakeDuringSession, $applyBackgroundRulesDuringSession, $maximizeRefreshRateDuringSession)
                 ON CONFLICT(ProfileId) DO UPDATE SET
                     GamePriority = excluded.GamePriority,
                     UpdatedAtUtc = excluded.UpdatedAtUtc,
                     AutoOptimizeWhenDetected = excluded.AutoOptimizeWhenDetected,
                     PinGameToPreferredCores = excluded.PinGameToPreferredCores,
-                    KeepAwakeDuringSession = excluded.KeepAwakeDuringSession;
+                    KeepAwakeDuringSession = excluded.KeepAwakeDuringSession,
+                    ApplyBackgroundRulesDuringSession = excluded.ApplyBackgroundRulesDuringSession,
+                    MaximizeRefreshRateDuringSession = excluded.MaximizeRefreshRateDuringSession;
                 """;
             upsert.Parameters.AddWithValue("$profileId", profileId);
             upsert.Parameters.AddWithValue(
@@ -750,6 +759,12 @@ public sealed class SqliteUserDataStore :
             upsert.Parameters.AddWithValue(
                 "$keepAwakeDuringSession",
                 preferences.KeepAwakeDuringSession ? 1 : 0);
+            upsert.Parameters.AddWithValue(
+                "$applyBackgroundRulesDuringSession",
+                preferences.ApplyBackgroundRulesDuringSession ? 1 : 0);
+            upsert.Parameters.AddWithValue(
+                "$maximizeRefreshRateDuringSession",
+                preferences.MaximizeRefreshRateDuringSession ? 1 : 0);
             await upsert.ExecuteNonQueryAsync(cancellationToken)
                 .ConfigureAwait(false);
         }
@@ -1092,7 +1107,7 @@ public sealed class SqliteUserDataStore :
                 AverageFramesPerSecond, AverageFrameTimeMilliseconds,
                 MinimumFramesPerSecond, MaximumFrameTimeMilliseconds,
                 OnePercentLowFramesPerSecond, PointOnePercentLowFramesPerSecond,
-                HitchCount)
+                HitchCount, DurationSeconds)
             VALUES (
                 $sessionId, $profileId, $gameDisplayName, $startedAtUtc,
                 $endedAtUtc, $status, $appliedActionCount,
@@ -1101,7 +1116,7 @@ public sealed class SqliteUserDataStore :
                 $averageFrameTimeMilliseconds, $minimumFramesPerSecond,
                 $maximumFrameTimeMilliseconds,
                 $onePercentLowFramesPerSecond, $pointOnePercentLowFramesPerSecond,
-                $hitchCount)
+                $hitchCount, $durationSeconds)
             ON CONFLICT(SessionId) DO NOTHING;
             """;
         command.Parameters.AddWithValue(
@@ -1130,6 +1145,7 @@ public sealed class SqliteUserDataStore :
             "$conflictCount",
             summary.ConflictCount);
         command.Parameters.AddWithValue("$errorCount", summary.ErrorCount);
+        command.Parameters.AddWithValue("$durationSeconds", (object?)summary.DurationSeconds ?? DBNull.Value);
         SessionFrameRateStatistics? frameRate =
             summary.FrameRateStatistics;
         command.Parameters.AddWithValue(
@@ -1196,7 +1212,7 @@ public sealed class SqliteUserDataStore :
                    FrameRateSampleCount, AverageFramesPerSecond,
                    AverageFrameTimeMilliseconds, MinimumFramesPerSecond,
                    MaximumFrameTimeMilliseconds, OnePercentLowFramesPerSecond,
-                   PointOnePercentLowFramesPerSecond, HitchCount
+                   PointOnePercentLowFramesPerSecond, HitchCount, DurationSeconds
             FROM SessionSummaries
             ORDER BY EndedAtUtc DESC, SessionId
             LIMIT $maximumCount;
@@ -2101,6 +2117,68 @@ public sealed class SqliteUserDataStore :
             schema.Parameters.AddWithValue("$appliedAtUtc", FormatTimestamp(DateTimeOffset.UtcNow));
             await schema.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
             await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
+            existingVersion = 18;
+        }
+
+        if (existingVersion < 19)
+        {
+            await using SqliteTransaction transaction =
+                (SqliteTransaction)await connection.BeginTransactionAsync(
+                    IsolationLevel.Serializable, cancellationToken).ConfigureAwait(false);
+            await using SqliteCommand schema = connection.CreateCommand();
+            schema.Transaction = transaction;
+            schema.CommandText =
+                """
+                ALTER TABLE GameOptimizationPreferences
+                    ADD COLUMN ApplyBackgroundRulesDuringSession INTEGER NOT NULL DEFAULT 0
+                        CHECK (ApplyBackgroundRulesDuringSession IN (0, 1));
+                INSERT INTO SchemaMigrations (Version, AppliedAtUtc)
+                VALUES (19, $appliedAtUtc);
+                """;
+            schema.Parameters.AddWithValue("$appliedAtUtc", FormatTimestamp(DateTimeOffset.UtcNow));
+            await schema.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+            await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
+            existingVersion = 19;
+        }
+
+        if (existingVersion < 20)
+        {
+            await using SqliteTransaction transaction =
+                (SqliteTransaction)await connection.BeginTransactionAsync(
+                    IsolationLevel.Serializable, cancellationToken).ConfigureAwait(false);
+            await using SqliteCommand schema = connection.CreateCommand();
+            schema.Transaction = transaction;
+            schema.CommandText =
+                """
+                ALTER TABLE SessionSummaries ADD COLUMN DurationSeconds INTEGER NULL
+                    CHECK (DurationSeconds IS NULL OR DurationSeconds >= 0);
+                INSERT INTO SchemaMigrations (Version, AppliedAtUtc)
+                VALUES (20, $appliedAtUtc);
+                """;
+            schema.Parameters.AddWithValue("$appliedAtUtc", FormatTimestamp(DateTimeOffset.UtcNow));
+            await schema.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+            await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
+            existingVersion = 20;
+        }
+
+        if (existingVersion < 21)
+        {
+            await using SqliteTransaction transaction =
+                (SqliteTransaction)await connection.BeginTransactionAsync(
+                    IsolationLevel.Serializable, cancellationToken).ConfigureAwait(false);
+            await using SqliteCommand schema = connection.CreateCommand();
+            schema.Transaction = transaction;
+            schema.CommandText =
+                """
+                ALTER TABLE GameOptimizationPreferences
+                    ADD COLUMN MaximizeRefreshRateDuringSession INTEGER NOT NULL DEFAULT 0
+                        CHECK (MaximizeRefreshRateDuringSession IN (0, 1));
+                INSERT INTO SchemaMigrations (Version, AppliedAtUtc)
+                VALUES (21, $appliedAtUtc);
+                """;
+            schema.Parameters.AddWithValue("$appliedAtUtc", FormatTimestamp(DateTimeOffset.UtcNow));
+            await schema.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+            await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
         }
     }
 
@@ -2165,13 +2243,13 @@ public sealed class SqliteUserDataStore :
                        AverageFramesPerSecond, AverageFrameTimeMilliseconds,
                        MinimumFramesPerSecond, MaximumFrameTimeMilliseconds,
                        OnePercentLowFramesPerSecond, PointOnePercentLowFramesPerSecond,
-                       HitchCount
+                       HitchCount, DurationSeconds
                 FROM SessionSummaries
                 LIMIT 0;
 
                 SELECT ProfileId, GamePriority, UpdatedAtUtc,
                        AutoOptimizeWhenDetected, PinGameToPreferredCores,
-                       KeepAwakeDuringSession
+                       KeepAwakeDuringSession, ApplyBackgroundRulesDuringSession, MaximizeRefreshRateDuringSession
                 FROM GameOptimizationPreferences
                 LIMIT 0;
 
@@ -2342,7 +2420,8 @@ public sealed class SqliteUserDataStore :
             reader.GetInt32(7),
             reader.GetInt32(8),
             reader.GetInt32(9),
-            frameRateStatistics);
+            frameRateStatistics,
+            reader.IsDBNull(18) ? null : reader.GetInt64(18));
     }
 
     private static string FormatTimestamp(DateTimeOffset timestamp) =>
