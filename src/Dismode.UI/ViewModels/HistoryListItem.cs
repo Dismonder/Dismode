@@ -13,7 +13,7 @@ public sealed class HistoryListItem
             .ToLocalTime()
             .ToString("g", CultureInfo.CurrentCulture);
         DurationLabel =
-            FormatDuration(summary.EndedAtUtc - summary.StartedAtUtc);
+            FormatDuration(summary.Duration);
         StatusLabel = summary.Status switch
         {
             SessionCompletionStatus.Completed => "Zakończona",

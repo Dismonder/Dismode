@@ -23,4 +23,10 @@ public enum SessionCheckpoint
     /// reverse restraints nobody planned in advance.
     /// </summary>
     BackgroundRestraintChanged = 15,
+    GameHandoffWaiting = 16,
+    GameHandoffAdopted = 17,
+    GameplayDurationObserved = 18,
+    GameHandoffAdoptionPrepared = 19,
+    GameHandoffRefused = 20,
+    BackgroundRuleMonitorDisabled = 21,
 }

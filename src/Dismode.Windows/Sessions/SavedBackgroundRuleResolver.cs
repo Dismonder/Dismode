@@ -17,7 +17,8 @@ public sealed class SavedBackgroundRuleResolver
         GameOptimizationPreferences preferences,
         string gameExecutablePath,
         int currentSessionId,
-        int maximumProcessCount)
+        int maximumProcessCount,
+        Func<ProcessSnapshot, bool>? processFilter = null)
     {
         ArgumentNullException.ThrowIfNull(preferences);
         ArgumentException.ThrowIfNullOrWhiteSpace(gameExecutablePath);
@@ -78,6 +79,7 @@ public sealed class SavedBackgroundRuleResolver
         {
             if (selections.Count >= maximumProcessCount
                 || process.StartedAtUtc is not DateTimeOffset startedAtUtc
+                || processFilter?.Invoke(process) == false
                 || string.IsNullOrWhiteSpace(process.ExecutablePath)
                 || !TryGetFullPath(
                     process.ExecutablePath,

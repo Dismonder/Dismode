@@ -15,9 +15,14 @@ public sealed record SessionSummary
         int restoredActionCount,
         int conflictCount,
         int errorCount,
-        SessionFrameRateStatistics? frameRateStatistics = null)
+        SessionFrameRateStatistics? frameRateStatistics = null,
+        long? durationSeconds = null)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(gameDisplayName);
+        if (durationSeconds < 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(durationSeconds));
+        }
 
         DateTimeOffset started = startedAtUtc.ToUniversalTime();
         DateTimeOffset ended = endedAtUtc.ToUniversalTime();
@@ -58,6 +63,7 @@ public sealed record SessionSummary
         ConflictCount = conflictCount;
         ErrorCount = errorCount;
         FrameRateStatistics = frameRateStatistics;
+        DurationSeconds = durationSeconds;
     }
 
     public SessionId SessionId { get; }
@@ -81,4 +87,9 @@ public sealed record SessionSummary
     public int ErrorCount { get; }
 
     public SessionFrameRateStatistics? FrameRateStatistics { get; }
+
+    public long? DurationSeconds { get; }
+
+    public TimeSpan Duration => DurationSeconds is long seconds
+        ? TimeSpan.FromSeconds(seconds) : EndedAtUtc - StartedAtUtc;
 }

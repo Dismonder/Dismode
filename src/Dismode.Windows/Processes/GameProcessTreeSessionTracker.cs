@@ -1,6 +1,7 @@
 using System.Collections.Concurrent;
 using System.ComponentModel;
 using Dismode.Core.Domain.Processes;
+using Dismode.Windows.Cpu;
 
 namespace Dismode.Windows.Processes;
 
@@ -54,8 +55,11 @@ public sealed class GameProcessTreeSessionTracker
         }
     }
 
+    public ValueTask<GameProcessTreeObservation> ObserveAsync(CancellationToken cancellationToken) =>
+        ObserveAsync(null, cancellationToken);
+
     public async ValueTask<GameProcessTreeObservation> ObserveAsync(
-        CancellationToken cancellationToken)
+        IReadOnlyList<CpuProcessSample>? processSet, CancellationToken cancellationToken)
     {
         if (!_scratch.TryTake(out ObservationScratch? scratch))
         {
@@ -64,7 +68,7 @@ public sealed class GameProcessTreeSessionTracker
 
         try
         {
-            return await ObserveCoreAsync(scratch, cancellationToken).ConfigureAwait(false);
+            return await ObserveCoreAsync(scratch, processSet, cancellationToken).ConfigureAwait(false);
         }
         finally
         {
@@ -75,7 +79,7 @@ public sealed class GameProcessTreeSessionTracker
 
     private async ValueTask<GameProcessTreeObservation> ObserveCoreAsync(
         ObservationScratch scratch,
-        CancellationToken cancellationToken)
+        IReadOnlyList<CpuProcessSample>? processSet, CancellationToken cancellationToken)
     {
         IReadOnlyList<ProcessIdentity> known = GetKnownProcesses();
         Dictionary<int, ProcessIdentity> trustedSeeds = scratch.TrustedSeeds;
@@ -123,7 +127,8 @@ public sealed class GameProcessTreeSessionTracker
         IReadOnlyDictionary<int, int> parents;
         try
         {
-            parents = _parentMapProvider.Capture();
+            parents = processSet is null ? _parentMapProvider.Capture()
+                : processSet.ToDictionary(process => process.ProcessId, process => process.ParentProcessId);
         }
         catch (Exception exception) when (
             exception is
@@ -251,6 +256,8 @@ public sealed class GameProcessTreeSessionTracker
             newlyDiscovered,
             IsReliable: true);
     }
+
+    internal bool Adopt(ProcessIdentity identity) => AddKnown(identity);
 
     private bool AddKnown(ProcessIdentity identity)
     {

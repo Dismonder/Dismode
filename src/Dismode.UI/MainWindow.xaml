@@ -1898,6 +1898,18 @@
                           IsChecked="True"
                           ToolTipService.ToolTip="Na czas sesji Dismode prosi Windows o niewygaszanie ekranu i niewchodzenie w uśpienie. Zadanie znika po zakończeniu sesji."
                           Click="OnKeepAwakeDuringSessionCheckBoxClicked" />
+                      <CheckBox
+                          x:Name="LateBackgroundRulesCheckBox"
+                          AutomationProperties.Name="Stosuj reguły tła także po starcie gry"
+                          Content="Stosuj reguły tła także po starcie gry"
+                          IsChecked="False"
+                          Click="OnLateBackgroundRulesCheckBoxClicked" />
+                      <CheckBox
+                          x:Name="MaximizeRefreshRateCheckBox"
+                          AutomationProperties.Name="Maksymalne odświeżanie na czas gry"
+                          Content="Maksymalne odświeżanie na czas gry"
+                          IsChecked="False"
+                          Click="OnMaximizeRefreshRateCheckBoxClicked" />
                     </StackPanel>
                   </Border>
 
