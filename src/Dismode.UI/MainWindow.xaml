@@ -1301,8 +1301,12 @@
                 <Grid.ColumnDefinitions><ColumnDefinition Width="Auto" /><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
                 <TextBlock Text="Ostatnio grane" Foreground="{ThemeResource DismodeMutedTextBrush}" FontSize="12" VerticalAlignment="Center" />
                 <TextBlock x:Name="LibraryHeroTitleText" Grid.Column="1" FontSize="16" FontWeight="SemiBold" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
-                <Button x:Name="LibraryHeroLaunchButton" MinHeight="32" Height="32" Padding="12,4" Grid.Column="2" Content="Graj" Click="OnLibraryHeroLaunchClicked"
-                        AutomationProperties.Name="Uruchom ostatnio graną grę" Style="{StaticResource DismodePrimaryButtonStyle}" />
+                <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="8">
+                  <Button MinHeight="32" Height="32" Padding="12,4" Content="Wyniki gry" Click="OnLibraryHeroResultsClicked"
+                          AutomationProperties.Name="Pokaż wyniki ostatnio granej gry" Style="{StaticResource DismodeSecondaryButtonStyle}" />
+                  <Button x:Name="LibraryHeroLaunchButton" MinHeight="32" Height="32" Padding="12,4" Content="Graj" Click="OnLibraryHeroLaunchClicked"
+                          AutomationProperties.Name="Uruchom ostatnio graną grę" Style="{StaticResource DismodePrimaryButtonStyle}" />
+                </StackPanel>
                 <StackPanel Visibility="Collapsed">
                   <Image x:Name="LibraryHeroImage" /><TextBlock x:Name="LibraryHeroStateText" /><TextBlock x:Name="LibraryHeroMetaText" />
                 </StackPanel>
@@ -2271,10 +2275,130 @@ CPU —   GPU —
                 IsOpen="False"
                 Title="Historia" />
 
-            <!-- Bento History List -->
+            <!-- Bento History: a tile per game; a tile opens that game's sessions -->
             <Grid Grid.Row="3" Margin="0,8,0,0">
+              <Grid.RowDefinitions>
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="*" />
+              </Grid.RowDefinitions>
+              <GridView
+                  x:Name="HistoryGamesGrid"
+                  Grid.RowSpan="2"
+                  AutomationProperties.Name="Gry z wynikami sesji"
+                  IsItemClickEnabled="True"
+                  ItemClick="OnHistoryGameClicked"
+                  SelectionMode="None">
+                <GridView.ItemTemplate>
+                  <DataTemplate>
+                    <Border
+                        Width="288"
+                        Height="242"
+                        Margin="0,0,14,14"
+                        Padding="0"
+                        Style="{StaticResource DismodeDeckCardStyle}">
+                      <Grid>
+                        <Grid.RowDefinitions>
+                          <RowDefinition Height="136" />
+                          <RowDefinition Height="*" />
+                        </Grid.RowDefinitions>
+
+                        <Border Background="#FF0B1015" CornerRadius="11,11,0,0">
+                          <Grid>
+                            <Image
+                                Source="{Binding Profile.TileArtworkSource}"
+                                Opacity="0.18"
+                                Visibility="{Binding Profile.TileBackdropVisibility}"
+                                Stretch="UniformToFill" />
+                            <Image
+                                HorizontalAlignment="Center"
+                                VerticalAlignment="Center"
+                                Source="{Binding Profile.TileArtworkSource}"
+                                Stretch="{Binding Profile.TileArtworkStretch}" />
+                            <!-- A game removed from the library has no Profile:
+                                 the letter keeps its default Visible state. -->
+                            <TextBlock
+                                HorizontalAlignment="Center"
+                                VerticalAlignment="Center"
+                                Foreground="{ThemeResource DismodeAccentBrush}"
+                                FontFamily="Segoe UI Variable Display"
+                                FontSize="44"
+                                FontWeight="SemiBold"
+                                Opacity="0.85"
+                                Visibility="{Binding Profile.FallbackInitialVisibility}"
+                                Text="{Binding Initial}" />
+                            <Border
+                                Margin="0,8,8,0"
+                                Padding="7,4"
+                                HorizontalAlignment="Right"
+                                VerticalAlignment="Top"
+                                Background="{ThemeResource DismodeCardBrush}"
+                                BorderBrush="{ThemeResource DismodeAmberBrush}"
+                                BorderThickness="1"
+                                CornerRadius="8"
+                                ToolTipService.ToolTip="{Binding ProblemLabel}"
+                                Visibility="{Binding ProblemVisibility}">
+                              <FontIcon
+                                  Foreground="{ThemeResource DismodeAmberBrush}"
+                                  FontSize="13"
+                                  Glyph="&#xE7BA;" />
+                            </Border>
+                          </Grid>
+                        </Border>
+
+                        <StackPanel Grid.Row="1" Padding="16,12" Spacing="4">
+                          <TextBlock
+                              FontFamily="Segoe UI Variable Display"
+                              FontSize="16"
+                              FontWeight="SemiBold"
+                              Text="{Binding GameDisplayName}"
+                              TextTrimming="CharacterEllipsis" />
+                          <TextBlock
+                              Foreground="{ThemeResource DismodeMutedTextBrush}"
+                              FontSize="12"
+                              Text="{Binding SessionsLabel}"
+                              TextTrimming="CharacterEllipsis" />
+                          <TextBlock
+                              Foreground="{ThemeResource DismodeAccentBrush}"
+                              FontSize="13"
+                              FontWeight="SemiBold"
+                              Text="{Binding FrameRateLabel}"
+                              TextTrimming="CharacterEllipsis" />
+                        </StackPanel>
+                      </Grid>
+                    </Border>
+                  </DataTemplate>
+                </GridView.ItemTemplate>
+              </GridView>
+
+              <StackPanel
+                  x:Name="HistoryGameHeader"
+                  Margin="0,0,0,12"
+                  Orientation="Horizontal"
+                  Spacing="14"
+                  Visibility="Collapsed">
+                <Button
+                    x:Name="HistoryBackButton"
+                    Style="{StaticResource DismodeSecondaryButtonStyle}"
+                    AutomationProperties.Name="Wszystkie gry"
+                    Click="OnHistoryBackClicked">
+                  <StackPanel Orientation="Horizontal" Spacing="8">
+                    <FontIcon FontSize="14" Glyph="&#xE72B;" />
+                    <TextBlock Text="Wszystkie gry" />
+                  </StackPanel>
+                </Button>
+                <TextBlock
+                    x:Name="HistoryGameTitleText"
+                    VerticalAlignment="Center"
+                    FontFamily="Segoe UI Variable Display"
+                    FontSize="20"
+                    FontWeight="SemiBold"
+                    TextWrapping="Wrap" />
+              </StackPanel>
+
               <ListView
                   x:Name="HistoryList"
+                  Grid.Row="1"
+                  Visibility="Collapsed"
                   AutomationProperties.Name="Lista zakończonych sesji"
                   IsItemClickEnabled="False"
                   SelectionMode="None">
@@ -2378,6 +2502,7 @@ CPU —   GPU —
               </ListView>
               <TextBlock
                   x:Name="HistoryEmptyText"
+                  Grid.Row="1"
                   Margin="12"
                   HorizontalAlignment="Center"
                   VerticalAlignment="Center"

@@ -529,6 +529,33 @@ public sealed class UiResourceReferenceTests
     }
 
     [TestMethod]
+    public void HistoryGivesEveryGameItsOwnPlace()
+    {
+        XDocument mainWindow = LoadUiXaml("MainWindow.xaml");
+        XElement page = FindNamedElement(mainWindow, "HistoryPage");
+
+        XElement games = FindNamedElement(page, "HistoryGamesGrid");
+        Assert.AreEqual("GridView", games.Name.LocalName);
+        Assert.AreEqual("OnHistoryGameClicked", (string?)games.Attribute("ItemClick"));
+
+        // The session log is the detail of one game, hidden until one is chosen.
+        Assert.AreEqual(
+            "Collapsed",
+            (string?)FindNamedElement(page, "HistoryList").Attribute("Visibility"));
+        Assert.AreEqual(
+            "Collapsed",
+            (string?)FindNamedElement(page, "HistoryGameHeader").Attribute("Visibility"));
+        Assert.AreEqual(
+            "OnHistoryBackClicked",
+            (string?)FindNamedElement(page, "HistoryBackButton").Attribute("Click"));
+
+        Assert.IsTrue(FindNamedElement(mainWindow, "ProfilesPage")
+            .Descendants()
+            .Any(element => element.Name.LocalName == "Button"
+                && (string?)element.Attribute("Click") == "OnLibraryHeroResultsClicked"));
+    }
+
+    [TestMethod]
     public void SystemImpactReservesMoreWidthForLongMetrics()
     {
         XDocument mainWindow = LoadUiXaml("MainWindow.xaml");
