@@ -211,12 +211,9 @@ public sealed class UiResourceReferenceTests
         XDocument mainWindow = LoadUiXaml("MainWindow.xaml");
         XElement card = FindNamedElement(mainWindow, "SystemOptimizerCard");
 
-        // Karta ma byc osobna i na pelna szerokosc; konkretny numer wiersza
-        // jest szczegolem ukladu i zmienia sie przy przebudowie ustawien.
-        Assert.AreEqual("2", (string?)card.Attribute("Grid.ColumnSpan"));
-        Assert.IsNotNull(
-            card.Attribute("Grid.Row"),
-            "Karta musi byc jawnie umieszczona w wierszu siatki ustawien.");
+        // Optymalizatory dziela responsywny wiersz, a waskie okno je uklada.
+        Assert.AreEqual("SettingsTilePanel", card.Parent?.Name.LocalName);
+        Assert.AreEqual("2", (string?)card.Parent?.Attribute("MaximumColumns"));
         Assert.IsTrue(ContainsNamedElement(card, "SystemOptimizerStatusText"));
         Assert.IsTrue(ContainsNamedElement(card, "SystemOptimizerProfileText"));
         XElement button = FindNamedElement(card, "OpenSystemOptimizerButton");
@@ -476,12 +473,34 @@ public sealed class UiResourceReferenceTests
             "HistoryHeaderAction.(Grid.Row)",
             "CheckForUpdatesButton.(Grid.Row)",
             "UpdatesSettingsCard.(Grid.Row)",
-            "DiagnosticsStatusCard.(Grid.Row)",
         ];
         foreach (string target in requiredTargets)
         {
             Assert.Contains(target, setterTargets);
         }
+    }
+
+    [TestMethod]
+    public void SettingsKeepIndependentSwitchesAndMoveDetailsIntoTiles()
+    {
+        XDocument mainWindow = LoadUiXaml("MainWindow.xaml");
+        XElement settings = FindNamedElement(mainWindow, "DiagnosticsPage");
+        Assert.AreEqual(6, FindNamedElement(settings, "SettingsPerformanceCard")
+            .Descendants().Count(element => element.Name.LocalName == "SettingsOptionTile"));
+        foreach (XElement toggle in settings.Descendants()
+            .Where(element => element.Name.LocalName == "ToggleSwitch"))
+        {
+            Assert.AreEqual(string.Empty, (string?)toggle.Attribute("OnContent"));
+            Assert.AreEqual(string.Empty, (string?)toggle.Attribute("OffContent"));
+            Assert.IsNotNull(toggle.Attribute("Toggled"));
+        }
+
+        XElement edge = FindNamedElement(settings, "EdgePanelSettingsToggleSwitch");
+        Assert.AreEqual("StackPanel", edge.Parent?.Name.LocalName);
+        Assert.AreEqual("OnEdgePanelSettingChanged", (string?)edge.Attribute("Toggled"));
+        Assert.AreEqual("RadioButtons", FindNamedElement(settings, "ThemeSelector").Name.LocalName);
+        Assert.AreEqual(5, settings.Descendants().Count(element =>
+            element.Name.LocalName == "Ellipse" && element.Attribute(XamlNamespace + "Name") is not null));
     }
 
     [TestMethod]
