@@ -165,17 +165,20 @@ public sealed class MemoryPresentationTests
     }
 
     [TestMethod]
-    public void HiddenStartupKeepsSlowCadenceThroughInitialStatusRefresh()
+    public void HiddenStartupAllowsInitialReadButDoesNotSchedulePolling()
     {
         MemoryRefreshPolicy policy = new() { IsVisible = false };
-        Assert.AreEqual(TimeSpan.FromSeconds(30), policy.StatusPollInterval);
+        Assert.IsFalse(policy.ShouldPollStatus);
         Assert.IsTrue(policy.TryBeginStatus());
         policy.EndStatus();
-        Assert.AreEqual(TimeSpan.FromSeconds(30), policy.StatusPollInterval);
+        Assert.IsFalse(policy.ShouldPollStatus);
         policy.IsVisible = true;
+        Assert.IsTrue(policy.ShouldPollStatus);
         Assert.AreEqual(TimeSpan.FromSeconds(5), policy.StatusPollInterval);
         Assert.IsTrue(policy.TryBeginStatus());
         policy.EndStatus();
+        policy.IsVisible = false;
+        Assert.IsFalse(policy.ShouldPollStatus);
     }
 
     [TestMethod]

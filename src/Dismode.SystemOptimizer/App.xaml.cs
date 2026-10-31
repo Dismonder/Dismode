@@ -25,6 +25,7 @@ public partial class App : Application
 
     protected override void OnLaunched(LaunchActivatedEventArgs args)
     {
+        if (Environment.GetEnvironmentVariable("DISMODE_UI_PREVIEW") == "1") { P3Preview.Run(); return; } // PREVIEW-HACK
         if (!OperatingSystem.IsWindowsVersionAtLeast(10, 0, 22631))
         {
             Exit();

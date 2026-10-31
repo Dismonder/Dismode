@@ -23,7 +23,7 @@
         <Grid.ColumnDefinitions>
           <ColumnDefinition x:Name="TitleBarLeftInset" Width="0" />
           <ColumnDefinition Width="*" />
-          <ColumnDefinition x:Name="TitleBarRightInset" Width="0" />
+          <ColumnDefinition x:Name="TitleBarRightInset" Width="138" />
         </Grid.ColumnDefinitions>
         <Grid
             x:Name="TitleBarDragRegion"
@@ -38,12 +38,14 @@
           <Border
               Width="28"
               Height="28"
-              Margin="12,0,10,0"
+              Margin="16,0,8,0"
               Background="{ThemeResource OptimizerAccentSoftBrush}"
+              BorderBrush="{ThemeResource OptimizerAccentBrush}"
+              BorderThickness="1"
               CornerRadius="8">
             <FontIcon
                 Glyph="&#xE950;"
-                FontSize="15"
+                FontSize="14"
                 Foreground="{ThemeResource OptimizerAccentBrush}" />
           </Border>
           <StackPanel
@@ -63,12 +65,12 @@
           </StackPanel>
           <Border
               Grid.Column="2"
-              Margin="12,0"
-              Padding="10,4"
+              Margin="16,0"
+              Padding="12,4"
               Background="{ThemeResource OptimizerElevatedBrush}"
               BorderBrush="{ThemeResource OptimizerBorderBrush}"
               BorderThickness="1"
-              CornerRadius="12">
+              CornerRadius="11">
             <TextBlock
                 x:Name="TitleBarModeText"
                 Width="102"
@@ -131,12 +133,12 @@
             x:Name="ServiceStatusStrip"
             Grid.Row="0"
             Height="64"
-            Margin="24,14,24,0"
-            Padding="18,0"
+            Margin="24,16,24,0"
+            Padding="16,0"
             Background="{ThemeResource OptimizerCardBrush}"
-            BorderBrush="{ThemeResource OptimizerBorderBrush}"
+            BorderBrush="{ThemeResource DismodeCardEdgeBrush}"
             BorderThickness="1"
-            CornerRadius="12">
+            CornerRadius="11">
           <Grid>
             <Grid.ColumnDefinitions>
               <ColumnDefinition Width="Auto" />
@@ -147,7 +149,7 @@
                 x:Name="ServiceStatusDot"
                 Width="10"
                 Height="10"
-                Margin="0,0,14,0"
+                Margin="0,0,16,0"
                 Fill="{ThemeResource OptimizerWarningBrush}" />
             <StackPanel Grid.Column="1" VerticalAlignment="Center" Spacing="2">
               <TextBlock
@@ -160,12 +162,12 @@
                   x:Name="ServiceStatusMessage"
                   Height="18"
                   MaxLines="1"
-                  Text="Odczytywanie stanu i recovery…"
+                  Text="Odczytywanie stanu i ochrony…"
                   Style="{StaticResource OptimizerMutedTextStyle}"
                   TextWrapping="NoWrap"
                   TextTrimming="CharacterEllipsis" />
             </StackPanel>
-            <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
+            <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
               <ProgressRing
                   x:Name="OperationProgressRing"
                   Width="22"
@@ -178,8 +180,9 @@
                   x:Name="RefreshButton"
                   Width="108"
                   Style="{StaticResource OptimizerSecondaryButtonStyle}"
+                  AutomationProperties.Name="Odśwież"
                   Click="RefreshButton_Click">
-                <StackPanel Orientation="Horizontal" Spacing="7">
+                <StackPanel Orientation="Horizontal" Spacing="8">
                   <FontIcon Glyph="&#xE72C;" FontSize="14" />
                   <TextBlock Text="Odśwież" />
                 </StackPanel>
@@ -188,59 +191,82 @@
           </Grid>
         </Border>
 
-        <Grid Grid.Row="1" Margin="24,18,24,24">
+        <Grid Grid.Row="1" Margin="24,16,24,24">
           <ScrollViewer
               x:Name="OverviewPage"
               HorizontalScrollMode="Disabled"
               HorizontalScrollBarVisibility="Disabled"
               VerticalScrollBarVisibility="Auto">
             <StackPanel MaxWidth="1380" HorizontalAlignment="Stretch" Spacing="16">
-              <Grid>
-                <Grid.ColumnDefinitions>
-                  <ColumnDefinition Width="*" />
-                  <ColumnDefinition Width="Auto" />
-                </Grid.ColumnDefinitions>
-                <StackPanel Spacing="5">
-                  <TextBlock Text="DISMODE / SYSTEM OPTIMIZER" Style="{StaticResource OptimizerEyebrowStyle}" />
-                  <TextBlock Text="Przegląd" Style="{StaticResource OptimizerPageTitleStyle}" />
-                  <TextBlock
-                      Text="Pomiarowe optymalizacje z niezależnym readbackiem i automatycznym restore."
-                      Style="{StaticResource OptimizerMutedTextStyle}" />
-                </StackPanel>
-                <Button
-                    x:Name="ConsentButton"
-                    Grid.Column="1"
-                    Width="190"
-                    Style="{StaticResource OptimizerPrimaryButtonStyle}"
-                    Content="Włącz bezpieczny tryb"
-                    Click="ConsentButton_Click" />
-              </Grid>
+              <Border Style="{StaticResource DismodeDeckHeaderStyle}">
+                <Grid ColumnSpacing="16">
+                  <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                  </Grid.ColumnDefinitions>
+                  <StackPanel Spacing="8">
+                    <TextBlock Text="DISMODE / SYSTEM OPTIMIZER" Style="{StaticResource OptimizerEyebrowStyle}" />
+                    <TextBlock Text="Przegląd" Style="{StaticResource OptimizerPageTitleStyle}" />
+                    <StackPanel Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
+                      <TextBlock
+                          Text="Bezpieczne poprawki pod gry — każdą zmianę cofniesz jednym kliknięciem."
+                          Style="{StaticResource OptimizerMutedTextStyle}"
+                          VerticalAlignment="Center" />
+                      <ToggleButton
+                          Style="{StaticResource OptimizerMoreToggleStyle}"
+                          Tag="OverviewProtectionDetails"
+                          AutomationProperties.Name="Więcej"
+                          Click="ToggleDetails_Click">
+                        <StackPanel Orientation="Horizontal" Spacing="4">
+                          <TextBlock Text="Więcej" />
+                          <FontIcon Glyph="&#xE70D;" FontSize="10" />
+                        </StackPanel>
+                      </ToggleButton>
+                    </StackPanel>
+                    <TextBlock
+                        x:Name="OverviewProtectionDetails"
+                        Visibility="Collapsed"
+                        Text="Każda akcja przechodzi capability check, snapshot, zapis intencji, apply, niezależny readback i checkpoint. Restore porównuje stan original / applied / current i nie nadpisuje zewnętrznych zmian."
+                        Style="{StaticResource OptimizerMutedTextStyle}"
+                        FontSize="12" />
+                  </StackPanel>
+                  <Button
+                      x:Name="ConsentButton"
+                      Grid.Column="1"
+                      Width="190"
+                      VerticalAlignment="Center"
+                      Style="{StaticResource OptimizerPrimaryButtonStyle}"
+                      Content="Włącz bezpieczny tryb"
+                      Click="ConsentButton_Click" />
+                </Grid>
+              </Border>
 
               <Border Style="{StaticResource OptimizerCardStyle}" Background="{ThemeResource OptimizerAccentSoftBrush}">
-                <Grid ColumnSpacing="20">
+                <Grid ColumnSpacing="16">
                   <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="Auto" />
                     <ColumnDefinition Width="*" />
                     <ColumnDefinition Width="Auto" />
                   </Grid.ColumnDefinitions>
-                  <Border Width="58" Height="58" Background="{ThemeResource OptimizerElevatedBrush}" CornerRadius="16">
-                    <FontIcon Glyph="&#xE9D2;" FontSize="26" Foreground="{ThemeResource OptimizerAccentBrush}" />
+                  <Border Width="56" Height="56" Background="{ThemeResource OptimizerElevatedBrush}" CornerRadius="11">
+                    <FontIcon Glyph="&#xE9D2;" FontSize="24" Foreground="{ThemeResource OptimizerAccentBrush}" />
                   </Border>
                   <StackPanel Grid.Column="1" Spacing="4" VerticalAlignment="Center">
                     <TextBlock x:Name="OverviewStateText" Text="Usługa nie została jeszcze odczytana" Style="{StaticResource OptimizerSectionTitleStyle}" />
-                    <TextBlock x:Name="OverviewDetailText" Height="40" MaxLines="2" Text="Dismode niczego nie zmieni bez świadomej zgody i sprawnego recovery." Style="{StaticResource OptimizerMutedTextStyle}" TextTrimming="CharacterEllipsis" />
+                    <TextBlock x:Name="OverviewDetailText" Height="40" MaxLines="2" Text="Dismode niczego nie zmieni bez Twojej zgody i gotowej kopii ustawień." Style="{StaticResource OptimizerMutedTextStyle}" TextTrimming="CharacterEllipsis" />
                   </StackPanel>
                   <Button
                       x:Name="RestoreAllButton"
                       Grid.Column="2"
                       Width="170"
+                      VerticalAlignment="Center"
                       Style="{StaticResource OptimizerSecondaryButtonStyle}"
                       Content="Przywróć wszystko"
                       Click="RestoreAllButton_Click" />
                 </Grid>
               </Border>
 
-              <Grid ColumnSpacing="14">
+              <Grid ColumnSpacing="16">
                 <Grid.ColumnDefinitions>
                   <ColumnDefinition Width="*" />
                   <ColumnDefinition Width="*" />
@@ -248,33 +274,26 @@
                 </Grid.ColumnDefinitions>
                 <Border Style="{StaticResource OptimizerCardStyle}">
                   <StackPanel Spacing="8">
-                    <TextBlock Text="RECOVERY" Style="{StaticResource OptimizerEyebrowStyle}" />
+                    <TextBlock Text="OCHRONA" Style="{StaticResource OptimizerEyebrowStyle}" />
                     <TextBlock x:Name="RecoveryMetricText" Text="Sprawdzanie" Style="{StaticResource OptimizerMetricValueStyle}" />
-                    <TextBlock x:Name="RecoveryMetricDetail" Text="Stan journalu maszyny" Style="{StaticResource OptimizerMutedTextStyle}" />
+                    <TextBlock x:Name="RecoveryMetricDetail" Text="Gotowość cofania zmian" Style="{StaticResource OptimizerMutedTextStyle}" />
                   </StackPanel>
                 </Border>
                 <Border Grid.Column="1" Style="{StaticResource OptimizerCardStyle}">
                   <StackPanel Spacing="8">
                     <TextBlock Text="PROFIL GRY" Style="{StaticResource OptimizerEyebrowStyle}" />
                     <TextBlock x:Name="GameProfileMetricText" Text="Brak" Style="{StaticResource OptimizerMetricValueStyle}" TextTrimming="CharacterEllipsis" />
-                    <TextBlock Text="Akcje sesyjne cofane po zakończeniu gry" Style="{StaticResource OptimizerMutedTextStyle}" />
+                    <TextBlock Text="Działa tylko podczas grania" Style="{StaticResource OptimizerMutedTextStyle}" />
                   </StackPanel>
                 </Border>
                 <Border Grid.Column="2" Style="{StaticResource OptimizerCardStyle}">
                   <StackPanel Spacing="8">
                     <TextBlock Text="EKSPERYMENT" Style="{StaticResource OptimizerEyebrowStyle}" />
                     <TextBlock x:Name="ExperimentMetricText" Text="Brak" Style="{StaticResource OptimizerMetricValueStyle}" TextTrimming="CharacterEllipsis" />
-                    <TextBlock Text="Jedna zmiana na kontrolowany test A/B" Style="{StaticResource OptimizerMutedTextStyle}" />
+                    <TextBlock Text="Test płynności A/B w grze" Style="{StaticResource OptimizerMutedTextStyle}" />
                   </StackPanel>
                 </Border>
               </Grid>
-
-              <Border Style="{StaticResource OptimizerCardStyle}">
-                <StackPanel Spacing="12">
-                  <TextBlock Text="Jak działa ochrona" Style="{StaticResource OptimizerSectionTitleStyle}" />
-                  <TextBlock Text="Każda akcja przechodzi capability check, snapshot, zapis intencji, apply, niezależny readback i checkpoint. Restore porównuje stan original / applied / current i nie nadpisuje zewnętrznych zmian." Style="{StaticResource OptimizerMutedTextStyle}" />
-                </StackPanel>
-              </Border>
             </StackPanel>
           </ScrollViewer>
 
@@ -285,19 +304,44 @@
               HorizontalScrollBarVisibility="Disabled"
               VerticalScrollBarVisibility="Auto">
             <StackPanel MaxWidth="1380" Spacing="16">
-              <TextBlock Text="SPRZĘT / ZGODNOŚĆ" Style="{StaticResource OptimizerEyebrowStyle}" />
-              <TextBlock Text="Sprzęt i zgodność" Style="{StaticResource OptimizerPageTitleStyle}" />
-              <TextBlock Text="Fingerprint nie zawiera numerów seryjnych ani identyfikatorów użytkownika." Style="{StaticResource OptimizerMutedTextStyle}" />
+              <Border Style="{StaticResource DismodeDeckHeaderStyle}">
+                <StackPanel Spacing="8">
+                  <TextBlock Text="SPRZĘT / ZGODNOŚĆ" Style="{StaticResource OptimizerEyebrowStyle}" />
+                  <TextBlock Text="Sprzęt i zgodność" Style="{StaticResource OptimizerPageTitleStyle}" />
+                  <StackPanel Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
+                    <TextBlock
+                        Text="Wykryte podzespoły dobierają bezpieczne opcje dla Twojego PC."
+                        Style="{StaticResource OptimizerMutedTextStyle}"
+                        VerticalAlignment="Center" />
+                    <ToggleButton
+                        Style="{StaticResource OptimizerMoreToggleStyle}"
+                        Tag="HardwarePrivacyDetails"
+                        AutomationProperties.Name="Więcej"
+                        Click="ToggleDetails_Click">
+                      <StackPanel Orientation="Horizontal" Spacing="4">
+                        <TextBlock Text="Więcej" />
+                        <FontIcon Glyph="&#xE70D;" FontSize="10" />
+                      </StackPanel>
+                    </ToggleButton>
+                  </StackPanel>
+                  <TextBlock
+                      x:Name="HardwarePrivacyDetails"
+                      Visibility="Collapsed"
+                      Text="Fingerprint nie zawiera numerów seryjnych ani identyfikatorów użytkownika. Służy wyłącznie do wykrycia zmiany sprzętu lub sterownika."
+                      Style="{StaticResource OptimizerMutedTextStyle}"
+                      FontSize="12" />
+                </StackPanel>
+              </Border>
               <Border Style="{StaticResource OptimizerCardStyle}">
                 <Grid RowSpacing="16" ColumnSpacing="24">
                   <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
                   <Grid.RowDefinitions><RowDefinition Height="Auto" /><RowDefinition Height="Auto" /><RowDefinition Height="Auto" /></Grid.RowDefinitions>
-                  <StackPanel><TextBlock Text="WINDOWS" Style="{StaticResource OptimizerEyebrowStyle}" /><TextBlock x:Name="WindowsBuildText" Text="—" Style="{StaticResource OptimizerMetricValueStyle}" /></StackPanel>
-                  <StackPanel Grid.Column="1"><TextBlock Text="ARCHITEKTURA" Style="{StaticResource OptimizerEyebrowStyle}" /><TextBlock x:Name="ArchitectureText" Text="—" Style="{StaticResource OptimizerMetricValueStyle}" /></StackPanel>
-                  <StackPanel Grid.Row="1"><TextBlock Text="CPU" Style="{StaticResource OptimizerEyebrowStyle}" /><TextBlock x:Name="CpuText" Text="—" TextWrapping="Wrap" /></StackPanel>
-                  <StackPanel Grid.Row="1" Grid.Column="1"><TextBlock Text="RAM" Style="{StaticResource OptimizerEyebrowStyle}" /><TextBlock x:Name="PhysicalMemoryText" Text="—" /></StackPanel>
-                  <StackPanel Grid.Row="2"><TextBlock Text="GPU" Style="{StaticResource OptimizerEyebrowStyle}" /><TextBlock x:Name="GraphicsText" Text="—" TextWrapping="Wrap" /></StackPanel>
-                  <StackPanel Grid.Row="2" Grid.Column="1"><TextBlock Text="SIEĆ" Style="{StaticResource OptimizerEyebrowStyle}" /><TextBlock x:Name="NetworkText" Text="—" TextWrapping="Wrap" /></StackPanel>
+                  <StackPanel Spacing="4"><TextBlock Text="WINDOWS" Style="{StaticResource OptimizerEyebrowStyle}" /><TextBlock x:Name="WindowsBuildText" Text="—" Style="{StaticResource OptimizerMetricValueStyle}" /></StackPanel>
+                  <StackPanel Grid.Column="1" Spacing="4"><TextBlock Text="ARCHITEKTURA" Style="{StaticResource OptimizerEyebrowStyle}" /><TextBlock x:Name="ArchitectureText" Text="—" Style="{StaticResource OptimizerMetricValueStyle}" /></StackPanel>
+                  <StackPanel Grid.Row="1" Spacing="4"><TextBlock Text="CPU" Style="{StaticResource OptimizerEyebrowStyle}" /><TextBlock x:Name="CpuText" Text="—" TextWrapping="Wrap" /></StackPanel>
+                  <StackPanel Grid.Row="1" Grid.Column="1" Spacing="4"><TextBlock Text="RAM" Style="{StaticResource OptimizerEyebrowStyle}" /><TextBlock x:Name="PhysicalMemoryText" Text="—" /></StackPanel>
+                  <StackPanel Grid.Row="2" Spacing="4"><TextBlock Text="GPU" Style="{StaticResource OptimizerEyebrowStyle}" /><TextBlock x:Name="GraphicsText" Text="—" TextWrapping="Wrap" /></StackPanel>
+                  <StackPanel Grid.Row="2" Grid.Column="1" Spacing="4"><TextBlock Text="SIEĆ" Style="{StaticResource OptimizerEyebrowStyle}" /><TextBlock x:Name="NetworkText" Text="—" TextWrapping="Wrap" /></StackPanel>
                 </Grid>
               </Border>
               <Border Style="{StaticResource OptimizerCardStyle}">
@@ -313,17 +357,39 @@
               HorizontalScrollBarVisibility="Disabled"
               VerticalScrollBarVisibility="Auto">
             <StackPanel MaxWidth="1380" Spacing="16">
-              <TextBlock Text="PROFILE / SESJA" Style="{StaticResource OptimizerEyebrowStyle}" />
-              <TextBlock Text="Gry i zapisane profile" Style="{StaticResource OptimizerPageTitleStyle}" />
-              <TextBlock Text="Tylko bezpieczne akcje bez restartu mogą być automatycznie przypisane do gry." Style="{StaticResource OptimizerMutedTextStyle}" />
+              <Border Style="{StaticResource DismodeDeckHeaderStyle}">
+                <StackPanel Spacing="8">
+                  <TextBlock Text="PROFILE / SESJA" Style="{StaticResource OptimizerEyebrowStyle}" />
+                  <TextBlock Text="Gry i zapisane profile" Style="{StaticResource OptimizerPageTitleStyle}" />
+                  <StackPanel Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
+                    <TextBlock
+                        Text="Ustawienia przypisane do gry włączają się przy starcie i cofają po zamknięciu."
+                        Style="{StaticResource OptimizerMutedTextStyle}"
+                        VerticalAlignment="Center" />
+                    <ToggleButton
+                        Style="{StaticResource OptimizerMoreToggleStyle}"
+                        Tag="GamesScopeDetails"
+                        AutomationProperties.Name="Więcej"
+                        Click="ToggleDetails_Click">
+                      <StackPanel Orientation="Horizontal" Spacing="4">
+                        <TextBlock Text="Więcej" />
+                        <FontIcon Glyph="&#xE70D;" FontSize="10" />
+                      </StackPanel>
+                    </ToggleButton>
+                  </StackPanel>
+                  <TextBlock
+                      x:Name="GamesScopeDetails"
+                      Visibility="Collapsed"
+                      Text="Tylko bezpieczne akcje bez restartu mogą być automatycznie przypisane do gry. Profile powstają wyłącznie po pomiarze A/B i są stosowane przez SessionHost do zweryfikowanego procesu gry. Dozwolony zakres automatyczny: AboveNormal dla procesu gry, wyłączenie Power Throttling tylko dla procesu gry, EcoQoS wyłącznie dla zatwierdzonego tła oraz tymczasowy plan zasilania dopiero po wygranym teście."
+                      Style="{StaticResource OptimizerMutedTextStyle}"
+                      FontSize="12" />
+                </StackPanel>
+              </Border>
               <Border Style="{StaticResource OptimizerCardStyle}">
-                <StackPanel Spacing="10"><TextBlock Text="Aktywny profil" Style="{StaticResource OptimizerSectionTitleStyle}" /><TextBlock x:Name="ActiveGameProfileText" Text="Brak aktywnego profilu gry." Style="{StaticResource OptimizerMutedTextStyle}" /><TextBlock Text="Profile powstają wyłącznie po pomiarze A/B i są stosowane przez SessionHost do zweryfikowanego procesu gry." Style="{StaticResource OptimizerMutedTextStyle}" /></StackPanel>
+                <StackPanel Spacing="8"><TextBlock Text="Aktywny profil" Style="{StaticResource OptimizerSectionTitleStyle}" /><TextBlock x:Name="ActiveGameProfileText" Text="Brak aktywnego profilu gry." Style="{StaticResource OptimizerMutedTextStyle}" /></StackPanel>
               </Border>
               <TextBlock Text="Zapisane profile" Style="{StaticResource OptimizerSectionTitleStyle}" />
-              <StackPanel x:Name="SavedGameProfilesList" Spacing="10" />
-              <Border Style="{StaticResource OptimizerCardStyle}">
-                <StackPanel Spacing="10"><TextBlock Text="Dozwolony zakres automatyczny" Style="{StaticResource OptimizerSectionTitleStyle}" /><TextBlock Text="• AboveNormal dla procesu gry&#x0a;• wyłączenie Power Throttling tylko dla procesu gry&#x0a;• EcoQoS wyłącznie dla zatwierdzonego tła&#x0a;• tymczasowy plan zasilania dopiero po wygranym teście" Style="{StaticResource OptimizerMutedTextStyle}" /></StackPanel>
-              </Border>
+              <StackPanel x:Name="SavedGameProfilesList" Spacing="16" />
             </StackPanel>
           </ScrollViewer>
 
@@ -334,19 +400,44 @@
               HorizontalScrollBarVisibility="Disabled"
               VerticalScrollBarVisibility="Auto">
             <StackPanel MaxWidth="1380" Spacing="16">
-              <TextBlock Text="BENCHMARK / A/B" Style="{StaticResource OptimizerEyebrowStyle}" />
-              <TextBlock Text="Testy A/B" Style="{StaticResource OptimizerPageTitleStyle}" />
-              <TextBlock Text="Jedna funkcja lub jedna nierozdzielna grupa na eksperyment. Ta sama scena i kontrolowane okna pomiaru." Style="{StaticResource OptimizerMutedTextStyle}" />
+              <Border Style="{StaticResource DismodeDeckHeaderStyle}">
+                <StackPanel Spacing="8">
+                  <TextBlock Text="BENCHMARK / A/B" Style="{StaticResource OptimizerEyebrowStyle}" />
+                  <TextBlock Text="Testy A/B" Style="{StaticResource OptimizerPageTitleStyle}" />
+                  <StackPanel Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
+                    <TextBlock
+                        Text="Sprawdź w tej samej scenie gry, czy zmiana naprawdę poprawia płynność."
+                        Style="{StaticResource OptimizerMutedTextStyle}"
+                        VerticalAlignment="Center" />
+                    <ToggleButton
+                        Style="{StaticResource OptimizerMoreToggleStyle}"
+                        Tag="BenchmarkRulesDetails"
+                        AutomationProperties.Name="Więcej"
+                        Click="ToggleDetails_Click">
+                      <StackPanel Orientation="Horizontal" Spacing="4">
+                        <TextBlock Text="Więcej" />
+                        <FontIcon Glyph="&#xE70D;" FontSize="10" />
+                      </StackPanel>
+                    </ToggleButton>
+                  </StackPanel>
+                  <TextBlock
+                      x:Name="BenchmarkRulesDetails"
+                      Visibility="Collapsed"
+                      Text="Jedna funkcja lub grupa na eksperyment. 1. Stabilizacja: 15 sekund po wejściu do tej samej sceny. • 2. Pomiar: 90 sekund, minimum 60 sekund danych i 2000 ramek. • 3. Decyzja: minimum 5% poprawy bez regresji FPS i hitch rate."
+                      Style="{StaticResource OptimizerMutedTextStyle}"
+                      FontSize="12" />
+                </StackPanel>
+              </Border>
               <Border Style="{StaticResource OptimizerCardStyle}" Background="{ThemeResource OptimizerAccentSoftBrush}">
                 <StackPanel Spacing="8"><TextBlock Text="Aktywny eksperyment" Style="{StaticResource OptimizerSectionTitleStyle}" /><TextBlock x:Name="ActiveExperimentText" Text="Brak aktywnego eksperymentu." Style="{StaticResource OptimizerMutedTextStyle}" /></StackPanel>
               </Border>
-              <Grid ColumnSpacing="14">
+              <Grid ColumnSpacing="16">
                 <Grid.ColumnDefinitions>
                   <ColumnDefinition Width="*" />
                   <ColumnDefinition Width="*" />
                 </Grid.ColumnDefinitions>
                 <Border Style="{StaticResource OptimizerCardStyle}">
-                  <StackPanel Spacing="10">
+                  <StackPanel Spacing="8">
                     <TextBlock Text="Aktywna gra" Style="{StaticResource OptimizerSectionTitleStyle}" />
                     <TextBlock
                         x:Name="ActiveGameLeaseText"
@@ -366,13 +457,14 @@
                   </StackPanel>
                 </Border>
                 <Border Grid.Column="1" Style="{StaticResource OptimizerCardStyle}">
-                  <StackPanel Spacing="10">
+                  <StackPanel Spacing="8">
                     <TextBlock Text="Pojedynczy test A/B" Style="{StaticResource OptimizerSectionTitleStyle}" />
                     <ComboBox
                         x:Name="SafeTweakComboBox"
                         MinWidth="260"
                         HorizontalAlignment="Stretch"
                         PlaceholderText="Wybierz zmianę do testu"
+                        AutomationProperties.Name="Wybierz zmianę do testu"
                         SelectionChanged="SafeTweakComboBox_SelectionChanged" />
                     <TextBlock x:Name="SelectedTweakDescriptionText" Style="{StaticResource OptimizerMutedTextStyle}" />
                     <Button
@@ -385,14 +477,8 @@
                   </StackPanel>
                 </Border>
               </Grid>
-              <Grid ColumnSpacing="14">
-                <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="*" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
-                <Border Style="{StaticResource OptimizerCardStyle}"><StackPanel Spacing="8"><TextBlock Text="1. Stabilizacja" Style="{StaticResource OptimizerSectionTitleStyle}" /><TextBlock Text="15 sekund po wejściu do tej samej sceny." Style="{StaticResource OptimizerMutedTextStyle}" /></StackPanel></Border>
-                <Border Grid.Column="1" Style="{StaticResource OptimizerCardStyle}"><StackPanel Spacing="8"><TextBlock Text="2. Pomiar" Style="{StaticResource OptimizerSectionTitleStyle}" /><TextBlock Text="90 sekund, minimum 60 sekund danych i 2000 ramek." Style="{StaticResource OptimizerMutedTextStyle}" /></StackPanel></Border>
-                <Border Grid.Column="2" Style="{StaticResource OptimizerCardStyle}"><StackPanel Spacing="8"><TextBlock Text="3. Decyzja" Style="{StaticResource OptimizerSectionTitleStyle}" /><TextBlock Text="Minimum 5% poprawy bez regresji FPS i hitch rate." Style="{StaticResource OptimizerMutedTextStyle}" /></StackPanel></Border>
-              </Grid>
               <Border Style="{StaticResource OptimizerCardStyle}">
-                <StackPanel Spacing="12">
+                <StackPanel Spacing="16">
                   <TextBlock Text="Przebieg pomiaru" Style="{StaticResource OptimizerSectionTitleStyle}" />
                   <TextBlock
                       x:Name="ExperimentStepText"
@@ -404,16 +490,16 @@
                       TextTrimming="CharacterEllipsis" />
                   <ProgressBar
                       x:Name="ExperimentProgressBar"
-                      Height="6"
+                      Height="8"
                       Minimum="0"
                       Maximum="105"
                       Value="0"
                       Opacity="0" />
-                  <StackPanel Orientation="Horizontal" Spacing="10">
+                  <StackPanel Orientation="Horizontal" Spacing="8">
                     <Button
                         x:Name="RunBenchmarkButton"
                         Width="200"
-                        Style="{StaticResource OptimizerPrimaryButtonStyle}"
+                        Style="{StaticResource OptimizerSecondaryButtonStyle}"
                         Content="Uruchom bieżący wariant"
                         Click="RunBenchmarkButton_Click" />
                     <Button
@@ -439,15 +525,15 @@
               </Border>
               <Border
                   x:Name="BenchmarkResultCard"
-                  MinHeight="138"
+                  MinHeight="136"
                   Style="{StaticResource OptimizerCardStyle}">
-                <StackPanel Spacing="12">
+                <StackPanel Spacing="16">
                   <TextBlock
                       x:Name="BenchmarkVerdictText"
                       Text="Wynik pojawi się po zarejestrowaniu pełnej pary A/B."
                       Style="{StaticResource OptimizerSectionTitleStyle}"
                       TextWrapping="Wrap" />
-                  <Grid ColumnSpacing="18">
+                  <Grid ColumnSpacing="16">
                     <Grid.ColumnDefinitions>
                       <ColumnDefinition Width="*" />
                       <ColumnDefinition Width="*" />
@@ -483,10 +569,35 @@
               HorizontalScrollBarVisibility="Disabled"
               VerticalScrollBarVisibility="Auto">
             <StackPanel MaxWidth="1380" Spacing="16">
-              <TextBlock Text="MASZYNA / PROFIL" Style="{StaticResource OptimizerEyebrowStyle}" />
-              <TextBlock Text="Profil globalny" Style="{StaticResource OptimizerPageTitleStyle}" />
-              <TextBlock Text="Zmiany restartowe nigdy nie są przełączane przy każdym uruchomieniu gry." Style="{StaticResource OptimizerMutedTextStyle}" />
-              <Border Style="{StaticResource OptimizerCardStyle}"><StackPanel Spacing="10"><TextBlock Text="Stan profilu" Style="{StaticResource OptimizerSectionTitleStyle}" /><TextBlock x:Name="GlobalProfileText" Text="Brak aktywnego profilu globalnego." Style="{StaticResource OptimizerMutedTextStyle}" /><TextBlock x:Name="GlobalProfileDetailsText" Text="Nie zapisano profilu globalnego dla tego użytkownika." TextWrapping="Wrap" Style="{StaticResource OptimizerMutedTextStyle}" /><TextBlock Text="Promocja wymaga osobnej akcji „Pozostaw globalnie” po pokazaniu pełnego diffu. Wynik A/B nigdy nie aktywuje profilu samodzielnie." Style="{StaticResource OptimizerMutedTextStyle}" /></StackPanel></Border>
+              <Border Style="{StaticResource DismodeDeckHeaderStyle}">
+                <StackPanel Spacing="8">
+                  <TextBlock Text="MASZYNA / PROFIL" Style="{StaticResource OptimizerEyebrowStyle}" />
+                  <TextBlock Text="Profil globalny" Style="{StaticResource OptimizerPageTitleStyle}" />
+                  <StackPanel Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
+                    <TextBlock
+                        Text="Stałe ustawienia systemu zatwierdzone po testach."
+                        Style="{StaticResource OptimizerMutedTextStyle}"
+                        VerticalAlignment="Center" />
+                    <ToggleButton
+                        Style="{StaticResource OptimizerMoreToggleStyle}"
+                        Tag="GlobalPolicyDetails"
+                        AutomationProperties.Name="Więcej"
+                        Click="ToggleDetails_Click">
+                      <StackPanel Orientation="Horizontal" Spacing="4">
+                        <TextBlock Text="Więcej" />
+                        <FontIcon Glyph="&#xE70D;" FontSize="10" />
+                      </StackPanel>
+                    </ToggleButton>
+                  </StackPanel>
+                  <TextBlock
+                      x:Name="GlobalPolicyDetails"
+                      Visibility="Collapsed"
+                      Text="Zmiany restartowe nigdy nie są przełączane przy każdym uruchomieniu gry. Promocja wymaga osobnej akcji „Pozostaw globalnie” po pokazaniu pełnego diffu. Wynik A/B nigdy nie aktywuje profilu samodzielnie."
+                      Style="{StaticResource OptimizerMutedTextStyle}"
+                      FontSize="12" />
+                </StackPanel>
+              </Border>
+              <Border Style="{StaticResource OptimizerCardStyle}"><StackPanel Spacing="8"><TextBlock Text="Stan profilu" Style="{StaticResource OptimizerSectionTitleStyle}" /><TextBlock x:Name="GlobalProfileText" Text="Brak aktywnego profilu globalnego." Style="{StaticResource OptimizerMutedTextStyle}" /><TextBlock x:Name="GlobalProfileDetailsText" Text="Nie zapisano profilu globalnego dla tego użytkownika." TextWrapping="Wrap" Style="{StaticResource OptimizerMutedTextStyle}" /></StackPanel></Border>
             </StackPanel>
           </ScrollViewer>
 
@@ -497,10 +608,35 @@
               HorizontalScrollBarVisibility="Disabled"
               VerticalScrollBarVisibility="Auto">
             <StackPanel MaxWidth="1380" Spacing="16">
-              <TextBlock Text="KATALOG / READBACK" Style="{StaticResource OptimizerEyebrowStyle}" />
-              <TextBlock Text="Laboratorium" Style="{StaticResource OptimizerPageTitleStyle}" />
-              <TextBlock Text="Widoczne są wszystkie pozycje katalogu. Brak niezależnej weryfikacji oznacza Unsupported — bez atrapowego Apply." Style="{StaticResource OptimizerMutedTextStyle}" />
-              <StackPanel x:Name="LaboratoryCatalogList" Spacing="10">
+              <Border Style="{StaticResource DismodeDeckHeaderStyle}">
+                <StackPanel Spacing="8">
+                  <TextBlock Text="KATALOG / READBACK" Style="{StaticResource OptimizerEyebrowStyle}" />
+                  <TextBlock Text="Laboratorium" Style="{StaticResource OptimizerPageTitleStyle}" />
+                  <StackPanel Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
+                    <TextBlock
+                        Text="Sprawdzone optymalizacje z czytelnym opisem działania i cofania."
+                        Style="{StaticResource OptimizerMutedTextStyle}"
+                        VerticalAlignment="Center" />
+                    <ToggleButton
+                        Style="{StaticResource OptimizerMoreToggleStyle}"
+                        Tag="LaboratoryPolicyDetails"
+                        AutomationProperties.Name="Więcej"
+                        Click="ToggleDetails_Click">
+                      <StackPanel Orientation="Horizontal" Spacing="4">
+                        <TextBlock Text="Więcej" />
+                        <FontIcon Glyph="&#xE70D;" FontSize="10" />
+                      </StackPanel>
+                    </ToggleButton>
+                  </StackPanel>
+                  <TextBlock
+                      x:Name="LaboratoryPolicyDetails"
+                      Visibility="Collapsed"
+                      Text="Widoczne są wszystkie pozycje katalogu. Brak niezależnej weryfikacji oznacza Unsupported — bez atrapowego Apply."
+                      Style="{StaticResource OptimizerMutedTextStyle}"
+                      FontSize="12" />
+                </StackPanel>
+              </Border>
+              <StackPanel x:Name="LaboratoryCatalogList" Spacing="16">
                 <Border Style="{StaticResource OptimizerCardStyle}"><TextBlock Text="Katalog zostanie pobrany z usługi." Style="{StaticResource OptimizerMutedTextStyle}" /></Border>
               </StackPanel>
             </StackPanel>
@@ -513,20 +649,44 @@
               HorizontalScrollBarVisibility="Disabled"
               VerticalScrollBarVisibility="Auto">
             <StackPanel MaxWidth="1380" Spacing="16">
-              <TextBlock Text="HARD SAFETY POLICY" Style="{StaticResource OptimizerEyebrowStyle}" Foreground="{ThemeResource OptimizerDangerBrush}" />
-              <TextBlock Text="Danger Zone" Style="{StaticResource OptimizerPageTitleStyle}" />
-              <Border Style="{StaticResource OptimizerCardStyle}" BorderBrush="{ThemeResource OptimizerDangerBrush}">
-                <StackPanel Spacing="8"><TextBlock Text="Tych zabezpieczeń Dismode nie wyłącza" Style="{StaticResource OptimizerSectionTitleStyle}" /><TextBlock Text="Defender, firewall, Windows Update, BitLocker, anti-cheat, Secure Boot, HVCI, mitigacje exploitów, WHEA, watchdog DPC oraz ustawienia BCD pozostają zablokowane." Style="{StaticResource OptimizerMutedTextStyle}" /></StackPanel>
+              <Border Style="{StaticResource DismodeDeckHeaderStyle}">
+                <StackPanel Spacing="8">
+                  <TextBlock Text="HARD SAFETY POLICY" Style="{StaticResource OptimizerEyebrowStyle}" Foreground="{ThemeResource OptimizerDangerBrush}" />
+                  <TextBlock Text="Danger Zone" Style="{StaticResource OptimizerPageTitleStyle}" />
+                  <StackPanel Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
+                    <TextBlock
+                        Text="Zaawansowane opcje globalne tylko do ręcznych testów A/B."
+                        Style="{StaticResource OptimizerMutedTextStyle}"
+                        VerticalAlignment="Center" />
+                    <ToggleButton
+                        Style="{StaticResource OptimizerMoreToggleStyle}"
+                        Tag="DangerSafetyDetails"
+                        AutomationProperties.Name="Więcej"
+                        Click="ToggleDetails_Click">
+                      <StackPanel Orientation="Horizontal" Spacing="4">
+                        <TextBlock Text="Więcej" />
+                        <FontIcon Glyph="&#xE70D;" FontSize="10" />
+                      </StackPanel>
+                    </ToggleButton>
+                  </StackPanel>
+                  <TextBlock
+                      x:Name="DangerSafetyDetails"
+                      Visibility="Collapsed"
+                      Text="Tych zabezpieczeń Dismode nie wyłącza: Defender, firewall, Windows Update, BitLocker, anti-cheat, Secure Boot, HVCI, mitigacje exploitów, WHEA, watchdog DPC oraz ustawienia BCD pozostają zablokowane. Dostępne są wyłącznie pozycje z realnym snapshotem, stałymi argumentami, niezależnym readbackiem i trójstronnym restore."
+                      Style="{StaticResource OptimizerMutedTextStyle}"
+                      FontSize="12" />
+                </StackPanel>
               </Border>
               <Border Style="{StaticResource OptimizerCardStyle}" BorderBrush="{ThemeResource OptimizerWarningBrush}">
-                <StackPanel Spacing="12">
+                <StackPanel Spacing="16">
                   <TextBlock Text="Pojedynczy test globalny" Style="{StaticResource OptimizerSectionTitleStyle}" />
-                  <TextBlock Text="Dostępne są wyłącznie pozycje z realnym snapshotem, stałymi argumentami, niezależnym readbackiem i trójstronnym restore. Test nadal wymaga aktywnej gry oraz pełnej pary A/B." Style="{StaticResource OptimizerMutedTextStyle}" />
+                  <TextBlock Text="Wymaga uruchomionej gry, pełnego pomiaru A/B i przepisania frazy potwierdzającej." Style="{StaticResource OptimizerMutedTextStyle}" />
                   <ComboBox
                       x:Name="DangerousTweakComboBox"
                       MinWidth="300"
                       HorizontalAlignment="Stretch"
                       PlaceholderText="Brak wykonywalnej pozycji Dangerous"
+                      AutomationProperties.Name="Wybierz ryzykowną pozycję do testu"
                       SelectionChanged="DangerousTweakComboBox_SelectionChanged" />
                   <TextBox
                       x:Name="DangerousConfirmationTextBox"
@@ -543,7 +703,7 @@
                       Click="PrepareDangerousExperimentButton_Click" />
                 </StackPanel>
               </Border>
-              <StackPanel x:Name="DangerCatalogList" Spacing="10">
+              <StackPanel x:Name="DangerCatalogList" Spacing="16">
                 <Border Style="{StaticResource OptimizerCardStyle}"><TextBlock Text="Zablokowane i ryzykowne pozycje zostaną pobrane z usługi." Style="{StaticResource OptimizerMutedTextStyle}" /></Border>
               </StackPanel>
             </StackPanel>
@@ -556,12 +716,14 @@
               HorizontalScrollBarVisibility="Disabled"
               VerticalScrollBarVisibility="Auto">
             <StackPanel MaxWidth="1380" Spacing="16">
-              <Grid>
-                <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
-                <StackPanel Spacing="5"><TextBlock Text="AUDYT / RECOVERY" Style="{StaticResource OptimizerEyebrowStyle}" /><TextBlock Text="Historia i przywracanie" Style="{StaticResource OptimizerPageTitleStyle}" /><TextBlock Text="Chronologiczny zapis zgód, eksperymentów, profili i restore." Style="{StaticResource OptimizerMutedTextStyle}" /></StackPanel>
-                <Button Grid.Column="1" Width="170" Style="{StaticResource OptimizerSecondaryButtonStyle}" Content="Przywróć wszystko" Click="RestoreAllButton_Click" />
-              </Grid>
-              <StackPanel x:Name="HistoryList" Spacing="10">
+              <Border Style="{StaticResource DismodeDeckHeaderStyle}">
+                <Grid ColumnSpacing="16">
+                  <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+                  <StackPanel Spacing="8"><TextBlock Text="AUDYT / RECOVERY" Style="{StaticResource OptimizerEyebrowStyle}" /><TextBlock Text="Historia i przywracanie" Style="{StaticResource OptimizerPageTitleStyle}" /><TextBlock Text="Zapis wszystkich zmian, testów i przywróceń ustawień." Style="{StaticResource OptimizerMutedTextStyle}" /></StackPanel>
+                  <Button Grid.Column="1" Width="170" VerticalAlignment="Center" Style="{StaticResource OptimizerPrimaryButtonStyle}" Content="Przywróć wszystko" Click="RestoreAllButton_Click" />
+                </Grid>
+              </Border>
+              <StackPanel x:Name="HistoryList" Spacing="16">
                 <Border Style="{StaticResource OptimizerCardStyle}"><TextBlock Text="Brak zapisanych operacji." Style="{StaticResource OptimizerMutedTextStyle}" /></Border>
               </StackPanel>
             </StackPanel>
