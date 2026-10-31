@@ -58,6 +58,33 @@ public sealed class SystemOptimizerRecoveryHostedServiceTests
         await service.StopAsync(CancellationToken.None);
     }
 
+    [TestMethod]
+    public async Task ExecuteAsyncWaitsWhileIdleAndWakesWhenPendingTimeoutAppears()
+    {
+        TaskCompletionSource wake = new(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+        FakeRecoveryMaintenance maintenance = new()
+        {
+            PendingTimeoutGate = wake.Task,
+        };
+        using SystemOptimizerRecoveryHostedService service = new(
+            maintenance,
+            TimeSpan.FromMilliseconds(10));
+
+        await service.StartAsync(CancellationToken.None);
+        await maintenance.StartupRecoveryObserved.Task.WaitAsync(
+            TimeSpan.FromSeconds(5));
+        await Task.Delay(40);
+        Assert.AreEqual(0, maintenance.TimeoutRecoveryCount);
+
+        wake.SetResult();
+        await maintenance.TimeoutRecoveryObserved.Task.WaitAsync(
+            TimeSpan.FromSeconds(5));
+
+        Assert.IsGreaterThanOrEqualTo(maintenance.TimeoutRecoveryCount, 1);
+        await service.StopAsync(CancellationToken.None);
+    }
+
     private sealed class FakeRecoveryMaintenance :
         ISystemOptimizerRecoveryMaintenance
     {
@@ -69,6 +96,8 @@ public sealed class SystemOptimizerRecoveryHostedServiceTests
 
         internal TaskCompletionSource SecondTimeoutRecoveryObserved { get; } =
             new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        internal Task? PendingTimeoutGate { get; init; }
 
         internal bool ThrowOnStartup { get; init; }
 
@@ -107,6 +136,16 @@ public sealed class SystemOptimizerRecoveryHostedServiceTests
             }
 
             return ValueTask.CompletedTask;
+        }
+
+        public async ValueTask WaitForPendingTimeoutAsync(
+            TimeSpan idleFallback,
+            CancellationToken cancellationToken)
+        {
+            if (PendingTimeoutGate is not null)
+            {
+                await PendingTimeoutGate.WaitAsync(idleFallback, cancellationToken);
+            }
         }
     }
 }

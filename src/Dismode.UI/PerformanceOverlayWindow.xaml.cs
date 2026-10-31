@@ -72,6 +72,9 @@ public sealed partial class PerformanceOverlayWindow : Window, IDisposable
     {
         Interval = ForegroundPollInterval,
     };
+    private readonly WindowRefreshController _refresh;
+    private readonly ForegroundWindowChangeListener? _foregroundChanges;
+    private OverlaySample? _pendingSample;
     private string? _gameDisplayName;
     private int? _targetProcessId;
     private PerformanceOverlayCorner _corner =
@@ -166,6 +169,36 @@ public sealed partial class PerformanceOverlayWindow : Window, IDisposable
         _ = DwmExtendFrameIntoClientArea(_windowHandle, ref sheetOfGlass);
 
         _foregroundTimer.Tick += OnForegroundTimerTick;
+        _refresh = new(
+            enabled =>
+            {
+                if (enabled)
+                {
+                    _foregroundTimer.Start();
+                }
+                else
+                {
+                    _foregroundTimer.Stop();
+                    HideWindow();
+                }
+            },
+            RefreshShownOverlay);
+        try
+        {
+            _foregroundChanges = new(
+                _ =>
+                {
+                    if (!_disposed && _requestedVisible && _targetProcessId is > 0)
+                    {
+                        DispatcherQueue.TryEnqueue(() => OnForegroundTimerTick(this, EventArgs.Empty));
+                    }
+                },
+                includeOwnProcess: true);
+        }
+        catch (Win32Exception)
+        {
+            // Aktualizacje probek nadal pozwalaja wznowic nakladke bez haka.
+        }
     }
 
     public void Update(SessionStateClientSnapshot session)
@@ -194,6 +227,25 @@ public sealed partial class PerformanceOverlayWindow : Window, IDisposable
         int? droppedFrames = null)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
+        _pendingSample = new(gameName, processId, framesPerSecond, frameTimeMilliseconds,
+            displayedFramesPerSecond, droppedFrames);
+        if (_targetProcessId != processId)
+        {
+            _layoutDirty = true;
+        }
+        _targetProcessId = processId;
+        RefreshVisibility();
+    }
+
+    private sealed record OverlaySample(string GameName, int? ProcessId,
+        double? FramesPerSecond, double? FrameTimeMilliseconds,
+        double? DisplayedFramesPerSecond, int? DroppedFrames);
+
+    private void RenderSample(OverlaySample sample)
+    {
+        (string gameName, int? processId, double? framesPerSecond,
+            double? frameTimeMilliseconds, double? displayedFramesPerSecond,
+            int? droppedFrames) = sample;
 
         if (!StringComparer.Ordinal.Equals(_gameDisplayName, gameName))
         {
@@ -253,7 +305,6 @@ public sealed partial class PerformanceOverlayWindow : Window, IDisposable
                         : string.Empty);
             }
 
-            RefreshVisibility();
             return;
         }
 
@@ -266,7 +317,6 @@ public sealed partial class PerformanceOverlayWindow : Window, IDisposable
             : "brak pomiaru";
         _frameTimeHistory.Clear();
         UpdateFrameGraph();
-        RefreshVisibility();
     }
 
     /// <summary>
@@ -404,18 +454,6 @@ public sealed partial class PerformanceOverlayWindow : Window, IDisposable
         }
 
         _requestedVisible = requestedVisible;
-        if (requestedVisible)
-        {
-            if (!_foregroundTimer.IsEnabled)
-            {
-                _foregroundTimer.Start();
-            }
-        }
-        else
-        {
-            _foregroundTimer.Stop();
-        }
-
         RefreshVisibility();
     }
 
@@ -431,7 +469,7 @@ public sealed partial class PerformanceOverlayWindow : Window, IDisposable
             // A monitor or window change can make positioning fail; an
             // unhandled throw from the timer would end the app. Hide the
             // overlay and retry on the next tick.
-            HideWindow();
+            _refresh.Update(visible: false, minimized: false);
             _layoutDirty = true;
         }
     }
@@ -443,10 +481,26 @@ public sealed partial class PerformanceOverlayWindow : Window, IDisposable
             return;
         }
 
-        if (!_requestedVisible || !IsTargetGameForeground())
+        bool wasActive = _refresh.IsActive;
+        _refresh.Update(_requestedVisible && IsTargetGameForeground(), minimized: false);
+        if (!_refresh.IsActive)
         {
             HideWindow();
             return;
+        }
+
+        if (wasActive)
+        {
+            _refresh.Refresh();
+        }
+    }
+
+    private void RefreshShownOverlay()
+    {
+        if (_pendingSample is { } sample)
+        {
+            _pendingSample = null;
+            RenderSample(sample);
         }
 
         SetWithShadow(SourceStatusText, SourceStatusShadowText, SourceStatusText.Text);
@@ -621,12 +675,12 @@ public sealed partial class PerformanceOverlayWindow : Window, IDisposable
     private void HideWindow()
     {
         _hardwareTelemetry.SetActive(false, null);
-        HideTelemetryRows();
         if (!_isShown)
         {
             return;
         }
 
+        HideTelemetryRows();
         _ = ShowWindow(_windowHandle, SwHide);
         _isShown = false;
     }
@@ -649,6 +703,7 @@ public sealed partial class PerformanceOverlayWindow : Window, IDisposable
         }
 
         _disposed = true;
+        _foregroundChanges?.Dispose();
         _foregroundTimer.Stop();
         _foregroundTimer.Tick -= OnForegroundTimerTick;
         _hardwareTelemetry.Dispose();

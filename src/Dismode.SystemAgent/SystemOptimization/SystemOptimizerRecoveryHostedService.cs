@@ -1,3 +1,4 @@
+using Dismode.Core.SystemOptimization;
 using Microsoft.Extensions.Hosting;
 
 namespace Dismode.SystemAgent.SystemOptimization;
@@ -9,6 +10,11 @@ internal interface ISystemOptimizerRecoveryMaintenance
 
     ValueTask RecoverTimedOutRebootExperimentAsync(
         CancellationToken cancellationToken);
+
+    ValueTask WaitForPendingTimeoutAsync(
+        TimeSpan idleFallback,
+        CancellationToken cancellationToken) =>
+        ValueTask.CompletedTask;
 }
 
 internal sealed class SystemOptimizerRecoveryHostedService : BackgroundService
@@ -46,10 +52,16 @@ internal sealed class SystemOptimizerRecoveryHostedService : BackgroundService
                 stoppingToken)
             .ConfigureAwait(false);
 
-        using PeriodicTimer timer = new(_checkInterval);
-        while (await timer.WaitForNextTickAsync(stoppingToken)
-                   .ConfigureAwait(false))
+        while (!stoppingToken.IsCancellationRequested)
         {
+            await RunGuardedAsync(
+                    token => _maintenance.WaitForPendingTimeoutAsync(
+                        SystemOptimizerRecoveryStateMachine.ConfirmationTimeout,
+                        token),
+                    stoppingToken)
+                .ConfigureAwait(false);
+            await Task.Delay(_checkInterval, stoppingToken)
+                .ConfigureAwait(false);
             await RunGuardedAsync(
                     _maintenance.RecoverTimedOutRebootExperimentAsync,
                     stoppingToken)
