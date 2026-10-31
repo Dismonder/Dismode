@@ -1,5 +1,5 @@
 <!-- Wynik workflow 2026-10-29/30: 19 projektow open source przeczytanych (Codex), porownanych z kodem Dismode (Codex), sprawdzonych przez sceptykow (Sonnet), uszeregowanych (Opus). -->
-> **Stan wdrozenia (2026-10-30):** pierwsza partia wdrozona i przetestowana: #1 monitor odporny na awarie pomiaru FPS, #2 pelny stan EcoQoS (stare rekordy: false -> SystemManaged, true -> On; stala `LegacyFalseMapsToSystemManaged`), #3 statystyki z pojedynczych klatek (1% / 0.1% low, przyciecia; sprawdzone na Valheim), #4A diagnostyka nagrywania w tle (tylko odczyt), #6 cooldown po recznym czyszczeniu pamieci. Reszta czeka na decyzje wlasciciela (sekcja "Needs owner decision").
+> **Stan wdrozenia (2026-10-31):** partia 1 (2026-10-30) plus #5, #7, #8, #9, #10 (PR #11/#12) i #11-#17 (#17 tylko faza 1, PR #13) wdrozone w 0.9.0. Otwarte: #4B, #17 faza 2, #18 oraz decyzje z sekcji "Needs owner decision".
 
 # Dismode: ranking propozycji z analizy projektów open source
 

@@ -1,6 +1,6 @@
 # Dismode — kontekst roboczy repozytorium
 
-Ostatnia aktualizacja: 2026-10-01 (wydanie 0.8.0)
+Ostatnia aktualizacja: 2026-10-31 (wydanie 0.9.0)
 
 ## Zasady prowadzenia sesji (od 2026-10-01)
 
@@ -271,6 +271,40 @@ i paczka dla update-service; pierwsza instalacja Dismode obok
 zainstalowanego GameShift to pierwszy żywy test migracji (w tym ścieżki
 kodu 9 → komunikat UI); `wrangler deploy` nowego adresu update-service;
 instalator 0.8.0 po podaniu produkcyjnego certyfikatu.
+
+Wydanie 0.9.0 (2026-10-31): PR #11, #12, #13 scalone do `main`; tag `v0.9.0`
+= `main` d30ffa0, release na GitHubie oznaczony jako Latest
+(`releases/tag/v0.9.0`). Schema 21 (migracje 19-21 dodają kolumny z domyślnymi
+wartościami lub NULL). Nowości:
+- statystyki z pojedynczych klatek: średnia, 1% / 0.1% low i przycięcia;
+  opcjonalnie wyświetlone FPS i zgubione klatki;
+- benchmark bez fałszywych zysków: utrata zdarzeń lub buforów ETW w oknie
+  pomiaru unieważnia wynik;
+- gra na CCD z większym L3 (X3D); przy niejednoznacznej topologii Dismode nie
+  zmienia przypisania rdzeni; przypinanie gry do rdzeni włączane per gra;
+- przejęcie gry od launchera lub DRM: sesja trwa, gdy launcher uruchomi grę
+  ponownie (do 30 s na jednego zgodnego następcę);
+- reguły tła także dla procesów uruchomionych w trakcie gry (opcja, domyślnie
+  wyłączona); maksymalne odświeżanie monitora na czas gry (opcja, domyślnie
+  wyłączona), przywracane po sesji i po awarii;
+- rzeczywisty czas gry bez uśpienia systemu i czasu przywracania, w sekundach;
+- nakładka: najbardziej obciążony rdzeń, obciążenie GPU 3D i VRAM (liczniki
+  Windows, bez sterowników producentów);
+- ekran nie usypia w trakcie sesji; pełny stan EcoQoS przy przywracaniu;
+- mniejszy narzut własny Dismode (mniej alokacji w procesie sesji, odczyt
+  CPU/GPU nakładki poza wątkiem interfejsu).
+
+Instalator 0.9.0: `artifacts/installer/Dismode-Setup-0.9.0-win-x64.exe` (225 MB,
+plik `.sha256` obok), SHA-256 `E3C2575D45BF98E70FD56D59C27B96FDB193CB350FF0D15D0A1718E2169C6F61`,
+podpis certyfikatem testowym „GameShift Development”, `ProductVersion`
+`0.9.0-gaming-edition+d30ffa0`. Zbudowany `tools/Build-Installer.ps1 -SkipTests
+-AllowTestCodeSigningCertificate` z checkoutu tagu. Ostatni krok (publikacja
+manifestu przez Dismode.UpdatePublisher) kończy się kodem 1, tak jak w 0.8.0,
+bo klucz podpisu aktualizacji jest tylko na maszynie wydawniczej; aktualizację
+z 0.8.0 wykonuje się uruchomieniem instalatora.
+
+Niezweryfikowane na sprzęcie: X3D (CCD, L3, przypinanie), launchery i DRM,
+uśpienie i wybudzenie, przełączanie odświeżania monitora, wpływ na FPS.
 
 ### Memory Optimizer — bieżąca poprawka panelu tray (2026-09-05)
 

@@ -1,6 +1,6 @@
 # Narzut własnych procesów Dismode
 
-Gałąź `claude/perf-own-overhead`, baza 0.8.0. Bez commitów i zmian gałęzi.
+Scalone w PR #12 (wydanie 0.9.0).
 Pomiar: `OwnOverheadMeasurements`, kategoria `Perf`, rozgrzewka 16 wywołań,
 Stopwatch oraz alokacje wątku; dla async alokacje całego procesu (precise).
 Poniżej zapisane rzeczywiste przebiegi przed zmianą i po niej, te same fixture i N.
