@@ -45,13 +45,11 @@ public sealed partial class PerformanceOverlayWindow : Window, IDisposable
     private const int DwmWindowCornerPreferenceDoNotRound = 1;
     private const int DwmwaBorderColor = 34;
     private const int DwmColorNone = unchecked((int)0xFFFFFFFE);
-    private const int OverlayWidth = 328;
-    private const int OverlayHeight = 174;
     private const int OverlayMargin = 22;
     private static readonly TimeSpan ForegroundPollInterval =
         TimeSpan.FromMilliseconds(200);
-    private const double GraphWidth = 58d;
-    private const double GraphHeight = 17d;
+    private const double GraphWidth = 224d;
+    private const double GraphHeight = 32d;
     private const int MaximumGraphSamples = 32;
     private static readonly nint HwndTopmost = new(-1);
 
@@ -79,6 +77,10 @@ public sealed partial class PerformanceOverlayWindow : Window, IDisposable
     private PerformanceOverlayCorner _corner =
         PerformanceOverlayCorner.TopRight;
     private double _scale = 1d;
+    private PerformanceOverlayStyle _style = PerformanceOverlayStyle.FullDeck;
+    private string _fpsText = "—";
+    private int _baseWidth;
+    private int _baseHeight;
     private nint _positionedMonitor;
     private uint _positionedDpi;
     private bool _requestedVisible;
@@ -87,12 +89,6 @@ public sealed partial class PerformanceOverlayWindow : Window, IDisposable
     private bool _isShown;
     private bool _layoutDirty = true;
     private bool _disposed;
-
-    // Jeden uklad, wiec rozmiar jest staly. Wczesniej zalezal od stylu,
-    // ktorych bylo trzy; zostal jeden, wzorowany na nakladce RivaTunera.
-    private static int CurrentBaseWidth => OverlayWidth;
-
-    private static int CurrentBaseHeight => OverlayHeight;
 
     public PerformanceOverlayWindow()
     {
@@ -211,20 +207,15 @@ public sealed partial class PerformanceOverlayWindow : Window, IDisposable
             _layoutDirty = true;
         }
 
-        GameNameText.Text = string.IsNullOrWhiteSpace(gameName)
+        SetWithShadow(GameNameText, GameNameShadowText, string.IsNullOrWhiteSpace(gameName)
             ? "—"
-            : gameName;
+            : gameName);
 
         if (framesPerSecond is double fps && frameTimeMilliseconds is double ms)
         {
             AddFrameTimeSample(ms);
-            // Jednostka przy liczbie, bo kolumna etykiet zniknela razem
-            // z panelem. "138 FPS" czyta sie bez niej tak samo dobrze,
-            // a nie zajmuje polowy szerokosci nakladki.
-            SetWithShadow(
-                FpsValueText,
-                FpsShadowText,
-                fps.ToString("0", CultureInfo.CurrentCulture) + " FPS");
+            _fpsText = fps.ToString("0", CultureInfo.CurrentCulture);
+            RenderFps();
             SetWithShadow(
                 FrameTimeValueText,
                 FrameTimeShadowText,
@@ -266,7 +257,8 @@ public sealed partial class PerformanceOverlayWindow : Window, IDisposable
             return;
         }
 
-        SetWithShadow(FpsValueText, FpsShadowText, "— FPS");
+        _fpsText = "—";
+        RenderFps();
         SetWithShadow(FrameTimeValueText, FrameTimeShadowText, "—");
         SetWithShadow(OnePercentLowText, OnePercentLowShadowText, "—");
         SourceStatusText.Text = string.IsNullOrWhiteSpace(gameName)
@@ -329,15 +321,73 @@ public sealed partial class PerformanceOverlayWindow : Window, IDisposable
             _layoutDirty = true;
         }
 
-        OverlayRoot.Width = CurrentBaseWidth;
-        OverlayRoot.Height = CurrentBaseHeight;
         ApplyWindowOpacity(preferences.OpacityPercent);
         OverlayScaleTransform.ScaleX = _scale;
         OverlayScaleTransform.ScaleY = _scale;
         _showDisplayedFrames = preferences.IsDisplayTrackingEnabled;
         _vendorTelemetryEnabled = preferences.IsVendorTelemetryEnabled;
+        if (_style != preferences.Style)
+        {
+            _style = preferences.Style;
+            ApplyStyle();
+        }
         SetRequestedVisibility(
             preferences.IsEnabled && preferences.IsFpsTrackingEnabled);
+    }
+
+    private void ApplyStyle()
+    {
+        bool full = _style == PerformanceOverlayStyle.FullDeck;
+        bool compact = _style == PerformanceOverlayStyle.CompactBar;
+        bool minimal = _style == PerformanceOverlayStyle.MinimalText;
+        FpsRow.Visibility = compact ? Visibility.Collapsed : Visibility.Visible;
+        CompactBarLayout.Visibility = compact ? Visibility.Visible : Visibility.Collapsed;
+        FrameTimeRow.Visibility = full || _style == PerformanceOverlayStyle.FpsAndLows
+            ? Visibility.Visible : Visibility.Collapsed;
+        OnePercentLowRow.Visibility = FrameTimeRow.Visibility;
+        FrameGraphRow.Visibility = full ? Visibility.Visible : Visibility.Collapsed;
+        GameNameRow.Visibility = FrameGraphRow.Visibility;
+        SourceStatusRow.Visibility = FrameGraphRow.Visibility;
+        FpsValueText.FontSize = minimal ? 48 : 28;
+        FpsShadowText.FontSize = FpsValueText.FontSize;
+        RenderFps();
+        RenderHardwareTelemetry(_displayedHardwareTelemetry, force: true);
+        _layoutDirty = true;
+    }
+
+    private void RenderFps()
+    {
+        SetWithShadow(FpsValueText, FpsShadowText,
+            _fpsText + (_style == PerformanceOverlayStyle.MinimalText ? string.Empty : " FPS"));
+        RenderCompactTelemetry(_displayedHardwareTelemetry);
+    }
+
+    private void RenderCompactTelemetry(OverlayTelemetrySnapshot sample)
+    {
+        static string Percent(double? value) => value is double number
+            ? number.ToString("0", CultureInfo.CurrentCulture) + "%"
+            : "—";
+        string temperature = sample.Vendor?.TemperatureCelsius is double celsius
+            ? celsius.ToString("0", CultureInfo.CurrentCulture) + " °C"
+            : "—";
+        SetWithShadow(CompactTelemetryText, CompactTelemetryShadowText,
+            $"{_fpsText} FPS | CPU {Percent(sample.Cpu?.CpuPercent)} | GPU {Percent(sample.Gpu?.ThreeDPercent)} | temp. GPU {temperature}");
+    }
+
+    private void MeasureContent()
+    {
+        // Pomiar bez ograniczen okna zapobiega obcinaniu po zmianie stylu.
+        OverlayStatisticsContent.Measure(new(double.PositiveInfinity, double.PositiveInfinity));
+        int width = Math.Max(1, (int)Math.Ceiling(OverlayStatisticsContent.DesiredSize.Width));
+        int height = Math.Max(1, (int)Math.Ceiling(OverlayStatisticsContent.DesiredSize.Height));
+        if (width != _baseWidth || height != _baseHeight)
+        {
+            _baseWidth = width;
+            _baseHeight = height;
+            OverlayRoot.Width = width;
+            OverlayRoot.Height = height;
+            _layoutDirty = true;
+        }
     }
 
     private void ApplyWindowOpacity(int opacityPercent)
@@ -399,8 +449,10 @@ public sealed partial class PerformanceOverlayWindow : Window, IDisposable
             return;
         }
 
-        ShowForGame();
+        SetWithShadow(SourceStatusText, SourceStatusShadowText, SourceStatusText.Text);
         UpdateHardwareTelemetry();
+        MeasureContent();
+        ShowForGame();
     }
 
     private void UpdateHardwareTelemetry()
@@ -417,19 +469,21 @@ public sealed partial class PerformanceOverlayWindow : Window, IDisposable
         }
     }
 
-    private void RenderHardwareTelemetry(OverlayTelemetrySnapshot sample)
+    private void RenderHardwareTelemetry(OverlayTelemetrySnapshot sample, bool force = false)
     {
-        if (sample == _displayedHardwareTelemetry)
+        if (!force && sample == _displayedHardwareTelemetry)
         {
             return;
         }
 
         _displayedHardwareTelemetry = sample;
-        CpuTelemetryRow.Visibility = sample.Cpu is null ? Visibility.Collapsed : Visibility.Visible;
-        GpuTelemetryRow.Visibility = sample.Gpu?.ThreeDPercent is null ? Visibility.Collapsed : Visibility.Visible;
-        VramTelemetryRow.Visibility = sample.Gpu?.DedicatedBytes is null ? Visibility.Collapsed : Visibility.Visible;
+        bool full = _style == PerformanceOverlayStyle.FullDeck;
+        CpuTelemetryRow.Visibility = full && sample.Cpu is not null ? Visibility.Visible : Visibility.Collapsed;
+        GpuTelemetryRow.Visibility = full && sample.Gpu?.ThreeDPercent is not null ? Visibility.Visible : Visibility.Collapsed;
+        VramTelemetryRow.Visibility = full && sample.Gpu?.DedicatedBytes is not null ? Visibility.Visible : Visibility.Collapsed;
         string? vendorText = GpuVendorTelemetryFormatter.Format(sample.Vendor);
-        VendorTelemetryRow.Visibility = vendorText is null ? Visibility.Collapsed : Visibility.Visible;
+        VendorTelemetryRow.Visibility = full && vendorText is not null ? Visibility.Visible : Visibility.Collapsed;
+        RenderCompactTelemetry(sample);
         if (sample.Cpu is { } cpu)
         {
             SetWithShadow(CpuTelemetryText, CpuTelemetryShadowText,
@@ -519,12 +573,12 @@ public sealed partial class PerformanceOverlayWindow : Window, IDisposable
     {
         int width = ScaleForDpi(
             checked((int)Math.Round(
-                CurrentBaseWidth * _scale,
+                _baseWidth * _scale,
                 MidpointRounding.AwayFromZero)),
             dpi);
         int height = ScaleForDpi(
             checked((int)Math.Round(
-                CurrentBaseHeight * _scale,
+                _baseHeight * _scale,
                 MidpointRounding.AwayFromZero)),
             dpi);
         int margin = ScaleForDpi(OverlayMargin, dpi);
@@ -584,6 +638,7 @@ public sealed partial class PerformanceOverlayWindow : Window, IDisposable
         GpuTelemetryRow.Visibility = Visibility.Collapsed;
         VramTelemetryRow.Visibility = Visibility.Collapsed;
         VendorTelemetryRow.Visibility = Visibility.Collapsed;
+        RenderCompactTelemetry(default);
     }
 
     public void Dispose()
@@ -615,6 +670,7 @@ public sealed partial class PerformanceOverlayWindow : Window, IDisposable
     private void UpdateFrameGraph()
     {
         FrameGraphLine.Points.Clear();
+        FrameGraphShadowLine.Points.Clear();
         if (_frameTimeHistory.Count == 0)
         {
             return;
@@ -627,19 +683,22 @@ public sealed partial class PerformanceOverlayWindow : Window, IDisposable
         if (samples.Length == 1)
         {
             double y = ScaleFrameTime(samples[0], ceiling);
-            FrameGraphLine.Points.Add(new(0d, y));
-            FrameGraphLine.Points.Add(new(GraphWidth, y));
+            AddGraphPoint(0d, y);
+            AddGraphPoint(GraphWidth, y);
             return;
         }
 
         double step = GraphWidth / (samples.Length - 1);
         for (int index = 0; index < samples.Length; index++)
         {
-            FrameGraphLine.Points.Add(
-                new(
-                    index * step,
-                    ScaleFrameTime(samples[index], ceiling)));
+            AddGraphPoint(index * step, ScaleFrameTime(samples[index], ceiling));
         }
+    }
+
+    private void AddGraphPoint(double x, double y)
+    {
+        FrameGraphLine.Points.Add(new(x, y));
+        FrameGraphShadowLine.Points.Add(new(x, y));
     }
 
     private static double ScaleFrameTime(

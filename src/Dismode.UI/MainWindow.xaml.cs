@@ -149,6 +149,7 @@ public sealed partial class MainWindow : Window, IDisposable
     private string? _stagedInstallerPath;
     private Guid? _dashboardFrameSessionId;
     private bool _isLoaded;
+    private bool _hasAnalyzedBackground;
     private bool _isBusy;
     private bool _isSessionPollRunning;
     private bool _isSynchronizingProfileSelection;
@@ -310,6 +311,9 @@ public sealed partial class MainWindow : Window, IDisposable
         _launchOptions = launchOptions
             ?? throw new ArgumentNullException(nameof(launchOptions));
         InitializeComponent();
+        ProfilesInfoBar.Closed += OnCompactInfoBarClosed;
+        PlanInfoBar.Closed += OnCompactInfoBarClosed;
+        PlanSafetyInfoBar.Closed += OnCompactInfoBarClosed;
         _dashboardFallbackArtwork = DashboardHeroImage.Source;
         NavigateToPage("dashboard");
         ConfigurePageEntranceAnimations();
@@ -428,6 +432,7 @@ public sealed partial class MainWindow : Window, IDisposable
         await Task.Yield();
 
         await LoadPerformanceOverlayPreferencesAsync(_lifetime.Token);
+        await LoadEdgePanelPreferencesAsync(_lifetime.Token);
         await LoadUpdatePreferencesAsync(_lifetime.Token);
         await LoadGameDetectionPreferencesAsync(_lifetime.Token);
         await RefreshGlobalRulesSummaryAsync(_lifetime.Token);
@@ -578,7 +583,7 @@ public sealed partial class MainWindow : Window, IDisposable
                 _trayIcon?.ShowNotification(
                     "Dismode — wyłączenie zablokowane",
                     !journal.IsClean
-                        ? "Najpierw zakończ recovery aktywnej sesji."
+                        ? "Najpierw dokończ przywracanie po grze."
                         : "Najpierw zakończ aktywną sesję lub przygotowany plan.");
                 return;
             }
@@ -1191,6 +1196,7 @@ public sealed partial class MainWindow : Window, IDisposable
         ProBalanceDescriptionText.Text = toggle.IsOn
             ? "Zadziała od następnej sesji. " + ProBalanceDescription
             : ProBalanceDescription;
+        UpdateSessionHero();
     }
 
     private async void OnFpsTrackingSettingChanged(
@@ -1636,8 +1642,7 @@ public sealed partial class MainWindow : Window, IDisposable
         _libraryHero = _libraryView
             .Where(item => item.LastPlayedAtUtc is not null)
             .OrderByDescending(item => item.LastPlayedAtUtc)
-            .FirstOrDefault()
-            ?? _libraryView.FirstOrDefault();
+            .FirstOrDefault();
 
         if (LibraryHeroPanel is null)
         {
@@ -1662,7 +1667,7 @@ public sealed partial class MainWindow : Window, IDisposable
                 _libraryHero.SourceLabel,
                 _libraryHero.LastPlayedLabel,
                 _libraryHero.PlaytimeLabel,
-                $"Preset: {_libraryHero.PresetLabel}",
+                $"Ustawienia: {_libraryHero.PresetLabel}",
             }.Where(part => !string.IsNullOrWhiteSpace(part)));
     }
 
@@ -1828,6 +1833,7 @@ public sealed partial class MainWindow : Window, IDisposable
         }
 
         _backgroundApplications.Clear();
+        _hasAnalyzedBackground = false;
         _serviceClassifications.Clear();
         ServiceClassificationSummaryText.Text =
             "Klasyfikacja usług pojawi się po analizie.";
@@ -1881,9 +1887,9 @@ public sealed partial class MainWindow : Window, IDisposable
             int optionalCount = discovered.Count(process =>
                 process.SafetyClassification == "OptionalUser");
             ProcessClassificationSummaryText.Text =
-                $"Chronione i systemowe: {requiredCount}  •  "
-                + $"powiązane z grami: {relatedCount}  •  "
-                + $"opcjonalne użytkownika: {optionalCount}";
+                "Wybierz aplikacje, których nie potrzebujesz podczas gry.";
+            ToolTipService.SetToolTip(ProcessClassificationSummaryText,
+                $"Chronione i systemowe: {requiredCount} • Powiązane z grami: {relatedCount} • Opcjonalne: {optionalCount}");
             int currentSessionId =
                 Process.GetCurrentProcess().SessionId;
             string gamePath = selected.Profile.ExecutablePath;
@@ -1933,6 +1939,7 @@ public sealed partial class MainWindow : Window, IDisposable
                         canLowerPriority));
             }
 
+            _hasAnalyzedBackground = true;
             int appliedSavedRuleCount = ApplyBackgroundRules();
             try
             {
@@ -1959,19 +1966,13 @@ public sealed partial class MainWindow : Window, IDisposable
                     : InfoBarSeverity.Informational,
                 _backgroundApplications.Count > 0
                     ? "Analiza zakończona"
-                    : "Brak bezpiecznych kandydatów",
+                    : "Tło wygląda dobrze",
                 _backgroundApplications.Count > 0
-                    ? "Zaznacz tylko aplikacje, których nie potrzebujesz "
-                        + "podczas grania i wybierz: zamknij albo obniż "
-                        + "priorytet. Dismode nie dotyka procesów chronionych."
+                    ? "Zaznacz aplikacje, których nie potrzebujesz podczas gry."
                         + (appliedSavedRuleCount > 0
-                            ? $" Wczytano zapisane reguły: "
-                                + $"{appliedSavedRuleCount}."
+                            ? $" Wczytano Twoje ustawienia: {appliedSavedRuleCount}."
                             : string.Empty)
-                        + " Nowi kandydaci pozostają niezaznaczeni — "
-                        + "wybierz ręcznie pojedyncze działania do testu."
-                    : "Nie znaleziono opcjonalnych procesów użytkownika, "
-                        + "które spełniają warunki bezpiecznej optymalizacji.");
+                    : "Nie znaleźliśmy aplikacji, które można teraz ograniczyć.");
         }
         catch (OperationCanceledException)
             when (_lifetime.IsCancellationRequested)
@@ -3037,8 +3038,7 @@ public sealed partial class MainWindow : Window, IDisposable
                 ProfilesInfoBar,
                 InfoBarSeverity.Informational,
                 "Gra startuje",
-                "Po uruchomieniu Dismode zastosuje zatwierdzone działania "
-                + "w tle, kolejno i z pełnym recovery.");
+                "Dismode zastosuje wybrane ustawienia. Po grze przywróci aplikacje w tle.");
 
             SessionStateClientSnapshot active =
                 await _sessions.StartAsync(
@@ -3097,9 +3097,28 @@ public sealed partial class MainWindow : Window, IDisposable
         }
     }
 
-    private async void OnPreparePlanClicked(
-        object sender,
-        RoutedEventArgs args)
+    private async void OnSessionHeroStartClicked(object sender, RoutedEventArgs args)
+    {
+        if (_isBusy || _activeSession is not null)
+        {
+            return;
+        }
+
+        if (_pendingPlan is null || _pendingPlan.ExpiresAtUtc < DateTimeOffset.UtcNow)
+        {
+            await PrepareSelectedPlanAsync();
+        }
+
+        if (_pendingPlan is not null)
+        {
+            OnStartSessionClicked(sender, args);
+        }
+    }
+
+    private async void OnPreparePlanClicked(object sender, RoutedEventArgs args) =>
+        await PrepareSelectedPlanAsync();
+
+    private async Task PrepareSelectedPlanAsync()
     {
         if (_isBusy)
         {
@@ -3209,7 +3228,7 @@ public sealed partial class MainWindow : Window, IDisposable
                 PlanInfoBar,
                 InfoBarSeverity.Warning,
                 "Plan wygasł",
-                "Przygotuj nowy plan, aby ponownie zweryfikować plik EXE.");
+                "Kliknij START ponownie, aby sprawdzić grę i wybrane działania.");
             return;
         }
 
@@ -3235,8 +3254,7 @@ public sealed partial class MainWindow : Window, IDisposable
                 PlanInfoBar,
                 InfoBarSeverity.Informational,
                 "Gra startuje",
-                "Proces gry jest uruchamiany przed sekwencyjnymi działaniami "
-                + "tła. Każda zmiana nadal przechodzi verify i recovery.");
+                "Dismode zastosuje wybrane ustawienia. Po grze przywróci aplikacje w tle.");
             SessionStateClientSnapshot active =
                 await _sessions.StartAsync(
                     plan.PlanId,
@@ -3283,6 +3301,11 @@ public sealed partial class MainWindow : Window, IDisposable
         object sender,
         RoutedEventArgs args)
     {
+        await RestoreActiveSessionAsync(RootLayout.XamlRoot);
+    }
+
+    private async Task RestoreActiveSessionAsync(XamlRoot dialogRoot)
+    {
         if (_isBusy || _activeSession is null)
         {
             return;
@@ -3291,7 +3314,7 @@ public sealed partial class MainWindow : Window, IDisposable
         SessionStateClientSnapshot active = _activeSession;
         ContentDialog confirmation = new()
         {
-            XamlRoot = RootLayout.XamlRoot,
+            XamlRoot = dialogRoot,
             Title = "Przywrócić aplikacje teraz?",
             Content =
                 $"Dismode przywróci aplikacje zamknięte dla "
@@ -4104,7 +4127,7 @@ public sealed partial class MainWindow : Window, IDisposable
             ShowInfo(
                 UpdateInfoBar,
                 InfoBarSeverity.Error,
-                "Aktualizacja zablokowana przez recovery",
+                "Najpierw dokończ przywracanie",
                 "Najpierw przywróć niedokończoną sesję: "
                 + string.Join(
                     ", ",
@@ -4141,8 +4164,7 @@ public sealed partial class MainWindow : Window, IDisposable
             UpdateInfoBar,
             InfoBarSeverity.Success,
             "Instalator uruchomiony",
-            "Dismode zamknie wyłącznie własne składniki po ponownej "
-            + "kontroli aktywnej sesji i recovery.");
+            "Dismode zamknie swoje składniki po sprawdzeniu sesji i przywracania aplikacji.");
     }
 
     private void SetUpdatePipelineStep(int activeStep)
@@ -5563,9 +5585,7 @@ public sealed partial class MainWindow : Window, IDisposable
         }
 
         PlanStateTitleText.Text = $"Plan gotowy: {plan.GameDisplayName}";
-        PlanDetailsText.Text =
-            $"Wygasa {plan.ExpiresAtUtc.ToLocalTime():t}. "
-            + plan.SafetyMessage;
+        PlanDetailsText.Text = "Sprawdź wybrane działania. Przed startem poprosimy o ich zatwierdzenie.";
         PlanActionsList.Visibility = _planActions.Count == 0
             ? Visibility.Collapsed
             : Visibility.Visible;
@@ -5589,9 +5609,7 @@ public sealed partial class MainWindow : Window, IDisposable
         ActiveSessionStateText.Text = stateLabel;
         UpdateDashboardRecoveryState(session);
         ActiveSessionDetailsText.Text =
-            $"Od {session.StartedAtUtc.ToLocalTime():g}. "
-            + $"Zastosowane akcje: {session.AppliedActionCount}. "
-            + session.Message;
+            $"Grasz od {session.StartedAtUtc.ToLocalTime():t}. Dismode pilnuje tła.";
         if (FpsTrackingToggleSwitch.IsOn
             && session.FramesPerSecond is double framesPerSecond
             && double.IsFinite(framesPerSecond)
@@ -5631,19 +5649,15 @@ public sealed partial class MainWindow : Window, IDisposable
         }
 
         ActiveFrameRateStatusText.Text = !FpsTrackingToggleSwitch.IsOn
-            ? "Pomiar FPS jest wyłączony w ustawieniach Dismode."
-            : (string.IsNullOrWhiteSpace(session.FrameRateStatus)
-                ? "PresentMon nie zwrócił stanu pomiaru."
-                : session.FrameRateStatus)
-                + (session.FrameRateProcessId is int processId
-                    ? $" Proces gry: PID {processId}."
-                    : string.Empty);
+            ? "Pomiar FPS jest wyłączony."
+            : session.FramesPerSecond is > 0
+                ? "Pomiar FPS działa."
+                : "Czekamy na dane o płynności gry.";
         UpdatePerformanceOverlay();
         PlanStateTitleText.Text =
             $"Sesja aktywna: {session.GameDisplayName}";
         PlanDetailsText.Text =
-            "Gra jest monitorowana lokalnie. Po jej wyjściu Dismode "
-            + "automatycznie przywróci zamknięte aplikacje. "
+            "Dismode pilnuje gry. Po jej zamknięciu przywróci aplikacje w tle. "
             + DescribeFrameRate(session);
         PlanActionsList.Visibility = Visibility.Collapsed;
         UpdateDashboardHero();
@@ -5767,9 +5781,7 @@ public sealed partial class MainWindow : Window, IDisposable
                 + (session.FrameTimeMilliseconds is double frameTime
                     ? $" • {frameTime:0.00} ms."
                     : ".")
-            : string.IsNullOrWhiteSpace(session.FrameRateStatus)
-                ? "Pomiar: brak potwierdzonych danych."
-                : $"Pomiar: {session.FrameRateStatus}";
+            : "Pomiar: czekamy na klatki gry.";
 
     private async Task LoadPerformanceOverlayPreferencesAsync(
         CancellationToken cancellationToken)
@@ -5790,6 +5802,7 @@ public sealed partial class MainWindow : Window, IDisposable
             OverlaySizeSlider.Value = preferences.ScalePercent;
             OverlayCornerSelector.SelectedIndex =
                 GetOverlayCornerIndex(preferences.Corner);
+            OverlayStyleSelector.SelectedIndex = GetOverlayStyleIndex(preferences.Style);
         }
         catch (OperationCanceledException)
             when (_lifetime.IsCancellationRequested)
@@ -5820,7 +5833,9 @@ public sealed partial class MainWindow : Window, IDisposable
             || OverlaySizeSlider is null
             || OverlayCornerSelector is null
             || OverlayOpacityValueText is null
-            || OverlaySizeValueText is null)
+            || OverlaySizeValueText is null
+            || OverlayStyleSelector is null
+            || OverlayStyleSketchText is null)
         {
             return;
         }
@@ -5833,6 +5848,14 @@ public sealed partial class MainWindow : Window, IDisposable
         {
             ClearFrameRateTelemetryForDisabledTracking();
         }
+        OverlayStyleSketchText.Text = GetSelectedOverlayStyle() switch
+        {
+            PerformanceOverlayStyle.MinimalText => "FPS —",
+            PerformanceOverlayStyle.FpsAndLows => "FPS —   ms —   minimum —",
+            PerformanceOverlayStyle.CompactBar => "FPS — | CPU — | GPU — | °C —",
+            _ => "FPS —   minimum —\nCPU —   GPU —\n▁ ▂ ▁ ▃ ▂ ▁",
+        };
+        UpdateSessionHero();
         UpdatePerformanceOverlay();
 
         if (scheduleSave
@@ -5895,12 +5918,29 @@ public sealed partial class MainWindow : Window, IDisposable
             GetOverlayOpacityPercent(),
             GetOverlayScalePercent(),
             GetSelectedOverlayCorner(),
-            PerformanceOverlayStyle.FullDeck,
+            GetSelectedOverlayStyle(),
             PerformanceOverlayTheme.CyberNeon,
             DateTimeOffset.UtcNow)
         {
             IsVendorTelemetryEnabled =
                 VendorTelemetrySettingsToggleSwitch?.IsOn ?? false,
+        };
+
+    private static int GetOverlayStyleIndex(PerformanceOverlayStyle style) => style switch
+    {
+        PerformanceOverlayStyle.MinimalText => 0,
+        PerformanceOverlayStyle.FpsAndLows => 1,
+        PerformanceOverlayStyle.CompactBar => 2,
+        _ => 3,
+    };
+
+    private PerformanceOverlayStyle GetSelectedOverlayStyle() =>
+        (OverlayStyleSelector.SelectedItem as RadioButton)?.Tag?.ToString() switch
+        {
+            nameof(PerformanceOverlayStyle.MinimalText) => PerformanceOverlayStyle.MinimalText,
+            nameof(PerformanceOverlayStyle.FpsAndLows) => PerformanceOverlayStyle.FpsAndLows,
+            nameof(PerformanceOverlayStyle.CompactBar) => PerformanceOverlayStyle.CompactBar,
+            _ => PerformanceOverlayStyle.FullDeck,
         };
 
     private int GetOverlayOpacityPercent() =>
@@ -6028,6 +6068,7 @@ public sealed partial class MainWindow : Window, IDisposable
                 return;
             }
 
+            _edgeForegroundSample = sample.IsPresenting ? sample : null;
             _performanceOverlay ??= new();
             _performanceOverlay.Update(
                 sample.ProcessName,
@@ -6077,16 +6118,14 @@ public sealed partial class MainWindow : Window, IDisposable
     {
         TacticalAudioService.Instance.PlaySessionStop();
         ActiveSessionStateText.Text = "Gotowość";
-        ActiveSessionDetailsText.Text = session.Message;
+        ActiveSessionDetailsText.Text = "Sesja zakończona. Szczegóły znajdziesz w Historii.";
         HidePerformanceOverlay();
         ResetFrameRateDisplay();
         UpdateDashboardRecoveryState(session);
         PlanStateTitleText.Text =
             $"Sesja zakończona: {session.GameDisplayName}";
         PlanDetailsText.Text =
-            "Trwały journal został uzgodniony, a podsumowanie zapisane "
-            + $"w lokalnej historii. Przywrócone aplikacje: "
-            + $"{session.RestoredActionCount}.";
+            $"Sesja zapisana w Historii. Przywrócone działania: {session.RestoredActionCount}.";
         PlanActionsList.Visibility = Visibility.Collapsed;
         UpdateDashboardHero();
         UpdateSessionControls();
@@ -6097,7 +6136,7 @@ public sealed partial class MainWindow : Window, IDisposable
         _trayIcon?.SetActiveGame(null);
         ActiveSessionStateText.Text = "Gotowość";
         ActiveSessionDetailsText.Text =
-            "SessionHost nie monitoruje obecnie żadnej gry.";
+            "Wybierz grę i ruszaj z Dismode.";
         HidePerformanceOverlay();
         ResetFrameRateDisplay();
         UpdateDashboardRecoveryState(session: null);
@@ -6134,7 +6173,7 @@ public sealed partial class MainWindow : Window, IDisposable
         ActiveFpsText.Text = "—";
         ActiveFrameTimeText.Text = "— ms";
         ActiveFrameRateStatusText.Text = FpsTrackingToggleSwitch.IsOn
-            ? "PresentMon uruchomi się automatycznie razem z grą."
+            ? "Pomiar FPS ruszy razem z grą."
             : "Pomiar FPS jest wyłączony w ustawieniach Dismode.";
         SetDashboardTelemetryAvailability(hasValidSample: false);
         SetDashboardFrameRateStatus(
@@ -6193,9 +6232,9 @@ public sealed partial class MainWindow : Window, IDisposable
             "Active" => "aktywna",
             "Completed" => "zakończona",
             "Restoring" => "przywracanie",
-            "Reconciling" => "uzgadnianie",
+            "Reconciling" => "porządkowanie",
             "GameExited" => "gra zakończona",
-            _ => state,
+            _ => "sprawdzanie sesji",
         };
 
     private async Task LoadProfilesAsync(
@@ -6333,6 +6372,12 @@ public sealed partial class MainWindow : Window, IDisposable
             await _userDataStore.ListRecentAsync(
                 MaximumRecentHistoryItems,
                 cancellationToken);
+        TimeSpan? recordedPlayTime = SessionPagePresentation.RecordedPlayTime(history);
+        DashboardRecoveredMemoryText.Text = recordedPlayTime is TimeSpan played
+            ? played.TotalHours >= 1 ? $"{played.TotalHours:0.#} godz."
+                : played.TotalMinutes >= 1 ? $"{played.TotalMinutes:0} min"
+                : $"{played.TotalSeconds:0} s"
+            : "—";
         _allHistory = history;
         _historyByGame = Core.History.GameSessionHistory.GroupByGame(history);
         RebuildHistoryTiles();
@@ -6586,6 +6631,54 @@ public sealed partial class MainWindow : Window, IDisposable
         UpdateSessionControls();
     }
 
+    private static void OnCompactInfoBarClosed(InfoBar sender, InfoBarClosedEventArgs args) =>
+        sender.Visibility = Visibility.Collapsed;
+
+    private void OnSessionOptionChanged(object sender, RoutedEventArgs args)
+    {
+        if (!_isLoaded)
+        {
+            return;
+        }
+
+        if (!_isLoadingOptimizationPreferences && _pendingPlan is not null)
+        {
+            ClearPreparedPlan();
+        }
+
+        UpdateSessionHero();
+    }
+
+    private void UpdateSessionHero()
+    {
+        if (SessionHeroSummaryText is null || ProBalanceToggleSwitch is null)
+        {
+            return;
+        }
+
+        SessionHeroTitleText.Text = _activeSession?.GameDisplayName
+            ?? (ProfilesList.SelectedItem as ProfileListItem)?.DisplayName
+            ?? "W co dziś gramy?";
+        IReadOnlyList<string> options = ProfilesList.SelectedItem is null
+            ? []
+            : SessionPagePresentation.OptionLabels(
+                RememberRulesCheckBox.IsChecked == true,
+                AutoOptimizeGameCheckBox.IsChecked == true && IsAutomaticOptimizationEnabled,
+                PinGameToPreferredCoresCheckBox.IsChecked == true,
+                KeepAwakeDuringSessionCheckBox.IsChecked == true,
+                LateBackgroundRulesCheckBox.IsChecked == true,
+                MaximizeRefreshRateCheckBox.IsChecked == true,
+                FpsTrackingToggleSwitch.IsOn, FpsOverlayToggleSwitch.IsOn,
+                ProBalanceToggleSwitch.IsOn,
+                _backgroundApplications.Count(application => application.IsSelected));
+        SessionHeroChips.ItemsSource = options;
+        SessionHeroChips.Visibility = options.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
+        SessionHeroSummaryText.Text = ProfilesList.SelectedItem is null
+            ? "Wybierz grę, ustaw opcje i ruszaj."
+            : "Uruchomi grę bez dodatkowych zmian.";
+        SessionHeroSummaryText.Visibility = options.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
+    }
+
     private void UpdateSessionControls()
     {
         bool hasSelectedProfile =
@@ -6644,36 +6737,31 @@ public sealed partial class MainWindow : Window, IDisposable
             !_isBusy
             && _sessionEndpointAvailable
             && _activeSession?.State == "Active";
+        SessionHeroStartButton.IsEnabled = canPrepare;
+        foreach (CheckBox option in new[]
+        {
+            RememberRulesCheckBox, AutoOptimizeGameCheckBox, PinGameToPreferredCoresCheckBox,
+            KeepAwakeDuringSessionCheckBox, LateBackgroundRulesCheckBox, MaximizeRefreshRateCheckBox,
+        })
+        {
+            option.IsEnabled = !_isBusy && _activeSession is null && hasSelectedProfile;
+        }
+
+        UpdateSessionHero();
     }
 
     private void UpdateBackgroundApplicationSummary()
     {
-        BackgroundApplicationListItem[] selected =
-            _backgroundApplications
-                .Where(application => application.IsSelected)
-                .ToArray();
-        long estimatedSavingsBytes = selected.Sum(application =>
-        {
-            BackgroundProcessActionMode mode = application.SelectedAction.Mode switch
-            {
-                BackgroundProcessClientActionMode.CloseAndRestore =>
-                    BackgroundProcessActionMode.CloseAndRestore,
-                BackgroundProcessClientActionMode.LowerPriorityAndEcoQos =>
-                    BackgroundProcessActionMode.LowerPriorityAndEcoQos,
-                BackgroundProcessClientActionMode.RestrainBackground =>
-                    BackgroundProcessActionMode.RestrainBackground,
-                _ => BackgroundProcessActionMode.LowerPriority,
-            };
-            return BackgroundOptimizationAdvisor.EstimatePotentialMemorySavings(
-                application.Process.WorkingSetBytes,
-                mode);
-        });
-
-        SelectedAppsCountText.Text =
-            selected.Length.ToString(
-                System.Globalization.CultureInfo.CurrentCulture);
-        SelectedAppsMemoryText.Text =
-            FormatMemory(estimatedSavingsBytes);
+        (int count, long workingSetBytes) = SessionPagePresentation.BackgroundSnapshot(
+            _backgroundApplications.Select(application => application.Process.WorkingSetBytes));
+        SelectedAppsCountText.Text = _hasAnalyzedBackground
+            ? count.ToString(System.Globalization.CultureInfo.CurrentCulture) : "—";
+        SelectedAppsMemoryText.Text = _hasAnalyzedBackground
+            ? FormatMemory(workingSetBytes) : "—";
+        BackgroundApplicationsEmptyText.Text = _hasAnalyzedBackground
+            ? "Ruszaj do gry — nie znaleźliśmy aplikacji do ograniczenia."
+            : "Tu pojawią się aplikacje, które możesz przyhamować. Najpierw wybierz grę i znajdź aplikacje w tle.";
+        UpdateSessionHero();
         BackgroundApplicationsEmptyPanel.Visibility =
             _backgroundApplications.Count == 0
                 ? Visibility.Visible
@@ -7199,41 +7287,14 @@ public sealed partial class MainWindow : Window, IDisposable
             _backgroundApplications
                 .Where(application => application.IsSelected)
                 .ToArray();
-        if (selected.Length == 0)
-        {
-            return "Dismode ponownie sprawdzi zatwierdzony plik EXE, "
-                + "zapisze trwały punkt recovery i uruchomi grę albo dołączy "
-                + "do jednego zgodnego, działającego procesu. "
-                + "Nie wybrano aplikacji w tle do zamknięcia ani "
-                + "ograniczenia.";
-        }
-
         int closeCount = selected.Count(application =>
-            application.SelectedAction.Mode
-                == BackgroundProcessClientActionMode.CloseAndRestore);
-        int lowerCount = selected.Length - closeCount;
-        int ecoQosCount = selected.Count(application =>
-            application.SelectedAction.Mode
-                == BackgroundProcessClientActionMode
-                    .LowerPriorityAndEcoQos);
-        int restrainCount = selected.Count(application =>
-            application.SelectedAction.Mode
-                == BackgroundProcessClientActionMode.RestrainBackground);
-        long selectedBytes = selected.Sum(application =>
-            application.SelectedAction.Mode
-                    == BackgroundProcessClientActionMode.CloseAndRestore
-                ? application.Process.WorkingSetBytes
-                : 0);
-        return "Dismode najpierw uruchomi zweryfikowaną grę albo dołączy "
-            + "do jednego zgodnego procesu. Następnie sekwencyjnie zamknie "
-            + $"aplikacji: {closeCount} "
-            + $"(working set około {FormatMemory(selectedBytes)}; nie jest "
-            + "to miara FPS), obniży "
-            + $"priorytet procesów: {lowerCount}, w tym ograniczy pełnym "
-            + "pakietem (rdzenie tła, EcoQoS, niski priorytet pamięci "
-            + $"i dysku): {restrainCount}, a samym EcoQoS: {ecoQosCount}. "
-            + "Po zakończeniu sesji odtworzy poprzedni stan. Niezapisane "
-            + "dane mogą wywołać własne pytanie aplikacji o zapis.";
+            application.SelectedAction.Mode == BackgroundProcessClientActionMode.CloseAndRestore);
+        return $"Uruchomimy grę „{plan.GameDisplayName}”. "
+            + (selected.Length == 0
+                ? "Nie wybrano aplikacji do ograniczenia. "
+                : $"Przyhamujemy aplikacje: {selected.Length - closeCount}. Zamkniemy i później uruchomimy ponownie: {closeCount}. ")
+            + "Po grze Dismode cofnie swoje zmiany. "
+            + (closeCount > 0 ? "Zapisz swoją pracę w aplikacjach, które mają zostać zamknięte." : string.Empty);
     }
 
     private GamePriorityClientMode GetSelectedGamePriority() =>
@@ -7408,6 +7469,7 @@ public sealed partial class MainWindow : Window, IDisposable
         infoBar.Severity = severity;
         infoBar.Title = title;
         infoBar.Message = message;
+        infoBar.Visibility = Visibility.Visible;
         infoBar.IsOpen = true;
 
         if (severity == InfoBarSeverity.Success)
@@ -7509,6 +7571,8 @@ public sealed partial class MainWindow : Window, IDisposable
         _overlaySettingsSaveTimer.Tick -= OnOverlaySettingsSaveTick;
         _overlayPollTimer.Stop();
         _overlayPollTimer.Tick -= OnOverlayPollTick;
+        _edgePanel?.Dispose();
+        _edgePanel = null;
         _ = _foregroundGameWatcher?.DisposeAsync().AsTask();
         _foregroundGameWatcher = null;
         _foregroundChangeListener?.Dispose();

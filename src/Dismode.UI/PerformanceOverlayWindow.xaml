@@ -7,10 +7,8 @@
   <!--
     Same liczby na obrazie gry, bez tla i bez ramki.
 
-    Poprzednia wersja rysowala ciemny panel z kolumna etykiet, wykresem
-    i linijka statusu. Wygladalo to jak tabelka polozona na grze i zaslanialo
-    jej fragment, a nakladka ma byc niewidoczna dopoki nie spojrzy sie
-    wprost na liczbe.
+    Cztery style wspoldziela liczby i cienie. Kod zwija niepotrzebne
+    wiersze i mierzy widoczna tresc przed ustawieniem okna w rogu ekranu.
 
     Czytelnosc bez panelu daje cien: pod kazdym napisem lezy jego czarna
     kopia przesunieta o piksel. To samo rozwiazanie ma nakladka RivaTunera
@@ -25,7 +23,7 @@
     Czcionka o stalej szerokosci jest funkcja, nie stylistyka: przy zmiennej
     liczba skacze w poziomie przy kazdej zmianie i widac to katem oka.
   -->
-  <Grid x:Name="OverlayRoot" Background="Transparent">
+  <Grid x:Name="OverlayRoot" Background="Transparent" HorizontalAlignment="Left" VerticalAlignment="Top">
     <Grid.RenderTransform>
       <ScaleTransform x:Name="OverlayScaleTransform" ScaleX="1" ScaleY="1" />
     </Grid.RenderTransform>
@@ -37,7 +35,7 @@
         Spacing="0">
 
       <!-- FPS. Jedyna liczba, ktora ma byc widoczna z daleka. -->
-      <Grid>
+      <Grid x:Name="FpsRow">
         <TextBlock
             FontFamily="Consolas"
             FontSize="28"
@@ -56,7 +54,7 @@
       </Grid>
 
       <!-- Czas klatki. Mniejszy, bo sluzy do zerkniecia, nie do patrzenia. -->
-      <Grid Margin="0,-2,0,0">
+      <Grid x:Name="FrameTimeRow">
         <TextBlock
             FontFamily="Consolas"
             FontSize="14"
@@ -75,7 +73,7 @@
       </Grid>
 
       <!-- Najnizszy procent klatek. To on pokazuje przyciecia. -->
-      <Grid Margin="0,-1,0,0">
+      <Grid x:Name="OnePercentLowRow">
         <TextBlock
             FontFamily="Consolas"
             FontSize="14"
@@ -91,6 +89,13 @@
             FontWeight="SemiBold"
             Foreground="#FFBFC8CE"
             Text="—" />
+      </Grid>
+
+      <Grid x:Name="CompactBarLayout" Visibility="Collapsed">
+        <TextBlock x:Name="CompactTelemetryShadowText" FontFamily="Consolas" FontSize="16"
+                   FontWeight="SemiBold" Foreground="#D9000000" Margin="1,1,0,0" />
+        <TextBlock x:Name="CompactTelemetryText" FontFamily="Consolas" FontSize="16"
+                   FontWeight="SemiBold" Foreground="#FFE6ECF0" />
       </Grid>
 
       <Grid x:Name="CpuTelemetryRow" Visibility="Collapsed">
@@ -123,36 +128,42 @@
         tylko wtedy, gdy cos nie dziala i trzeba sprawdzic, co nakladka
         w ogole mierzy.
       -->
-      <TextBlock
+      <Grid x:Name="GameNameRow" Margin="0,8,0,0">
+        <TextBlock x:Name="GameNameShadowText" FontFamily="Consolas" FontSize="10"
+                   Foreground="#D9000000" Margin="1,1,0,0" MaxWidth="224"
+                   TextTrimming="CharacterEllipsis" />
+        <TextBlock
           x:Name="GameNameText"
           FontFamily="Consolas"
           FontSize="10"
           Foreground="#8CFFFFFF"
           TextTrimming="CharacterEllipsis"
-          MaxWidth="220"
-          Margin="0,2,0,0"
+          MaxWidth="224"
           Text="—" />
-      <TextBlock
+      </Grid>
+      <Grid x:Name="SourceStatusRow">
+        <TextBlock x:Name="SourceStatusShadowText" FontFamily="Consolas" FontSize="9"
+                   Foreground="#D9000000" Margin="1,1,0,0" />
+        <TextBlock
           x:Name="SourceStatusText"
           FontFamily="Consolas"
           FontSize="9"
           Foreground="#73FFFFFF"
           Text="" />
+      </Grid>
 
-      <!--
-        Wykres czasu klatki zostaje w drzewie, bo kod go wypelnia, ale jest
-        zwiniety: linia na obrazie gry to juz nie "same liczby". Wroci, gdy
-        przelacznik stylu nakladki zacznie cokolwiek robic — dzis pole Style
-        jest zapisywane i ignorowane.
-      -->
-      <Polyline
+      <!-- Wykres tylko w pelnych szczegolach; czarna kopia daje kontrast. -->
+      <Grid x:Name="FrameGraphRow" Margin="0,8,0,0" HorizontalAlignment="Left">
+        <Polyline x:Name="FrameGraphShadowLine" Height="32" Width="224"
+                  Stroke="#D9000000" StrokeThickness="3" Margin="1,1,0,0" />
+        <Polyline
           x:Name="FrameGraphLine"
-          Height="26"
-          Width="150"
+          Height="32"
+          Width="224"
           Stroke="#FF5BE37D"
           StrokeThickness="1"
-          HorizontalAlignment="Left"
-          Visibility="Collapsed" />
+          HorizontalAlignment="Left" />
+      </Grid>
     </StackPanel>
   </Grid>
 </Window>

@@ -20,7 +20,7 @@ public sealed class SqliteUserDataStore :
     IGlobalBackgroundRuleRepository,
     IDisposable
 {
-    private const int CurrentSchemaVersion = 22;
+    private const int CurrentSchemaVersion = 23;
     private const int MaximumGlobalRuleCount = 128;
     private const int MaximumHistoryPageSize = 1000;
 
@@ -808,6 +808,33 @@ public sealed class SqliteUserDataStore :
         }
 
         await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
+    }
+
+    public async ValueTask<bool> LoadEdgePanelEnabledAsync(CancellationToken cancellationToken)
+    {
+        await InitializeAsync(cancellationToken).ConfigureAwait(false);
+        await using SqliteConnection connection = CreateConnection();
+        await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
+        await ConfigureConnectionAsync(connection, cancellationToken).ConfigureAwait(false);
+        await using SqliteCommand command = connection.CreateCommand();
+        command.CommandText = "SELECT IsEnabled FROM EdgePanelPreferences WHERE SettingsKey = 1;";
+        object? value = await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false);
+        return value is null || Convert.ToInt32(value, CultureInfo.InvariantCulture) != 0;
+    }
+
+    public async ValueTask SaveEdgePanelEnabledAsync(bool enabled, CancellationToken cancellationToken)
+    {
+        await InitializeAsync(cancellationToken).ConfigureAwait(false);
+        await using SqliteConnection connection = CreateConnection();
+        await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
+        await ConfigureConnectionAsync(connection, cancellationToken).ConfigureAwait(false);
+        await using SqliteCommand command = connection.CreateCommand();
+        command.CommandText = """
+            INSERT INTO EdgePanelPreferences (SettingsKey, IsEnabled) VALUES (1, $enabled)
+            ON CONFLICT(SettingsKey) DO UPDATE SET IsEnabled = excluded.IsEnabled;
+            """;
+        command.Parameters.AddWithValue("$enabled", enabled ? 1 : 0);
+        await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
     }
 
     public async ValueTask<PerformanceOverlayPreferences>
@@ -2203,6 +2230,25 @@ public sealed class SqliteUserDataStore :
                         CHECK (IsVendorTelemetryEnabled IN (0, 1));
                 INSERT INTO SchemaMigrations (Version, AppliedAtUtc)
                 VALUES (22, $appliedAtUtc);
+                """;
+            schema.Parameters.AddWithValue("$appliedAtUtc", FormatTimestamp(DateTimeOffset.UtcNow));
+            await schema.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+            await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
+        }
+
+        if (existingVersion < 23)
+        {
+            await using SqliteTransaction transaction =
+                (SqliteTransaction)await connection.BeginTransactionAsync(
+                    IsolationLevel.Serializable, cancellationToken).ConfigureAwait(false);
+            await using SqliteCommand schema = connection.CreateCommand();
+            schema.Transaction = transaction;
+            schema.CommandText = """
+                CREATE TABLE IF NOT EXISTS EdgePanelPreferences (
+                    SettingsKey INTEGER NOT NULL PRIMARY KEY CHECK (SettingsKey = 1),
+                    IsEnabled INTEGER NOT NULL DEFAULT 1 CHECK (IsEnabled IN (0, 1))
+                );
+                INSERT INTO SchemaMigrations (Version, AppliedAtUtc) VALUES (23, $appliedAtUtc);
                 """;
             schema.Parameters.AddWithValue("$appliedAtUtc", FormatTimestamp(DateTimeOffset.UtcNow));
             await schema.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
