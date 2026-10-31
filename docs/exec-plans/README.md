@@ -3,7 +3,7 @@
 Spis wszystkich planów i uczciwy stan każdego z nich. Aktualizowany razem
 z wydaniem.
 
-Stan na: 2026-10-31, wydanie **0.9.0**
+Stan na: 2026-10-31, wydanie **0.10.0**
 
 ## Zasada
 
@@ -21,7 +21,6 @@ rzeczy i w tych dokumentach nigdy nie są mieszane.
 | [`update-platform-installer-hardening.md`](active/update-platform-installer-hardening.md) | kanał aktualizacji, dzielenie instalatora, podpisy | 0.5.2 zbudowana i podpisana **certyfikatem testowym** | produkcyjny certyfikat Authenticode; smoke update/uninstall na VM |
 | [`system-optimizer-0.4.0.md`](active/system-optimizer-0.4.0.md) | osobny optimizer A/B, usługa `DismodeSystemAgent` | implementacja i lokalna regresja zakończone | macierz VM z recovery po restarcie; podpis produkcyjny |
 | [`dismode-mvp.md`](active/dismode-mvp.md) | bramy A–G całego MVP, transakcyjność, recovery | bramy A–G ukończone w kodzie | instalacja i restartowe recovery na kontrolowanej VM; checklista dostępności (DPI, kontrast, Narrator) |
-| [`oss-benchmark.md`](active/oss-benchmark.md) | ranking propozycji z analizy projektów open source (benchmark, FPS, narzut) | partia 1 (2026-10-30) oraz #5, #7–#17 wdrożone w 0.9.0 (PR #11–#13) | #4B, #17 faza 2, #18 oraz decyzje właściciela z sekcji „Needs owner decision” |
 
 ## Ukończone
 
@@ -29,7 +28,8 @@ rzeczy i w tych dokumentach nigdy nie są mieszane.
 `memory-optimizer-ui` (0.3.0) · `aggressive-mode-overlay` · `fps-overlay-v2` ·
 `installer-exe` · `one-click-saved-optimization` · `overlay-settings` ·
 `presentmon-migration` · `safety-release-0.1.1` ·
-`session-performance-history` · `own-overhead` (0.9.0)
+`session-performance-history` · `own-overhead` (0.9.0) ·
+`oss-benchmark` (0.10.0)
 
 ## Plan rozwoju — kolejność
 
