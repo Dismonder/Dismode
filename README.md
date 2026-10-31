@@ -1,20 +1,20 @@
-<p align="center"><img src="assets/brand/ui/readme-hero.svg" alt="Dismode 0.10.0 Gaming Edition — przygotowanie systemu na czas gry i przywracanie po sesji" width="100%"></p>
+<p align="center"><img src="assets/brand/ui/readme-hero.svg" alt="Dismode 0.10.1 Gaming Edition — przygotowanie systemu na czas gry i przywracanie po sesji" width="100%"></p>
 
-# Dismode 0.10.0 Gaming Edition
+# Dismode 0.10.1 Gaming Edition
 
 Natywny optymalizator sesji gry dla Windows 11: pokazuje plan zmian, mierzy FPS i przywraca poprzedni stan po zakończeniu gry.
 
-[![Wydanie](https://img.shields.io/badge/wydanie-0.10.0-00D7E2)](https://github.com/Dismonder/Dismode/releases/latest)
+[![Wydanie](https://img.shields.io/badge/wydanie-0.10.1-00D7E2)](https://github.com/Dismonder/Dismode/releases/latest)
 [![Licencja](https://img.shields.io/badge/licencja-warunki_produktu-9DA5AA)](installer/LICENSE-PL.txt)
 ![Windows](https://img.shields.io/badge/Windows_11-23H2%2B_x64-00D7E2)
 ![.NET](https://img.shields.io/badge/.NET-10-00D7E2)
 
-[![Pobierz 0.10.0](https://img.shields.io/badge/Pobierz-0.10.0-00D7E2?style=for-the-badge)](https://github.com/Dismonder/Dismode/releases/latest)
+[![Pobierz 0.10.1](https://img.shields.io/badge/Pobierz-0.10.1-00D7E2?style=for-the-badge)](https://github.com/Dismonder/Dismode/releases/latest)
 
-Plik: **`Dismode-Setup-0.10.0-win-x64.exe`**. SHA-256:
+Plik: **`Dismode-Setup-0.10.1-win-x64.exe`**. SHA-256:
 
 ```text
-E3ECC9EF5709390CF7E197370514A17C995573D56FA558954FD56D80FCBECFCC
+ED2FCE89F9361D0223FC6D5F1EC20878F1A8770D1254405516325787302A5D66
 ```
 
 **Podpis testowy:** Windows SmartScreen ostrzega przed tym wydaniem. SHA-256 sprawdza integralność, ale nie zastępuje zaufanego podpisu Authenticode. U innych użytkowników **System Optimizer pozostaje tylko do odczytu**, dopóki klient nie ma zaufanego podpisu. Wydanie jest rozwojowe i nie gwarantuje wzrostu FPS.
@@ -70,6 +70,10 @@ Osobny interfejs i usługa `DismodeSystemAgent` udostępniają diagnostykę, kat
 Opcjonalny, niezależny składnik GPL-3.0-only ma własny tray i usługę LocalSystem. Pozostaje aktywny po zamknięciu części gamingowej; można odznaczyć go w instalatorze. Automat i działania ręczne przechodzą przez ochronę aktywnej gry. Domyślny profil przycina working sety procesów użytkownika i listę standby o niskim priorytecie. Operacje zaawansowane mogą wymusić ponowne doczytywanie danych i nie są funkcją zwiększania FPS.
 
 <img src="assets/brand/ui/memory-optimizer.svg" alt="Panel Memory Optimizer 400×548: RAM, automat i niezależna usługa" width="100%">
+
+### Nowości w 0.10.1
+
+- Nakładka FPS w pełni przezroczysta: bez tła i ramki, same liczby z cieniem.
 
 ### Nowości w 0.10.0
 
@@ -207,8 +211,8 @@ Skrypt odmawia podmiany działających składników lub niedokończonego journal
 Artefakty bieżącej wersji:
 
 ```text
-artifacts\installer\Dismode-Setup-0.10.0-win-x64.exe
-artifacts\installer\Dismode-Setup-0.10.0-win-x64.exe.sha256
+artifacts\installer\Dismode-Setup-0.10.1-win-x64.exe
+artifacts\installer\Dismode-Setup-0.10.1-win-x64.exe.sha256
 ```
 
 Domyślny łańcuch wymaga certyfikatu Authenticode przez `DISMODE_RELEASE_SIGNING_THUMBPRINT` lub parametr skryptu. Podpisuje własnych klientów mutacji i instalator, sprawdza listę sygnatariuszy, tworzy sumę instalatora i manifest payloadu. Jawny tryb certyfikatu testowego w skrypcie nie nadaje klientowi zaufania produkcyjnego na innym komputerze.
@@ -242,7 +246,7 @@ cd infrastructure\website
 
 ## Status projektu
 
-**Wydanie rozwojowe 0.10.0 Gaming Edition.** Brak gwarancji poprawy FPS i zgodności z każdą grą lub anti-cheatem. Publiczny instalator ma podpis testowy, a System Optimizer u innych użytkowników działa tylko do odczytu. Wyniki ocenia się na podstawie pomiaru konkretnej sesji; braki danych są pokazywane wprost.
+**Wydanie rozwojowe 0.10.1 Gaming Edition.** Brak gwarancji poprawy FPS i zgodności z każdą grą lub anti-cheatem. Publiczny instalator ma podpis testowy, a System Optimizer u innych użytkowników działa tylko do odczytu. Wyniki ocenia się na podstawie pomiaru konkretnej sesji; braki danych są pokazywane wprost.
 
 ## English summary
 
