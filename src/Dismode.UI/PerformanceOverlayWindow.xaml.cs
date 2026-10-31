@@ -24,8 +24,18 @@ public sealed partial class PerformanceOverlayWindow : Window, IDisposable
     private const long WsExToolWindow = 0x00000080L;
     private const long WsExLayered = 0x00080000L;
     private const long WsExNoActivate = 0x08000000L;
-    private const uint LwaColorKey = 0x00000001;
-    private const uint TransparentColorKey = 0x00000000;
+    private const long WsExDlgModalFrame = 0x00000001L;
+    private const long WsExWindowEdge = 0x00000100L;
+    private const long WsExClientEdge = 0x00000200L;
+    private const long WsExStaticEdge = 0x00020000L;
+    private const int GwlStyle = -16;
+    private const long WsPopup = 0x80000000L;
+    private const long WsCaption = 0x00C00000L;
+    private const long WsBorder = 0x00800000L;
+    private const long WsDlgFrame = 0x00400000L;
+    private const long WsThickFrame = 0x00040000L;
+    private const long WsSysMenu = 0x00080000L;
+    private const uint LwaAlpha = 0x00000002;
     private const uint MonitorDefaultToPrimary = 0x00000001;
     private const uint MonitorDefaultToNearest = 0x00000002;
     private const uint SwpNoActivate = 0x0010;
@@ -101,7 +111,18 @@ public sealed partial class PerformanceOverlayWindow : Window, IDisposable
                 hasTitleBar: false);
         }
 
-        nint extendedStyle = GetWindowLongPtr(_windowHandle, GwlExStyle);
+        // Bez tla i bez ramki: przezroczysty pedzel kompozytora zamiast klucza
+        // koloru, ktory WinUI 3 ignoruje, i czysty styl popup bez krawedzi.
+        SystemBackdrop = new TransparentBackdrop();
+        nint style = GetWindowLongPtr(_windowHandle, GwlStyle);
+        _ = SetWindowLongPtr(
+            _windowHandle,
+            GwlStyle,
+            (style & ~(nint)(WsCaption | WsThickFrame | WsBorder | WsDlgFrame | WsSysMenu))
+            | unchecked((nint)WsPopup));
+
+        nint extendedStyle = GetWindowLongPtr(_windowHandle, GwlExStyle)
+            & ~(nint)(WsExWindowEdge | WsExClientEdge | WsExStaticEdge | WsExDlgModalFrame);
         _ = SetWindowLongPtr(
             _windowHandle,
             GwlExStyle,
@@ -112,11 +133,13 @@ public sealed partial class PerformanceOverlayWindow : Window, IDisposable
                 | WsExToolWindow
                 | WsExLayered
                 | WsExNoActivate));
+        // Okno warstwowe tylko po to, by WS_EX_TRANSPARENT przepuszczal
+        // klikniecia do gry; pelne krycie, przezroczystosc daje tlo.
         if (!SetLayeredWindowAttributes(
                 _windowHandle,
-                TransparentColorKey,
+                0,
                 byte.MaxValue,
-                LwaColorKey))
+                LwaAlpha))
         {
             throw new InvalidOperationException(
                 "Windows nie ustawił przezroczystości nakładki.",
@@ -139,6 +162,12 @@ public sealed partial class PerformanceOverlayWindow : Window, IDisposable
             DwmwaBorderColor,
             ref borderColor,
             sizeof(int));
+
+        // Okno najwyzszego poziomu WinUI ma bitmape przekierowania, ktora DWM
+        // maluje na czarno. Ramka rozciagnieta na caly obszar okna kaze DWM
+        // traktowac ja jako przezroczysta; liczby kompozytora leza nad nia.
+        Margins sheetOfGlass = new() { Left = -1, Right = -1, Top = -1, Bottom = -1 };
+        _ = DwmExtendFrameIntoClientArea(_windowHandle, ref sheetOfGlass);
 
         _foregroundTimer.Tick += OnForegroundTimerTick;
     }
@@ -726,6 +755,20 @@ public sealed partial class PerformanceOverlayWindow : Window, IDisposable
         int attribute,
         ref int value,
         int valueSize);
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct Margins
+    {
+        public int Left;
+        public int Right;
+        public int Top;
+        public int Bottom;
+    }
+
+    [DllImport("dwmapi.dll")]
+    private static extern int DwmExtendFrameIntoClientArea(
+        nint windowHandle,
+        ref Margins margins);
 
     [StructLayout(LayoutKind.Sequential)]
     private struct Rectangle

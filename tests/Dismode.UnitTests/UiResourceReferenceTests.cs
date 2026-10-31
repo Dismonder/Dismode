@@ -633,24 +633,19 @@ public sealed class UiResourceReferenceTests
         StringAssert.Contains(codeBehind, "WsExLayered");
         StringAssert.Contains(codeBehind, "WsExTransparent");
         StringAssert.Contains(codeBehind, "WsExNoActivate");
+        // Klucz koloru nie dziala w oknie WinUI 3: zostawial czarne tlo.
+        Assert.IsFalse(codeBehind.Contains("LwaColorKey", StringComparison.Ordinal));
         StringAssert.Contains(
             codeBehind,
-            "private const uint LwaColorKey = 0x00000001;");
-        StringAssert.Contains(
-            codeBehind,
-            "private const uint TransparentColorKey = 0x00000000;");
-        StringAssert.Contains(
-            codeBehind,
-            "SetLayeredWindowAttributes(\n                _windowHandle,\n                TransparentColorKey,\n                byte.MaxValue,\n                LwaColorKey)");
+            "SetLayeredWindowAttributes(\n                _windowHandle,\n                0,\n                byte.MaxValue,\n                LwaAlpha)");
         StringAssert.Contains(
             codeBehind,
             "presenter.SetBorderAndTitleBar(\n                hasBorder: false,\n                hasTitleBar: false);");
-        Assert.IsFalse(codeBehind.Contains(
-            "SystemBackdrop =",
-            StringComparison.Ordinal));
-        Assert.IsFalse(codeBehind.Contains(
-            "DwmExtendFrameIntoClientArea",
-            StringComparison.Ordinal));
+        StringAssert.Contains(codeBehind, "SystemBackdrop = new TransparentBackdrop();");
+        StringAssert.Contains(codeBehind, "DwmExtendFrameIntoClientArea(_windowHandle, ref sheetOfGlass);");
+        StringAssert.Contains(
+            LoadUiSource("TransparentBackdrop.cs"),
+            "CreateColorBrush(");
     }
 
     [TestMethod]
