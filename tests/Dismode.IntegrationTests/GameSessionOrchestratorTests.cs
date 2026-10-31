@@ -607,12 +607,14 @@ public sealed class GameSessionOrchestratorTests
         AppendOnlyRecoveryJournal journal =
             new(Path.Combine(directory, "recovery.jsonl"));
         FailOnceStopFrameRateProvider frameRateProvider = new();
+        HandoffClock gameplayClock = new();
         LocalGameSessionOrchestrator orchestrator = new(
             store,
             store,
             journal,
             monitorInterval: TimeSpan.FromMilliseconds(50),
-            frameRateProvider: frameRateProvider);
+            frameRateProvider: frameRateProvider,
+            gameplayClock: gameplayClock);
 
         try
         {
@@ -630,6 +632,7 @@ public sealed class GameSessionOrchestratorTests
             await WaitForFileAsync(readyFile);
             processId = ReadProcessId(readyFile);
 
+            gameplayClock.Advance(TimeSpan.FromMinutes(5));
             await CloseProcessAsync(processId.Value);
             processId = null;
             GameSessionSnapshot recoveryRequired =
@@ -680,11 +683,13 @@ public sealed class GameSessionOrchestratorTests
         AppendOnlyRecoveryJournal journal =
             new(Path.Combine(directory, "recovery.jsonl"));
         FailOnceHistoryRepository history = new(store);
+        HandoffClock gameplayClock = new();
         LocalGameSessionOrchestrator orchestrator = new(
             store,
             history,
             journal,
-            monitorInterval: TimeSpan.FromMilliseconds(50));
+            monitorInterval: TimeSpan.FromMilliseconds(50),
+            gameplayClock: gameplayClock);
 
         try
         {
@@ -703,6 +708,7 @@ public sealed class GameSessionOrchestratorTests
             await WaitForFileAsync(readyFile);
             processId = ReadProcessId(readyFile);
 
+            gameplayClock.Advance(TimeSpan.FromMinutes(5));
             await CloseProcessAsync(processId.Value);
             processId = null;
             GameSessionSnapshot recoveryRequired =
@@ -871,11 +877,13 @@ public sealed class GameSessionOrchestratorTests
 
             restartedStore = new(databasePath);
             restartedJournal = new(journalPath);
+            HandoffClock gameplayClock = new();
             restartedHost = new(
                 restartedStore,
                 restartedStore,
                 restartedJournal,
-                monitorInterval: TimeSpan.FromMilliseconds(50));
+                monitorInterval: TimeSpan.FromMilliseconds(50),
+                gameplayClock: gameplayClock);
             await restartedHost.InitializeAsync(CancellationToken.None);
 
             GameSessionSnapshot? recovered =
@@ -900,6 +908,7 @@ public sealed class GameSessionOrchestratorTests
             Assert.AreEqual(plan.SessionId, recovered.SessionId);
             Assert.AreEqual(OptimizationSessionState.Active, recovered.State);
 
+            gameplayClock.Advance(TimeSpan.FromMinutes(5));
             await CloseProcessAsync(processId.Value);
             processId = null;
             await WaitForNoActiveSessionAsync(restartedHost);
@@ -1022,11 +1031,13 @@ public sealed class GameSessionOrchestratorTests
 
             restartedStore = new(databasePath);
             restartedJournal = new(journalPath);
+            HandoffClock gameplayClock = new();
             restartedHost = new(
                 restartedStore,
                 restartedStore,
                 restartedJournal,
-                monitorInterval: TimeSpan.FromMilliseconds(30));
+                monitorInterval: TimeSpan.FromMilliseconds(30),
+                gameplayClock: gameplayClock);
             await restartedHost.InitializeAsync(CancellationToken.None);
 
             GameSessionSnapshot? recovered =
@@ -1037,6 +1048,7 @@ public sealed class GameSessionOrchestratorTests
                 OptimizationSessionState.Active,
                 recovered.State);
 
+            gameplayClock.Advance(TimeSpan.FromMinutes(5));
             await restartedHost.CloseGameAsync(
                 plan.SessionId,
                 CancellationToken.None);
@@ -1811,7 +1823,7 @@ public sealed class GameSessionOrchestratorTests
         LocalGameSessionOrchestrator orchestrator)
     {
         using CancellationTokenSource timeout =
-            new(TimeSpan.FromSeconds(90));
+            new(TimeSpan.FromSeconds(10));
         while (await orchestrator.GetActiveAsync(timeout.Token) is not null)
         {
             await Task.Delay(TimeSpan.FromMilliseconds(50), timeout.Token);
@@ -1823,7 +1835,7 @@ public sealed class GameSessionOrchestratorTests
         OptimizationSessionState expectedState)
     {
         using CancellationTokenSource timeout =
-            new(TimeSpan.FromSeconds(90));
+            new(TimeSpan.FromSeconds(10));
         while (true)
         {
             GameSessionSnapshot? active =

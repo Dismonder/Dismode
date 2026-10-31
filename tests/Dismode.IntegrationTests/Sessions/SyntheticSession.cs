@@ -28,7 +28,8 @@ internal sealed class SyntheticSession : IAsyncDisposable, IProcessIdentityProvi
         ISystemGameProfileCoordinator? systemProfileCoordinator = null,
         string? profileExecutablePath = null, string? profileExecutableSha256 = null,
         string? rootExecutablePath = null, bool refuseAdoption = false,
-        Func<IRecoveryJournal, IRecoveryJournal>? journalDecorator = null)
+        Func<IRecoveryJournal, IRecoveryJournal>? journalDecorator = null,
+        TimeProvider? timeProvider = null)
     {
         _lateRules = lateRules;
         Directory.CreateDirectory(_directory);
@@ -40,7 +41,7 @@ internal sealed class SyntheticSession : IAsyncDisposable, IProcessIdentityProvi
         _profileHash = profileExecutableSha256 ?? Root.ExecutableSha256;
         Running.Add(Root);
         Orchestrator = new(Store, Store, journalDecorator?.Invoke(Journal) ?? Journal, identityProvider: this,
-            timeProvider: Clock, monitorInterval: TimeSpan.FromMilliseconds(5),
+            timeProvider: timeProvider ?? Clock, monitorInterval: TimeSpan.FromMilliseconds(5),
             processParentMapProvider: this, processInventory: this, gameplayClock: Clock, displayApi: displayApi,
             savedRuleResolver: new(this), systemProfileCoordinator: systemProfileCoordinator,
             cpuProcessSourceFactory: () => this)

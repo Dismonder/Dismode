@@ -5,6 +5,7 @@ using Dismode.Core.Profiles;
 using Dismode.Core.Sessions;
 using Dismode.Data.Journal;
 using Dismode.Data.UserData;
+using Dismode.IntegrationTests.Sessions;
 using Dismode.Windows.Processes;
 using Dismode.Windows.Profiles;
 using Dismode.Windows.Sessions;
@@ -31,13 +32,15 @@ public sealed class SavedRuleGameSessionTests
         AppendOnlyRecoveryJournal journal =
             new(Path.Combine(directory, "recovery.jsonl"));
         TrackingFrameRateProvider frameRateProvider = new();
+        SyntheticSession.ManualClock gameplayClock = new();
         LocalGameSessionOrchestrator orchestrator = new(
             store,
             store,
             journal,
             monitorInterval: TimeSpan.FromMilliseconds(50),
             frameRateProvider: frameRateProvider,
-            optimizationPreferences: store);
+            optimizationPreferences: store,
+            gameplayClock: gameplayClock);
 
         try
         {
@@ -108,6 +111,7 @@ public sealed class SavedRuleGameSessionTests
                 && processesAppliedIndex > launchedIndex,
                 "Gra musi zostać uruchomiona przed sekwencyjnymi akcjami tła.");
 
+            gameplayClock.Advance(300);
             await CloseProcessAsync(gameProcessId.Value);
             gameProcessId = null;
             await WaitForNoActiveSessionAsync(orchestrator);
@@ -161,6 +165,7 @@ public sealed class SavedRuleGameSessionTests
         AppendOnlyRecoveryJournal journal =
             new(Path.Combine(directory, "recovery.jsonl"));
         TrackingFrameRateProvider frameRateProvider = new();
+        SyntheticSession.ManualClock gameplayClock = new();
         LocalGameSessionOrchestrator orchestrator = new(
             store,
             store,
@@ -168,7 +173,8 @@ public sealed class SavedRuleGameSessionTests
             monitorInterval: TimeSpan.FromMilliseconds(50),
             frameRateProvider: frameRateProvider,
             optimizationPreferences: store,
-            globalBackgroundRules: store);
+            globalBackgroundRules: store,
+            gameplayClock: gameplayClock);
 
         try
         {
@@ -213,6 +219,7 @@ public sealed class SavedRuleGameSessionTests
                 ProcessPriorityClass.BelowNormal,
                 background.Process.PriorityClass);
 
+            gameplayClock.Advance(300);
             await CloseProcessAsync(gameProcessId.Value);
             gameProcessId = null;
             await WaitForNoActiveSessionAsync(orchestrator);
@@ -355,7 +362,7 @@ public sealed class SavedRuleGameSessionTests
         LocalGameSessionOrchestrator orchestrator)
     {
         using CancellationTokenSource timeout =
-            new(TimeSpan.FromSeconds(90));
+            new(TimeSpan.FromSeconds(10));
         while (await orchestrator.GetActiveAsync(timeout.Token) is not null)
         {
             await Task.Delay(TimeSpan.FromMilliseconds(50), timeout.Token);
