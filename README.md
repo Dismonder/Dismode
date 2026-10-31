@@ -4,17 +4,17 @@
 
 Natywny optymalizator sesji gry dla Windows 11: pokazuje plan zmian, mierzy FPS i przywraca poprzedni stan po zakończeniu gry.
 
-[![Wydanie](https://img.shields.io/badge/wydanie-0.8.0-00D7E2)](https://github.com/Dismonder/Dismode/releases/latest)
+[![Wydanie](https://img.shields.io/badge/wydanie-0.9.0-00D7E2)](https://github.com/Dismonder/Dismode/releases/latest)
 [![Licencja](https://img.shields.io/badge/licencja-warunki_produktu-9DA5AA)](installer/LICENSE-PL.txt)
 ![Windows](https://img.shields.io/badge/Windows_11-23H2%2B_x64-00D7E2)
 ![.NET](https://img.shields.io/badge/.NET-10-00D7E2)
 
-[![Pobierz 0.8.0](https://img.shields.io/badge/Pobierz-0.8.0-00D7E2?style=for-the-badge)](https://github.com/Dismonder/Dismode/releases/latest)
+[![Pobierz 0.9.0](https://img.shields.io/badge/Pobierz-0.9.0-00D7E2?style=for-the-badge)](https://github.com/Dismonder/Dismode/releases/latest)
 
-Plik: **`Dismode-Setup-0.8.0-win-x64.exe`**. SHA-256:
+Plik: **`Dismode-Setup-0.9.0-win-x64.exe`**. SHA-256:
 
 ```text
-61011EA2DF6258CA0A9D0C5D786E22EC35545A1E2A9A0F054839637D6D993851
+E3C2575D45BF98E70FD56D59C27B96FDB193CB350FF0D15D0A1718E2169C6F61
 ```
 
 **Podpis testowy:** Windows SmartScreen ostrzega przed tym wydaniem. SHA-256 sprawdza integralność, ale nie zastępuje zaufanego podpisu Authenticode. U innych użytkowników **System Optimizer pozostaje tylko do odczytu**, dopóki klient nie ma zaufanego podpisu. Wydanie jest rozwojowe i nie gwarantuje wzrostu FPS.
@@ -71,6 +71,19 @@ Opcjonalny, niezależny składnik GPL-3.0-only ma własny tray i usługę LocalS
 
 <img src="assets/brand/ui/memory-optimizer.svg" alt="Panel Memory Optimizer 400×548: RAM, automat i niezależna usługa" width="100%">
 
+### Nowości w 0.9.0
+
+- Statystyki z pojedynczych klatek: średnia, 1% / 0.1% low i przycięcia; opcjonalnie wyświetlone FPS i zgubione klatki.
+- Benchmark bez fałszywych zysków: utrata zdarzeń lub buforów ETW w oknie pomiaru unieważnia wynik.
+- Gra na CCD z większym L3 (X3D); przy niejednoznacznej topologii Dismode nie zmienia przypisania rdzeni. Przypinanie gry do rdzeni włączane per gra.
+- Przejęcie gry od launchera lub DRM: sesja trwa, gdy launcher uruchomi grę ponownie (do 30 s na jednego zgodnego następcę).
+- Reguły tła także dla procesów uruchomionych w trakcie gry (opcja, domyślnie wyłączona).
+- Maksymalne odświeżanie monitora na czas gry (opcja, domyślnie wyłączona), przywracane po sesji i po awarii.
+- Rzeczywisty czas gry: bez uśpienia systemu i czasu przywracania, w sekundach.
+- Nakładka: najbardziej obciążony rdzeń, obciążenie GPU 3D i VRAM (liczniki Windows, bez sterowników producentów).
+- Ekran nie usypia w trakcie sesji; pełny stan EcoQoS przy przywracaniu.
+- Mniejszy narzut własny Dismode (mniej alokacji w procesie sesji, odczyt CPU/GPU nakładki poza wątkiem interfejsu).
+
 ## Jak działa sesja
 
 1. **Plan:** wybierasz grę i reguły tła. Procesy Windows, launchery, anti-cheat i pomocnicy gry są chronieni.
@@ -109,7 +122,7 @@ Instalator zapisuje program w `Program Files\Dismode`, rejestruje usługi i stan
 
 Dismode to ten sam projekt pod nową nazwą. Migracja przenosi profile, historię i dzienniki GameShift. Działająca stara wersja albo nieukończone przeniesienie bazy i journalu blokują start. Zamknij procesy trzymające pliki i uruchom ponownie; host nie otwiera pustej biblioteki obok zablokowanych danych.
 
-[Uwagi instalatora](installer/INSTALLER-NOTES.txt) opisują mechanizmy instalacji; wzmianka o produkcyjnym podpisie 0.4.0 dotyczy wcześniejszego łańcucha wydania. Publiczny instalator 0.8.0 opisany tutaj ma podpis testowy.
+[Uwagi instalatora](installer/INSTALLER-NOTES.txt) opisują mechanizmy instalacji; wzmianka o produkcyjnym podpisie 0.4.0 dotyczy wcześniejszego łańcucha wydania. Publiczny instalator 0.9.0 opisany tutaj ma podpis testowy.
 
 ## Dla deweloperów
 
@@ -186,8 +199,8 @@ Skrypt odmawia podmiany działających składników lub niedokończonego journal
 Artefakty bieżącej wersji:
 
 ```text
-artifacts\installer\Dismode-Setup-0.8.0-win-x64.exe
-artifacts\installer\Dismode-Setup-0.8.0-win-x64.exe.sha256
+artifacts\installer\Dismode-Setup-0.9.0-win-x64.exe
+artifacts\installer\Dismode-Setup-0.9.0-win-x64.exe.sha256
 ```
 
 Domyślny łańcuch wymaga certyfikatu Authenticode przez `DISMODE_RELEASE_SIGNING_THUMBPRINT` lub parametr skryptu. Podpisuje własnych klientów mutacji i instalator, sprawdza listę sygnatariuszy, tworzy sumę instalatora i manifest payloadu. Jawny tryb certyfikatu testowego w skrypcie nie nadaje klientowi zaufania produkcyjnego na innym komputerze.
@@ -221,7 +234,7 @@ cd infrastructure\website
 
 ## Status projektu
 
-**Wydanie rozwojowe 0.8.0 Gaming Edition.** Brak gwarancji poprawy FPS i zgodności z każdą grą lub anti-cheatem. Publiczny instalator ma podpis testowy, a System Optimizer u innych użytkowników działa tylko do odczytu. Wyniki ocenia się na podstawie pomiaru konkretnej sesji; braki danych są pokazywane wprost.
+**Wydanie rozwojowe 0.9.0 Gaming Edition.** Brak gwarancji poprawy FPS i zgodności z każdą grą lub anti-cheatem. Publiczny instalator ma podpis testowy, a System Optimizer u innych użytkowników działa tylko do odczytu. Wyniki ocenia się na podstawie pomiaru konkretnej sesji; braki danych są pokazywane wprost.
 
 ## English summary
 
