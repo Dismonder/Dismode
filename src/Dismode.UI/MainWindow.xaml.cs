@@ -413,6 +413,7 @@ public sealed partial class MainWindow : Window, IDisposable
         await Task.Yield();
 
         await LoadPerformanceOverlayPreferencesAsync(_lifetime.Token);
+        await LoadEdgePanelPreferencesAsync(_lifetime.Token);
         await LoadUpdatePreferencesAsync(_lifetime.Token);
         await LoadGameDetectionPreferencesAsync(_lifetime.Token);
         await RefreshGlobalRulesSummaryAsync(_lifetime.Token);
@@ -3247,6 +3248,11 @@ public sealed partial class MainWindow : Window, IDisposable
         object sender,
         RoutedEventArgs args)
     {
+        await RestoreActiveSessionAsync(RootLayout.XamlRoot);
+    }
+
+    private async Task RestoreActiveSessionAsync(XamlRoot dialogRoot)
+    {
         if (_isBusy || _activeSession is null)
         {
             return;
@@ -3255,7 +3261,7 @@ public sealed partial class MainWindow : Window, IDisposable
         SessionStateClientSnapshot active = _activeSession;
         ContentDialog confirmation = new()
         {
-            XamlRoot = RootLayout.XamlRoot,
+            XamlRoot = dialogRoot,
             Title = "Przywrócić aplikacje teraz?",
             Content =
                 $"Dismode przywróci aplikacje zamknięte dla "
@@ -5743,6 +5749,7 @@ public sealed partial class MainWindow : Window, IDisposable
             PerformanceOverlayPreferences preferences =
                 await _userDataStore
                     .LoadPerformanceOverlayPreferencesAsync(cancellationToken);
+            _edgeOverlayStyle = preferences.Style;
             _isLoadingOverlayPreferences = true;
             SetFpsTrackingToggleValues(preferences.IsFpsTrackingEnabled);
             SetFpsOverlayToggleValues(preferences.IsEnabled);
@@ -5859,7 +5866,7 @@ public sealed partial class MainWindow : Window, IDisposable
             GetOverlayOpacityPercent(),
             GetOverlayScalePercent(),
             GetSelectedOverlayCorner(),
-            PerformanceOverlayStyle.FullDeck,
+            _edgeOverlayStyle,
             PerformanceOverlayTheme.CyberNeon,
             DateTimeOffset.UtcNow)
         {
@@ -5992,6 +5999,7 @@ public sealed partial class MainWindow : Window, IDisposable
                 return;
             }
 
+            _edgeForegroundSample = sample.IsPresenting ? sample : null;
             _performanceOverlay ??= new();
             _performanceOverlay.Update(
                 sample.ProcessName,
@@ -7409,6 +7417,8 @@ public sealed partial class MainWindow : Window, IDisposable
         _overlaySettingsSaveTimer.Tick -= OnOverlaySettingsSaveTick;
         _overlayPollTimer.Stop();
         _overlayPollTimer.Tick -= OnOverlayPollTick;
+        _edgePanel?.Dispose();
+        _edgePanel = null;
         _ = _foregroundGameWatcher?.DisposeAsync().AsTask();
         _foregroundGameWatcher = null;
         _foregroundChangeListener?.Dispose();

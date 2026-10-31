@@ -13,6 +13,7 @@ public enum PerformanceOverlayStyle
     FullDeck = 1,
     CompactBar = 2,
     MinimalText = 3,
+    FpsAndLows = 4,
 }
 
 public enum PerformanceOverlayTheme

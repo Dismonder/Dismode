@@ -3054,6 +3054,14 @@
                     Style="{StaticResource DismodeDeckCardStyle}">
                   <StackPanel Spacing="12">
                     <!-- FPS tracking and overlay can be disabled independently. -->
+                    <StackPanel Spacing="8">
+                      <ToggleSwitch x:Name="EdgePanelSettingsToggleSwitch"
+                          Header="Panel przy krawędzi ekranu" IsOn="True"
+                          OnContent="Włączony" OffContent="Wyłączony"
+                          Toggled="OnEdgePanelSettingChanged" />
+                      <TextBlock Text="Alt+D" FontSize="12"
+                          Foreground="{ThemeResource DismodeMutedTextBrush}" />
+                    </StackPanel>
                     <StackPanel Spacing="10" Margin="0,10,0,0">
                       <TextBlock
                           FontWeight="SemiBold"

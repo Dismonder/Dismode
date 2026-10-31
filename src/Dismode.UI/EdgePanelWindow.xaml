@@ -1,0 +1,107 @@
+<Window
+    x:Class="Dismode.UI.EdgePanelWindow"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+  <Border x:Name="PanelRoot" RequestedTheme="Dark"
+          Background="{ThemeResource DismodeTitleBarBrush}"
+          BorderBrush="{ThemeResource DismodeCardBorderBrush}" BorderThickness="1"
+          CornerRadius="16,0,0,16">
+    <Border.RenderTransform>
+      <TranslateTransform x:Name="SlideTransform" />
+    </Border.RenderTransform>
+    <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+      <StackPanel Padding="24" Spacing="24">
+        <Grid ColumnSpacing="8">
+          <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="*" />
+            <ColumnDefinition Width="Auto" />
+          </Grid.ColumnDefinitions>
+          <StackPanel Spacing="4">
+            <TextBlock Text="DISMODE" FontSize="12" FontWeight="SemiBold"
+                       CharacterSpacing="160" Foreground="{ThemeResource DismodeAccentBrush}" />
+            <TextBlock Text="Pod ręką" FontSize="24" FontWeight="SemiBold" />
+          </StackPanel>
+          <Button Grid.Column="1" Click="OnCloseClicked" VerticalAlignment="Top"
+                  AutomationProperties.Name="Schowaj panel" ToolTipService.ToolTip="Schowaj panel"
+                  IsTabStop="False" Padding="8">
+            <FontIcon Glyph="&#xE711;" FontSize="12" />
+          </Button>
+        </Grid>
+
+        <Border Background="{ThemeResource DismodeCardBrush}"
+                BorderBrush="{ThemeResource DismodeCardBorderBrush}" BorderThickness="1"
+                CornerRadius="8" Padding="16">
+          <StackPanel Spacing="8">
+            <TextBlock x:Name="GameText" Text="Brak aktywnej gry" FontSize="16"
+                       FontWeight="SemiBold" TextWrapping="Wrap" MaxLines="2" TextTrimming="CharacterEllipsis" />
+            <TextBlock x:Name="FpsText" Text="— FPS" FontFamily="Consolas" FontSize="32"
+                       Foreground="{ThemeResource DismodeAccentBrush}" />
+            <TextBlock x:Name="SelectedGameText" FontSize="12" TextWrapping="Wrap"
+                       Foreground="{ThemeResource DismodeMutedTextBrush}" />
+            <Button x:Name="SessionButton" Content="Włącz Tryb gry" Click="OnSessionClicked"
+                    HorizontalAlignment="Stretch" Style="{StaticResource AccentButtonStyle}" IsTabStop="False" />
+          </StackPanel>
+        </Border>
+
+        <StackPanel Spacing="12">
+          <ToggleSwitch x:Name="OverlayToggle" Header="Nakładka FPS" Toggled="OnOverlayToggled"
+                        OnContent="Włączona" OffContent="Wyłączona" IsTabStop="False" />
+          <TextBlock Text="Wygląd nakładki" FontSize="12" Foreground="{ThemeResource DismodeMutedTextBrush}" />
+          <Grid RowSpacing="8" ColumnSpacing="8">
+            <Grid.ColumnDefinitions>
+              <ColumnDefinition Width="*" />
+              <ColumnDefinition Width="*" />
+            </Grid.ColumnDefinitions>
+            <Grid.RowDefinitions>
+              <RowDefinition Height="Auto" />
+              <RowDefinition Height="Auto" />
+            </Grid.RowDefinitions>
+            <ToggleButton x:Name="MinimalStyle" Tag="MinimalText" Content="Tylko FPS" Click="OnStyleClicked"
+                          HorizontalAlignment="Stretch" FontSize="12" Padding="8" IsTabStop="False" />
+            <ToggleButton x:Name="LowsStyle" Grid.Column="1" Tag="FpsAndLows" Content="FPS + minimum" Click="OnStyleClicked"
+                          HorizontalAlignment="Stretch" FontSize="12" Padding="8" IsTabStop="False" />
+            <ToggleButton x:Name="CompactStyle" Grid.Row="1" Tag="CompactBar" Content="Kompakt w jednej linii" Click="OnStyleClicked"
+                          HorizontalAlignment="Stretch" FontSize="12" Padding="8" IsTabStop="False">
+              <ToggleButton.ContentTemplate>
+                <DataTemplate><TextBlock Text="{Binding}" TextWrapping="Wrap" TextAlignment="Center" /></DataTemplate>
+              </ToggleButton.ContentTemplate>
+            </ToggleButton>
+            <ToggleButton x:Name="FullStyle" Grid.Row="1" Grid.Column="1" Tag="FullDeck" Content="Pełne szczegóły" Click="OnStyleClicked"
+                          HorizontalAlignment="Stretch" FontSize="12" Padding="8" IsTabStop="False" />
+          </Grid>
+        </StackPanel>
+
+        <StackPanel Spacing="12">
+          <TextBlock Text="Teraz na komputerze" FontWeight="SemiBold" />
+          <Grid ColumnSpacing="8" RowSpacing="8">
+            <Grid.ColumnDefinitions>
+              <ColumnDefinition Width="*" />
+              <ColumnDefinition Width="*" />
+            </Grid.ColumnDefinitions>
+            <Grid.RowDefinitions>
+              <RowDefinition Height="Auto" />
+              <RowDefinition Height="Auto" />
+            </Grid.RowDefinitions>
+            <TextBlock x:Name="CpuText" Text="CPU  —" FontFamily="Consolas" />
+            <TextBlock x:Name="GpuText" Grid.Column="1" Text="GPU  —" FontFamily="Consolas" />
+            <TextBlock x:Name="RamText" Grid.Row="1" Text="RAM  —" FontFamily="Consolas" />
+            <TextBlock x:Name="TemperatureText" Grid.Row="1" Grid.Column="1" Text="GPU  — °C" FontFamily="Consolas" />
+          </Grid>
+          <TextBlock Text="Bieżące odczyty · — oznacza brak pomiaru" FontSize="11" TextWrapping="Wrap"
+                     Foreground="{ThemeResource DismodeMutedTextBrush}" />
+        </StackPanel>
+
+        <Border Background="{ThemeResource DismodeCardBrush}" CornerRadius="8" Padding="16">
+          <StackPanel Spacing="8">
+            <TextBlock Text="Ostatnia sesja" FontSize="12" Foreground="{ThemeResource DismodeMutedTextBrush}" />
+            <TextBlock x:Name="LastGameText" Text="Jeszcze nie było sesji" FontWeight="SemiBold"
+                       TextWrapping="Wrap" MaxLines="2" TextTrimming="CharacterEllipsis" />
+            <TextBlock x:Name="LastDetailsText" FontFamily="Consolas" FontSize="12" TextWrapping="Wrap" />
+          </StackPanel>
+        </Border>
+        <TextBlock x:Name="HotkeyText" Text="Alt+D · Schowaj też klawiszem Esc" FontSize="11" TextWrapping="Wrap"
+                   Foreground="{ThemeResource DismodeMutedTextBrush}" />
+      </StackPanel>
+    </ScrollViewer>
+  </Border>
+</Window>
