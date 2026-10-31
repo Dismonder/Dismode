@@ -36,19 +36,35 @@ public sealed partial class EdgePanelWindow : Window, IDisposable
         InitializeComponent();
         Title = "Dismode — panel przy krawędzi";
         _native = new(this);
-        _handle = new();
-        _toggleHotkey = new(() => _native.Register(ToggleHotkey, 0x0001, 0x44), () => _native.Unregister(ToggleHotkey));
-        _escapeHotkey = new(() => _native.Register(EscapeHotkey, 0, 0x1B), () => _native.Unregister(EscapeHotkey));
-        _native.HotkeyPressed += OnHotkey;
-        if (!_toggleHotkey.TryRegister())
+        try
         {
-            HotkeyText.Text = "Alt+D jest zajęty · Otwórz panel myszką";
-        }
+            _handle = new();
+            _toggleHotkey = new(() => _native.Register(ToggleHotkey, 0x0001, 0x44), () => _native.Unregister(ToggleHotkey));
+            _escapeHotkey = new(() => _native.Register(EscapeHotkey, 0, 0x1B), () => _native.Unregister(EscapeHotkey));
+            _native.HotkeyPressed += OnHotkey;
+            if (!_toggleHotkey.TryRegister())
+            {
+                HotkeyText.Text = "Alt+D jest zajęty · Otwórz panel myszką";
+            }
 
-        Reposition();
-        RefreshContent();
-        _timer.Tick += OnTick;
-        _timer.Start();
+            Reposition();
+            RefreshContent();
+            _timer.Tick += OnTick;
+            _timer.Start();
+        }
+        catch
+        {
+            // The caller never gets an instance to dispose, so release the
+            // native windows and hotkeys created so far before rethrowing.
+            _toggleHotkey?.Dispose();
+            _escapeHotkey?.Dispose();
+            _native.HotkeyPressed -= OnHotkey;
+            _native.Dispose();
+            _handle?.Dispose();
+            _telemetry.Dispose();
+            Close();
+            throw;
+        }
     }
 
     private void Reposition()
