@@ -114,6 +114,22 @@ public sealed class GlobalBackgroundRuleMergeTests
         Assert.EndsWith("app127.exe", merged.BackgroundRules[^1].ExecutablePath);
     }
 
+    [TestMethod]
+    public void PerformanceOverlayPreferencesVendorTelemetryDefaultsOffAndIsRetained()
+    {
+        PerformanceOverlayPreferences defaults =
+            PerformanceOverlayPreferences.CreateDefault();
+
+        Assert.IsFalse(defaults.IsVendorTelemetryEnabled);
+
+        PerformanceOverlayPreferences retained = defaults with
+        {
+            IsVendorTelemetryEnabled = true,
+        };
+
+        Assert.IsTrue(retained.IsVendorTelemetryEnabled);
+    }
+
     private static GameOptimizationPreferences Preferences(
         params SavedBackgroundProcessRule[] rules) =>
         new(

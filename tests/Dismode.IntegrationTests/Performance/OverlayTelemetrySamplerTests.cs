@@ -9,6 +9,90 @@ namespace Dismode.IntegrationTests.Performance;
 public sealed class OverlayTelemetrySamplerTests
 {
     [TestMethod]
+    public async Task VendorToggleOffDuringReadUnloadsOnWorkerAndDiscardsResult()
+    {
+        using GpuTelemetrySamplerTests.FakeGpuCounters gpu = new();
+        gpu.Readings = [new(new(new(1, 0), 0, 0, default, GpuCounterKind.AdapterMemory), 512, 0, true)];
+        using BlockingVendorSource vendor = new();
+        await using OverlayTelemetrySampler sampler = new(new(new LogicalProcessorLoadSamplerTests.FakeProcessorTimes()),
+            new(gpu), TimeProvider.System, vendor: vendor);
+        try
+        {
+            sampler.SetActive(true, 42, true);
+            Assert.IsTrue(vendor.Entered.Wait(TimeSpan.FromSeconds(5)));
+            Assert.AreNotEqual(Environment.CurrentManagedThreadId, vendor.ReadThread);
+            sampler.SetActive(true, 42, false);
+            Assert.IsNull(sampler.Snapshot.Vendor);
+            Assert.IsFalse(vendor.Stopped.IsSet);
+            vendor.Release.Set();
+            Assert.IsTrue(vendor.Stopped.Wait(TimeSpan.FromSeconds(5)));
+            Assert.AreEqual(vendor.ReadThread, vendor.StopThread);
+            Assert.IsNull(sampler.Snapshot.Vendor);
+        }
+        finally { vendor.Release.Set(); }
+    }
+
+    private sealed class BlockingVendorSource : IGpuVendorTelemetrySource
+    {
+        internal ManualResetEventSlim Entered { get; } = new();
+        internal ManualResetEventSlim Release { get; } = new();
+        internal ManualResetEventSlim Stopped { get; } = new();
+        internal int ReadThread { get; private set; }
+        internal int StopThread { get; private set; }
+        public GpuVendorTelemetrySnapshot? Sample(GpuAdapterId adapter)
+        {
+            ReadThread = Environment.CurrentManagedThreadId;
+            Entered.Set();
+            if (!Release.Wait(TimeSpan.FromSeconds(5))) { throw new TimeoutException(); }
+            return new(60, 2500, 300, 50);
+        }
+
+        public void Stop() { StopThread = Environment.CurrentManagedThreadId; Stopped.Set(); }
+        public void Dispose() { Entered.Dispose(); Release.Dispose(); Stopped.Dispose(); }
+    }
+
+    [TestMethod]
+    public void VendorOptInSamplesAtOneHertzAndTurningOffOrHidingStopsIt()
+    {
+        LogicalProcessorLoadSamplerTests.FakeProcessorTimes cpu = new();
+        using GpuTelemetrySamplerTests.FakeGpuCounters gpu = new();
+        gpu.Readings = [new(new(new(1, 0), 0, 0, default, GpuCounterKind.AdapterMemory), 512, 0, true)];
+        TestClock clock = new();
+        FakeVendorSource vendor = new();
+        using OverlayTelemetrySession session = new(new(cpu), new(gpu), clock, vendor: vendor);
+        _ = session.Sample(false, 42, true);
+        _ = session.Sample(true, 42);
+        Assert.AreEqual(0, vendor.Reads);
+        clock.Advance(TimeSpan.FromSeconds(1));
+        _ = session.Sample(true, 42, true);
+        Assert.AreEqual(1, vendor.Reads);
+        _ = session.Sample(true, 42, true);
+        Assert.AreEqual(1, vendor.Reads);
+        _ = session.Sample(true, 42, false);
+        Assert.AreEqual(1, vendor.Stops);
+        Assert.IsNull(session.Sample(true, 42).Vendor);
+        clock.Advance(TimeSpan.FromSeconds(1));
+        _ = session.Sample(true, 42, true);
+        _ = session.Sample(false, 42, true);
+        Assert.AreEqual(2, vendor.Stops);
+        Assert.IsNull(session.Sample(false, 42, true).Vendor);
+    }
+
+    internal sealed class FakeVendorSource : IGpuVendorTelemetrySource
+    {
+        internal int Reads { get; private set; }
+        internal int Stops { get; private set; }
+        public GpuVendorTelemetrySnapshot? Sample(GpuAdapterId adapter)
+        {
+            Reads++;
+            return new(60, 2500, 300, 50);
+        }
+
+        public void Stop() => Stops++;
+        public void Dispose() { }
+    }
+
+    [TestMethod]
     public void HiddenConsumerDoesNotReadAndVisibleConsumerRunsAtOneHertz()
     {
         LogicalProcessorLoadSamplerTests.FakeProcessorTimes cpu = new();

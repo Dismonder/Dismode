@@ -173,6 +173,12 @@ public sealed record PerformanceOverlayPreferences
     /// </summary>
     public bool IsDisplayTrackingEnabled { get; }
 
+    /// <summary>
+    /// Opt-in: dane z biblioteki producenta GPU (NVML/ADL: temperatura, zegar, moc).
+    /// Domyslnie wylaczone; opcja laduje podpisana biblioteke sterownika.
+    /// </summary>
+    public bool IsVendorTelemetryEnabled { get; init; }
+
     public int OpacityPercent { get; }
 
     public int ScalePercent { get; }

@@ -144,6 +144,7 @@ public sealed partial class MainWindow : Window, IDisposable
     private bool _suppressFpsSettingEvents;
     // Czytane przez watek pomiaru nakladki przy starcie PresentMon.
     private volatile bool _displayTrackingEnabled;
+    private volatile bool _vendorTelemetryEnabled;
     private bool _isOverlaySettingsSaveRunning;
     private int _frameRateTrackingUpdateRevision;
     private bool _isLoadingUpdatePreferences;
@@ -1041,6 +1042,19 @@ public sealed partial class MainWindow : Window, IDisposable
         ApplyOverlaySettingsFromControls(scheduleSave: true);
     }
 
+    private void OnVendorTelemetrySettingChanged(
+        object sender,
+        RoutedEventArgs args)
+    {
+        if (_suppressFpsSettingEvents)
+        {
+            return;
+        }
+
+        _vendorTelemetryEnabled = VendorTelemetrySettingsToggleSwitch.IsOn;
+        ApplyOverlaySettingsFromControls(scheduleSave: true);
+    }
+
     private void SetDisplayTrackingToggleValue(bool enabled)
     {
         if (DisplayedFramesSettingsToggleSwitch is null)
@@ -1053,6 +1067,25 @@ public sealed partial class MainWindow : Window, IDisposable
         {
             DisplayedFramesSettingsToggleSwitch.IsOn = enabled;
             _displayTrackingEnabled = enabled;
+        }
+        finally
+        {
+            _suppressFpsSettingEvents = false;
+        }
+    }
+
+    private void SetVendorTelemetryToggleValue(bool enabled)
+    {
+        if (VendorTelemetrySettingsToggleSwitch is null)
+        {
+            return;
+        }
+
+        _suppressFpsSettingEvents = true;
+        try
+        {
+            VendorTelemetrySettingsToggleSwitch.IsOn = enabled;
+            _vendorTelemetryEnabled = enabled;
         }
         finally
         {
@@ -5715,6 +5748,8 @@ public sealed partial class MainWindow : Window, IDisposable
             SetFpsOverlayToggleValues(preferences.IsEnabled);
             SetDisplayTrackingToggleValue(
                 preferences.IsDisplayTrackingEnabled);
+            SetVendorTelemetryToggleValue(
+                preferences.IsVendorTelemetryEnabled);
             OverlayOpacitySlider.Value = preferences.OpacityPercent;
             OverlaySizeSlider.Value = preferences.ScalePercent;
             OverlayCornerSelector.SelectedIndex =
@@ -5826,7 +5861,11 @@ public sealed partial class MainWindow : Window, IDisposable
             GetSelectedOverlayCorner(),
             PerformanceOverlayStyle.FullDeck,
             PerformanceOverlayTheme.CyberNeon,
-            DateTimeOffset.UtcNow);
+            DateTimeOffset.UtcNow)
+        {
+            IsVendorTelemetryEnabled =
+                VendorTelemetrySettingsToggleSwitch?.IsOn ?? false,
+        };
 
     private int GetOverlayOpacityPercent() =>
         Math.Clamp(
