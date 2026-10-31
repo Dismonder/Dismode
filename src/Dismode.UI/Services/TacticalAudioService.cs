@@ -10,6 +10,7 @@ public sealed class TacticalAudioService
     private const uint SndMemory = 0x0004;
 
     private static readonly Lazy<TacticalAudioService> s_instance = new(() => new TacticalAudioService());
+    private static readonly AsyncLocal<int> s_panelSilence = new();
     public static TacticalAudioService Instance => s_instance.Value;
 
     private readonly byte[] _sessionStartSfx;
@@ -18,10 +19,18 @@ public sealed class TacticalAudioService
     private readonly byte[] _toggleSfx;
     private readonly byte[] _successSfx;
     private readonly byte[] _warningSfx;
-    private readonly byte[] _panelOpenSfx;
-    private readonly byte[] _panelCloseSfx;
 
     public bool IsEnabled { get; set; } = true;
+
+    internal static IDisposable SilencePanelAction() => new PanelSilence();
+    internal static bool IsPanelActionSilent => s_panelSilence.Value > 0;
+
+    private sealed class PanelSilence : IDisposable
+    {
+        private readonly int _previous = s_panelSilence.Value;
+        internal PanelSilence() => s_panelSilence.Value++;
+        public void Dispose() => s_panelSilence.Value = _previous;
+    }
 
     private TacticalAudioService()
     {
@@ -31,8 +40,6 @@ public sealed class TacticalAudioService
         _toggleSfx = PinForPlayback(SynthesizeToggleWav());
         _successSfx = PinForPlayback(SynthesizeSuccessWav());
         _warningSfx = PinForPlayback(SynthesizeWarningWav());
-        _panelOpenSfx = PinForPlayback(SynthesizePanelOpenWav());
-        _panelCloseSfx = PinForPlayback(SynthesizePanelCloseWav());
     }
 
     public void PlaySessionStart() => Play(_sessionStartSfx);
@@ -41,8 +48,6 @@ public sealed class TacticalAudioService
     public void PlayToggle() => Play(_toggleSfx);
     public void PlaySuccess() => Play(_successSfx);
     public void PlayWarning() => Play(_warningSfx);
-    public void PlayPanelOpen() => Play(_panelOpenSfx);
-    public void PlayPanelClose() => Play(_panelCloseSfx);
 
     /// <summary>
     /// PlaySound with SND_ASYNC|SND_MEMORY keeps reading the buffer after the
@@ -60,7 +65,7 @@ public sealed class TacticalAudioService
 
     private void Play(byte[] wavData)
     {
-        if (!IsEnabled || wavData.Length == 0)
+        if (!IsEnabled || IsPanelActionSilent || wavData.Length == 0)
         {
             return;
         }
@@ -121,12 +126,6 @@ public sealed class TacticalAudioService
             new(0, 0.14, 392, 369.99, 0.75, 0.30),
             new(0.14, 0.16, 329.63, 329.63, 0.65, 0.30));
     }
-
-    private static byte[] SynthesizePanelOpenWav() =>
-        SynthesizeWav(0.18, 0.65, true, new Voice(0, 0.18, 330, 494, 0.20));
-
-    private static byte[] SynthesizePanelCloseWav() =>
-        SynthesizeWav(0.18, 0.65, false, new Voice(0, 0.18, 494, 330, 0.20));
 
     private readonly record struct Voice(
         double Start, double Duration, double Frequency, double EndFrequency, double Gain, double Sustain = 0.40);

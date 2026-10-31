@@ -46,6 +46,38 @@ public sealed class UiResourceReferenceTests
         RegexOptions.CultureInvariant);
 
     [TestMethod]
+    public void EdgePanelIsACompactCardWithAccessibleOverlaySegmentsAndTransparencyRow()
+    {
+        XDocument panel = LoadUiXaml("EdgePanelWindow.xaml");
+        Assert.AreEqual("11", FindNamedElement(panel, "PanelRoot").Attribute("CornerRadius")?.Value);
+        Assert.IsNotNull(FindNamedElement(panel, "FpsSparkline"));
+        Assert.IsNotNull(FindNamedElement(panel, "SelectionIndicator"));
+        Assert.AreEqual("Collapsed", FindNamedElement(panel, "LastSessionText").Attribute("Visibility")?.Value);
+        XElement segment = FindNamedElement(panel, "OverlaySegment");
+        XElement[] buttons = segment.Descendants().Where(element => element.Name.LocalName == "Button").ToArray();
+        Assert.HasCount(5, buttons);
+        for (int i = 0; i < buttons.Length; i++)
+        {
+            Assert.AreEqual(i.ToString(System.Globalization.CultureInfo.InvariantCulture), buttons[i].Attribute("Tag")?.Value);
+            Assert.IsFalse(string.IsNullOrEmpty(buttons[i].Attribute("AutomationProperties.Name")?.Value));
+            Assert.AreEqual(buttons[i].Attribute("AutomationProperties.Name")?.Value, buttons[i].Attribute("ToolTipService.ToolTip")?.Value);
+        }
+        string source = LoadUiSource("EdgePanelWindow.xaml.cs");
+        Assert.IsFalse(source.Contains("TacticalAudioService", StringComparison.Ordinal));
+        StringAssert.Contains(source, "_state.NeedsTimer");
+        StringAssert.Contains(source, "_handle.Show();");
+        string nativeSource = LoadUiSource("Services/EdgePanelNativeWindow.cs");
+        StringAssert.Contains(nativeSource, "0x0010 | 0x0002 | 0x0001");
+        XDocument settings = LoadUiXaml("MainWindow.xaml");
+        XElement row = FindNamedElement(settings, "EdgeHandleTransparencyRow");
+        Assert.AreEqual("EdgePanelSettingsToggleSwitch", row.PreviousNode is XElement previous ? previous.Attribute(XamlNamespace + "Name")?.Value : null);
+        XElement slider = FindNamedElement(settings, "EdgeHandleTransparencySlider");
+        Assert.AreEqual("0", slider.Attribute("Minimum")?.Value);
+        Assert.AreEqual("90", slider.Attribute("Maximum")?.Value);
+        Assert.AreEqual("5", slider.Attribute("StepFrequency")?.Value);
+    }
+
+    [TestMethod]
     public void EveryCustomUiResourceReferenceHasADefinition()
     {
         string repositoryRoot = FindRepositoryRoot();

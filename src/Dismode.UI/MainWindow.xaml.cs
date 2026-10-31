@@ -5594,6 +5594,7 @@ public sealed partial class MainWindow : Window, IDisposable
 
     private void ApplyActiveSession(SessionStateClientSnapshot session)
     {
+        RecordEdgePanelFps(session.FrameRateProcessId, session.FramesPerSecond);
         _trayIcon?.SetActiveGame(session.GameDisplayName);
         _ = TryRenewActiveGameLeaseAsync(session, _lifetime.Token);
         if (_dashboardFrameSessionId != session.SessionId)
@@ -6069,6 +6070,7 @@ public sealed partial class MainWindow : Window, IDisposable
             }
 
             _edgeForegroundSample = sample.IsPresenting ? sample : null;
+            RecordEdgePanelFps(_edgeForegroundSample?.ProcessId, _edgeForegroundSample?.FramesPerSecond);
             _performanceOverlay ??= new();
             _performanceOverlay.Update(
                 sample.ProcessName,

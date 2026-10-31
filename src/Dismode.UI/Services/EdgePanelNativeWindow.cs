@@ -1,5 +1,6 @@
 using System.ComponentModel;
 using System.Runtime.InteropServices;
+using Dismode.Core.Interaction;
 using Microsoft.UI.Windowing;
 using Microsoft.UI.Xaml;
 using Windows.Graphics;
@@ -9,15 +10,26 @@ namespace Dismode.UI.Services;
 
 internal sealed class EdgePanelNativeWindow : IDisposable
 {
+    private const uint TopmostPositionFlags = 0x0010 | 0x0020;
+    private const uint TopmostZOrderFlags = 0x0010 | 0x0002 | 0x0001;
     private readonly nint _handle;
+    private readonly nint _stripHandle;
     private readonly SubclassProc _procedure;
     private bool _disposed;
-    private (int Width, int Height, int Left) _lastRegion;
+    private bool _trackingMain;
+    private bool _trackingStrip;
 
-    internal EdgePanelNativeWindow(Window window)
+    internal EdgePanelNativeWindow(Window window, bool roundCorners = true, bool enableHotStrip = false)
     {
         _handle = WindowNative.GetWindowHandle(window);
-        window.AppWindow.IsShownInSwitchers = false;
+        try
+        {
+            window.AppWindow.IsShownInSwitchers = false;
+        }
+        catch (Exception exception) when (exception is NotImplementedException or COMException)
+        {
+            // Styl WS_EX_TOOLWINDOW ponizej ukrywa okno w Alt+Tab i na pasku zadan.
+        }
         if (window.AppWindow.Presenter is OverlappedPresenter presenter)
         {
             presenter.IsAlwaysOnTop = true;
@@ -36,57 +48,185 @@ internal sealed class EdgePanelNativeWindow : IDisposable
         _ = SetWindowLongPtrW(_handle, -20, extended | (nint)0x08000088);
         Margins glass = new() { Left = -1, Right = -1, Top = -1, Bottom = -1 };
         _ = DwmExtendFrameIntoClientArea(_handle, ref glass);
+        int cornerPreference = roundCorners ? 2 : 1;
+        _ = DwmSetWindowAttribute(_handle, 33, ref cornerPreference, sizeof(int));
+        int borderColor = unchecked((int)0xFFFFFFFE);
+        _ = DwmSetWindowAttribute(_handle, 34, ref borderColor, sizeof(int));
         _procedure = OnMessage;
         if (!SetWindowSubclass(_handle, _procedure, 1, 0))
         {
             throw new Win32Exception(Marshal.GetLastWin32Error());
         }
+
+        if (enableHotStrip && Environment.GetEnvironmentVariable("DISMODE_UI_PREVIEW") != "1") // PREVIEW-HACK
+        {
+            _stripHandle = CreateWindowExW(
+                0x08080088,
+                "STATIC",
+                string.Empty,
+                unchecked((int)0x80000000),
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0);
+            if (_stripHandle != 0)
+            {
+                _ = SetLayeredWindowAttributes(_stripHandle, 0, 1, 2);
+                _ = SetWindowSubclass(_stripHandle, _procedure, 2, 0);
+            }
+        }
     }
 
     internal event Action<int>? HotkeyPressed;
+    internal event Action<bool>? PointerChanged;
+    internal event Action? GeometryChanged;
     internal double Scale => GetDpiForWindow(_handle) / 96d;
+    private DisplayArea CurrentDisplayArea => DisplayArea.GetFromWindowId(
+        Microsoft.UI.Win32Interop.GetWindowIdFromWindow(_handle), DisplayAreaFallback.Primary);
+    internal RectInt32 WorkArea => CurrentDisplayArea.WorkArea;
+    internal RectInt32 MonitorBounds => CurrentDisplayArea.OuterBounds;
 
-    internal static RectInt32 PrimaryWorkArea => DisplayArea.Primary.WorkArea;
-    internal static RectInt32 PrimaryBounds => DisplayArea.Primary.OuterBounds;
+    internal static EdgePanelRect ToEdgeRect(RectInt32 rect) =>
+        new(rect.X, rect.Y, rect.Width, rect.Height);
 
     internal void Position(RectInt32 bounds) =>
-        _ = SetWindowPos(_handle, new(-1), bounds.X, bounds.Y, bounds.Width, bounds.Height, 0x0010 | 0x0020);
+        _ = SetWindowPos(_handle, new(-1), bounds.X, bounds.Y, bounds.Width, bounds.Height, TopmostPositionFlags);
 
-    internal void Show() => _ = ShowWindow(_handle, 4);
-    internal void Hide() => _ = ShowWindow(_handle, 0);
-
-    internal bool Register(int id, uint modifiers, uint key) => RegisterHotKey(_handle, id, modifiers | 0x4000, key);
-    internal void Unregister(int id) => _ = UnregisterHotKey(_handle, id);
-
-    internal void Reveal(int width, int height, double amount)
+    internal void PositionHotStrip(EdgePanelRect bounds)
     {
-        // Obszar poza wysunieta czescia nie przechwytuje wejscia ani nie nachodzi na drugi monitor.
-        int left = Math.Clamp((int)Math.Ceiling(width * (1 - amount)), 0, width);
-        if (_lastRegion == (width, height, left))
+        if (_stripHandle != 0 && bounds.Width > 0 && bounds.Height > 0)
         {
-            return;
-        }
-
-        nint region = CreateRectRgn(left, 0, width, height);
-        if (SetWindowRgn(_handle, region, true) == 0)
-        {
-            _ = DeleteObject(region);
-        }
-        else
-        {
-            _lastRegion = (width, height, left);
+            _ = SetWindowPos(_stripHandle, new(-1), bounds.X, bounds.Y, bounds.Width, bounds.Height, TopmostPositionFlags);
         }
     }
 
-    internal static bool PointerInside(RectInt32 bounds)
+    internal void AssertTopmost()
     {
+        if (_stripHandle != 0)
+        {
+            _ = SetWindowPos(_stripHandle, new(-1), 0, 0, 0, 0, TopmostZOrderFlags);
+        }
+
+        _ = SetWindowPos(_handle, new(-1), 0, 0, 0, 0, TopmostZOrderFlags);
+    }
+
+    internal void Show()
+    {
+        if (_stripHandle != 0)
+        {
+            _ = ShowWindow(_stripHandle, 4);
+        }
+
+        _ = ShowWindow(_handle, 4);
+        AssertTopmost();
+    }
+
+    internal void Hide()
+    {
+        if (_stripHandle != 0)
+        {
+            _ = ShowWindow(_stripHandle, 0);
+        }
+
+        _ = ShowWindow(_handle, 0);
+    }
+
+    internal bool Register(int id, uint modifiers, uint key)
+    {
+        if (Environment.GetEnvironmentVariable("DISMODE_UI_PREVIEW") == "1") // PREVIEW-HACK
+        { // PREVIEW-HACK
+            return Environment.GetEnvironmentVariable("DISMODE_PREVIEW_HOTKEY_TAKEN") != "1"; // PREVIEW-HACK
+        } // PREVIEW-HACK
+        return RegisterHotKey(_handle, id, modifiers | 0x4000, key);
+    }
+
+    internal void Unregister(int id)
+    {
+        if (Environment.GetEnvironmentVariable("DISMODE_UI_PREVIEW") == "1") // PREVIEW-HACK
+        { // PREVIEW-HACK
+            return; // PREVIEW-HACK
+        } // PREVIEW-HACK
+        _ = UnregisterHotKey(_handle, id);
+    }
+
+    internal static bool PointerInsideHotZone(EdgePanelRect monitorBounds, EdgePanelRect handleBounds)
+    {
+        if (Environment.GetEnvironmentVariable("DISMODE_UI_PREVIEW") == "1") // PREVIEW-HACK
+        { // PREVIEW-HACK
+            return false; // PREVIEW-HACK
+        } // PREVIEW-HACK
         return GetCursorPos(out NativePoint point)
-            && point.X >= bounds.X && point.X < bounds.X + bounds.Width
-            && point.Y >= bounds.Y && point.Y < bounds.Y + bounds.Height;
+            && EdgePanelMetrics.IsInHotZone(point.X, point.Y, monitorBounds, handleBounds);
+    }
+
+    internal static bool PointerInsideOpenPanel(
+        EdgePanelRect cardBounds,
+        EdgePanelRect monitorBounds,
+        EdgePanelRect handleBounds,
+        double scale,
+        bool pointerEntered)
+    {
+        if (Environment.GetEnvironmentVariable("DISMODE_UI_PREVIEW") == "1") // PREVIEW-HACK
+        { // PREVIEW-HACK
+            return false; // PREVIEW-HACK
+        } // PREVIEW-HACK
+        return GetCursorPos(out NativePoint point)
+            && EdgePanelMetrics.IsInOpenPanelZone(point.X, point.Y, cardBounds, monitorBounds, handleBounds, scale, pointerEntered);
     }
 
     private nint OnMessage(nint window, uint message, nuint wParam, nint lParam, nuint id, nuint data)
     {
+        if (window == _stripHandle && message == 0x0084)
+        {
+            return 1;
+        }
+
+        if (Environment.GetEnvironmentVariable("DISMODE_UI_PREVIEW") != "1") // PREVIEW-HACK
+        { // PREVIEW-HACK
+            if (message == 0x0200)
+            {
+                bool isStrip = window == _stripHandle;
+                if (isStrip ? !_trackingStrip : !_trackingMain)
+                {
+                    if (isStrip)
+                    {
+                        _trackingStrip = true;
+                    }
+                    else
+                    {
+                        _trackingMain = true;
+                    }
+
+                    TrackMouse tracking = new() { Size = (uint)Marshal.SizeOf<TrackMouse>(), Flags = 2, Window = window };
+                    _ = TrackMouseEvent(ref tracking);
+                }
+
+                PointerChanged?.Invoke(true);
+            }
+            else if (message == 0x02A3)
+            {
+                if (window == _stripHandle)
+                {
+                    _trackingStrip = false;
+                }
+                else
+                {
+                    _trackingMain = false;
+                }
+
+                PointerChanged?.Invoke(false);
+            }
+        } // PREVIEW-HACK
+
+        if (message is 0x02E0 or 0x007E or 0x001A)
+        {
+            GeometryChanged?.Invoke();
+        }
+
         if (message == 0x0021)
         {
             return 3; // MA_NOACTIVATE: klik pozostaje w panelu, fokus zostaje w grze.
@@ -109,6 +249,12 @@ internal sealed class EdgePanelNativeWindow : IDisposable
         }
 
         _disposed = true;
+        if (_stripHandle != 0)
+        {
+            _ = RemoveWindowSubclass(_stripHandle, _procedure, 2);
+            _ = DestroyWindow(_stripHandle);
+        }
+
         _ = RemoveWindowSubclass(_handle, _procedure, 1);
     }
 
@@ -116,8 +262,30 @@ internal sealed class EdgePanelNativeWindow : IDisposable
     private struct Margins { internal int Left; internal int Right; internal int Top; internal int Bottom; }
     [StructLayout(LayoutKind.Sequential)]
     private struct NativePoint { internal int X; internal int Y; }
+    [StructLayout(LayoutKind.Sequential)]
+    private struct TrackMouse { internal uint Size; internal uint Flags; internal nint Window; internal uint HoverTime; }
     private delegate nint SubclassProc(nint window, uint message, nuint wParam, nint lParam, nuint id, nuint data);
 
+    [DllImport("user32.dll", ExactSpelling = true, CharSet = CharSet.Unicode, SetLastError = true)]
+    private static extern nint CreateWindowExW(
+        uint exStyle,
+        string className,
+        string windowName,
+        int style,
+        int x,
+        int y,
+        int width,
+        int height,
+        nint parent,
+        nint menu,
+        nint instance,
+        nint param);
+    [DllImport("user32.dll", ExactSpelling = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool DestroyWindow(nint window);
+    [DllImport("user32.dll", ExactSpelling = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool SetLayeredWindowAttributes(nint window, uint key, byte alpha, uint flags);
     [DllImport("user32.dll", ExactSpelling = true)]
     private static extern nint GetWindowLongPtrW(nint window, int index);
     [DllImport("user32.dll", ExactSpelling = true)]
@@ -149,11 +317,9 @@ internal sealed class EdgePanelNativeWindow : IDisposable
     private static extern nint DefSubclassProc(nint window, uint message, nuint wParam, nint lParam);
     [DllImport("dwmapi.dll", ExactSpelling = true)]
     private static extern int DwmExtendFrameIntoClientArea(nint window, ref Margins margins);
-    [DllImport("gdi32.dll", ExactSpelling = true)]
-    private static extern nint CreateRectRgn(int left, int top, int right, int bottom);
+    [DllImport("dwmapi.dll", ExactSpelling = true)]
+    private static extern int DwmSetWindowAttribute(nint window, int attribute, ref int value, int size);
     [DllImport("user32.dll", ExactSpelling = true)]
-    private static extern int SetWindowRgn(nint window, nint region, [MarshalAs(UnmanagedType.Bool)] bool redraw);
-    [DllImport("gdi32.dll", ExactSpelling = true)]
     [return: MarshalAs(UnmanagedType.Bool)]
-    private static extern bool DeleteObject(nint value);
+    private static extern bool TrackMouseEvent(ref TrackMouse tracking);
 }

@@ -5,127 +5,134 @@
   <Border x:Name="PanelRoot" RequestedTheme="Dark"
           Background="{ThemeResource DismodeTitleBarBrush}"
           BorderBrush="{ThemeResource DismodeCardBorderBrush}" BorderThickness="1"
-          CornerRadius="16,0,0,16">
+          CornerRadius="11" RenderTransformOrigin="0.5,0.5">
     <Border.Resources>
       <SolidColorBrush x:Key="DismodePanelAccentHoverBrush" Color="{Binding Color, Source={StaticResource DismodeAccentBrush}}" Opacity="0.85" />
       <SolidColorBrush x:Key="DismodePanelAccentPressedBrush" Color="{Binding Color, Source={StaticResource DismodeAccentBrush}}" Opacity="0.7" />
-      <StaticResource x:Key="AccentFillColorDefaultBrush" ResourceKey="DismodeAccentBrush" />
-      <StaticResource x:Key="AccentFillColorSecondaryBrush" ResourceKey="DismodePanelAccentHoverBrush" />
-      <StaticResource x:Key="AccentFillColorTertiaryBrush" ResourceKey="DismodePanelAccentPressedBrush" />
-      <StaticResource x:Key="AccentControlElevationBorderBrush" ResourceKey="DismodeAccentBrush" />
+      <SolidColorBrush x:Key="AccentButtonForeground" Color="#071018" />
+      <SolidColorBrush x:Key="AccentButtonForegroundPointerOver" Color="#071018" />
+      <SolidColorBrush x:Key="AccentButtonForegroundPressed" Color="#071018" />
       <StaticResource x:Key="AccentButtonBackground" ResourceKey="DismodeAccentBrush" />
       <StaticResource x:Key="AccentButtonBackgroundPointerOver" ResourceKey="DismodePanelAccentHoverBrush" />
       <StaticResource x:Key="AccentButtonBackgroundPressed" ResourceKey="DismodePanelAccentPressedBrush" />
       <StaticResource x:Key="AccentButtonBorderBrush" ResourceKey="DismodeAccentBrush" />
       <StaticResource x:Key="AccentButtonBorderBrushPointerOver" ResourceKey="DismodePanelAccentHoverBrush" />
       <StaticResource x:Key="AccentButtonBorderBrushPressed" ResourceKey="DismodePanelAccentPressedBrush" />
-      <StaticResource x:Key="ToggleButtonBackgroundChecked" ResourceKey="DismodeAccentBrush" />
-      <StaticResource x:Key="ToggleButtonBackgroundCheckedPointerOver" ResourceKey="DismodePanelAccentHoverBrush" />
-      <StaticResource x:Key="ToggleButtonBackgroundCheckedPressed" ResourceKey="DismodePanelAccentPressedBrush" />
-      <StaticResource x:Key="ToggleButtonBorderBrushChecked" ResourceKey="DismodeAccentBrush" />
-      <StaticResource x:Key="ToggleButtonBorderBrushCheckedPointerOver" ResourceKey="DismodePanelAccentHoverBrush" />
-      <StaticResource x:Key="ToggleButtonBorderBrushCheckedPressed" ResourceKey="DismodePanelAccentPressedBrush" />
-      <StaticResource x:Key="ToggleSwitchFillOn" ResourceKey="DismodeAccentBrush" />
-      <StaticResource x:Key="ToggleSwitchFillOnPointerOver" ResourceKey="DismodePanelAccentHoverBrush" />
-      <StaticResource x:Key="ToggleSwitchFillOnPressed" ResourceKey="DismodePanelAccentPressedBrush" />
-      <StaticResource x:Key="ToggleSwitchStrokeOn" ResourceKey="DismodeAccentBrush" />
-      <StaticResource x:Key="ToggleSwitchStrokeOnPointerOver" ResourceKey="DismodePanelAccentHoverBrush" />
-      <StaticResource x:Key="ToggleSwitchStrokeOnPressed" ResourceKey="DismodePanelAccentPressedBrush" />
+      <Style x:Key="DismodePanelSegmentStyle" TargetType="Button">
+        <Setter Property="Width" Value="48" />
+        <Setter Property="Height" Value="40" />
+        <Setter Property="Padding" Value="0" />
+        <Setter Property="Background" Value="Transparent" />
+        <Setter Property="BorderThickness" Value="0" />
+        <Setter Property="CornerRadius" Value="7" />
+      </Style>
     </Border.Resources>
     <Border.RenderTransform>
-      <TranslateTransform x:Name="SlideTransform" />
+      <CompositeTransform x:Name="CardTransform" />
     </Border.RenderTransform>
-    <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
-      <StackPanel Padding="24" Spacing="24">
+    <ScrollViewer x:Name="PanelScroll" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+      <StackPanel x:Name="PanelRows" Padding="16" Spacing="16">
         <Grid ColumnSpacing="8">
           <Grid.ColumnDefinitions>
             <ColumnDefinition Width="*" />
             <ColumnDefinition Width="Auto" />
+            <ColumnDefinition Width="Auto" />
           </Grid.ColumnDefinitions>
-          <StackPanel Spacing="4">
-            <TextBlock Text="DISMODE" FontSize="12" FontWeight="SemiBold"
-                       CharacterSpacing="160" Foreground="{ThemeResource DismodeAccentBrush}" />
-            <TextBlock Text="Pod ręką" FontSize="24" FontWeight="SemiBold" />
-          </StackPanel>
-          <Button Grid.Column="1" Click="OnCloseClicked" VerticalAlignment="Top"
-                  AutomationProperties.Name="Schowaj panel" ToolTipService.ToolTip="Schowaj panel"
-                  IsTabStop="False" Padding="8">
+          <TextBlock x:Name="GameText" Text="Brak aktywnej gry" FontSize="16" FontWeight="SemiBold"
+                     VerticalAlignment="Center" TextTrimming="CharacterEllipsis" MaxLines="2" TextWrapping="Wrap" />
+          <FontIcon x:Name="HotkeyWarning" Grid.Column="1" Visibility="Collapsed" Glyph="&#xE7BA;" FontSize="14"
+                    VerticalAlignment="Center" Foreground="{ThemeResource DismodeMutedTextBrush}"
+                    ToolTipService.ToolTip="Alt+D jest zajęty · Otwórz panel myszką"
+                    AutomationProperties.Name="Alt+D jest zajęty · Otwórz panel myszką" />
+          <Button Grid.Column="2" Click="OnCloseClicked" Width="32" Height="32" Padding="0"
+                  Background="Transparent" BorderThickness="0" VerticalAlignment="Center"
+                  AutomationProperties.Name="Schowaj panel" ToolTipService.ToolTip="Schowaj panel">
             <FontIcon Glyph="&#xE711;" FontSize="12" />
           </Button>
         </Grid>
-
-        <Border Background="{ThemeResource DismodeCardBrush}"
-                BorderBrush="{ThemeResource DismodeCardBorderBrush}" BorderThickness="1"
-                CornerRadius="8" Padding="16">
-          <StackPanel Spacing="8">
-            <TextBlock x:Name="GameText" Text="Brak aktywnej gry" FontSize="16"
-                       FontWeight="SemiBold" TextWrapping="Wrap" MaxLines="2" TextTrimming="CharacterEllipsis" />
-            <TextBlock x:Name="FpsText" Text="— FPS" FontFamily="Consolas" FontSize="32"
+        <Grid ColumnSpacing="8">
+          <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="Auto" />
+            <ColumnDefinition Width="*" />
+          </Grid.ColumnDefinitions>
+          <StackPanel Orientation="Horizontal" Spacing="4" VerticalAlignment="Center">
+            <TextBlock x:Name="FpsText" Text="—" FontFamily="Consolas" FontSize="36" FontWeight="SemiBold"
                        Foreground="{ThemeResource DismodeAccentBrush}" />
-            <TextBlock x:Name="SelectedGameText" FontSize="12" TextWrapping="Wrap"
+            <TextBlock Text="FPS" FontSize="12" Margin="0,0,0,8" VerticalAlignment="Bottom"
                        Foreground="{ThemeResource DismodeMutedTextBrush}" />
-            <Button x:Name="SessionButton" Content="Włącz Tryb gry" Click="OnSessionClicked"
-                    HorizontalAlignment="Stretch" Style="{StaticResource AccentButtonStyle}" IsTabStop="False" />
           </StackPanel>
-        </Border>
-
-        <StackPanel Spacing="12">
-          <ToggleSwitch x:Name="OverlayToggle" Header="Nakładka FPS" Toggled="OnOverlayToggled"
-                        OnContent="Włączona" OffContent="Wyłączona" IsTabStop="False" />
-          <TextBlock Text="Wygląd nakładki" FontSize="12" Foreground="{ThemeResource DismodeMutedTextBrush}" />
-          <Grid RowSpacing="8" ColumnSpacing="8">
-            <Grid.ColumnDefinitions>
-              <ColumnDefinition Width="*" />
-              <ColumnDefinition Width="*" />
-            </Grid.ColumnDefinitions>
-            <Grid.RowDefinitions>
-              <RowDefinition Height="Auto" />
-              <RowDefinition Height="Auto" />
-            </Grid.RowDefinitions>
-            <ToggleButton x:Name="MinimalStyle" Tag="MinimalText" Content="Tylko FPS" Click="OnStyleClicked"
-                          HorizontalAlignment="Stretch" FontSize="12" Padding="8" IsTabStop="False" />
-            <ToggleButton x:Name="LowsStyle" Grid.Column="1" Tag="FpsAndLows" Content="FPS + minimum" Click="OnStyleClicked"
-                          HorizontalAlignment="Stretch" FontSize="12" Padding="8" IsTabStop="False" />
-            <ToggleButton x:Name="CompactStyle" Grid.Row="1" Tag="CompactBar" Content="Kompakt w jednej linii" Click="OnStyleClicked"
-                          HorizontalAlignment="Stretch" FontSize="12" Padding="8" IsTabStop="False">
-              <ToggleButton.ContentTemplate>
-                <DataTemplate><TextBlock Text="{Binding}" TextWrapping="Wrap" TextAlignment="Center" /></DataTemplate>
-              </ToggleButton.ContentTemplate>
-            </ToggleButton>
-            <ToggleButton x:Name="FullStyle" Grid.Row="1" Grid.Column="1" Tag="FullDeck" Content="Pełne szczegóły" Click="OnStyleClicked"
-                          HorizontalAlignment="Stretch" FontSize="12" Padding="8" IsTabStop="False" />
-          </Grid>
-        </StackPanel>
-
-        <StackPanel Spacing="12">
-          <TextBlock Text="Teraz na komputerze" FontWeight="SemiBold" />
-          <Grid ColumnSpacing="8" RowSpacing="8">
-            <Grid.ColumnDefinitions>
-              <ColumnDefinition Width="*" />
-              <ColumnDefinition Width="*" />
-            </Grid.ColumnDefinitions>
-            <Grid.RowDefinitions>
-              <RowDefinition Height="Auto" />
-              <RowDefinition Height="Auto" />
-            </Grid.RowDefinitions>
-            <TextBlock x:Name="CpuText" Text="CPU  —" FontFamily="Consolas" />
-            <TextBlock x:Name="GpuText" Grid.Column="1" Text="GPU  —" FontFamily="Consolas" />
-            <TextBlock x:Name="RamText" Grid.Row="1" Text="RAM  —" FontFamily="Consolas" />
-            <TextBlock x:Name="TemperatureText" Grid.Row="1" Grid.Column="1" Text="GPU  — °C" FontFamily="Consolas" />
-          </Grid>
-          <TextBlock Text="Bieżące odczyty · — oznacza brak pomiaru" FontSize="11" TextWrapping="Wrap"
-                     Foreground="{ThemeResource DismodeMutedTextBrush}" />
-        </StackPanel>
-
-        <Border Background="{ThemeResource DismodeCardBrush}" CornerRadius="8" Padding="16">
-          <StackPanel Spacing="8">
-            <TextBlock Text="Ostatnia sesja" FontSize="12" Foreground="{ThemeResource DismodeMutedTextBrush}" />
-            <TextBlock x:Name="LastGameText" Text="Jeszcze nie było sesji" FontWeight="SemiBold"
-                       TextWrapping="Wrap" MaxLines="2" TextTrimming="CharacterEllipsis" />
-            <TextBlock x:Name="LastDetailsText" FontFamily="Consolas" FontSize="12" TextWrapping="Wrap" />
+          <Canvas x:Name="FpsCanvas" Grid.Column="1" Height="32" VerticalAlignment="Center"
+                  SizeChanged="OnFpsCanvasSizeChanged">
+            <Polyline x:Name="FpsSparkline" Stroke="{ThemeResource DismodeAccentBrush}" StrokeThickness="1.5"
+                      StrokeLineJoin="Round" />
+          </Canvas>
+        </Grid>
+        <Button x:Name="SessionButton" Click="OnSessionClicked" HorizontalAlignment="Stretch"
+                HorizontalContentAlignment="Center" MinHeight="40" Style="{StaticResource AccentButtonStyle}">
+          <StackPanel Orientation="Horizontal" Spacing="8">
+            <FontIcon x:Name="SessionGlyph" Glyph="&#xE768;" FontSize="14" />
+            <TextBlock x:Name="SessionLabel" Text="Włącz Tryb gry" />
           </StackPanel>
-        </Border>
-        <TextBlock x:Name="HotkeyText" Text="Alt+D · Schowaj też klawiszem Esc" FontSize="11" TextWrapping="Wrap"
+        </Button>
+        <Grid x:Name="OverlaySegment" HorizontalAlignment="Center" Width="264" Height="48"
+              Background="{ThemeResource DismodeCardBrush}" CornerRadius="9">
+          <Border x:Name="SelectionIndicator" Width="48" Height="40" Margin="4" HorizontalAlignment="Left"
+                  VerticalAlignment="Center" CornerRadius="7" BorderThickness="1"
+                  BorderBrush="{ThemeResource DismodeAccentBrush}" Background="{ThemeResource DismodeAccentSoftBrush}"
+                  IsHitTestVisible="False">
+            <Border.RenderTransform><TranslateTransform x:Name="SelectionTransform" /></Border.RenderTransform>
+          </Border>
+          <StackPanel Orientation="Horizontal" Spacing="4" Margin="4">
+            <Button Tag="0" Click="OnSegmentClicked" Style="{StaticResource DismodePanelSegmentStyle}"
+                    ToolTipService.ToolTip="Wyłączona" AutomationProperties.Name="Wyłączona">
+              <FontIcon Glyph="&#xED1A;" FontSize="18" />
+            </Button>
+            <Button Tag="1" Click="OnSegmentClicked" Style="{StaticResource DismodePanelSegmentStyle}"
+                    ToolTipService.ToolTip="Tylko FPS" AutomationProperties.Name="Tylko FPS">
+              <TextBlock Text="60" FontFamily="Consolas" FontSize="16" />
+            </Button>
+            <Button Tag="2" Click="OnSegmentClicked" Style="{StaticResource DismodePanelSegmentStyle}"
+                    ToolTipService.ToolTip="FPS + minimum" AutomationProperties.Name="FPS + minimum">
+              <StackPanel Spacing="0"><TextBlock Text="60" FontFamily="Consolas" FontSize="14" />
+                <TextBlock Text="45" FontFamily="Consolas" FontSize="10" Opacity="0.6" HorizontalAlignment="Center" /></StackPanel>
+            </Button>
+            <Button Tag="3" Click="OnSegmentClicked" Style="{StaticResource DismodePanelSegmentStyle}"
+                    ToolTipService.ToolTip="Kompakt w jednej linii" AutomationProperties.Name="Kompakt w jednej linii">
+              <FontIcon Glyph="&#xE921;" FontSize="18" />
+            </Button>
+            <Button Tag="4" Click="OnSegmentClicked" Style="{StaticResource DismodePanelSegmentStyle}"
+                    ToolTipService.ToolTip="Pełne szczegóły" AutomationProperties.Name="Pełne szczegóły">
+              <FontIcon Glyph="&#xE80A;" FontSize="18" />
+            </Button>
+          </StackPanel>
+        </Grid>
+        <StackPanel Spacing="12">
+          <Grid ColumnSpacing="16">
+            <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
+            <StackPanel Spacing="6">
+              <Grid><TextBlock Text="CPU" FontSize="12" Foreground="{ThemeResource DismodeMutedTextBrush}" />
+                <TextBlock x:Name="CpuText" Text="—" FontFamily="Consolas" FontSize="12" HorizontalAlignment="Right" /></Grid>
+              <Border Height="3" Background="{ThemeResource DismodeCardBorderBrush}" CornerRadius="1.5">
+                <Border x:Name="CpuBar" Background="{ThemeResource DismodeAccentBrush}" CornerRadius="1.5" RenderTransformOrigin="0,0.5">
+                  <Border.RenderTransform><ScaleTransform x:Name="CpuScale" ScaleX="0" /></Border.RenderTransform>
+                </Border>
+              </Border>
+            </StackPanel>
+            <StackPanel Grid.Column="1" Spacing="6">
+              <Grid><TextBlock Text="GPU" FontSize="12" Foreground="{ThemeResource DismodeMutedTextBrush}" />
+                <TextBlock x:Name="GpuText" Text="—" FontFamily="Consolas" FontSize="12" HorizontalAlignment="Right" /></Grid>
+              <Border Height="3" Background="{ThemeResource DismodeCardBorderBrush}" CornerRadius="1.5">
+                <Border x:Name="GpuBar" Background="{ThemeResource DismodeAccentBrush}" CornerRadius="1.5" RenderTransformOrigin="0,0.5">
+                  <Border.RenderTransform><ScaleTransform x:Name="GpuScale" ScaleX="0" /></Border.RenderTransform>
+                </Border>
+              </Border>
+            </StackPanel>
+          </Grid>
+          <Grid><TextBlock x:Name="RamText" Text="RAM  —" FontFamily="Consolas" FontSize="12" />
+            <TextBlock x:Name="TemperatureText" Text="—" FontFamily="Consolas" FontSize="12" HorizontalAlignment="Right"
+                       ToolTipService.ToolTip="Temperatura GPU" AutomationProperties.Name="Temperatura GPU" /></Grid>
+        </StackPanel>
+        <TextBlock x:Name="LastSessionText" Visibility="Collapsed" FontSize="12" TextTrimming="CharacterEllipsis"
                    Foreground="{ThemeResource DismodeMutedTextBrush}" />
       </StackPanel>
     </ScrollViewer>

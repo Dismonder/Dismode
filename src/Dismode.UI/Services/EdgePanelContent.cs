@@ -13,7 +13,9 @@ internal sealed record EdgePanelContent(
     bool OverlayEnabled,
     PerformanceOverlayStyle OverlayStyle,
     bool VendorTelemetryEnabled,
-    SessionSummary? LastSession);
+    SessionSummary? LastSession,
+    IReadOnlyList<(double AgeSeconds, double Fps)>? FpsHistory = null,
+    Microsoft.UI.Xaml.ElementTheme Theme = Microsoft.UI.Xaml.ElementTheme.Dark);
 
 internal interface IEdgePanelActions
 {
