@@ -1,6 +1,6 @@
-<p align="center"><img src="assets/brand/ui/readme-hero.svg" alt="Dismode 0.8.0 Gaming Edition — przygotowanie systemu na czas gry i przywracanie po sesji" width="100%"></p>
+<p align="center"><img src="assets/brand/ui/readme-hero.svg" alt="Dismode 0.9.0 Gaming Edition — przygotowanie systemu na czas gry i przywracanie po sesji" width="100%"></p>
 
-# Dismode 0.8.0 Gaming Edition
+# Dismode 0.9.0 Gaming Edition
 
 Natywny optymalizator sesji gry dla Windows 11: pokazuje plan zmian, mierzy FPS i przywraca poprzedni stan po zakończeniu gry.
 

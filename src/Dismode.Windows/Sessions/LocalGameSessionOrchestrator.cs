@@ -625,6 +625,9 @@ public sealed class LocalGameSessionOrchestrator : IAsyncDisposable
                     plan.State,
                     OptimizationSessionState.LaunchingGame);
 
+                // Bazowy zbior kopii gry zbieramy przed uruchomieniem: launcher
+                // moze uruchomic wlasciwa gre, zanim sesja zostanie aktywowana.
+                IReadOnlyList<ProcessSnapshot> preLaunchProcesses = _processInventory.Capture();
                 LaunchedGameProcess launched =
                     await _launcher.LaunchOrAttachAfterVerificationAsync(
                             currentProfile,
@@ -766,7 +769,7 @@ public sealed class LocalGameSessionOrchestrator : IAsyncDisposable
                     gameCpuSets: metadata.GameCpuSets);
                 runtime.Duration = gameplay;
                 runtime.HandoffIdentity = CaptureHandoffIdentity(launched.Identity,
-                    currentProfile.ExecutablePath, currentHash);
+                    currentProfile.ExecutablePath, currentHash, preLaunchProcesses);
                 runtime.DisplayRefresh = metadata.DisplayRefresh;
                 runtime.RefreshRatePending = maximizeRefreshRate;
                 runtime.FrameRate = enableFrameRateTracking
@@ -2655,8 +2658,9 @@ public sealed class LocalGameSessionOrchestrator : IAsyncDisposable
         bool pinPreference) =>
         restraintEnabled && pinPreference;
 
-    private GameHandoffIdentity CaptureHandoffIdentity(ProcessIdentity root, string profilePath, string profileHash) =>
-        new(profilePath, profileHash, _processInventory.Capture()
+    private GameHandoffIdentity CaptureHandoffIdentity(ProcessIdentity root, string profilePath, string profileHash,
+        IReadOnlyList<ProcessSnapshot>? processes = null) =>
+        new(profilePath, profileHash, (processes ?? _processInventory.Capture())
             .Where(process => process.ProcessId > 0 && process.StartedAtUtc is not null
                 && process.SessionId == root.SessionId
                 && (ExecutablePathIdentity.AreSameExecutable(process.ExecutablePath, root.ExecutablePath)

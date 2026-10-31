@@ -128,7 +128,8 @@ public sealed class GameProcessTreeSessionTracker
         try
         {
             parents = processSet is null ? _parentMapProvider.Capture()
-                : processSet.ToDictionary(process => process.ProcessId, process => process.ParentProcessId);
+                : processSet.DistinctBy(process => process.ProcessId)
+                    .ToDictionary(process => process.ProcessId, process => process.ParentProcessId);
         }
         catch (Exception exception) when (
             exception is
