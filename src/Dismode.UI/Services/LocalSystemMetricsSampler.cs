@@ -1,16 +1,15 @@
 using System.Runtime.InteropServices;
+using Dismode.Windows.Cpu;
 
 namespace Dismode.UI.Services;
 
 internal sealed class LocalSystemMetricsSampler
 {
-    private ulong? _lastIdleTime;
-    private ulong? _lastKernelTime;
-    private ulong? _lastUserTime;
+    private readonly SystemCpuLoadSampler _cpu = new(clampExcessIdle: true);
 
     public LocalSystemMetricsSnapshot Sample()
     {
-        double? cpuPercent = SampleCpuPercent();
+        double? cpuPercent = _cpu.Sample();
         (ulong? usedMemory, ulong? totalMemory) = SampleMemory();
         double? systemDriveUsedPercent = SampleSystemDriveUsedPercent();
         return new(
@@ -18,47 +17,6 @@ internal sealed class LocalSystemMetricsSampler
             usedMemory,
             totalMemory,
             systemDriveUsedPercent);
-    }
-
-    private double? SampleCpuPercent()
-    {
-        if (!GetSystemTimes(
-                out NativeFileTime idle,
-                out NativeFileTime kernel,
-                out NativeFileTime user))
-        {
-            return null;
-        }
-
-        ulong idleTime = idle.ToUInt64();
-        ulong kernelTime = kernel.ToUInt64();
-        ulong userTime = user.ToUInt64();
-        double? result = null;
-        if (_lastIdleTime is ulong previousIdle
-            && _lastKernelTime is ulong previousKernel
-            && _lastUserTime is ulong previousUser
-            && idleTime >= previousIdle
-            && kernelTime >= previousKernel
-            && userTime >= previousUser)
-        {
-            ulong idleDelta = idleTime - previousIdle;
-            ulong totalDelta = kernelTime - previousKernel
-                + userTime - previousUser;
-            if (totalDelta > 0)
-            {
-                result = Math.Clamp(
-                    (totalDelta - Math.Min(idleDelta, totalDelta))
-                        * 100d
-                        / totalDelta,
-                    0,
-                    100);
-            }
-        }
-
-        _lastIdleTime = idleTime;
-        _lastKernelTime = kernelTime;
-        _lastUserTime = userTime;
-        return result;
     }
 
     private static (ulong? UsedMemory, ulong? TotalMemory) SampleMemory()
@@ -110,25 +68,8 @@ internal sealed class LocalSystemMetricsSampler
 
     [DllImport("kernel32.dll", SetLastError = true)]
     [return: MarshalAs(UnmanagedType.Bool)]
-    private static extern bool GetSystemTimes(
-        out NativeFileTime idleTime,
-        out NativeFileTime kernelTime,
-        out NativeFileTime userTime);
-
-    [DllImport("kernel32.dll", SetLastError = true)]
-    [return: MarshalAs(UnmanagedType.Bool)]
     private static extern bool GlobalMemoryStatusEx(
         ref NativeMemoryStatus buffer);
-
-    [StructLayout(LayoutKind.Sequential)]
-    private struct NativeFileTime
-    {
-        public uint Low;
-        public uint High;
-
-        public readonly ulong ToUInt64() =>
-            ((ulong)High << 32) | Low;
-    }
 
     [StructLayout(LayoutKind.Sequential)]
     private struct NativeMemoryStatus

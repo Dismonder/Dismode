@@ -93,6 +93,25 @@
             Text="—" />
       </Grid>
 
+      <Grid x:Name="CpuTelemetryRow" Visibility="Collapsed">
+        <TextBlock x:Name="CpuTelemetryShadowText" FontFamily="Consolas" FontSize="14"
+                   Foreground="#D9000000" Margin="1,1,0,0" />
+        <TextBlock x:Name="CpuTelemetryText" FontFamily="Consolas" FontSize="14"
+                   Foreground="#FFE6ECF0" />
+      </Grid>
+      <Grid x:Name="GpuTelemetryRow" Visibility="Collapsed">
+        <TextBlock x:Name="GpuTelemetryShadowText" FontFamily="Consolas" FontSize="14"
+                   Foreground="#D9000000" Margin="1,1,0,0" />
+        <TextBlock x:Name="GpuTelemetryText" FontFamily="Consolas" FontSize="14"
+                   Foreground="#FFE6ECF0" />
+      </Grid>
+      <Grid x:Name="VramTelemetryRow" Visibility="Collapsed">
+        <TextBlock x:Name="VramTelemetryShadowText" FontFamily="Consolas" FontSize="14"
+                   Foreground="#D9000000" Margin="1,1,0,0" />
+        <TextBlock x:Name="VramTelemetryText" FontFamily="Consolas" FontSize="14"
+                   Foreground="#FFE6ECF0" />
+      </Grid>
+
       <!--
         Nazwa gry i zrodlo pomiaru. Ledwie widoczne i celowo: sa potrzebne
         tylko wtedy, gdy cos nie dziala i trzeba sprawdzic, co nakladka
