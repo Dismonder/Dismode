@@ -1,6 +1,6 @@
 # Dismode — kontekst roboczy repozytorium
 
-Ostatnia aktualizacja: 2026-10-31 (wydanie 0.9.0)
+Ostatnia aktualizacja: 2026-10-31 (wydanie 0.10.0)
 
 ## Zasady prowadzenia sesji (od 2026-10-01)
 
@@ -271,6 +271,17 @@ i paczka dla update-service; pierwsza instalacja Dismode obok
 zainstalowanego GameShift to pierwszy żywy test migracji (w tym ścieżki
 kodu 9 → komunikat UI); `wrangler deploy` nowego adresu update-service;
 instalator 0.8.0 po podaniu produkcyjnego certyfikatu.
+
+Wydanie 0.10.0 (2026-10-31): PR #15 i #16 scalone do `main`; tag `v0.10.0`
+= `main` 0a338a4, release na GitHubie oznaczony jako Latest. Schema bez zmian (21);
+`OptimizationActionKind`: `ConfigureGameCapture = 18`, `AssignProcessCpuSets = 19`. Nowości:
+- okno przekazania 30 s tylko przy wyjściu z gry w ciągu pierwszych 2 minut sesji;
+- dane GPU producenta (NVML / ADL2, opt-in, tylko podpisane biblioteki z System32, tylko proces nakładki);
+- opt-in zapis `HistoricalCaptureEnabled=0` (`GameCaptureRegistryAction`, bramka A/B);
+- CPU Sets przez `TransactionCoordinator` + `ThreeWayReconciler`; status `Unchanged` dla zgodnego priorytetu.
+Instalator 0.10.0: `artifacts/installer/Dismode-Setup-0.10.0-win-x64.exe` (225 MB),
+SHA-256 `E3ECC9EF5709390CF7E197370514A17C995573D56FA558954FD56D80FCBECFCC`, podpis testowy „GameShift Development”;
+ostatni krok (UpdatePublisher) kończy się kodem 1 jak w 0.9.0.
 
 Wydanie 0.9.0 (2026-10-31): PR #11, #12, #13 scalone do `main`; tag `v0.9.0`
 = `main` d30ffa0, release na GitHubie oznaczony jako Latest
