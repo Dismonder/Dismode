@@ -11,6 +11,30 @@ namespace Dismode.IntegrationTests;
 public sealed class UserDataStoreTests
 {
     [TestMethod]
+    public async Task VendorTelemetryDefaultsOffRoundTripsAndMigratesVersion21()
+    {
+        using UserDataTestContext context = new();
+        PerformanceOverlayPreferences defaults = await context.Store.LoadPerformanceOverlayPreferencesAsync(CancellationToken.None);
+        Assert.IsFalse(defaults.IsVendorTelemetryEnabled);
+        await context.Store.SavePerformanceOverlayPreferencesAsync(defaults with { IsVendorTelemetryEnabled = true }, CancellationToken.None);
+        Assert.IsTrue((await context.Store.LoadPerformanceOverlayPreferencesAsync(CancellationToken.None)).IsVendorTelemetryEnabled);
+        using (SqliteConnection connection = new($"Data Source={context.DatabasePath};Pooling=False"))
+        {
+            await connection.OpenAsync();
+            using SqliteCommand command = connection.CreateCommand();
+            command.CommandText = """
+                ALTER TABLE PerformanceOverlayPreferences DROP COLUMN IsVendorTelemetryEnabled;
+                DELETE FROM SchemaMigrations WHERE Version = 22;
+                """;
+            await command.ExecuteNonQueryAsync();
+        }
+
+        using SqliteUserDataStore migrated = new(context.DatabasePath);
+        Assert.IsFalse((await migrated.LoadPerformanceOverlayPreferencesAsync(CancellationToken.None)).IsVendorTelemetryEnabled);
+        Assert.AreEqual(22, await ReadMaximumSchemaVersionAsync(context.DatabasePath));
+    }
+
+    [TestMethod]
     public async Task ProfileCrudRoundTripsParameterizedValues()
     {
         using UserDataTestContext testContext = new();
@@ -270,10 +294,11 @@ public sealed class UserDataStoreTests
                 ALTER TABLE GameOptimizationPreferences DROP COLUMN PinGameToPreferredCores;
                 ALTER TABLE GameOptimizationPreferences DROP COLUMN KeepAwakeDuringSession;
                 ALTER TABLE PerformanceOverlayPreferences DROP COLUMN IsDisplayTrackingEnabled;
+                ALTER TABLE PerformanceOverlayPreferences DROP COLUMN IsVendorTelemetryEnabled;
                 ALTER TABLE GameOptimizationPreferences DROP COLUMN MaximizeRefreshRateDuringSession;
                 ALTER TABLE GameOptimizationPreferences DROP COLUMN ApplyBackgroundRulesDuringSession;
                 ALTER TABLE SessionSummaries DROP COLUMN DurationSeconds;
-                DELETE FROM SchemaMigrations WHERE Version IN (16, 17, 18, 19, 20, 21);
+                DELETE FROM SchemaMigrations WHERE Version IN (16, 17, 18, 19, 20, 21, 22);
                 """;
             await command.ExecuteNonQueryAsync();
         }
@@ -289,7 +314,7 @@ public sealed class UserDataStoreTests
         Assert.IsNull(history[1].FrameRateStatistics!.OnePercentLowFramesPerSecond);
         Assert.IsNull(history[1].FrameRateStatistics!.PointOnePercentLowFramesPerSecond);
         Assert.IsNull(history[1].FrameRateStatistics!.HitchCount);
-        Assert.AreEqual(21, await ReadMaximumSchemaVersionAsync(testContext.DatabasePath));
+        Assert.AreEqual(22, await ReadMaximumSchemaVersionAsync(testContext.DatabasePath));
     }
 
     [TestMethod]
@@ -371,10 +396,11 @@ public sealed class UserDataStoreTests
                 ALTER TABLE GameOptimizationPreferences DROP COLUMN PinGameToPreferredCores;
                 ALTER TABLE GameOptimizationPreferences DROP COLUMN KeepAwakeDuringSession;
                 ALTER TABLE PerformanceOverlayPreferences DROP COLUMN IsDisplayTrackingEnabled;
+                ALTER TABLE PerformanceOverlayPreferences DROP COLUMN IsVendorTelemetryEnabled;
                 ALTER TABLE GameOptimizationPreferences DROP COLUMN MaximizeRefreshRateDuringSession;
                 ALTER TABLE GameOptimizationPreferences DROP COLUMN ApplyBackgroundRulesDuringSession;
                 ALTER TABLE SessionSummaries DROP COLUMN DurationSeconds;
-                DELETE FROM SchemaMigrations WHERE Version IN (17, 18, 19, 20, 21);
+                DELETE FROM SchemaMigrations WHERE Version IN (17, 18, 19, 20, 21, 22);
                 """;
             await command.ExecuteNonQueryAsync();
         }
@@ -384,7 +410,7 @@ public sealed class UserDataStoreTests
             await migrated.LoadOptimizationPreferencesAsync(profile, CancellationToken.None);
         Assert.IsTrue(loaded.PinGameToPreferredCores, "Istniejacy wiersz zachowuje dotychczasowe zachowanie.");
         Assert.IsTrue(loaded.KeepAwakeDuringSession, "Nowy przelacznik jest domyslnie wlaczony.");
-        Assert.AreEqual(21, await ReadMaximumSchemaVersionAsync(testContext.DatabasePath));
+        Assert.AreEqual(22, await ReadMaximumSchemaVersionAsync(testContext.DatabasePath));
     }
 
     [TestMethod]
@@ -760,7 +786,7 @@ public sealed class UserDataStoreTests
             Assert.AreEqual(legacySummary.SessionId, history[0].SessionId);
             Assert.IsNull(history[0].FrameRateStatistics);
             Assert.AreEqual(
-                21,
+                22,
                 await ReadMaximumSchemaVersionAsync(databasePath));
         }
         finally
@@ -815,7 +841,7 @@ public sealed class UserDataStoreTests
             SavedBackgroundActionMode.RestrainBackground,
             upgraded.BackgroundRules[0].ActionMode);
         Assert.AreEqual(
-            21,
+            22,
             await ReadMaximumSchemaVersionAsync(testContext.DatabasePath));
         Assert.AreEqual(
             1,
@@ -865,7 +891,7 @@ public sealed class UserDataStoreTests
             await Task.WhenAll(initializations);
 
             Assert.AreEqual(
-                21,
+                22,
                 await ReadMaximumSchemaVersionAsync(databasePath));
             IReadOnlyList<SessionSummary> history =
                 await stores[0].ListRecentAsync(
@@ -933,7 +959,7 @@ public sealed class UserDataStoreTests
             Assert.AreEqual(artworkPath, migrated.ArtworkPath);
             Assert.IsEmpty(metadata);
             Assert.AreEqual(
-                21,
+                22,
                 await ReadMaximumSchemaVersionAsync(databasePath));
         }
         finally
@@ -1116,6 +1142,7 @@ public sealed class UserDataStoreTests
             ALTER TABLE PerformanceOverlayPreferences DROP COLUMN Style;
             ALTER TABLE PerformanceOverlayPreferences DROP COLUMN Theme;
             ALTER TABLE PerformanceOverlayPreferences DROP COLUMN IsDisplayTrackingEnabled;
+            ALTER TABLE PerformanceOverlayPreferences DROP COLUMN IsVendorTelemetryEnabled;
             ALTER TABLE PerformanceOverlayPreferences DROP COLUMN IsFpsTrackingEnabled;
             ALTER TABLE GameOptimizationPreferences
                 DROP COLUMN AutoOptimizeWhenDetected;
@@ -1127,7 +1154,7 @@ public sealed class UserDataStoreTests
             ALTER TABLE GameOptimizationPreferences DROP COLUMN MaximizeRefreshRateDuringSession;
             ALTER TABLE GameOptimizationPreferences DROP COLUMN ApplyBackgroundRulesDuringSession;
             DELETE FROM SchemaMigrations
-            WHERE Version IN (5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21);
+            WHERE Version IN (5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22);
             """;
         await command.ExecuteNonQueryAsync();
         await transaction.CommitAsync();
@@ -1190,10 +1217,11 @@ public sealed class UserDataStoreTests
             ALTER TABLE GameOptimizationPreferences DROP COLUMN PinGameToPreferredCores;
             ALTER TABLE GameOptimizationPreferences DROP COLUMN KeepAwakeDuringSession;
             ALTER TABLE PerformanceOverlayPreferences DROP COLUMN IsDisplayTrackingEnabled;
+            ALTER TABLE PerformanceOverlayPreferences DROP COLUMN IsVendorTelemetryEnabled;
             ALTER TABLE GameOptimizationPreferences DROP COLUMN MaximizeRefreshRateDuringSession;
             ALTER TABLE GameOptimizationPreferences DROP COLUMN ApplyBackgroundRulesDuringSession;
             ALTER TABLE SessionSummaries DROP COLUMN DurationSeconds;
-            DELETE FROM SchemaMigrations WHERE Version IN (15, 16, 17, 18, 19, 20, 21);
+            DELETE FROM SchemaMigrations WHERE Version IN (15, 16, 17, 18, 19, 20, 21, 22);
             """;
         command.Parameters.AddWithValue(
             "$orphanedProfileId",
@@ -1232,6 +1260,7 @@ public sealed class UserDataStoreTests
             ALTER TABLE PerformanceOverlayPreferences DROP COLUMN Style;
             ALTER TABLE PerformanceOverlayPreferences DROP COLUMN Theme;
             ALTER TABLE PerformanceOverlayPreferences DROP COLUMN IsDisplayTrackingEnabled;
+            ALTER TABLE PerformanceOverlayPreferences DROP COLUMN IsVendorTelemetryEnabled;
             ALTER TABLE PerformanceOverlayPreferences DROP COLUMN IsFpsTrackingEnabled;
             ALTER TABLE GameOptimizationPreferences
                 DROP COLUMN AutoOptimizeWhenDetected;
@@ -1246,7 +1275,7 @@ public sealed class UserDataStoreTests
             ALTER TABLE GameOptimizationPreferences DROP COLUMN MaximizeRefreshRateDuringSession;
             ALTER TABLE GameOptimizationPreferences DROP COLUMN ApplyBackgroundRulesDuringSession;
             ALTER TABLE SessionSummaries DROP COLUMN DurationSeconds;
-            DELETE FROM SchemaMigrations WHERE Version IN (16, 17, 18, 19, 20, 21);
+            DELETE FROM SchemaMigrations WHERE Version IN (16, 17, 18, 19, 20, 21, 22);
             DELETE FROM SchemaMigrations
             WHERE Version IN (8, 9, 10, 11, 12, 13, 14, 15);
             """;

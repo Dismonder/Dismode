@@ -1,5 +1,5 @@
 <!-- Wynik workflow 2026-10-29/30: 19 projektow open source przeczytanych (Codex), porownanych z kodem Dismode (Codex), sprawdzonych przez sceptykow (Sonnet), uszeregowanych (Opus). -->
-> **Stan wdrozenia (2026-10-31):** partia 1 (2026-10-30) plus #5, #7, #8, #9, #10 (PR #11/#12) i #11-#17 (#17 tylko faza 1, PR #13) wdrozone w 0.9.0. Otwarte: #4B, #17 faza 2, #18 oraz decyzje z sekcji "Needs owner decision".
+> **Stan wdrozenia (2026-10-31):** partia 1 (2026-10-30) plus #5, #7, #8, #9, #10 (PR #11/#12) i #11-#17 (#17 faza 1, PR #13) wdrozone w 0.9.0. #17 faza 2 zaimplementowana w galezi zadaniowej. Otwarte: #4B, #18 oraz decyzje z sekcji "Needs owner decision".
 
 # Dismode: ranking propozycji z analizy projektów open source
 
@@ -40,6 +40,7 @@ Uwaga do stanu repo: na gałęzi `fix/bug-hunt-2026-10-08` są niezacommitowane 
 - **Ryzyko:** niskie, bo to tylko odczyt. **Nakład:** M. **Pewność:** HIGH.
 
 ### 4. Poprawna diagnostyka nagrywania w tle oraz odwracalny zapis Game DVR
+- **Stan (2026-10-31):** zrobione — część B: ręczny opt-in Experimental w System Optimizer, wyłącznie `HistoricalCaptureEnabled=0` w `HKEY_USERS\<SID>\Software\Microsoft\Windows\CurrentVersion\GameDVR` uwierzytelnionego użytkownika (ta sama ścieżka co diagnostyka; bez zmian `System\GameConfigStore`). Opis ostrzega o utracie powtórek. Istniejąca bramka `BenchmarkDecisionEngine` / `KeepGloballyAsync` wymaga wygranej A/B i jawnego utrwalenia; brak automatycznego presetu. Snapshot obecności, typu i wartości, durable journal przed zapisem, restore przez usunięcie pierwotnie nieobecnej wartości, crash replay i zachowanie zmian zewnętrznych; polityka `AllowGameDVR=0`, niejednoznaczna polityka oraz błędy dostępu blokują zapis. Bez migracji. Testy syntetyczne, bez zapisu do rzeczywistego rejestru, bez weryfikacji na sprzęcie i bez pomiaru FPS lub opóźnień.
 - **Dlaczego:** obecna diagnostyka myli dostępność przechwytywania (`AppCaptureEnabled`) z nagrywaniem w tle (`HistoricalCaptureEnabled`) i wprowadza użytkownika w błąd. Zapis tej wartości jest prostą poprawką, ale przez kompromis trafia do decyzji właściciela.
 - **Źródła:** Optimizer/hellzerg (`OptimizeHelper.cs:1214-1233`) i winutil (`tweaks.json:1883`) jako przykłady, czego nie robić (brak backupu). Dismode: `WindowsGamingEnvironmentDiagnostic.cs:77-114`, `SystemTweakCatalog.cs:231-250`.
 - **Pliki, część A (diagnostyka):** `src/Dismode.Windows/Platform/WindowsGamingEnvironmentDiagnostic.cs`, tekst w `src/Dismode.UI/MainWindow.xaml.cs:7121`.
@@ -49,10 +50,11 @@ Uwaga do stanu repo: na gałęzi `fix/bug-hunt-2026-10-08` są niezacommitowane 
 - **Ryzyko:** A niskie; B średnie (gałąź rejestru SID użytkownika, bo usługa działa jako SYSTEM). **Nakład:** A S, B M. **Pewność:** HIGH.
 
 ### 5. CPU Sets: trójstanowy odczyt, weryfikacja po zapisie, warunkowe przywracanie (wersja okrojona)
+- **Stan (2026-10-31):** zrobione — pelna integracja wybrana przez wlasciciela: `ProcessCpuSetsAction`, transakcje tla i gry, checkpoint przed mutacja, odczyt trojstanowy, porownanie zbiorow i ThreeWayReconciler przy przywracaniu/replay. Niepuste cudze przypisanie jest pomijane. Opcjonalne pola JSON zachowuja odczyt starszych rekordow; bez migracji SQLite. Testy na atrapach; bez weryfikacji sterowania na rzeczywistym sprzecie i bez pomiarow FPS/latencji.
 - **Dlaczego:** dziś Dismode nadpisuje ustawienie launchera lub użytkownika, a potem je czyści do pustego. To błąd poprawności; nie ma dowodu, że wpływa na FPS.
 - **Źródła:** ThreadPilot (`ProcessCpuSetHandler.cs:259,352,397`, `GameSessionService.cs:1004`) i ProcGovernor (`apply.rs:341-428`; braku przywracania z ProcGovernor nie przejmujemy). Dismode: `ProcessCpuSets.cs:59-113`, `LocalGameSessionOrchestrator.cs:2227-2229,2391,2951`, `JournaledProBalanceActuator.cs:473-481,598-600,675-701`.
 - **Pliki:** `src/Dismode.Windows/Cpu/ProcessCpuSets.cs`, `LocalGameSessionOrchestrator.cs`, `JournaledProBalanceActuator.cs` (oryginalne ID w istniejącym rekordzie zamiast samej flagi `steeredCpuSets`).
-- **Zakres:** bez nowego `ProcessCpuSetsAction` i bez ThreeWayReconciler.
+- **Zakres (decyzja 2026-10-31):** pelna integracja z `ProcessCpuSetsAction`, TransactionCoordinator i ThreeWayReconciler; stary format odtwarzania pozostaje czytelny.
 - **Test:** oryginał pusty lub niepusty, cel równy oryginałowi (no-op), błąd zapytania, niezgodny odczyt po zapisie, zmiana zewnętrzna, ponowne użycie PID, przywrócenie tylko gdy bieżące ID = zastosowane ID (porównanie jako zbiory).
 - **Ryzyko:** średnie (wiele wywołań, schemat journala ProBalance). **Nakład:** M. **Pewność:** MEDIUM–HIGH.
 
@@ -115,7 +117,7 @@ Uwaga do stanu repo: na gałęzi `fix/bug-hunt-2026-10-08` są niezacommitowane 
 - **Ryzyko:** niskie. **Nakład:** M. **Pewność:** MEDIUM.
 
 ### 13. Przejęcie gry po przekazaniu przez launcher lub DRM
-**Stan (2026-10-31):** zrobione — okno 30 s, migawka instancji przy aktywacji, nastepca urodzony po starcie korzenia (takze przed jego wyjsciem), tozsamosc korzenia lub odrebnego EXE profilu z wlasnym hashem. Journal zamiaru przed przejeciem, osobny wynik odmowy i natychmiastowe przywracanie. Testy syntetyczne; bez weryfikacji z prawdziwym launcherem/DRM.
+**Stan (2026-10-31):** zrobione — okno 30 s tylko przy zniknieciu drzewa przed uplywem 2 min od aktywacji (zegar aktywnego systemu, bez uspienia); od dokladnie 2 min natychmiastowe przywracanie, bez przejmowania pozniejszego nastepcy. Zakonczenie przez uzytkownika lub zamkniecie Dismode nadal przywraca od razu; czas gry konczy sie na ostatniej obserwacji zywego drzewa. Migawka instancji przy aktywacji, nastepca urodzony po starcie korzenia (takze przed jego wyjsciem), tozsamosc korzenia lub odrebnego EXE profilu z wlasnym hashem. Journal zamiaru przed przejeciem, osobny wynik odmowy i natychmiastowe przywracanie. Testy z kontrolowanym zegarem (10 s, 5 min, granica 2 min, przerwanie oczekiwania); bez weryfikacji z prawdziwa gra/launcherem/DRM i fizycznym uspieniem komputera, bez pomiaru wplywu na FPS lub opoznienia.
 - **Dlaczego:** gdy DRM uruchomi grę ponownie poza obserwowanym drzewem procesów, Dismode przedwcześnie przywraca ustawienia.
 - **Źródła:** Playnite (`GenericGameController.cs:696-728`, `ProcessMonitor.cs:119-164`). Dismode: `LocalGameSessionOrchestrator.cs:1539-1581`, `GameProcessTreeSessionTracker.cs:74-96`, `ManualGameProfileLauncher.cs:194-223`.
 - **Pliki:** `LocalGameSessionOrchestrator.cs` (stan „czekam na przekazanie” przed GameExited), `ManualGameProfileLauncher.cs`, tracker.
@@ -148,6 +150,7 @@ Uwaga do stanu repo: na gałęzi `fix/bug-hunt-2026-10-08` są niezacommitowane 
 - **Ryzyko:** średnie. **Nakład:** M. **Pewność:** LOW–MEDIUM.
 
 ### 17. Telemetria GPU, faza 1: tylko API systemu
+- **Stan (2026-10-31):** zrobione — faza 2: NVML i ADL2 C API tylko w procesie UI, opcja domyslnie OFF (migracja 22), podpis Authenticode i dokladna nazwa wydawcy NVIDIA/AMD przed LoadLibraryEx z pelnej sciezki System32. Temperatura, zegar, moc calej karty i wentylator sa pokazywane tylko po udanym odczycie i jednoznacznym mapowaniu PCI adaptera PDH; brak mapowania lub adapter polaczony daje null. Worker 1 Hz tylko przy widocznej nakladce, shutdown/unload po ukryciu lub wylaczeniu; awaria biblioteki wylacza zrodlo bez ponawiania. Testy z atrapami obejmuja brak DLL, podpis, inicjalizacje, brak czujnika, usuniecie i wiele GPU oraz wylaczenie podczas odczytu. Perf z atrapami: 0 B/probke; pelna sesja CPU + PDH + czujniki ok. 0,111 ms/probke przy 1 Hz (bez kosztu prawdziwego API producenta). Wlasny test Live na RX 9070 XT: ADL odczytal 31 C, 15 MHz, 20 W BOARD_POWER i 0% wentylatora; NVML nieobecny, poprawnie niedostepny. Nie sprawdzono NVIDIA na sprzecie, wyboru adaptera podczas gry, wygladu nakladki w grze ani wplywu na FPS/latencje; nie deklarujemy takiego zysku.
 - **Stan (2026-10-31):** zrobione — faza 1 przez PDH `GPU Engine`, `GPU Adapter Memory` i `GPU Process Memory`: systemowe liczniki WDDM bez elevacji i DLL producenta; angielskie sciezki dzialaja niezaleznie od jezyka Windows. Jedno zapytanie, bufory wielokrotnego uzytku, 1 Hz tylko przy widocznej nakladce; po ukryciu zapytanie jest zamykane. Nakladka pokazuje 3D i dedykowana pamiec adaptera gry (jednoznaczna aktywnosc/pamiec PID, inaczej najwyzsze 3D; remis daje null). Testy syntetyczne obejmuja brak API, reset/wrap, usuniecie adaptera, wiele GPU i stabilnosc uchwytow. Perf: 128 instancji silnikow + 2 adaptery + 64 instancje pamieci procesow, 10 000 iteracji, 0 B/wywolanie i B/s, ok. 0,161 ms/wywolanie i ms/s przy 1 Hz (limit 8 B). Replay obejmuje parser i obliczenia, bez kosztu rzeczywistego API; nie sprawdzono GPU, dostepu zwyklego konta ani rozkladow PresentMon na sprzecie i nie deklarujemy zysku FPS/latencji.
 - **Dlaczego:** pozwala zestawić skoki czasu klatki z obciążeniem silników GPU i zajętością VRAM.
 - **Źródła:** LibreHardwareMonitor (`D3DDisplayDevice.cs:175-247`). Dismode nie ma telemetrii GPU (tylko priorytet w `GpuPriorityNativeMethods.cs:35,40`).
@@ -156,6 +159,7 @@ Uwaga do stanu repo: na gałęzi `fix/bug-hunt-2026-10-08` są niezacommitowane 
 - **Ryzyko:** niskie w fazie 1. **Nakład:** M (faza 1), L (całość). **Pewność:** MEDIUM.
 
 ### 18. Pomijanie zapisu priorytetu, gdy jest już taki sam
+- **Stan (2026-10-31):** zrobione — `Unchanged` po ponownej walidacji, bez settera i wpisow akcji; wywolania i przywracanie potomkow uwzgledniaja brak zmiany. Testy syntetyczne i integracyjne; bez pomiarow FPS/latencji na sprzecie.
 - **Dlaczego:** usuwa jedno wywołanie SetPriorityClass i około 3 zdarzeń journala na proces. Korzyść czysto księgowa, dla gracza znikoma.
 - **Źródła:** System Informer (`main.c:2623-2688`). Dismode: `RuntimeProcessPriorityAction.cs:82-127`, `TransactionCoordinator.cs:61-191`.
 - **Pliki:** `TransactionCoordinator.cs` (nowy status `Unchanged`), `RuntimeProcessPriorityAction.cs`, wywołania w `JournaledProBalanceActuator.cs:238` i `LocalGameSessionOrchestrator.cs:2266,2473,2714,3385`.
@@ -176,10 +180,10 @@ Pozycje #1 i #3 zmieniają ten sam plik (`LocalGameSessionOrchestrator.cs`), ale
 
 ## Needs owner decision
 
-- **#4B Zapis `HistoricalCaptureEnabled=0`.** Gracz traci powtórki z nagrywania w tle. Czy zapis ma być włączany ręcznie (opt-in) i dopiero po bramce A/B (`BenchmarkDecisionEngine.cs:7`)?
+- **#4B Zapis `HistoricalCaptureEnabled=0` — decyzja 2026-10-31:** ręczny opt-in, informacja o utracie powtórek, istniejąca bramka A/B przed jawnym utrwaleniem globalnym. Zaimplementowane w punkcie 4; bez domyślnego stosowania.
 - **#2 Stare rekordy EcoQoS.** Proponuję: stary `false` traktować jako SystemManaged, stary `true` jako On. Akceptacja?
 - **#3 Definicja hitcha.** Zostać przy definicji z `BenchmarkAnalyzer` (> max(50 ms, 3× mediana)) czy przejść na udział przycięć z CapFrameX (2,5× ruchomej linii bazowej)? Rekomendacja: jedna definicja, z BenchmarkAnalyzer.
-- **#5 Zakres CPU Sets.** Wersja okrojona (rekomendowana) czy pełna integracja z TransactionCoordinator i ThreeWayReconciler? Czy niepuste, obce przypisanie CPU Sets ma domyślnie oznaczać pominięcie?
+- **#5 Zakres CPU Sets — decyzja 2026-10-31:** pełna integracja z TransactionCoordinator i ThreeWayReconciler. Niepuste, obce przypisanie CPU Sets domyślnie oznacza pominięcie procesu przy sterowaniu zbiorami.
 - **#8 Śledzenie wyświetlania w PresentMon.** Na razie tylko opt-in; włączenie domyślne dopiero po pomiarze narzutu.
 - **#9 Utrzymanie ekranu.** Domyślnie włączone z możliwością wyłączenia czy wyłączone z możliwością włączenia? Czy pomijać grę, która sama zgłasza żądanie?
 - **#10 Domyślne przypinanie gry.** Proponuję „włączone” przy migracji, czyli bez zmiany zachowania.
@@ -187,7 +191,7 @@ Pozycje #1 i #3 zmieniają ten sam plik (`LocalGameSessionOrchestrator.cs`), ale
 - **#14 Odświeżanie.** Mignięcie ekranu i wiele monitorów. Czy w ogóle chcemy tej funkcji?
 - **#15 Czas gry.** Czy liczyć do wyjścia z gry, a nie do końca przywracania? Jak godzić wartość z ogólnym czasem gry raportowanym przez provider (np. Steam)?
 - **#16 Watcher reguł tła.** Opt-in, odpytywanie co ustalony interwał.
-- **#17 Faza 2 telemetrii GPU** (NVML, potem ADL/IGCL). Ładowanie DLL dostawców do procesu Dismode to nowa powierzchnia zaufania i ryzyko wizerunkowe przy anti-cheatach. Osobna zgoda.
+- **#17 Faza 2 telemetrii GPU:** zgoda wlasciciela 2026-10-31 na NVML i ADL2: opt-in OFF, tylko podpisane biblioteki NVIDIA/AMD z System32, tylko proces UI i widoczna nakladka. Zaimplementowano; Intel IGCL poza zakresem.
 
 ## What we could not cover
 

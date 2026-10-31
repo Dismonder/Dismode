@@ -14,6 +14,30 @@ namespace Dismode.IntegrationTests.Sessions;
 public sealed class LateBackgroundRuleTests
 {
     [TestMethod]
+    public async Task AlreadyBelowNormalIsSuccessfulWithoutSetterJournalOrPriorityRestore()
+    {
+        await using SyntheticSession session = new(lateRules: true);
+        await session.StartAsync();
+        session.Clock.Advance(1);
+        ProcessIdentity background = Background(12346, session.Clock.GetUtcNow());
+        session.Priorities[background.RuntimeKey] = ProcessPriorityClass.BelowNormal;
+        session.Running.Add(background);
+        using CancellationTokenSource timeout = new(TimeSpan.FromSeconds(5));
+        while ((await session.Journal.ReadAllAsync(timeout.Token)).Count(entry =>
+                   entry.SessionCheckpoint == SessionCheckpoint.BackgroundRestraintChanged) < 2)
+        {
+            await Task.Delay(5, timeout.Token);
+        }
+
+        Assert.AreEqual(0, session.PrioritySetCount);
+        Assert.IsEmpty(session.LateErrors);
+        Assert.IsFalse((await session.Journal.ReadAllAsync(CancellationToken.None))
+            .Any(entry => entry.EventKind == JournalEventKind.ActionPrepared));
+        await session.Orchestrator.RestoreAsync(session.Id, CancellationToken.None);
+        Assert.AreEqual(ProcessPriorityClass.BelowNormal, session.Priorities[background.RuntimeKey]);
+    }
+
+    [TestMethod]
     [DataRow(false)]
     [DataRow(true)]
     public async Task LateRuleFailureIsLoggedDisablesFeatureAndDoesNotStopExitMonitoring(bool unexpected)

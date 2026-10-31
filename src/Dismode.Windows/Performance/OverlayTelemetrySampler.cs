@@ -4,7 +4,8 @@ using Dismode.Windows.Gpu;
 
 namespace Dismode.Windows.Performance;
 
-public readonly record struct OverlayTelemetrySnapshot(LogicalProcessorLoad? Cpu, GpuTelemetrySnapshot? Gpu);
+public readonly record struct OverlayTelemetrySnapshot(LogicalProcessorLoad? Cpu, GpuTelemetrySnapshot? Gpu,
+    GpuVendorTelemetrySnapshot? Vendor = null);
 
 /// <summary>Jeden worker jest wlascicielem samplerow; UI czyta tylko kopie snapshotu.</summary>
 public sealed class OverlayTelemetrySampler : IDisposable, IAsyncDisposable
@@ -18,30 +19,33 @@ public sealed class OverlayTelemetrySampler : IDisposable, IAsyncDisposable
     private int? _processId;
     private long _generation;
     private bool _active;
+    private bool _vendorTelemetryEnabled;
     private bool _disposed;
 
-    public OverlayTelemetrySampler() : this(new(), new(), TimeProvider.System) { }
+    public OverlayTelemetrySampler() : this(new(), new(), TimeProvider.System, vendor: new GpuVendorTelemetrySource()) { }
 
     internal OverlayTelemetrySampler(LogicalProcessorLoadSampler cpu, GpuTelemetrySampler gpu, TimeProvider clock,
-        Action<Exception>? log = null) => _session = new(cpu, gpu, clock, log);
+        Action<Exception>? log = null, IGpuVendorTelemetrySource? vendor = null) => _session = new(cpu, gpu, clock, log, vendor);
 
     public OverlayTelemetrySnapshot Snapshot
     {
         get { lock (_sync) { return _snapshot; } }
     }
 
-    public void SetActive(bool active, int? gameProcessId)
+    public void SetActive(bool active, int? gameProcessId, bool vendorTelemetryEnabled = false)
     {
         lock (_sync)
         {
             ObjectDisposedException.ThrowIf(_disposed, this);
-            if (_active == active && (!active || _processId == gameProcessId))
+            if (_active == active && (!active || _processId == gameProcessId)
+                && _vendorTelemetryEnabled == vendorTelemetryEnabled)
             {
                 return;
             }
 
             _active = active;
             _processId = gameProcessId;
+            _vendorTelemetryEnabled = vendorTelemetryEnabled;
             _generation++;
             _snapshot = default;
             if (active && _worker is null)
@@ -63,6 +67,7 @@ public sealed class OverlayTelemetrySampler : IDisposable, IAsyncDisposable
             {
                 bool active;
                 int? processId;
+                bool vendorTelemetryEnabled;
                 long requestedGeneration;
                 lock (_sync)
                 {
@@ -73,6 +78,7 @@ public sealed class OverlayTelemetrySampler : IDisposable, IAsyncDisposable
 
                     active = _active;
                     processId = _processId;
+                    vendorTelemetryEnabled = _vendorTelemetryEnabled;
                     requestedGeneration = _generation;
                 }
 
@@ -85,7 +91,7 @@ public sealed class OverlayTelemetrySampler : IDisposable, IAsyncDisposable
                         generation = requestedGeneration;
                     }
 
-                    sample = _session.Sample(active, processId);
+                    sample = _session.Sample(active, processId, vendorTelemetryEnabled);
                 }
                 catch (Exception exception)
                 {
@@ -155,27 +161,36 @@ internal sealed class OverlayTelemetrySession : IDisposable
 {
     private readonly LogicalProcessorLoadSampler _cpu;
     private readonly GpuTelemetrySampler _gpu;
+    private readonly IGpuVendorTelemetrySource? _vendor;
     private readonly TimeProvider _clock;
     private OverlayTelemetrySnapshot _snapshot;
     private long? _lastSample;
     private int? _processId;
     private bool _active;
+    private bool _vendorTelemetryEnabled;
     private bool _disposed;
     private readonly Action<Exception>? _log;
     private long? _failedAt;
 
     internal OverlayTelemetrySession(LogicalProcessorLoadSampler cpu, GpuTelemetrySampler gpu, TimeProvider clock,
-        Action<Exception>? log = null)
+        Action<Exception>? log = null, IGpuVendorTelemetrySource? vendor = null)
     {
         _cpu = cpu;
         _gpu = gpu;
         _clock = clock;
         _log = log;
+        _vendor = vendor;
     }
 
-    public OverlayTelemetrySnapshot Sample(bool active, int? gameProcessId)
+    public OverlayTelemetrySnapshot Sample(bool active, int? gameProcessId, bool vendorTelemetryEnabled = false)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
+        if (_vendorTelemetryEnabled && (!active || !vendorTelemetryEnabled || _processId != gameProcessId))
+        {
+            _vendor?.Stop();
+            _snapshot = _snapshot with { Vendor = null };
+        }
+
         if (_active && (!active || _processId != gameProcessId))
         {
             _cpu.Reset();
@@ -185,6 +200,7 @@ internal sealed class OverlayTelemetrySession : IDisposable
         }
 
         _active = active;
+        _vendorTelemetryEnabled = active && vendorTelemetryEnabled;
         _processId = gameProcessId;
         if (active && (_failedAt is null || _clock.GetElapsedTime(_failedAt.Value) >= TimeSpan.FromSeconds(30))
             && (_lastSample is null || _clock.GetElapsedTime(_lastSample.Value) >= TimeSpan.FromSeconds(1)))
@@ -192,6 +208,11 @@ internal sealed class OverlayTelemetrySession : IDisposable
             try
             {
                 _snapshot = new(_cpu.Sample(), _gpu.Sample(gameProcessId));
+                if (_vendorTelemetryEnabled && _snapshot.Gpu is { } gpu)
+                {
+                    try { _snapshot = _snapshot with { Vendor = _vendor?.Sample(gpu.Adapter) }; }
+                    catch (Exception exception) { _vendor?.Stop(); Log(exception); }
+                }
                 _lastSample = _clock.GetTimestamp();
                 _failedAt = null;
             }
@@ -212,6 +233,7 @@ internal sealed class OverlayTelemetrySession : IDisposable
         _cpu.Reset();
         try { _gpu.Reset(); }
         catch (Exception cleanupException) { Log(cleanupException); }
+        _vendor?.Stop();
         Log(exception);
     }
 
@@ -233,6 +255,7 @@ internal sealed class OverlayTelemetrySession : IDisposable
         if (!_disposed)
         {
             _gpu.Dispose();
+            _vendor?.Dispose();
             _disposed = true;
         }
     }

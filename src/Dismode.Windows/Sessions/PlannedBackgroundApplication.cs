@@ -36,4 +36,5 @@ public sealed record PlannedBackgroundApplication(
     // Zbiory CPU sprzed zapisu i zapisane; null dla starszych rekordow
     // (sama flaga SteeredCpuSets), wtedy czyszczenie bezwarunkowe jak dawniej.
     uint[]? OriginalCpuSetIds = null,
-    uint[]? AppliedCpuSetIds = null);
+    uint[]? AppliedCpuSetIds = null,
+    ProcessCpuSetsTransaction? CpuSetsTransaction = null);

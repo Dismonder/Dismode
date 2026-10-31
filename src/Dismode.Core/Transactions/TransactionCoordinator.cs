@@ -41,6 +41,18 @@ public sealed class TransactionCoordinator<TState>
         PreparedAction<TState> preparedAction =
             await action.PrepareAsync(context, cancellationToken).ConfigureAwait(false);
 
+        ActionValidationResult? unchangedValidation = null;
+        if (preparedAction.IsUnchanged)
+        {
+            unchangedValidation = await action
+                .ValidateAsync(context, preparedAction, cancellationToken)
+                .ConfigureAwait(false);
+            if (unchangedValidation.IsValid)
+            {
+                return new(ActionExecutionStatus.Unchanged, null);
+            }
+        }
+
         await AppendAsync(
                 action,
                 context,
@@ -59,7 +71,7 @@ public sealed class TransactionCoordinator<TState>
             .ConfigureAwait(false);
 
         ActionValidationResult validation =
-            await action
+            unchangedValidation ?? await action
                 .ValidateAsync(context, preparedAction, cancellationToken)
                 .ConfigureAwait(false);
 

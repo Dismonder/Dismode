@@ -77,6 +77,30 @@ public sealed class OwnOverheadMeasurements
     }
 
     [TestMethod]
+    public void Item17VendorSensorsAndOverlaySessionDoNotAllocatePerSample()
+    {
+        GpuVendorTelemetryTests.FakeApi api = new();
+        using VendorGpuDeviceSource source = GpuVendorTelemetryTests.Create(new(), api);
+        Measurement native = Measure(() => _ = source.Sample(new(1, 0)), 100_000, 1);
+        Report("17 vendor PCI mapping + four sensors at 1 Hz (fake native API)", native);
+        Assert.AreEqual(0d, native.Bytes);
+
+        LogicalProcessorLoadSamplerTests.FakeProcessorTimes cpu = new(64);
+        ReplayPdhGpuApi pdh = new();
+        OverlayTelemetrySamplerTests.TestClock clock = new();
+        using OverlayTelemetrySession session = new(new(cpu), new(new PdhGpuCounterSource(pdh)), clock,
+            vendor: new OverlayTelemetrySamplerTests.FakeVendorSource());
+        Measurement result = Measure(() =>
+        {
+            cpu.Advance();
+            clock.Advance(TimeSpan.FromSeconds(1));
+            _ = session.Sample(true, 42, true);
+        }, 10_000, 1);
+        Report("17 overlay CPU + PDH + four vendor sensors at 1 Hz (fake vendor source)", result);
+        Assert.AreEqual(0d, result.Bytes);
+    }
+
+    [TestMethod]
     public async Task Items12And17WorkerSessionAndSnapshotDoNotAllocatePerTick()
     {
         LogicalProcessorLoadSamplerTests.FakeProcessorTimes cpu = new(64);

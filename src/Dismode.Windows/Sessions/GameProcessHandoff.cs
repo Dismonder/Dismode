@@ -9,6 +9,7 @@ public sealed record GameHandoffIdentity(string ExecutablePath, string Executabl
 public sealed class GameProcessHandoff(DateTimeOffset missingAtUtc, long timestamp)
 {
     public static readonly TimeSpan Window = TimeSpan.FromSeconds(30);
+    public static readonly TimeSpan EarlySessionWindow = TimeSpan.FromMinutes(2);
 
     public long Timestamp { get; } = timestamp;
 

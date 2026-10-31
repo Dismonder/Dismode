@@ -5,6 +5,7 @@ using System.Runtime.InteropServices;
 using Dismode.Core.Performance;
 using Dismode.Core.Profiles;
 using Dismode.UI.Services;
+using Dismode.Windows.Gpu;
 using Dismode.Windows.Performance;
 using Microsoft.UI.Windowing;
 using Microsoft.UI.Xaml;
@@ -72,6 +73,7 @@ public sealed partial class PerformanceOverlayWindow : Window, IDisposable
     private uint _positionedDpi;
     private bool _requestedVisible;
     private bool _showDisplayedFrames;
+    private bool _vendorTelemetryEnabled;
     private bool _isShown;
     private bool _layoutDirty = true;
     private bool _disposed;
@@ -304,6 +306,7 @@ public sealed partial class PerformanceOverlayWindow : Window, IDisposable
         OverlayScaleTransform.ScaleX = _scale;
         OverlayScaleTransform.ScaleY = _scale;
         _showDisplayedFrames = preferences.IsDisplayTrackingEnabled;
+        _vendorTelemetryEnabled = preferences.IsVendorTelemetryEnabled;
         SetRequestedVisibility(
             preferences.IsEnabled && preferences.IsFpsTrackingEnabled);
     }
@@ -375,7 +378,7 @@ public sealed partial class PerformanceOverlayWindow : Window, IDisposable
     {
         try
         {
-            _hardwareTelemetry.SetActive(true, _targetProcessId);
+            _hardwareTelemetry.SetActive(true, _targetProcessId, _vendorTelemetryEnabled);
             RenderHardwareTelemetry(_hardwareTelemetry.Snapshot);
         }
         catch (Exception exception)
@@ -396,6 +399,8 @@ public sealed partial class PerformanceOverlayWindow : Window, IDisposable
         CpuTelemetryRow.Visibility = sample.Cpu is null ? Visibility.Collapsed : Visibility.Visible;
         GpuTelemetryRow.Visibility = sample.Gpu?.ThreeDPercent is null ? Visibility.Collapsed : Visibility.Visible;
         VramTelemetryRow.Visibility = sample.Gpu?.DedicatedBytes is null ? Visibility.Collapsed : Visibility.Visible;
+        string? vendorText = GpuVendorTelemetryFormatter.Format(sample.Vendor);
+        VendorTelemetryRow.Visibility = vendorText is null ? Visibility.Collapsed : Visibility.Visible;
         if (sample.Cpu is { } cpu)
         {
             SetWithShadow(CpuTelemetryText, CpuTelemetryShadowText,
@@ -412,6 +417,11 @@ public sealed partial class PerformanceOverlayWindow : Window, IDisposable
         {
             SetWithShadow(VramTelemetryText, VramTelemetryShadowText,
                 string.Create(CultureInfo.CurrentCulture, $"VRAM {bytes / (1024d * 1024d):0} MiB"));
+        }
+
+        if (vendorText is not null)
+        {
+            SetWithShadow(VendorTelemetryText, VendorTelemetryShadowText, vendorText);
         }
     }
 
@@ -544,6 +554,7 @@ public sealed partial class PerformanceOverlayWindow : Window, IDisposable
         CpuTelemetryRow.Visibility = Visibility.Collapsed;
         GpuTelemetryRow.Visibility = Visibility.Collapsed;
         VramTelemetryRow.Visibility = Visibility.Collapsed;
+        VendorTelemetryRow.Visibility = Visibility.Collapsed;
     }
 
     public void Dispose()

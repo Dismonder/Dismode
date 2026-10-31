@@ -111,6 +111,12 @@
         <TextBlock x:Name="VramTelemetryText" FontFamily="Consolas" FontSize="14"
                    Foreground="#FFE6ECF0" />
       </Grid>
+      <Grid x:Name="VendorTelemetryRow" Visibility="Collapsed">
+        <TextBlock x:Name="VendorTelemetryShadowText" FontFamily="Consolas" FontSize="14"
+                   Foreground="#D9000000" Margin="1,1,0,0" />
+        <TextBlock x:Name="VendorTelemetryText" FontFamily="Consolas" FontSize="14"
+                   Foreground="#FFE6ECF0" />
+      </Grid>
 
       <!--
         Nazwa gry i zrodlo pomiaru. Ledwie widoczne i celowo: sa potrzebne

@@ -6,6 +6,8 @@ public sealed record PreparedAction<TState>(
     DateTimeOffset PreparedAtUtc)
     where TState : notnull
 {
+    public bool IsUnchanged { get; init; }
+
     public DateTimeOffset PreparedAtUtc { get; init; } = PreparedAtUtc.ToUniversalTime();
 }
 

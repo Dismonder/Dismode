@@ -184,6 +184,16 @@ public sealed partial class MainWindow : Window
         object sender,
         SelectionChangedEventArgs e) => UpdateOperationSurface();
 
+    private void SafeTweakComboBox_SelectionChanged(
+        object sender,
+        SelectionChangedEventArgs e)
+    {
+        SelectedTweakDescriptionText.Text =
+            (SafeTweakComboBox.SelectedItem as SafeTweakOption)?.Definition.Description
+            ?? string.Empty;
+        UpdateOperationSurface();
+    }
+
     private void DangerousConfirmationTextBox_TextChanged(
         object sender,
         TextChangedEventArgs e) => UpdateOperationSurface();
@@ -765,12 +775,10 @@ public sealed partial class MainWindow : Window
                 .Children.Add(CreateCatalogCard(definition));
             if (definition.Availability ==
                     SystemTweakAvailabilityValue.SystemTweakAvailabilitySupported
-                && definition.Risk ==
-                    SystemTweakRiskValue.SystemTweakRiskSafe
-                && definition.Scope ==
-                    SystemTweakScopeValue.SystemTweakScopeGameSession
-                && definition.RestartRequirement ==
-                    RestartRequirementValue.RestartRequirementNone
+                && ((definition.Risk == SystemTweakRiskValue.SystemTweakRiskSafe
+                        && definition.Scope == SystemTweakScopeValue.SystemTweakScopeGameSession
+                        && definition.RestartRequirement == RestartRequirementValue.RestartRequirementNone)
+                    || definition.Id == "gaming.background-capture")
                 && !definition.RequiresTarget)
             {
                 SafeTweakComboBox.Items.Add(new SafeTweakOption(definition));

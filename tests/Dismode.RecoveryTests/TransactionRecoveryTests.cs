@@ -12,6 +12,52 @@ public sealed class TransactionRecoveryTests
     private static readonly TestTargetState Stopped = new("Stopped");
 
     [TestMethod]
+    public async Task MatchingPrioritySkipsSetterAndJournalAndNeedsNoRestore()
+    {
+        using RecoveryTestContext testContext = new();
+        using AppendOnlyRecoveryJournal journal = new(testContext.JournalPath);
+        FakeReversibleAction action = new(testContext.ActionId, Running, Running);
+        ActionExecutionResult result = await new TransactionCoordinator<TestTargetState>(journal)
+            .ExecuteAsync(action, testContext.ExecutionContext, CancellationToken.None);
+
+        Assert.AreEqual("Unchanged", result.Status.ToString());
+        Assert.AreEqual(0, action.ApplyCount);
+        Assert.IsEmpty(await journal.ReadAllAsync(CancellationToken.None));
+        ActionRecoveryResult recovery = await new ActionRecoveryCoordinator<TestTargetState>(journal)
+            .RecoverAsync(action, testContext.ExecutionContext, CancellationToken.None);
+        Assert.AreEqual(ActionRecoveryStatus.MissingPreparation, recovery.Status);
+        Assert.AreEqual(0, action.CompensateCount);
+    }
+
+    [TestMethod]
+    public async Task MatchingPreparedPriorityStillValidatesExternalChange()
+    {
+        using RecoveryTestContext testContext = new();
+        using AppendOnlyRecoveryJournal journal = new(testContext.JournalPath);
+        FakeReversibleAction action = new(testContext.ActionId, Running, Running);
+        action.AfterPrepare = () => action.SimulateExternalChange(Stopped);
+        ActionExecutionResult result = await new TransactionCoordinator<TestTargetState>(journal)
+            .ExecuteAsync(action, testContext.ExecutionContext, CancellationToken.None);
+
+        Assert.AreEqual(ActionExecutionStatus.Blocked, result.Status);
+        Assert.AreEqual(0, action.ApplyCount);
+    }
+
+    [TestMethod]
+    public async Task NormalToBelowNormalStillWritesAndJournals()
+    {
+        using RecoveryTestContext testContext = new();
+        using AppendOnlyRecoveryJournal journal = new(testContext.JournalPath);
+        FakeReversibleAction action = new(testContext.ActionId, new("Normal"), new("BelowNormal"));
+        ActionExecutionResult result = await new TransactionCoordinator<TestTargetState>(journal)
+            .ExecuteAsync(action, testContext.ExecutionContext, CancellationToken.None);
+        Assert.AreEqual(ActionExecutionStatus.AppliedAndVerified, result.Status);
+        Assert.AreEqual(1, action.ApplyCount);
+        Assert.IsTrue((await journal.ReadAllAsync(CancellationToken.None))
+            .Any(entry => entry.EventKind == Dismode.Core.Journal.JournalEventKind.ActionVerified));
+    }
+
+    [TestMethod]
     public async Task RepeatedExecutionWithSameIdempotencyKeyAppliesOnlyOnce()
     {
         using RecoveryTestContext testContext = new();

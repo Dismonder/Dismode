@@ -20,7 +20,7 @@ public sealed class SqliteUserDataStore :
     IGlobalBackgroundRuleRepository,
     IDisposable
 {
-    private const int CurrentSchemaVersion = 21;
+    private const int CurrentSchemaVersion = 22;
     private const int MaximumGlobalRuleCount = 128;
     private const int MaximumHistoryPageSize = 1000;
 
@@ -826,7 +826,7 @@ public sealed class SqliteUserDataStore :
             SELECT IsEnabled, IsFpsTrackingEnabled, OpacityPercent,
                    ScalePercent, Corner, COALESCE(Style, 1),
                    COALESCE(Theme, 1),
-                   UpdatedAtUtc, IsDisplayTrackingEnabled
+                   UpdatedAtUtc, IsDisplayTrackingEnabled, IsVendorTelemetryEnabled
             FROM PerformanceOverlayPreferences
             WHERE SettingsKey = 1;
             """;
@@ -847,7 +847,10 @@ public sealed class SqliteUserDataStore :
             (PerformanceOverlayCorner)reader.GetInt32(4),
             (PerformanceOverlayStyle)reader.GetInt32(5),
             (PerformanceOverlayTheme)reader.GetInt32(6),
-            ParseTimestamp(reader.GetString(7)));
+            ParseTimestamp(reader.GetString(7)))
+        {
+            IsVendorTelemetryEnabled = reader.GetBoolean(9),
+        };
     }
 
     public async ValueTask SavePerformanceOverlayPreferencesAsync(
@@ -867,11 +870,11 @@ public sealed class SqliteUserDataStore :
             INSERT INTO PerformanceOverlayPreferences (
                 SettingsKey, IsEnabled, IsFpsTrackingEnabled,
                 OpacityPercent, ScalePercent, Corner, Style, Theme,
-                UpdatedAtUtc, IsDisplayTrackingEnabled)
+                UpdatedAtUtc, IsDisplayTrackingEnabled, IsVendorTelemetryEnabled)
             VALUES (
                 1, $isEnabled, $isFpsTrackingEnabled, $opacityPercent,
                 $scalePercent, $corner, $style, $theme, $updatedAtUtc,
-                $isDisplayTrackingEnabled)
+                $isDisplayTrackingEnabled, $isVendorTelemetryEnabled)
             ON CONFLICT(SettingsKey) DO UPDATE SET
                 IsEnabled = excluded.IsEnabled,
                 IsFpsTrackingEnabled = excluded.IsFpsTrackingEnabled,
@@ -881,7 +884,8 @@ public sealed class SqliteUserDataStore :
                 Style = excluded.Style,
                 Theme = excluded.Theme,
                 UpdatedAtUtc = excluded.UpdatedAtUtc,
-                IsDisplayTrackingEnabled = excluded.IsDisplayTrackingEnabled;
+                IsDisplayTrackingEnabled = excluded.IsDisplayTrackingEnabled,
+                IsVendorTelemetryEnabled = excluded.IsVendorTelemetryEnabled;
             """;
         command.Parameters.AddWithValue(
             "$isEnabled",
@@ -892,6 +896,9 @@ public sealed class SqliteUserDataStore :
         command.Parameters.AddWithValue(
             "$isDisplayTrackingEnabled",
             preferences.IsDisplayTrackingEnabled ? 1 : 0);
+        command.Parameters.AddWithValue(
+            "$isVendorTelemetryEnabled",
+            preferences.IsVendorTelemetryEnabled ? 1 : 0);
         command.Parameters.AddWithValue(
             "$opacityPercent",
             preferences.OpacityPercent);
@@ -2180,6 +2187,27 @@ public sealed class SqliteUserDataStore :
             await schema.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
             await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
         }
+
+        if (existingVersion < 22)
+        {
+            // Opt-in: istniejace bazy nigdy nie wlaczaja bibliotek producenta automatycznie.
+            await using SqliteTransaction transaction =
+                (SqliteTransaction)await connection.BeginTransactionAsync(
+                    IsolationLevel.Serializable, cancellationToken).ConfigureAwait(false);
+            await using SqliteCommand schema = connection.CreateCommand();
+            schema.Transaction = transaction;
+            schema.CommandText =
+                """
+                ALTER TABLE PerformanceOverlayPreferences
+                    ADD COLUMN IsVendorTelemetryEnabled INTEGER NOT NULL DEFAULT 0
+                        CHECK (IsVendorTelemetryEnabled IN (0, 1));
+                INSERT INTO SchemaMigrations (Version, AppliedAtUtc)
+                VALUES (22, $appliedAtUtc);
+                """;
+            schema.Parameters.AddWithValue("$appliedAtUtc", FormatTimestamp(DateTimeOffset.UtcNow));
+            await schema.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+            await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
+        }
     }
 
     private static async ValueTask VerifyRequiredSchemaAsync(
@@ -2259,7 +2287,7 @@ public sealed class SqliteUserDataStore :
 
                 SELECT SettingsKey, IsEnabled, IsFpsTrackingEnabled,
                        OpacityPercent, ScalePercent, Corner, Style, Theme,
-                       UpdatedAtUtc, IsDisplayTrackingEnabled
+                       UpdatedAtUtc, IsDisplayTrackingEnabled, IsVendorTelemetryEnabled
                 FROM PerformanceOverlayPreferences
                 LIMIT 0;
 

@@ -28,7 +28,9 @@ internal sealed class SyntheticSession : IAsyncDisposable, IProcessIdentityProvi
         ISystemGameProfileCoordinator? systemProfileCoordinator = null,
         string? profileExecutablePath = null, string? profileExecutableSha256 = null,
         string? rootExecutablePath = null, bool refuseAdoption = false,
-        Func<IRecoveryJournal, IRecoveryJournal>? journalDecorator = null)
+        ICpuSetsPort? cpuSetsPort = null,
+        Func<IRecoveryJournal, IRecoveryJournal>? journalDecorator = null,
+        TimeProvider? timeProvider = null)
     {
         _lateRules = lateRules;
         Directory.CreateDirectory(_directory);
@@ -40,11 +42,12 @@ internal sealed class SyntheticSession : IAsyncDisposable, IProcessIdentityProvi
         _profileHash = profileExecutableSha256 ?? Root.ExecutableSha256;
         Running.Add(Root);
         Orchestrator = new(Store, Store, journalDecorator?.Invoke(Journal) ?? Journal, identityProvider: this,
-            timeProvider: Clock, monitorInterval: TimeSpan.FromMilliseconds(5),
+            timeProvider: timeProvider ?? Clock, monitorInterval: TimeSpan.FromMilliseconds(5),
             processParentMapProvider: this, processInventory: this, gameplayClock: Clock, displayApi: displayApi,
             savedRuleResolver: new(this), systemProfileCoordinator: systemProfileCoordinator,
             cpuProcessSourceFactory: () => this)
         {
+            CpuSetsPort = cpuSetsPort ?? SystemCpuSetsPort.Instance,
             ForegroundProcessId = () => ForegroundPid,
             HandoffAdopter = (tree, identity) => !refuseAdoption && tree.Adopt(identity),
             LateRuleError = exception => LateErrors.Enqueue(exception),
@@ -77,7 +80,8 @@ internal sealed class SyntheticSession : IAsyncDisposable, IProcessIdentityProvi
     internal GameProfileId ProfileId { get; } = GameProfileId.Create();
 
     internal async Task StartAsync(object? displayRefresh = null, bool systemProfileActive = false,
-        DateTimeOffset? lateRulesResolvedAtUtc = null, bool refreshRatePending = false)
+        DateTimeOffset? lateRulesResolvedAtUtc = null, bool refreshRatePending = false,
+        object? gameCpuSets = null, object[]? restrainedProcesses = null)
     {
         await Store.UpsertAsync(new(ProfileId, "Synthetic", _profilePath, _profileHash,
             @"C:\", [], OptimizationPreset.Safe, true, Clock.GetUtcNow(), Clock.GetUtcNow()), CancellationToken.None);
@@ -97,6 +101,8 @@ internal sealed class SyntheticSession : IAsyncDisposable, IProcessIdentityProvi
                     Running.Where(identity => identity.ExecutablePath == Root.ExecutablePath
                         || identity.ExecutablePath == _profilePath).Select(identity => identity.RuntimeKey).ToArray()),
                 DisplayRefresh = displayRefresh,
+                GameCpuSets = gameCpuSets,
+                RestrainedProcesses = restrainedProcesses,
                 SystemProfileActive = systemProfileActive,
                 RefreshRatePending = refreshRatePending,
                 LateRules = !_lateRules ? null : new
@@ -164,7 +170,8 @@ internal sealed class SyntheticSession : IAsyncDisposable, IProcessIdentityProvi
             owner.Priorities.GetValueOrDefault(application.Identity.RuntimeKey, ProcessPriorityClass.Normal));
         public ValueTask<PreparedAction<RuntimeProcessPriorityState>> PrepareAsync(ActionExecutionContext context, CancellationToken token) =>
             ValueTask.FromResult(new PreparedAction<RuntimeProcessPriorityState>(Current,
-                new(true, ProcessPriorityClass.BelowNormal), DateTimeOffset.UtcNow));
+                new(true, ProcessPriorityClass.BelowNormal), DateTimeOffset.UtcNow)
+            { IsUnchanged = Current.PriorityClass == ProcessPriorityClass.BelowNormal });
         public ValueTask<ActionValidationResult> ValidateAsync(ActionExecutionContext context,
             PreparedAction<RuntimeProcessPriorityState> prepared, CancellationToken token) => ValueTask.FromResult(ActionValidationResult.Allowed());
         public ValueTask ApplyAsync(ActionExecutionContext context, PreparedAction<RuntimeProcessPriorityState> prepared, CancellationToken token)
