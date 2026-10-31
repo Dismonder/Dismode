@@ -5,6 +5,7 @@ using System.Runtime.InteropServices;
 using Dismode.Core.Performance;
 using Dismode.Core.Profiles;
 using Dismode.UI.Services;
+using Dismode.Windows.Performance;
 using Microsoft.UI.Windowing;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
@@ -34,7 +35,7 @@ public sealed partial class PerformanceOverlayWindow : Window, IDisposable
     private const int DwmwaBorderColor = 34;
     private const int DwmColorNone = unchecked((int)0xFFFFFFFE);
     private const int OverlayWidth = 328;
-    private const int OverlayHeight = 120;
+    private const int OverlayHeight = 174;
     private const int OverlayMargin = 22;
     private static readonly TimeSpan ForegroundPollInterval =
         TimeSpan.FromMilliseconds(200);
@@ -55,6 +56,8 @@ public sealed partial class PerformanceOverlayWindow : Window, IDisposable
     private readonly nint _windowHandle;
     private readonly Queue<double> _frameTimeHistory = [];
     private readonly OverlayTargetWindow _targetWindow = new();
+    private readonly OverlayTelemetrySampler _hardwareTelemetry = new();
+    private OverlayTelemetrySnapshot _displayedHardwareTelemetry;
     private readonly Dictionary<Color, SolidColorBrush> _metricBrushes = [];
     private readonly DispatcherTimer _foregroundTimer = new()
     {
@@ -365,6 +368,51 @@ public sealed partial class PerformanceOverlayWindow : Window, IDisposable
         }
 
         ShowForGame();
+        UpdateHardwareTelemetry();
+    }
+
+    private void UpdateHardwareTelemetry()
+    {
+        try
+        {
+            _hardwareTelemetry.SetActive(true, _targetProcessId);
+            RenderHardwareTelemetry(_hardwareTelemetry.Snapshot);
+        }
+        catch (Exception exception)
+        {
+            Trace.TraceError("Overlay telemetry update failed: {0}", exception);
+            HideTelemetryRows();
+        }
+    }
+
+    private void RenderHardwareTelemetry(OverlayTelemetrySnapshot sample)
+    {
+        if (sample == _displayedHardwareTelemetry)
+        {
+            return;
+        }
+
+        _displayedHardwareTelemetry = sample;
+        CpuTelemetryRow.Visibility = sample.Cpu is null ? Visibility.Collapsed : Visibility.Visible;
+        GpuTelemetryRow.Visibility = sample.Gpu?.ThreeDPercent is null ? Visibility.Collapsed : Visibility.Visible;
+        VramTelemetryRow.Visibility = sample.Gpu?.DedicatedBytes is null ? Visibility.Collapsed : Visibility.Visible;
+        if (sample.Cpu is { } cpu)
+        {
+            SetWithShadow(CpuTelemetryText, CpuTelemetryShadowText,
+                string.Create(CultureInfo.CurrentCulture, $"CPU {cpu.CpuPercent:0}% | maks. {cpu.BusiestProcessorPercent:0}%"));
+        }
+
+        if (sample.Gpu?.ThreeDPercent is double gpu)
+        {
+            SetWithShadow(GpuTelemetryText, GpuTelemetryShadowText,
+                string.Create(CultureInfo.CurrentCulture, $"GPU 3D {gpu:0}%"));
+        }
+
+        if (sample.Gpu?.DedicatedBytes is ulong bytes)
+        {
+            SetWithShadow(VramTelemetryText, VramTelemetryShadowText,
+                string.Create(CultureInfo.CurrentCulture, $"VRAM {bytes / (1024d * 1024d):0} MiB"));
+        }
     }
 
     private bool IsTargetGameForeground()
@@ -479,6 +527,8 @@ public sealed partial class PerformanceOverlayWindow : Window, IDisposable
 
     private void HideWindow()
     {
+        _hardwareTelemetry.SetActive(false, null);
+        HideTelemetryRows();
         if (!_isShown)
         {
             return;
@@ -486,6 +536,14 @@ public sealed partial class PerformanceOverlayWindow : Window, IDisposable
 
         _ = ShowWindow(_windowHandle, SwHide);
         _isShown = false;
+    }
+
+    private void HideTelemetryRows()
+    {
+        _displayedHardwareTelemetry = default;
+        CpuTelemetryRow.Visibility = Visibility.Collapsed;
+        GpuTelemetryRow.Visibility = Visibility.Collapsed;
+        VramTelemetryRow.Visibility = Visibility.Collapsed;
     }
 
     public void Dispose()
@@ -498,6 +556,7 @@ public sealed partial class PerformanceOverlayWindow : Window, IDisposable
         _disposed = true;
         _foregroundTimer.Stop();
         _foregroundTimer.Tick -= OnForegroundTimerTick;
+        _hardwareTelemetry.Dispose();
         Close();
         GC.SuppressFinalize(this);
     }

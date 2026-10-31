@@ -106,6 +106,7 @@ Uwaga do stanu repo: na gałęzi `fix/bug-hunt-2026-10-08` są niezacommitowane 
 - **Ryzyko:** niskie, bo polityka robi się ostrożniejsza. **Nakład:** M. **Pewność:** MEDIUM. Bez pomiaru na sprzęcie nie twierdzimy, że daje FPS.
 
 ### 12. Obciążenie pojedynczych procesorów logicznych (diagnostyka)
+- **Stan (2026-10-31):** zrobione — `LogicalProcessorLoadSampler` (NtQuerySystemInformation, jedna grupa) pokazuje CPU i maksimum procesora logicznego; wspolne obliczanie delt usuwa duplikacje w dotychczasowych samplerach. Probkowanie tylko przy widocznej nakladce, 1 Hz, bufory wielokrotnego uzytku; syntetyczne testy idle, regresji, krotkiego okna i wielu grup. Perf: 64 procesory, 100 000 iteracji, 0 B/wywolanie i B/s, ok. 0,0046 ms/wywolanie i ms/s przy 1 Hz (limit 8 B dla wyniku zerowego). Nie sprawdzono obciazenia jednego rdzenia na prawdziwym sprzecie ani wplywu na FPS.
 - **Dlaczego:** jeden nasycony rdzeń ginie w średnim obciążeniu CPU.
 - **Źródła:** LibreHardwareMonitor (`CpuLoad.cs:52,167`). Dismode: `SystemCpuLoadSampler.cs:13,21`, duplikat w `LocalSystemMetricsSampler.cs:25,113`, P/Invoke w `CpuProcessSampler.cs:36,118`.
 - **Pliki:** nowy `src/Dismode.Windows/Cpu/LogicalProcessorLoadSampler.cs` (`NtQuerySystemInformation(SystemProcessorPerformanceInformation)`, jedna grupa procesorów), `LocalSystemMetricsSampler.cs`, `PerformanceOverlayWindow.xaml.cs`.
@@ -141,6 +142,7 @@ Uwaga do stanu repo: na gałęzi `fix/bug-hunt-2026-10-08` są niezacommitowane 
 - **Ryzyko:** średnie. **Nakład:** M. **Pewność:** LOW–MEDIUM.
 
 ### 17. Telemetria GPU, faza 1: tylko API systemu
+- **Stan (2026-10-31):** zrobione — faza 1 przez PDH `GPU Engine`, `GPU Adapter Memory` i `GPU Process Memory`: systemowe liczniki WDDM bez elevacji i DLL producenta; angielskie sciezki dzialaja niezaleznie od jezyka Windows. Jedno zapytanie, bufory wielokrotnego uzytku, 1 Hz tylko przy widocznej nakladce; po ukryciu zapytanie jest zamykane. Nakladka pokazuje 3D i dedykowana pamiec adaptera gry (jednoznaczna aktywnosc/pamiec PID, inaczej najwyzsze 3D; remis daje null). Testy syntetyczne obejmuja brak API, reset/wrap, usuniecie adaptera, wiele GPU i stabilnosc uchwytow. Perf: 128 instancji silnikow + 2 adaptery + 64 instancje pamieci procesow, 10 000 iteracji, 0 B/wywolanie i B/s, ok. 0,161 ms/wywolanie i ms/s przy 1 Hz (limit 8 B). Replay obejmuje parser i obliczenia, bez kosztu rzeczywistego API; nie sprawdzono GPU, dostepu zwyklego konta ani rozkladow PresentMon na sprzecie i nie deklarujemy zysku FPS/latencji.
 - **Dlaczego:** pozwala zestawić skoki czasu klatki z obciążeniem silników GPU i zajętością VRAM.
 - **Źródła:** LibreHardwareMonitor (`D3DDisplayDevice.cs:175-247`). Dismode nie ma telemetrii GPU (tylko priorytet w `GpuPriorityNativeMethods.cs:35,40`).
 - **Pliki:** nowy `GpuTelemetrySampler` w `src/Dismode.Windows/` (D3DKMTQueryStatistics albo PDH „GPU Engine”), `PerformanceOverlayWindow.xaml.cs`.

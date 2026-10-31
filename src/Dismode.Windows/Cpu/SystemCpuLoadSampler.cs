@@ -12,43 +12,43 @@ namespace Dismode.Windows.Cpu;
 /// </summary>
 public sealed partial class SystemCpuLoadSampler
 {
+    private readonly bool _clampExcessIdle;
+    private readonly Func<ProcessorTimes?> _read;
     private ulong? _lastIdle;
     private ulong? _lastKernel;
     private ulong? _lastUser;
 
+    public SystemCpuLoadSampler() : this(false, ReadTimes) { }
+
+    public SystemCpuLoadSampler(bool clampExcessIdle) : this(clampExcessIdle, ReadTimes) { }
+
+    internal SystemCpuLoadSampler(bool clampExcessIdle, Func<ProcessorTimes?> read)
+    {
+        _clampExcessIdle = clampExcessIdle;
+        _read = read;
+    }
+
     public double? Sample()
     {
-        if (!GetSystemTimes(
-                out FileTime idle,
-                out FileTime kernel,
-                out FileTime user))
+        if (_read() is not ProcessorTimes times)
         {
             return null;
         }
 
-        ulong idleTime = idle.ToUInt64();
-        ulong kernelTime = kernel.ToUInt64();
-        ulong userTime = user.ToUInt64();
+        ulong idleTime = times.Idle;
+        ulong kernelTime = times.Kernel;
+        ulong userTime = times.User;
 
         double? percent = null;
         if (_lastIdle is ulong previousIdle
             && _lastKernel is ulong previousKernel
             && _lastUser is ulong previousUser
-            && idleTime >= previousIdle
-            && kernelTime >= previousKernel
-            && userTime >= previousUser)
+            && ProcessorTimes.TryGetDelta(
+                new(previousIdle, previousKernel, previousUser),
+                new(idleTime, kernelTime, userTime), out double total, out double busy, _clampExcessIdle)
+            && total > 0)
         {
-            // Kernel time already includes idle time, so the busy share is
-            // the total minus idle rather than kernel plus user.
-            ulong total = kernelTime - previousKernel + (userTime - previousUser);
-            ulong idleDelta = idleTime - previousIdle;
-            if (total > 0 && total >= idleDelta)
-            {
-                percent = Math.Clamp(
-                    100.0 * (total - idleDelta) / total,
-                    0,
-                    100);
-            }
+            percent = 100d * busy / total;
         }
 
         _lastIdle = idleTime;
@@ -56,6 +56,10 @@ public sealed partial class SystemCpuLoadSampler
         _lastUser = userTime;
         return percent;
     }
+
+    private static ProcessorTimes? ReadTimes() => GetSystemTimes(out FileTime idle, out FileTime kernel, out FileTime user)
+        ? new(idle.ToUInt64(), kernel.ToUInt64(), user.ToUInt64())
+        : null;
 
     [LibraryImport("kernel32.dll", SetLastError = true)]
     [return: MarshalAs(UnmanagedType.Bool)]
