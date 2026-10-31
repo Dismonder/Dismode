@@ -773,6 +773,7 @@ public sealed class LocalGameSessionOrchestrator : IAsyncDisposable
                     gameAffinity: metadata.GameAffinity,
                     gameCpuSets: metadata.GameCpuSets);
                 runtime.Duration = gameplay;
+                runtime.ActivatedAwakeAt = _gameplayClock.GetTimestamp();
                 runtime.HandoffIdentity = CaptureHandoffIdentity(launched.Identity,
                     currentProfile.ExecutablePath, currentHash, preLaunchProcesses);
                 runtime.DisplayRefresh = metadata.DisplayRefresh;
@@ -1385,6 +1386,7 @@ public sealed class LocalGameSessionOrchestrator : IAsyncDisposable
                         gameCpuSets: metadata.GameCpuSets);
                     recovered.Duration = metadata.DurationSeconds is long recoveredSeconds
                         ? new(_gameplayClock, recoveredSeconds) : null;
+                    recovered.ActivatedAwakeAt = _gameplayClock.GetTimestamp();
                     recovered.LastAliveAtUtc = metadata.DurationCheckpointAtUtc ?? metadata.StartedAtUtc;
                     recovered.DisplayRefresh = metadata.DisplayRefresh;
                     recovered.RefreshRatePending = metadata.RefreshRatePending && metadata.DisplayRefresh is null;
@@ -1789,6 +1791,15 @@ public sealed class LocalGameSessionOrchestrator : IAsyncDisposable
 
                 if (runtime.Handoff is null)
                 {
+                    if (_gameplayClock.GetElapsedTime(runtime.ActivatedAwakeAt, observedAwakeAt)
+                            >= GameProcessHandoff.EarlySessionWindow
+                        || runtime.RecoveredFromHostCrash
+                            && runtime.Duration?.CheckpointSeconds >= GameProcessHandoff.EarlySessionWindow.TotalSeconds)
+                    {
+                        await CompleteExitedGameAsync(runtime, cancellationToken).ConfigureAwait(false);
+                        return;
+                    }
+
                     runtime.Handoff = new(_timeProvider.GetUtcNow(), _timeProvider.GetTimestamp());
                     await RecordRuntimeCheckpointAsync(runtime,
                             SessionCheckpoint.GameHandoffWaiting, CancellationToken.None)
@@ -1867,17 +1878,7 @@ public sealed class LocalGameSessionOrchestrator : IAsyncDisposable
 
                 if (runtime.Handoff.Finished)
                 {
-                    runtime.State = SessionStateMachine.Transition(
-                        runtime.State,
-                        OptimizationSessionState.GameExited);
-                    await CompleteRuntimeAsync(
-                            runtime,
-                            runtime.RecoveredFromHostCrash
-                                ? SessionCompletionStatus.RecoveredAfterCrash
-                                : SessionCompletionStatus.Completed,
-                            "Gra została zamknięta; Dismode przywrócił aplikacje w tle.",
-                            cancellationToken)
-                        .ConfigureAwait(false);
+                    await CompleteExitedGameAsync(runtime, cancellationToken).ConfigureAwait(false);
                     return;
                 }
             }
@@ -1888,6 +1889,19 @@ public sealed class LocalGameSessionOrchestrator : IAsyncDisposable
 
             await Task.Delay(_monitorInterval, cancellationToken).ConfigureAwait(false);
         }
+    }
+
+    private async ValueTask CompleteExitedGameAsync(ActiveRuntime runtime, CancellationToken cancellationToken)
+    {
+        runtime.State = SessionStateMachine.Transition(runtime.State, OptimizationSessionState.GameExited);
+        await CompleteRuntimeAsync(
+                runtime,
+                runtime.RecoveredFromHostCrash
+                    ? SessionCompletionStatus.RecoveredAfterCrash
+                    : SessionCompletionStatus.Completed,
+                "Gra została zamknięta; Dismode przywrócił aplikacje w tle.",
+                cancellationToken)
+            .ConfigureAwait(false);
     }
 
     private async ValueTask TryApplyDisplayRefreshAsync(ActiveRuntime runtime,
@@ -4643,6 +4657,7 @@ public sealed class LocalGameSessionOrchestrator : IAsyncDisposable
         internal GameHandoffIdentity? HandoffIdentity { get; set; }
 
         internal GameplayDuration? Duration { get; set; }
+        internal long ActivatedAwakeAt { get; set; }
 
         internal DisplayRefreshRecoveryMetadata? DisplayRefresh { get; set; }
         internal bool RefreshRatePending { get; set; }

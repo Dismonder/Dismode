@@ -8,6 +8,67 @@ namespace Dismode.IntegrationTests.Sessions;
 public sealed class GameProcessHandoffTests
 {
     [TestMethod]
+    [DataRow(10)]
+    [DataRow(119)]
+    public async Task EarlyExitWaitsAndAdoptsSuccessorEvenAfterEarlySessionLimit(int seconds)
+    {
+        SyntheticSession.ManualClock wallClock = new();
+        await using SyntheticSession session = new(timeProvider: wallClock);
+        await session.StartAsync();
+        wallClock.Advance(300);
+        session.Clock.Advance(seconds);
+        session.Running.Clear();
+        await session.WaitForCheckpointAsync(SessionCheckpoint.GameHandoffWaiting);
+        Assert.IsNotNull(await session.Orchestrator.GetActiveAsync(CancellationToken.None));
+        wallClock.Advance(4);
+        session.Clock.Advance(4);
+        session.AddCandidates(new ProcessIdentity(new(12346, session.Clock.GetUtcNow()),
+            session.Root.ExecutablePath, session.Root.ExecutableSha256, null, "user", 1, null));
+        await session.WaitForCheckpointAsync(SessionCheckpoint.GameHandoffAdopted);
+        Assert.IsNotNull(await session.Orchestrator.GetActiveAsync(CancellationToken.None));
+    }
+
+    [TestMethod]
+    [DataRow(120, 0)]
+    [DataRow(300, 1)]
+    public async Task NormalExitRestoresImmediatelyAndNeverAdoptsSuccessor(int seconds, int detectionDelay)
+    {
+        SyntheticSession.ManualClock wallClock = new();
+        await using SyntheticSession session = new(timeProvider: wallClock);
+        await session.StartAsync();
+        session.Clock.Advance(seconds);
+        await session.WaitForCheckpointAsync(SessionCheckpoint.GameplayDurationObserved);
+        session.Running.Clear();
+        session.Clock.Advance(detectionDelay);
+        await session.WaitForCheckpointAsync(SessionCheckpoint.ReconciliationComplete)
+            .WaitAsync(TimeSpan.FromSeconds(2));
+        Assert.IsNull(await session.Orchestrator.GetActiveAsync(CancellationToken.None));
+        session.AddCandidates(new ProcessIdentity(new(12346, session.Clock.GetUtcNow()),
+            session.Root.ExecutablePath, session.Root.ExecutableSha256, null, "user", 1, null));
+        await Task.Delay(40);
+        Assert.IsNull(await session.Orchestrator.GetActiveAsync(CancellationToken.None));
+        var entries = await session.Journal.ReadAllAsync(CancellationToken.None);
+        Assert.IsFalse(entries.Any(entry => entry.SessionCheckpoint is
+            SessionCheckpoint.GameHandoffWaiting or SessionCheckpoint.GameHandoffAdoptionPrepared
+                or SessionCheckpoint.GameHandoffAdopted));
+        var history = await session.Store.ListRecentAsync(10, CancellationToken.None);
+        Assert.AreEqual((long)seconds, history.Single().DurationSeconds);
+        Assert.AreEqual(wallClock.GetUtcNow(), history.Single().EndedAtUtc);
+    }
+
+    [TestMethod]
+    public async Task ExitAtEarlySessionLimitDoesNotNeedAnotherLiveObservation()
+    {
+        await using SyntheticSession session = new(timeProvider: new SyntheticSession.ManualClock());
+        await session.StartAsync();
+        session.Clock.Advance(120);
+        session.Running.Clear();
+        await session.WaitForCheckpointAsync(SessionCheckpoint.ReconciliationComplete)
+            .WaitAsync(TimeSpan.FromSeconds(2));
+        Assert.IsNull(await session.Orchestrator.GetActiveAsync(CancellationToken.None));
+    }
+
+    [TestMethod]
     public async Task InstanceAlreadyRunningAtActivationIsNeverAdopted()
     {
         await using SyntheticSession session = new();
