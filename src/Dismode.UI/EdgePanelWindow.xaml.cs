@@ -96,13 +96,13 @@ public sealed partial class EdgePanelWindow : Window, IDisposable
                 _native.Reveal(_bounds.Width, _bounds.Height, _state.Reveal);
                 _native.Show();
                 _ = _escapeHotkey.TryRegister();
-                TacticalAudioService.Instance.PlayToggle();
+                TacticalAudioService.Instance.PlayPanelOpen();
                 AnimateSlide(0);
             }
             else if (_drawnState == EdgePanelState.Closing)
             {
                 _escapeHotkey.Release();
-                TacticalAudioService.Instance.PlayToggle();
+                TacticalAudioService.Instance.PlayPanelClose();
                 AnimateSlide(_bounds.Width / _native.Scale);
             }
             else if (_drawnState == EdgePanelState.Closed)

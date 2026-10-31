@@ -31,7 +31,7 @@ internal static class SessionPagePresentation
         return total is long recorded ? TimeSpan.FromSeconds(recorded) : null;
     }
 
-    public static string DescribeOptions(
+    public static IReadOnlyList<string> OptionLabels(
         bool remember, bool automatic, bool preferredCores, bool awake,
         bool lateRules, bool refreshRate, bool tracking, bool overlay,
         bool proBalance, int selectedApplications)
@@ -39,56 +39,54 @@ internal static class SessionPagePresentation
         List<string> actions = [];
         if (remember)
         {
-            actions.Add("zapamięta ustawienia");
+            actions.Add("Pamiętaj mój wybór");
         }
 
         if (automatic)
         {
-            actions.Add("automatycznie dołączy do gry uruchomionej poza Dismode");
+            actions.Add("Start automatyczny");
         }
 
         if (preferredCores)
         {
-            actions.Add("wybierze wydajne rdzenie");
+            actions.Add("Mocne rdzenie");
         }
 
         if (awake)
         {
-            actions.Add("nie pozwoli ekranowi zasnąć");
+            actions.Add("Ekran nie zasypia");
         }
 
         if (lateRules)
         {
-            actions.Add("przypilnuje zapisanych reguł tła także po starcie");
+            actions.Add("Pilnuj tła");
         }
 
         if (refreshRate)
         {
-            actions.Add("ustawi najwyższe odświeżanie");
+            actions.Add("Pełne odświeżanie");
         }
 
         if (tracking)
         {
-            actions.Add("zmierzy FPS");
+            actions.Add("Mierz FPS");
         }
 
         if (overlay)
         {
-            actions.Add("pokaże nakładkę");
+            actions.Add("Licznik w grze");
         }
 
         if (proBalance)
         {
-            actions.Add("przyhamuje aktywne aplikacje w tle");
+            actions.Add("Ograniczaj procesy tła w trakcie gry");
         }
 
         if (selectedApplications > 0)
         {
-            actions.Add($"zastosuje wybrane działania w tle ({selectedApplications})");
+            actions.Add("Aplikacje w tle");
         }
 
-        return actions.Count == 0
-            ? "Uruchomi grę bez dodatkowych zmian."
-            : "Dismode: " + string.Join(" · ", actions) + ".";
+        return actions;
     }
 }

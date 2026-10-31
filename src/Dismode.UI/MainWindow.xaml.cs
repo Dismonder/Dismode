@@ -6559,9 +6559,9 @@ public sealed partial class MainWindow : Window, IDisposable
         SessionHeroTitleText.Text = _activeSession?.GameDisplayName
             ?? (ProfilesList.SelectedItem as ProfileListItem)?.DisplayName
             ?? "W co dziś gramy?";
-        SessionHeroSummaryText.Text = ProfilesList.SelectedItem is null
-            ? "Wybierz grę, ustaw opcje i ruszaj."
-            : SessionPagePresentation.DescribeOptions(
+        IReadOnlyList<string> options = ProfilesList.SelectedItem is null
+            ? []
+            : SessionPagePresentation.OptionLabels(
                 RememberRulesCheckBox.IsChecked == true,
                 AutoOptimizeGameCheckBox.IsChecked == true && IsAutomaticOptimizationEnabled,
                 PinGameToPreferredCoresCheckBox.IsChecked == true,
@@ -6571,6 +6571,12 @@ public sealed partial class MainWindow : Window, IDisposable
                 FpsTrackingToggleSwitch.IsOn, FpsOverlayToggleSwitch.IsOn,
                 ProBalanceToggleSwitch.IsOn,
                 _backgroundApplications.Count(application => application.IsSelected));
+        SessionHeroChips.ItemsSource = options;
+        SessionHeroChips.Visibility = options.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
+        SessionHeroSummaryText.Text = ProfilesList.SelectedItem is null
+            ? "Wybierz grę, ustaw opcje i ruszaj."
+            : "Uruchomi grę bez dodatkowych zmian.";
+        SessionHeroSummaryText.Visibility = options.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
     }
 
     private void UpdateSessionControls()

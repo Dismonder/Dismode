@@ -6,6 +6,32 @@
           Background="{ThemeResource DismodeTitleBarBrush}"
           BorderBrush="{ThemeResource DismodeCardBorderBrush}" BorderThickness="1"
           CornerRadius="16,0,0,16">
+    <Border.Resources>
+      <SolidColorBrush x:Key="DismodePanelAccentHoverBrush" Color="{Binding Color, Source={StaticResource DismodeAccentBrush}}" Opacity="0.85" />
+      <SolidColorBrush x:Key="DismodePanelAccentPressedBrush" Color="{Binding Color, Source={StaticResource DismodeAccentBrush}}" Opacity="0.7" />
+      <StaticResource x:Key="AccentFillColorDefaultBrush" ResourceKey="DismodeAccentBrush" />
+      <StaticResource x:Key="AccentFillColorSecondaryBrush" ResourceKey="DismodePanelAccentHoverBrush" />
+      <StaticResource x:Key="AccentFillColorTertiaryBrush" ResourceKey="DismodePanelAccentPressedBrush" />
+      <StaticResource x:Key="AccentControlElevationBorderBrush" ResourceKey="DismodeAccentBrush" />
+      <StaticResource x:Key="AccentButtonBackground" ResourceKey="DismodeAccentBrush" />
+      <StaticResource x:Key="AccentButtonBackgroundPointerOver" ResourceKey="DismodePanelAccentHoverBrush" />
+      <StaticResource x:Key="AccentButtonBackgroundPressed" ResourceKey="DismodePanelAccentPressedBrush" />
+      <StaticResource x:Key="AccentButtonBorderBrush" ResourceKey="DismodeAccentBrush" />
+      <StaticResource x:Key="AccentButtonBorderBrushPointerOver" ResourceKey="DismodePanelAccentHoverBrush" />
+      <StaticResource x:Key="AccentButtonBorderBrushPressed" ResourceKey="DismodePanelAccentPressedBrush" />
+      <StaticResource x:Key="ToggleButtonBackgroundChecked" ResourceKey="DismodeAccentBrush" />
+      <StaticResource x:Key="ToggleButtonBackgroundCheckedPointerOver" ResourceKey="DismodePanelAccentHoverBrush" />
+      <StaticResource x:Key="ToggleButtonBackgroundCheckedPressed" ResourceKey="DismodePanelAccentPressedBrush" />
+      <StaticResource x:Key="ToggleButtonBorderBrushChecked" ResourceKey="DismodeAccentBrush" />
+      <StaticResource x:Key="ToggleButtonBorderBrushCheckedPointerOver" ResourceKey="DismodePanelAccentHoverBrush" />
+      <StaticResource x:Key="ToggleButtonBorderBrushCheckedPressed" ResourceKey="DismodePanelAccentPressedBrush" />
+      <StaticResource x:Key="ToggleSwitchFillOn" ResourceKey="DismodeAccentBrush" />
+      <StaticResource x:Key="ToggleSwitchFillOnPointerOver" ResourceKey="DismodePanelAccentHoverBrush" />
+      <StaticResource x:Key="ToggleSwitchFillOnPressed" ResourceKey="DismodePanelAccentPressedBrush" />
+      <StaticResource x:Key="ToggleSwitchStrokeOn" ResourceKey="DismodeAccentBrush" />
+      <StaticResource x:Key="ToggleSwitchStrokeOnPointerOver" ResourceKey="DismodePanelAccentHoverBrush" />
+      <StaticResource x:Key="ToggleSwitchStrokeOnPressed" ResourceKey="DismodePanelAccentPressedBrush" />
+    </Border.Resources>
     <Border.RenderTransform>
       <TranslateTransform x:Name="SlideTransform" />
     </Border.RenderTransform>

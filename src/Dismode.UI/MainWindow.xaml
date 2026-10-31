@@ -1573,6 +1573,18 @@
                               AutomationProperties.Name="Wybierz grę na tę sesję" DisplayMemberPath="DisplayName"
                               PlaceholderText="Wybierz grę z biblioteki" SelectionChanged="OnGameProfileSelectorChanged" />
                     <TextBlock x:Name="SessionHeroSummaryText" Foreground="{ThemeResource DismodeMutedTextBrush}" FontSize="13" TextWrapping="Wrap" />
+                    <ItemsControl x:Name="SessionHeroChips">
+                      <ItemsControl.ItemsPanel>
+                        <ItemsPanelTemplate><controls:SessionChipPanel /></ItemsPanelTemplate>
+                      </ItemsControl.ItemsPanel>
+                      <ItemsControl.ItemTemplate>
+                        <DataTemplate>
+                          <Border Background="{ThemeResource DismodeAccentSoftBrush}" CornerRadius="12" Padding="8,4">
+                            <TextBlock Text="{Binding}" FontSize="12" TextWrapping="Wrap" />
+                          </Border>
+                        </DataTemplate>
+                      </ItemsControl.ItemTemplate>
+                    </ItemsControl>
                   </StackPanel>
                   <StackPanel Grid.Column="1" VerticalAlignment="Center" Spacing="8">
                     <Button x:Name="SessionHeroStartButton" Content="START" MinWidth="184" Height="64" FontSize="24"
