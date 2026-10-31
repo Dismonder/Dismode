@@ -19,10 +19,19 @@ public sealed record CpuLogicalProcessor(
     byte EfficiencyClass,
     bool Parked,
     bool Allocated,
-    byte LastLevelCacheIndex = 0);
+    byte LastLevelCacheIndex = 0,
+    byte? NumaNodeIndex = null);
+
+public sealed record CpuCacheGroup(uint SizeBytes, IReadOnlyList<uint> ProcessorIds);
+
+public sealed record CpuProcessorPackage(IReadOnlyList<uint> ProcessorIds);
 
 public sealed record CpuTopology(IReadOnlyList<CpuLogicalProcessor> Processors)
 {
+    public IReadOnlyList<CpuCacheGroup> L3CacheGroups { get; init; } = [];
+
+    public IReadOnlyList<CpuProcessorPackage> ProcessorPackages { get; init; } = [];
+
     /// <summary>
     /// True when the machine mixes performance tiers, so pinning to the fast
     /// tier is a meaningful choice rather than a no-op.
@@ -50,23 +59,10 @@ public sealed record CpuTopology(IReadOnlyList<CpuLogicalProcessor> Processors)
     /// same speed, so nothing about efficiency class reveals it.
     /// </para>
     /// </summary>
-    public bool HasSeparateCacheGroups => Processors
+    public bool HasSeparateCacheGroups => L3CacheGroups.Count > 1 || Processors
         .Select(processor => (processor.Group, processor.LastLevelCacheIndex))
         .Distinct()
         .Count() > 1;
-
-    /// <summary>
-    /// The cache group with the most physical cores, or the lowest index among
-    /// equals so the choice is stable between reads.
-    /// </summary>
-    public IReadOnlyList<CpuLogicalProcessor> LargestCacheGroup => Processors
-        .GroupBy(processor =>
-            (processor.Group, processor.LastLevelCacheIndex))
-        .OrderByDescending(group => CountPhysicalCores(group))
-        .ThenBy(group => group.Key.Group)
-        .ThenBy(group => group.Key.LastLevelCacheIndex)
-        .Select(group => (IReadOnlyList<CpuLogicalProcessor>)[.. group])
-        .FirstOrDefault() ?? [];
 
     /// <summary>
     /// Logical processors in the fastest tier — Intel's P-cores on a hybrid
