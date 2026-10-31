@@ -663,14 +663,13 @@ public sealed class LocalGameSessionOrchestrator : IAsyncDisposable
                 int gamePriorityActionCount = 0;
                 if (plan.GamePriority is not null)
                 {
-                    await ApplyGamePriorityAsync(
+                    gamePriorityActionCount = await ApplyGamePriorityAsync(
                             plan.SessionId,
                             plan.GamePriority,
                             launched.Identity,
                             startedAtUtc,
                             CancellationToken.None)
                         .ConfigureAwait(false);
-                    gamePriorityActionCount = 1;
                 }
 
                 // Przypiecie gry do rdzeni wydajnych. Na jednorodnym
@@ -689,6 +688,12 @@ public sealed class LocalGameSessionOrchestrator : IAsyncDisposable
                                     metadata,
                                     CancellationToken.None)
                                 .ConfigureAwait(false);
+                        },
+                        async cpuSets =>
+                        {
+                            metadata = metadata with { GameCpuSets = cpuSets };
+                            await RecordCheckpointAsync(plan.SessionId, SessionCheckpoint.GameLaunched,
+                                metadata, CancellationToken.None).ConfigureAwait(false);
                         },
                         CancellationToken.None)
                     .ConfigureAwait(false);
@@ -835,14 +840,6 @@ public sealed class LocalGameSessionOrchestrator : IAsyncDisposable
             {
                 _pendingPlan = null;
                 ReleaseKeepAwake();
-                if (metadata.RootProcess is { } cpuSetRoot)
-                {
-                    await RestoreGameCpuSetsAsync(
-                            cpuSetRoot,
-                            metadata.GameCpuSets)
-                        .ConfigureAwait(false);
-                }
-
                 SystemGameProfileOperationResult systemProfileRecovery =
                     metadata.SystemProfileActive
                         ? await _systemProfileCoordinator.RestoreAsync(
@@ -876,6 +873,11 @@ public sealed class LocalGameSessionOrchestrator : IAsyncDisposable
                 BackgroundRecoveryTotals recovery = MergeRecoveryTotals(
                     MergeRecoveryTotals(priorityRecovery, affinityRecovery),
                     applicationRecovery);
+                if (metadata.RootProcess is { } cpuSetRoot)
+                {
+                    recovery = MergeRecoveryTotals(recovery,
+                        await RestoreGameCpuSetsAsync(cpuSetRoot, metadata.GameCpuSets).ConfigureAwait(false));
+                }
                 recovery = MergeRecoveryTotals(recovery, await RestoreDisplayRefreshAsync(
                     plan.SessionId, metadata.DisplayRefresh, startedAtUtc).ConfigureAwait(false));
                 if (!systemProfileRecovery.Succeeded)
@@ -1464,6 +1466,11 @@ public sealed class LocalGameSessionOrchestrator : IAsyncDisposable
             BackgroundRecoveryTotals recovery = MergeRecoveryTotals(
                 MergeRecoveryTotals(priorityRecovery, restraintRecovery),
                 applicationRecovery);
+            if (metadata.RootProcess is { } cpuSetRoot)
+            {
+                recovery = MergeRecoveryTotals(recovery,
+                    await RestoreGameCpuSetsAsync(cpuSetRoot, metadata.GameCpuSets).ConfigureAwait(false));
+            }
             recovery = MergeRecoveryTotals(recovery, await RestoreDisplayRefreshAsync(
                 sessionId, metadata.DisplayRefresh, metadata.StartedAtUtc).ConfigureAwait(false));
             if (recovery.ErrorCount > 0)
@@ -2344,6 +2351,8 @@ public sealed class LocalGameSessionOrchestrator : IAsyncDisposable
         BackgroundRecoveryTotals recovery = MergeRecoveryTotals(
             MergeRecoveryTotals(priorityRecovery, restraintRecovery),
             applicationRecovery);
+        recovery = MergeRecoveryTotals(recovery,
+            await RestoreGameCpuSetsAsync(runtime.RootProcess, runtime.GameCpuSets).ConfigureAwait(false));
         recovery = MergeRecoveryTotals(recovery, await RestoreDisplayRefreshAsync(
             runtime.SessionId, runtime.DisplayRefresh, runtime.StartedAtUtc).ConfigureAwait(false));
         if (recovery.ErrorCount == 0)
@@ -2433,8 +2442,6 @@ public sealed class LocalGameSessionOrchestrator : IAsyncDisposable
             recovery.ConflictCount == 0
                 ? OptimizationSessionState.Completed
                 : OptimizationSessionState.CompletedWithWarnings);
-        await RestoreGameCpuSetsAsync(runtime.RootProcess, runtime.GameCpuSets)
-            .ConfigureAwait(false);
         _activeSession = null;
         await TryRefreshCompletedSessionMetadataAsync(
                 runtime.ProfileId,
@@ -2611,7 +2618,8 @@ public sealed class LocalGameSessionOrchestrator : IAsyncDisposable
             GpuPriorityActionId: record.GpuPriorityActionId,
             GpuPriorityIdempotencyKey: record.GpuPriorityIdempotencyKey,
             OriginalCpuSetIds: record.OriginalCpuSetIds,
-            AppliedCpuSetIds: record.AppliedCpuSetIds);
+            AppliedCpuSetIds: record.AppliedCpuSetIds,
+            CpuSetsTransaction: record.CpuSetsTransaction);
 
     private GameProcessTreeSessionTracker CreateGameProcessTreeTracker(
         ProcessIdentity root,
@@ -2778,6 +2786,7 @@ public sealed class LocalGameSessionOrchestrator : IAsyncDisposable
         DateTimeOffset requestedAtUtc,
         bool enabled,
         Func<GameAffinityRecoveryMetadata, ValueTask> recordBeforeApply,
+        Func<GameCpuSetsRecoveryMetadata, ValueTask> recordCpuSetsBeforeApply,
         CancellationToken cancellationToken)
     {
         if (!enabled)
@@ -2807,24 +2816,15 @@ public sealed class LocalGameSessionOrchestrator : IAsyncDisposable
         // zbiorow, ani maski w zastepstwie. Tak samo gdy nie da sie go
         // odczytac. Gdy gra ma juz dokladnie to, czego chcemy, nic nie
         // zapisujemy i nic nie cofamy.
-        CpuSetsSteer steer = TryApplyCpuSets(
-            CpuSetsPort,
+        uint[]? ids = TryGetCpuSetIds(
             gameIdentity.RuntimeKey.ProcessId,
             topology,
             decision.Mask);
-        switch (steer.Outcome)
+        if (ids is { Length: > 0 })
         {
-            case CpuSetsSteerOutcome.Applied:
-                return new(
-                    AppliedCount: 1,
-                    Journaled: null,
-                    CpuSets: new GameCpuSetsRecoveryMetadata(
-                        [.. steer.Original],
-                        [.. steer.Applied]));
-            case CpuSetsSteerOutcome.NoChange:
-            case CpuSetsSteerOutcome.SkippedForeign:
-            case CpuSetsSteerOutcome.SkippedQueryFailed:
-                return GameAffinityOutcome.Nothing;
+            var cpuSets = await ApplyGameCpuSetsAsync(sessionId, gameIdentity, ids,
+                recordCpuSetsBeforeApply, cancellationToken).ConfigureAwait(false);
+            return new(cpuSets.AppliedCount, Journaled: null, CpuSets: cpuSets.Metadata);
         }
 
         // Twarda maska idzie przez dziennik, wiec jej identyfikatory trafiaja
@@ -2992,63 +2992,65 @@ public sealed class LocalGameSessionOrchestrator : IAsyncDisposable
     }
 
     /// <summary>
-    /// Puts back the CPU sets the game had before the session wrote its own,
-    /// but only while the game still has exactly what was written: a launcher
-    /// or the user who changed it since owns the assignment now. Nothing was
-    /// written (null) means nothing to put back. Cheap and safe to call
-    /// anyway.
+    /// Zapisuje identyfikatory przed mutacja i wykonuje akcje CPU Sets przez dziennik.
     /// </summary>
-    internal async ValueTask RestoreGameCpuSetsAsync(
+    internal async ValueTask<(int AppliedCount, GameCpuSetsRecoveryMetadata Metadata)> ApplyGameCpuSetsAsync(
+        SessionId sessionId, ProcessIdentity gameIdentity, uint[] ids,
+        Func<GameCpuSetsRecoveryMetadata, ValueTask> recordBeforeApply, CancellationToken cancellationToken)
+    {
+        ProcessCpuSetsTransaction transaction = ProcessCpuSetsTransaction.Create(sessionId);
+        GameCpuSetsRecoveryMetadata written = new([], ids, transaction);
+        await recordBeforeApply(written).ConfigureAwait(false);
+        try
+        {
+            ActionExecutionResult result = await new TransactionCoordinator<ProcessCpuSetsState>(_journal)
+                .ExecuteAsync(new ProcessCpuSetsAction(new(transaction.ActionId), gameIdentity, ids,
+                        _identityProvider, CpuSetsPort), transaction.Context, cancellationToken).ConfigureAwait(false);
+            return (result.Status is ActionExecutionStatus.AppliedAndVerified or ActionExecutionStatus.AlreadyCompleted
+                ? 1 : 0, written);
+        }
+        catch (Exception exception) when (IsExpectedRecoveryFailure(exception))
+        {
+            return (0, written);
+        }
+    }
+
+    /// <summary>
+    /// Odtwarza akcje z dziennika; starsze migawki rozlicza trojstronnie.
+    /// Blad odczytu lub zapisu zostawia sesje do ponownej proby.
+    /// </summary>
+    internal async ValueTask<BackgroundRecoveryTotals> RestoreGameCpuSetsAsync(
         ProcessIdentity gameIdentity,
         GameCpuSetsRecoveryMetadata? written)
     {
         if (written is null)
         {
-            return;
+            return new(0, 0, 0);
         }
 
         // A PID alone never identifies a process: after the game exits the
         // number can be reused, and that process keeps its own CPU sets.
         try
         {
-            if (await _identityProvider
-                    .MatchesRuntimeIdentityAsync(
-                        gameIdentity,
-                        CancellationToken.None)
-                    .ConfigureAwait(false))
-            {
-                _ = CpuSetsSteering.RestoreIfUnchanged(
-                    CpuSetsPort,
-                    gameIdentity.RuntimeKey.ProcessId,
-                    written.OriginalIds,
-                    written.AppliedIds);
-            }
+            ActionRecoveryResult result = written.Transaction is { } transaction
+                ? await transaction.RecoverAsync(_journal, gameIdentity, _identityProvider, CpuSetsPort,
+                    CancellationToken.None).ConfigureAwait(false)
+                : await ProcessCpuSetsAction.RestoreLegacyAsync(gameIdentity, written.OriginalIds, written.AppliedIds,
+                    _identityProvider, CpuSetsPort, CancellationToken.None).ConfigureAwait(false);
+            return ToRecoveryTotals(result);
         }
         catch (Exception exception) when (
-            exception is InvalidOperationException
-                or UnauthorizedAccessException
-                or IOException
-                or Win32Exception)
+            IsExpectedRecoveryFailure(exception))
         {
+            return new(0, 0, 1);
         }
     }
 
     /// <summary>
-    /// Installs default CPU sets matching the wanted mask, onto an empty
-    /// assignment only and confirmed by a read-back. Anything but
-    /// <see cref="CpuSetsSteerOutcome.Applied"/> leaves the game's sets as
-    /// they were; <see cref="CpuSetsSteerOutcome.NotApplied"/> means the
-    /// process cannot honour them and the caller may fall back to a hard
-    /// affinity mask.
-    /// <para>
-    /// Not journaled as an action: restoring puts back what the process had,
-    /// and the session metadata carries the ids for that. A crash leaves a
-    /// preference behind, not a restriction — the process keeps running on
-    /// every core either way, and the assignment dies with the process.
-    /// </para>
+    /// Wybiera ID zbiorow z maski. Null oznacza, ze affinity uniemozliwia
+    /// sterowanie zbiorami albo nie udalo sie odczytac maski procesu.
     /// </summary>
-    internal static CpuSetsSteer TryApplyCpuSets(
-        ICpuSetsPort port,
+    internal static uint[]? TryGetCpuSetIds(
         int processId,
         CpuTopology topology,
         ulong desiredMask)
@@ -3064,14 +3066,14 @@ public sealed class LocalGameSessionOrchestrator : IAsyncDisposable
                 or InvalidOperationException
                 or Win32Exception)
         {
-            return CpuSetsSteer.Of(CpuSetsSteerOutcome.NotApplied);
+            return null;
         }
 
         if (ProcessCpuSets.WouldBeDefeatedByAffinity(
                 currentAffinity,
                 desiredMask))
         {
-            return CpuSetsSteer.Of(CpuSetsSteerOutcome.NotApplied);
+            return null;
         }
 
         uint[] ids = [.. topology.Processors
@@ -3079,10 +3081,10 @@ public sealed class LocalGameSessionOrchestrator : IAsyncDisposable
                 processor.LogicalProcessorIndex < 64
                 && (desiredMask & (1UL << processor.LogicalProcessorIndex)) != 0)
             .Select(processor => processor.Id)];
-        return CpuSetsSteering.Steer(port, processId, ids);
+        return ids;
     }
 
-    private async ValueTask ApplyGamePriorityAsync(
+    private async ValueTask<int> ApplyGamePriorityAsync(
         SessionId sessionId,
         PlannedGamePriority priority,
         ProcessIdentity gameIdentity,
@@ -3105,13 +3107,16 @@ public sealed class LocalGameSessionOrchestrator : IAsyncDisposable
                 .ConfigureAwait(false);
         if (result.Status is not (
             ActionExecutionStatus.AppliedAndVerified
-            or ActionExecutionStatus.AlreadyCompleted))
+            or ActionExecutionStatus.AlreadyCompleted
+            or ActionExecutionStatus.Unchanged))
         {
             throw new InvalidOperationException(
                 "Nie ustawiono priorytetu gry: "
                 + (result.Details
                     ?? "transakcja nie została zweryfikowana."));
         }
+
+        return result.Status == ActionExecutionStatus.Unchanged ? 0 : 1;
     }
 
     private async ValueTask<BackgroundRecoveryTotals>
@@ -3222,7 +3227,10 @@ public sealed class LocalGameSessionOrchestrator : IAsyncDisposable
                 priorityResult,
                 application.DisplayName,
                 "obniżenie priorytetu");
-            appliedCount++;
+            if (priorityResult.Status != ActionExecutionStatus.Unchanged)
+            {
+                appliedCount++;
+            }
 
             if (application.ActionMode is not (
                 BackgroundProcessActionMode.LowerPriorityAndEcoQos
@@ -3469,12 +3477,13 @@ public sealed class LocalGameSessionOrchestrator : IAsyncDisposable
             if (application.ActionMode
                 != BackgroundProcessActionMode.CloseAndRestore)
             {
-                if (application.SteeredCpuSets)
+                if (application.SteeredCpuSets || application.CpuSetsTransaction is not null)
                 {
-                    await ClearSteeredCpuSetsAsync(
+                    BackgroundRecoveryTotals cpuSetsRecovery = await ClearSteeredCpuSetsAsync(
                             application,
                             cancellationToken)
                         .ConfigureAwait(false);
+                    totals = MergeRecoveryTotals(totals, cpuSetsRecovery);
                 }
 
                 // Granica czasu: chwila nalozenia tego konkretnego
@@ -3487,7 +3496,11 @@ public sealed class LocalGameSessionOrchestrator : IAsyncDisposable
                     application.AppliedAtUtc ?? requestedAtUtc,
                     affinityApplied,
                     ioApplied,
-                    memoryApplied));
+                    memoryApplied,
+                    await HasStartedMutationAsync(
+                            CreateActionContext(sessionId, application, requestedAtUtc),
+                            cancellationToken)
+                        .ConfigureAwait(false)));
             }
 
             if (application.ActionMode is
@@ -3534,7 +3547,7 @@ public sealed class LocalGameSessionOrchestrator : IAsyncDisposable
                 root.Mask ? backgroundMask : 0,
                 root.Io,
                 root.Memory,
-                resetPriorityClass: true);
+                resetPriorityClass: root.Priority);
             if (sweep.SnapshotFailed)
             {
                 // Bez migawki drzewa nie wiemy, czy cos zostalo. To jest
@@ -3561,20 +3574,22 @@ public sealed class LocalGameSessionOrchestrator : IAsyncDisposable
     }
 
     /// <summary>
-    /// Takes the default CPU sets off a process the reactive loop steered.
-    /// Best-effort and not counted as an error: sets are a preference, not a
-    /// restriction, and a process that is gone has nothing to clear. The
-    /// identity check keeps a recycled id from having its sets touched. With
-    /// the ids in the record, the original sets are put back only while the
-    /// process still has the ones we wrote; a record from before the ids
-    /// existed carries the flag alone and clears as it always did.
+    /// Odtwarza zbiory tla przez dziennik lub starsza migawke z ID.
+    /// Bledy zostawiaja rekord do ponownej proby, cudze zmiany sa zachowane.
+    /// Najstarszy format, z sama flaga, zachowuje dotychczasowe czyszczenie.
     /// </summary>
-    internal async ValueTask ClearSteeredCpuSetsAsync(
+    internal async ValueTask<BackgroundRecoveryTotals> ClearSteeredCpuSetsAsync(
         PlannedBackgroundApplication application,
         CancellationToken cancellationToken)
     {
         try
         {
+            if (application.CpuSetsTransaction is { } transaction)
+            {
+                return ToRecoveryTotals(await transaction.RecoverAsync(_journal, application.Identity,
+                    _identityProvider, CpuSetsPort, cancellationToken).ConfigureAwait(false));
+            }
+
             if (await _identityProvider
                     .MatchesRuntimeIdentityAsync(
                         application.Identity,
@@ -3583,23 +3598,27 @@ public sealed class LocalGameSessionOrchestrator : IAsyncDisposable
             {
                 if (application.AppliedCpuSetIds is { } applied)
                 {
-                    _ = CpuSetsSteering.RestoreIfUnchanged(
-                        CpuSetsPort,
-                        application.Identity.RuntimeKey.ProcessId,
+                    return ToRecoveryTotals(await ProcessCpuSetsAction.RestoreLegacyAsync(
+                        application.Identity,
                         application.OriginalCpuSetIds ?? [],
-                        applied);
+                        applied,
+                        _identityProvider, CpuSetsPort, cancellationToken).ConfigureAwait(false));
                 }
                 else
                 {
-                    _ = CpuSetsPort.Apply(
+                    bool restored = CpuSetsPort.Apply(
                         application.Identity.RuntimeKey.ProcessId,
                         []);
+                    return new(restored ? 1 : 0, 0, restored ? 0 : 1);
                 }
             }
+
+            return new(0, 0, 0);
         }
         catch (Exception exception) when (
             IsExpectedRecoveryFailure(exception))
         {
+            return new(0, 0, 1);
         }
     }
 
@@ -3609,7 +3628,8 @@ public sealed class LocalGameSessionOrchestrator : IAsyncDisposable
         DateTimeOffset NotBeforeUtc,
         bool Mask,
         bool Io,
-        bool Memory);
+        bool Memory,
+        bool Priority);
 
     private async ValueTask<BackgroundRecoveryTotals>
         RestorePrimaryBackgroundActionAsync(
@@ -4023,7 +4043,8 @@ public sealed class LocalGameSessionOrchestrator : IAsyncDisposable
     {
         if (result.Status is
             ActionExecutionStatus.AppliedAndVerified
-            or ActionExecutionStatus.AlreadyCompleted)
+            or ActionExecutionStatus.AlreadyCompleted
+            or ActionExecutionStatus.Unchanged)
         {
             return;
         }
@@ -4088,7 +4109,8 @@ public sealed class LocalGameSessionOrchestrator : IAsyncDisposable
             application.GpuPriorityActionId?.Value,
             application.GpuPriorityIdempotencyKey?.Value,
             application.OriginalCpuSetIds,
-            application.AppliedCpuSetIds);
+            application.AppliedCpuSetIds,
+            application.CpuSetsTransaction);
 
     private static GamePriorityRecoveryMetadata ToRecoveryMetadata(
         PlannedGamePriority priority,
@@ -4187,7 +4209,8 @@ public sealed class LocalGameSessionOrchestrator : IAsyncDisposable
             gpuPriorityActionId,
             gpuPriorityIdempotencyKey,
             metadata.OriginalCpuSetIds,
-            metadata.AppliedCpuSetIds);
+            metadata.AppliedCpuSetIds,
+            metadata.CpuSetsTransaction);
     }
 
     /// <summary>
@@ -4899,7 +4922,8 @@ public sealed class LocalGameSessionOrchestrator : IAsyncDisposable
         // w starszych punktach kontrolnych, ktore znaja sama flage
         // SteeredCpuSets i sa czyszczone bezwarunkowo jak dawniej.
         uint[]? OriginalCpuSetIds = null,
-        uint[]? AppliedCpuSetIds = null);
+        uint[]? AppliedCpuSetIds = null,
+        ProcessCpuSetsTransaction? CpuSetsTransaction = null);
 
     /// <summary>What the background bundle actually did at session start.</summary>
     private sealed record BackgroundBundleOutcome(
@@ -4923,7 +4947,8 @@ public sealed class LocalGameSessionOrchestrator : IAsyncDisposable
     /// </summary>
     internal sealed record GameCpuSetsRecoveryMetadata(
         uint[] OriginalIds,
-        uint[] AppliedIds);
+        uint[] AppliedIds,
+        ProcessCpuSetsTransaction? Transaction = null);
 
     private sealed record GameAffinityOutcome(
         int AppliedCount,
@@ -4934,7 +4959,7 @@ public sealed class LocalGameSessionOrchestrator : IAsyncDisposable
             new(AppliedCount: 0, Journaled: null);
     }
 
-    private sealed record BackgroundRecoveryTotals(
+    internal sealed record BackgroundRecoveryTotals(
         int RestoredCount,
         int ConflictCount,
         int ErrorCount);

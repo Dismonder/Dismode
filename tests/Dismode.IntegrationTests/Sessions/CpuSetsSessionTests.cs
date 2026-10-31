@@ -83,6 +83,7 @@ public sealed class CpuSetsSessionTests
         CollectionAssert.AreEqual(new uint[] { 0 }, port.Current);
         RestrainedProcessRecord record = ledger.Recorded[^1];
         Assert.IsTrue(record.SteeredCpuSets);
+        Assert.IsNotNull(record.CpuSetsTransaction);
         Assert.IsEmpty(record.OriginalCpuSetIds!);
         CollectionAssert.AreEqual(new uint[] { 0 }, record.AppliedCpuSetIds);
 

@@ -23,16 +23,23 @@ internal sealed class FakeCpuSetsPort : ICpuSetsPort
 
     public int Writes { get; private set; }
 
+    public int Queries { get; private set; }
+
+    public Action<int>? BeforeQuery { get; set; }
+
     public List<uint[]> Written { get; } = [];
 
-    public CpuSetsQuery Query(int processId) =>
-        QueryFails || (QueryFailsAfterApply && Writes > 0 && Current.Length > 0)
+    public CpuSetsQuery Query(int processId)
+    {
+        BeforeQuery?.Invoke(++Queries);
+        return QueryFails || (QueryFailsAfterApply && Writes > 0 && Current.Length > 0)
             ? CpuSetsQuery.Failure
             : new(
                 Current.Length == 0
                     ? CpuSetsQueryState.Empty
                     : CpuSetsQueryState.NonEmpty,
                 Current);
+    }
 
     public bool Apply(int processId, IReadOnlyList<uint> cpuSetIds)
     {

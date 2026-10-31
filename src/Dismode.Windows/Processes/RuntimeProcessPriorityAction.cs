@@ -63,10 +63,12 @@ public sealed class RuntimeProcessPriorityAction :
                 "The approved game process is no longer running.");
         }
 
+        RuntimeProcessPriorityState desired = new(IsRunning: true, _desiredPriority);
         return new(
             original,
-            new(IsRunning: true, _desiredPriority),
-            DateTimeOffset.UtcNow);
+            desired,
+            DateTimeOffset.UtcNow)
+        { IsUnchanged = original == desired };
     }
 
     public async ValueTask<ActionValidationResult> ValidateAsync(
@@ -96,7 +98,7 @@ public sealed class RuntimeProcessPriorityAction :
                             + "BelowNormal optional processes.");
             }
 
-            return current.PriorityClass is
+            return current.PriorityClass == _desiredPriority || current.PriorityClass is
                     ProcessPriorityClass.Idle
                     or ProcessPriorityClass.BelowNormal
                     or ProcessPriorityClass.Normal

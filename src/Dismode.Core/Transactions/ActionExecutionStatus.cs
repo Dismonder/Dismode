@@ -7,5 +7,6 @@ public enum ActionExecutionStatus
     AlreadyCompleted = 3,
     RecoveryRequired = 4,
     VerificationFailed = 5,
+    Unchanged = 6,
 }
 

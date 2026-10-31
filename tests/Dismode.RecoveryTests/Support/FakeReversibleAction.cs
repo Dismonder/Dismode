@@ -34,20 +34,28 @@ internal sealed class FakeReversibleAction : IReversibleAction<TestTargetState>
 
     public int CompensateCount { get; private set; }
 
+    public Action? AfterPrepare { get; set; }
+
     public ValueTask<PreparedAction<TestTargetState>> PrepareAsync(
         ActionExecutionContext context,
-        CancellationToken cancellationToken) =>
-        ValueTask.FromResult(
-            new PreparedAction<TestTargetState>(
+        CancellationToken cancellationToken)
+    {
+        PreparedAction<TestTargetState> prepared = new(
                 _originalState,
                 _desiredState,
-                DateTimeOffset.UtcNow));
+                DateTimeOffset.UtcNow)
+        { IsUnchanged = _originalState == _desiredState };
+        AfterPrepare?.Invoke();
+        return ValueTask.FromResult(prepared);
+    }
 
     public ValueTask<ActionValidationResult> ValidateAsync(
         ActionExecutionContext context,
         PreparedAction<TestTargetState> preparedAction,
         CancellationToken cancellationToken) =>
-        ValueTask.FromResult(_validation);
+        ValueTask.FromResult(CurrentState == preparedAction.OriginalState
+            ? _validation
+            : ActionValidationResult.Blocked("State changed after preparation."));
 
     public ValueTask ApplyAsync(
         ActionExecutionContext context,
