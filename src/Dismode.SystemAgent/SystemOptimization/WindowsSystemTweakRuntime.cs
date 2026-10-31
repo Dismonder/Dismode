@@ -73,6 +73,14 @@ internal sealed class WindowsSystemTweakRuntime :
                             applicationIndex,
                             cancellationToken)
                         .ConfigureAwait(false),
+                "gaming.background-capture" =>
+                    await ExecuteAsync(
+                            new GameCaptureRegistryAction(
+                                CreateActionId(request.OperationId, applicationIndex),
+                                request.OwnerSid),
+                            CreateContext(request.OperationId, applicationIndex),
+                            cancellationToken)
+                        .ConfigureAwait(false),
                 "power.hibernate" =>
                     await ExecuteAsync(
                             new HibernateConfigurationAction(
@@ -123,6 +131,14 @@ internal sealed class WindowsSystemTweakRuntime :
                     await RecoverGamePowerThrottlingAsync(
                             request,
                             applicationIndex,
+                            cancellationToken)
+                        .ConfigureAwait(false),
+                "gaming.background-capture" =>
+                    await RecoverAsync(
+                            new GameCaptureRegistryAction(
+                                CreateActionId(request.OperationId, applicationIndex),
+                                request.OwnerSid),
+                            CreateContext(request.OperationId, applicationIndex),
                             cancellationToken)
                         .ConfigureAwait(false),
                 "power.hibernate" =>
@@ -181,6 +197,14 @@ internal sealed class WindowsSystemTweakRuntime :
                 await ReadGamePowerThrottlingStateAsync(
                         request,
                         applicationIndex,
+                        cancellationToken)
+                    .ConfigureAwait(false),
+            "gaming.background-capture" =>
+                await new GameCaptureRegistryAction(
+                        CreateActionId(request.OperationId, applicationIndex),
+                        request.OwnerSid)
+                    .ReadCurrentStateAsync(
+                        CreateContext(request.OperationId, applicationIndex),
                         cancellationToken)
                     .ConfigureAwait(false),
             "power.hibernate" =>

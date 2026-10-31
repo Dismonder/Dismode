@@ -20,4 +20,5 @@ public enum OptimizationActionKind
     LowerProcessIoPriority = 15,
     LowerProcessGpuPriority = 16,
     SetDisplayRefreshRate = 17,
+    ConfigureGameCapture = 18,
 }
