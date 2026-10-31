@@ -70,7 +70,9 @@ public sealed record GameOptimizationPreferences
         SavedGamePriorityMode gamePriority,
         IEnumerable<SavedBackgroundProcessRule>? backgroundRules,
         DateTimeOffset updatedAtUtc,
-        bool autoOptimizeWhenDetected = true)
+        bool autoOptimizeWhenDetected = true,
+        bool pinGameToPreferredCores = true,
+        bool keepAwakeDuringSession = true)
     {
         if (!Enum.IsDefined(gamePriority))
         {
@@ -106,6 +108,8 @@ public sealed record GameOptimizationPreferences
             new ReadOnlyCollection<SavedBackgroundProcessRule>(rules);
         UpdatedAtUtc = updatedAtUtc.ToUniversalTime();
         AutoOptimizeWhenDetected = autoOptimizeWhenDetected;
+        PinGameToPreferredCores = pinGameToPreferredCores;
+        KeepAwakeDuringSession = keepAwakeDuringSession;
     }
 
     public GameProfileId ProfileId { get; }
@@ -124,6 +128,23 @@ public sealed record GameOptimizationPreferences
     /// title alone without being switched off for everything.
     /// </summary>
     public bool AutoOptimizeWhenDetected { get; }
+
+    /// <summary>
+    /// Whether a session may pin this game to the machine's performance cores
+    /// (CPU sets, or a hard mask where sets cannot work). Independent of the
+    /// background restraint: off leaves the game process untouched while
+    /// ProBalance keeps working on everything else. On by default, so rows
+    /// saved before this switch existed behave as they always did.
+    /// </summary>
+    public bool PinGameToPreferredCores { get; }
+
+    /// <summary>
+    /// Whether a session asks Windows to keep the display and the system
+    /// awake while it runs (a power request, released when the session ends).
+    /// For games played with a pad alone and for long cutscenes, which give
+    /// the system no input to count as activity. On by default.
+    /// </summary>
+    public bool KeepAwakeDuringSession { get; }
 
     public static GameOptimizationPreferences CreateDefault(
         GameProfileId profileId) =>
@@ -172,6 +193,8 @@ public sealed record GameOptimizationPreferences
                 GamePriority,
                 merged,
                 UpdatedAtUtc,
-                AutoOptimizeWhenDetected);
+                AutoOptimizeWhenDetected,
+                PinGameToPreferredCores,
+                KeepAwakeDuringSession);
     }
 }

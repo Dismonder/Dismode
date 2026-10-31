@@ -219,4 +219,25 @@ public sealed class MemoryAreaAndSettingsTests
             out HotkeyBinding parsed));
         Assert.AreEqual((uint)0x7B, parsed.VirtualKey);
     }
+
+    [TestMethod]
+    public void ExcludedProcessNamesKeepDotsAndStripOnlyExe()
+    {
+        MemoryOptimizerSettings settings = MemoryOptimizerSettings.Normalize(
+            new()
+            {
+                ExcludedProcesses =
+                [
+                    "Battle.net",
+                    "Warframe.x64",
+                    "game.EXE",
+                    @"C:\x\foo.exe",
+                ],
+            });
+
+        string[] expected = ["Battle.net", "foo", "game", "Warframe.x64"];
+        CollectionAssert.AreEqual(
+            expected,
+            settings.ExcludedProcesses.ToArray());
+    }
 }

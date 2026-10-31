@@ -83,9 +83,18 @@ window.Shown += (_, _) =>
 {
     if (readyFile is not null)
     {
-        File.WriteAllText(
-            readyFile,
-            Environment.ProcessId.ToString(CultureInfo.InvariantCulture));
+        try
+        {
+            File.WriteAllText(
+                readyFile,
+                Environment.ProcessId.ToString(CultureInfo.InvariantCulture));
+        }
+        catch (DirectoryNotFoundException)
+        {
+            // Test, ktory nas uruchomil, juz sprzatnal swoj katalog. Nikt nie
+            // czeka na ten plik, a okno bledu WinForms wisialoby na pulpicie.
+            Environment.Exit(0);
+        }
     }
 
     if (childReadyFile is not null && !isChild)

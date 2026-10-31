@@ -19,7 +19,9 @@ public sealed record ProBalanceObservation(
     string ProcessName,
     double CpuCores,
     bool IsProtected,
-    bool BelongsToGame);
+    bool BelongsToGame,
+    bool IsService = false,
+    bool IsForeground = false);
 
 public sealed record ProBalanceDecision(
     ProcessRuntimeKey RuntimeKey,
@@ -87,7 +89,10 @@ public sealed class ProBalanceEngine
             .OrderByDescending(candidate => candidate.CpuCores))
         {
             seen.Add(observation.RuntimeKey);
-            if (observation.IsProtected || observation.BelongsToGame)
+            if (observation.IsProtected
+                || observation.BelongsToGame
+                || (_settings.ExcludeServices && observation.IsService)
+                || (_settings.ExcludeForeground && observation.IsForeground))
             {
                 // Powloka, anti-cheat i samo drzewo gry sa poza zasiegiem.
                 // Sciszenie ktoregokolwiek z nich pogarsza dokladnie to, co
@@ -110,7 +115,13 @@ public sealed class ProBalanceEngine
                         ProBalanceAction.Release,
                         observation.BelongsToGame
                             ? "Proces należy teraz do drzewa gry."
-                            : "Proces jest teraz chroniony."));
+                            : observation.IsForeground
+                                && _settings.ExcludeForeground
+                                ? "Proces jest teraz na pierwszym planie."
+                                : observation.IsService
+                                    && _settings.ExcludeServices
+                                    ? "Proces jest usługą."
+                                    : "Proces jest teraz chroniony."));
                 }
 
                 continue;
@@ -162,6 +173,26 @@ public sealed class ProBalanceEngine
         }
 
         return decisions;
+    }
+
+    /// <summary>
+    /// Takes back a restraint the actuator refused to apply, so the process
+    /// stops occupying one of the limited slots. The cooldown keeps it from
+    /// being caught again on the very next samples. Does nothing for a
+    /// process that is not currently restrained.
+    /// </summary>
+    public void AbandonRestraint(ProcessRuntimeKey key, DateTimeOffset nowUtc)
+    {
+        if (!_tracked.TryGetValue(key, out TrackedProcess? state)
+            || state.RestrainedSinceUtc is null)
+        {
+            return;
+        }
+
+        state.RestrainedSinceUtc = null;
+        state.CalmSamples = 0;
+        state.HotSamples = 0;
+        state.CooldownUntilUtc = nowUtc + _settings.Cooldown;
     }
 
     /// <summary>

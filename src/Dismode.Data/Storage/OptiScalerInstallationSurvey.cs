@@ -53,8 +53,7 @@ public static class OptiScalerInstallationSurvey
             .Select(manifest => ReadTargetExecutable(manifest)
                 ?? "(nieznana gra)")];
 
-        return $"OptiScaler jest nadal zainstalowany w {games.Count} "
-            + "katalogach gier: "
+        return $"OptiScaler jest nadal zainstalowany w grach ({games.Count}): "
             + string.Join(", ", games.Take(NamedGamesLimit))
             + (games.Count > NamedGamesLimit ? ", …" : string.Empty);
     }
@@ -71,9 +70,11 @@ public static class OptiScalerInstallationSurvey
         {
             using JsonDocument document = JsonDocument.Parse(
                 File.ReadAllText(manifestPath));
-            return document.RootElement.TryGetProperty(
-                "targetExecutablePath",
-                out JsonElement value)
+            return document.RootElement.ValueKind == JsonValueKind.Object
+                && document.RootElement.TryGetProperty(
+                    "targetExecutablePath",
+                    out JsonElement value)
+                && value.ValueKind == JsonValueKind.String
                 ? Path.GetFileName(value.GetString())
                 : null;
         }

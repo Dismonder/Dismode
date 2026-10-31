@@ -54,6 +54,18 @@ na docelowym sprzęcie. To jest największy dług projektu — nie brak funkcji.
 2. **Nakładka FPS na 0.5.2** — czy pokazuje liczby przy grze odpalonej spoza
    Dismodea, czy nie migocze przy alt-tabie, czy wykres mieści się w ramce.
    Przebudowana w 0.5.0 i od tego czasu nieoglądana.
+   **2026-10-29: przyczyna „nie działa wcale” znaleziona i naprawiona.**
+   Nakładka (UI) i sesja gry (SessionHost) używały tej samej nazwy sesji
+   ETW, a PresentMon startuje z `--stop_existing_session`, więc zatrzymywały
+   się nawzajem bez końca (sonda: 25 s, zero klatek, przy 240 FPS osobno).
+   Teraz każda rola ma swoją sesję (`PresentMonCaptureRole`). Ładowanie gry
+   bez klatek nie jest już błędem obwiniającym inne narzędzia (usługa
+   PresentMon Intela pomiarowi nie przeszkadza — sprawdzone). Zweryfikowane
+   na Valheim przez prawdziwy orkiestrator: sesja i nakładka naraz, 106/119 s
+   zmierzone, 0 błędów, 60 FPS. Dziennik: `%LOCALAPPDATA%\Dismode\frame-capture.log`;
+   test na żywo: `DISMODE_LIVE_GAME_EXE` → `LiveGameSessionFrameRateTests`.
+   Średni FPS sesji zawiera ekran ładowania (Unity rysuje go w >2000 FPS),
+   więc bywa wyższy niż w samej rozgrywce — to prawda o sesji, nie błąd.
 3. ~~**Moduł CPU na grze ograniczonej procesorem**~~ — **zrobione 2026-09-10
    na 7 Days To Die.** Pierwszy pomiar wyszedł przeczący i doprowadził do
    przebudowy: priorytet nie daje nic, twarda maska powinowactwa daje 26%

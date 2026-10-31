@@ -20,6 +20,8 @@ public static partial class ProcessImagePath
 {
     private const uint ProcessQueryLimitedInformation = 0x1000;
     private const int MaximumWindowsPath = 32767;
+    private const int InitialPathLength = 1024;
+    private const int ErrorInsufficientBuffer = 122;
 
     public static string? TryRead(Process process)
     {
@@ -40,8 +42,26 @@ public static partial class ProcessImagePath
 
         try
         {
+            // Almost every path fits the small stack buffer; the 64 KB heap
+            // buffer is only needed for long-path images.
+            char* stackBuffer = stackalloc char[InitialPathLength];
+            uint length = InitialPathLength;
+            if (QueryFullProcessImageName(
+                    handle,
+                    flags: 0,
+                    stackBuffer,
+                    ref length))
+            {
+                return new string(stackBuffer, 0, checked((int)length));
+            }
+
+            if (Marshal.GetLastPInvokeError() != ErrorInsufficientBuffer)
+            {
+                return null;
+            }
+
             char[] path = new char[MaximumWindowsPath];
-            uint length = checked((uint)path.Length);
+            length = checked((uint)path.Length);
             fixed (char* pathPointer = path)
             {
                 return QueryFullProcessImageName(

@@ -37,6 +37,27 @@ public sealed class SystemOptimizerRecoveryHostedServiceTests
         await service.StopAsync(CancellationToken.None);
     }
 
+    [TestMethod]
+    public async Task MaintenanceFailuresDoNotStopTheHost()
+    {
+        FakeRecoveryMaintenance maintenance = new()
+        {
+            ThrowOnStartup = true,
+            ThrowOnFirstTimeoutRecovery = true,
+        };
+        using SystemOptimizerRecoveryHostedService service = new(
+            maintenance,
+            TimeSpan.FromMilliseconds(10));
+
+        await service.StartAsync(CancellationToken.None);
+        await maintenance.SecondTimeoutRecoveryObserved.Task.WaitAsync(
+            TimeSpan.FromSeconds(5));
+
+        Assert.IsNotNull(service.ExecuteTask);
+        Assert.IsFalse(service.ExecuteTask.IsFaulted);
+        await service.StopAsync(CancellationToken.None);
+    }
+
     private sealed class FakeRecoveryMaintenance :
         ISystemOptimizerRecoveryMaintenance
     {
@@ -45,6 +66,13 @@ public sealed class SystemOptimizerRecoveryHostedServiceTests
 
         internal TaskCompletionSource TimeoutRecoveryObserved { get; } =
             new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        internal TaskCompletionSource SecondTimeoutRecoveryObserved { get; } =
+            new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        internal bool ThrowOnStartup { get; init; }
+
+        internal bool ThrowOnFirstTimeoutRecovery { get; init; }
 
         internal int StartupRecoveryCount { get; private set; }
 
@@ -55,6 +83,11 @@ public sealed class SystemOptimizerRecoveryHostedServiceTests
         {
             StartupRecoveryCount++;
             StartupRecoveryObserved.TrySetResult();
+            if (ThrowOnStartup)
+            {
+                throw new IOException("startup failure");
+            }
+
             return ValueTask.CompletedTask;
         }
 
@@ -63,6 +96,16 @@ public sealed class SystemOptimizerRecoveryHostedServiceTests
         {
             TimeoutRecoveryCount++;
             TimeoutRecoveryObserved.TrySetResult();
+            if (TimeoutRecoveryCount >= 2)
+            {
+                SecondTimeoutRecoveryObserved.TrySetResult();
+            }
+
+            if (ThrowOnFirstTimeoutRecovery && TimeoutRecoveryCount == 1)
+            {
+                throw new InvalidOperationException("tick failure");
+            }
+
             return ValueTask.CompletedTask;
         }
     }

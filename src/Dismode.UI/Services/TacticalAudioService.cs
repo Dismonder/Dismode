@@ -23,12 +23,12 @@ public sealed class TacticalAudioService
 
     private TacticalAudioService()
     {
-        _sessionStartSfx = SynthesizeSessionStartWav();
-        _sessionStopSfx = SynthesizeSessionStopWav();
-        _clickSfx = SynthesizeClickWav();
-        _toggleSfx = SynthesizeToggleWav();
-        _successSfx = SynthesizeSuccessWav();
-        _warningSfx = SynthesizeWarningWav();
+        _sessionStartSfx = PinForPlayback(SynthesizeSessionStartWav());
+        _sessionStopSfx = PinForPlayback(SynthesizeSessionStopWav());
+        _clickSfx = PinForPlayback(SynthesizeClickWav());
+        _toggleSfx = PinForPlayback(SynthesizeToggleWav());
+        _successSfx = PinForPlayback(SynthesizeSuccessWav());
+        _warningSfx = PinForPlayback(SynthesizeWarningWav());
     }
 
     public void PlaySessionStart() => Play(_sessionStartSfx);
@@ -37,6 +37,20 @@ public sealed class TacticalAudioService
     public void PlayToggle() => Play(_toggleSfx);
     public void PlaySuccess() => Play(_successSfx);
     public void PlayWarning() => Play(_warningSfx);
+
+    /// <summary>
+    /// PlaySound with SND_ASYNC|SND_MEMORY keeps reading the buffer after the
+    /// call returns, so the data must never move: copy it to the pinned
+    /// object heap, which the GC does not compact.
+    /// </summary>
+    internal static byte[] PinForPlayback(byte[] source)
+    {
+        byte[] pinned = GC.AllocateUninitializedArray<byte>(
+            source.Length,
+            pinned: true);
+        source.CopyTo(pinned, 0);
+        return pinned;
+    }
 
     private void Play(byte[] wavData)
     {

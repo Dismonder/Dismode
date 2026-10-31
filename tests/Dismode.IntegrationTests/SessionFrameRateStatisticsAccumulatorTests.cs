@@ -1,5 +1,4 @@
 using Dismode.Core.History;
-using Dismode.Windows.Processes;
 using Dismode.Windows.Sessions;
 
 namespace Dismode.IntegrationTests;
@@ -8,53 +7,76 @@ namespace Dismode.IntegrationTests;
 public sealed class SessionFrameRateStatisticsAccumulatorTests
 {
     [TestMethod]
+    public void EmptyStreamReturnsNull()
+    {
+        Assert.IsNull(new SessionFrameRateStatisticsAccumulator().Snapshot());
+    }
+
+    [TestMethod]
+    [DataRow(0.1d)]
+    [DataRow(10_000d)]
+    public void SupportedBoundariesRemainValidAfterSummation(double frameTime)
+    {
+        SessionFrameRateStatisticsAccumulator accumulator = new();
+        for (int index = 0; index < 10; index++)
+        {
+            accumulator.Add(frameTime);
+        }
+
+        SessionFrameRateStatistics statistics = accumulator.Snapshot()!;
+        Assert.AreEqual(1000d / frameTime, statistics.AverageFramesPerSecond, 1e-9);
+        Assert.AreEqual(1000d / frameTime, statistics.OnePercentLowFramesPerSecond!.Value, 1e-9);
+    }
+
+    [TestMethod]
+    public void SessionFrameRateUsesFrameCountDividedByElapsedTime()
+    {
+        SessionFrameRateStatisticsAccumulator accumulator = new();
+        accumulator.Add(8.33d);
+        accumulator.Add(16.67d);
+
+        Assert.AreEqual(80d, accumulator.Snapshot()!.AverageFramesPerSecond, 0.001d);
+    }
+
+    [TestMethod]
     public void UnavailableOrInvalidSamplesAreNotCounted()
     {
         SessionFrameRateStatisticsAccumulator accumulator = new();
 
-        accumulator.Add(FrameRateSample.WaitingForGame(42));
-        accumulator.Add(
-            new(
-                FrameRateStatus.Measuring,
-                FramesPerSecond: double.NaN,
-                FrameTimeMilliseconds: 10d,
-                ProcessId: 42,
-                Message: "invalid"));
+        accumulator.Add(double.NaN);
+        accumulator.Add(double.PositiveInfinity);
+        accumulator.Add(0d);
+        accumulator.Add(-1d);
+        accumulator.Add(10_001d);
 
         Assert.IsNull(accumulator.Snapshot());
     }
 
     [TestMethod]
-    public void MeasuredSamplesProduceIntervalStatistics()
+    public void MeasuredFramesPreserveSpikeAndLows()
     {
         SessionFrameRateStatisticsAccumulator accumulator = new();
-        accumulator.Add(
-            new(
-                FrameRateStatus.Measuring,
-                FramesPerSecond: 120d,
-                FrameTimeMilliseconds: 8.33d,
-                ProcessId: 42,
-                Message: "measuring"));
-        accumulator.Add(
-            new(
-                FrameRateStatus.Measuring,
-                FramesPerSecond: 60d,
-                FrameTimeMilliseconds: 16.67d,
-                ProcessId: 42,
-                Message: "measuring"));
+        for (int index = 0; index < 999; index++)
+        {
+            accumulator.Add(10d);
+        }
+        accumulator.Add(200d);
 
         var statistics = accumulator.Snapshot();
 
         Assert.IsNotNull(statistics);
-        Assert.AreEqual(2, statistics.SampleCount);
-        Assert.AreEqual(90d, statistics.AverageFramesPerSecond, 0.001d);
+        Assert.AreEqual(1_000, statistics.SampleCount);
+        Assert.AreEqual(1_000_000d / 10_190d, statistics.AverageFramesPerSecond, 0.001d);
         Assert.AreEqual(
-            12.5d,
+            10.19d,
             statistics.AverageFrameTimeMilliseconds,
             0.001d);
-        Assert.AreEqual(60d, statistics.MinimumFramesPerSecond, 0.001d);
+        Assert.AreEqual(5d, statistics.MinimumFramesPerSecond, 0.001d);
+        Assert.AreEqual(1_000d / 29d, statistics.OnePercentLowFramesPerSecond!.Value, 0.001d);
+        Assert.AreEqual(5d, statistics.PointOnePercentLowFramesPerSecond!.Value, 0.001d);
+        Assert.AreEqual(1, statistics.HitchCount);
         Assert.AreEqual(
-            16.67d,
+            200d,
             statistics.MaximumFrameTimeMilliseconds,
             0.001d);
     }
@@ -71,13 +93,7 @@ public sealed class SessionFrameRateStatisticsAccumulatorTests
         SessionFrameRateStatisticsAccumulator accumulator = new();
         for (int index = 0; index < 30; index++)
         {
-            accumulator.Add(
-                new(
-                    FrameRateStatus.Measuring,
-                    FramesPerSecond: 60d,
-                    FrameTimeMilliseconds: 1000d / 60,
-                    ProcessId: 42,
-                    Message: "steady"));
+            accumulator.Add(1000d / 60);
         }
 
         SessionFrameRateStatistics? statistics = accumulator.Snapshot();

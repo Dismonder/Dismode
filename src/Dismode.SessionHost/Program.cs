@@ -154,6 +154,11 @@ await using LocalGameSessionOrchestrator sessionOrchestrator = new(
     userDataStore,
     userDataStore,
     recoveryJournal,
+    frameRateProvider: new PresentMonFrameRateProvider(
+        displayTrackingSetting: async cancellationToken =>
+            (await userDataStore
+                .LoadPerformanceOverlayPreferencesAsync(cancellationToken))
+            .IsDisplayTrackingEnabled),
     optimizationPreferences: userDataStore,
     systemProfileCoordinator: systemProfileCoordinator,
     globalBackgroundRules: userDataStore);

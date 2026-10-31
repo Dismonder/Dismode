@@ -29,7 +29,6 @@ public sealed class ForegroundWindowChangeListener : IDisposable
     private readonly WinEventProcedure _procedure;
     private readonly Action<int> _onForegroundProcessChanged;
     private nint _hook;
-    private int _lastProcessId;
 
     public ForegroundWindowChangeListener(
         Action<int> onForegroundProcessChanged)
@@ -69,14 +68,13 @@ public sealed class ForegroundWindowChangeListener : IDisposable
         }
 
         _ = GetWindowThreadProcessId(windowHandle, out uint processId);
-        if (processId == 0 || (int)processId == _lastProcessId)
+        if (processId == 0)
         {
-            // To samo okno co przed chwila (np. menu, dialog wlasny gry)
-            // niczego nowego nie mowi.
             return;
         }
 
-        _lastProcessId = (int)processId;
+        // No same-process deduplication: own-process windows are skipped by
+        // the hook, so a remembered PID goes stale (game, Dismode, game).
         _onForegroundProcessChanged((int)processId);
     }
 

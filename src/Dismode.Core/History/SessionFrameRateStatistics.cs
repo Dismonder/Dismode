@@ -10,7 +10,10 @@ public sealed record SessionFrameRateStatistics
         double averageFramesPerSecond,
         double averageFrameTimeMilliseconds,
         double minimumFramesPerSecond,
-        double maximumFrameTimeMilliseconds)
+        double maximumFrameTimeMilliseconds,
+        double? onePercentLowFramesPerSecond = null,
+        double? pointOnePercentLowFramesPerSecond = null,
+        int? hitchCount = null)
     {
         if (sampleCount <= 0)
         {
@@ -36,6 +39,27 @@ public sealed record SessionFrameRateStatistics
             maximumFrameTimeMilliseconds,
             MaximumSupportedFrameTimeMilliseconds,
             nameof(maximumFrameTimeMilliseconds));
+        if (onePercentLowFramesPerSecond is double onePercentLow)
+        {
+            ValidateMetric(
+                onePercentLow,
+                MaximumSupportedFramesPerSecond,
+                nameof(onePercentLowFramesPerSecond));
+        }
+
+        if (pointOnePercentLowFramesPerSecond is double pointOnePercentLow)
+        {
+            ValidateMetric(
+                pointOnePercentLow,
+                MaximumSupportedFramesPerSecond,
+                nameof(pointOnePercentLowFramesPerSecond));
+        }
+
+        if (hitchCount is < 0 || hitchCount > sampleCount)
+        {
+            throw new ArgumentOutOfRangeException(nameof(hitchCount));
+        }
+
         if (minimumFramesPerSecond > averageFramesPerSecond)
         {
             throw new ArgumentException(
@@ -55,6 +79,9 @@ public sealed record SessionFrameRateStatistics
         AverageFrameTimeMilliseconds = averageFrameTimeMilliseconds;
         MinimumFramesPerSecond = minimumFramesPerSecond;
         MaximumFrameTimeMilliseconds = maximumFrameTimeMilliseconds;
+        OnePercentLowFramesPerSecond = onePercentLowFramesPerSecond;
+        PointOnePercentLowFramesPerSecond = pointOnePercentLowFramesPerSecond;
+        HitchCount = hitchCount;
     }
 
     public int SampleCount { get; }
@@ -66,6 +93,12 @@ public sealed record SessionFrameRateStatistics
     public double MinimumFramesPerSecond { get; }
 
     public double MaximumFrameTimeMilliseconds { get; }
+
+    public double? OnePercentLowFramesPerSecond { get; }
+
+    public double? PointOnePercentLowFramesPerSecond { get; }
+
+    public int? HitchCount { get; }
 
     public double EstimatedFrametimeStabilityPercent =>
         AverageFrameTimeMilliseconds > 0 && MaximumFrameTimeMilliseconds > 0

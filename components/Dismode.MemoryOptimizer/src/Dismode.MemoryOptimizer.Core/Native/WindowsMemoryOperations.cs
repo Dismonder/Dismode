@@ -279,12 +279,8 @@ public sealed class WindowsMemoryAreaOperations : IMemoryAreaOperations
 
                 if (!NativeMethods.K32EmptyWorkingSet(handle))
                 {
-                    int error = Marshal.GetLastPInvokeError();
-                    if (error != NativeMethods.ErrorAccessDenied)
-                    {
-                        throw new Win32Exception(error, $"{name}: working-set trim failed.");
-                    }
-
+                    // A process may exit or change state between OpenProcess
+                    // and the trim; count it and keep the results so far.
                     inaccessible++;
                     continue;
                 }
@@ -337,6 +333,8 @@ public sealed class WindowsMemoryAreaOperations : IMemoryAreaOperations
     {
         List<string> warnings = [];
         int flushed = 0;
+        int firstError = 0;
+        string? firstErrorDrive = null;
         foreach (DriveInfo drive in DriveInfo.GetDrives())
         {
             cancellationToken.ThrowIfCancellationRequested();
@@ -359,7 +357,14 @@ public sealed class WindowsMemoryAreaOperations : IMemoryAreaOperations
                 nint.Zero);
             if (handle.IsInvalid)
             {
-                warnings.Add($"{drive.Name}: {Marshal.GetLastPInvokeError()}");
+                int openError = Marshal.GetLastPInvokeError();
+                warnings.Add($"{drive.Name}: {openError}");
+                if (firstError == 0)
+                {
+                    firstError = openError;
+                    firstErrorDrive = drive.Name;
+                }
+
                 continue;
             }
 
@@ -395,12 +400,25 @@ public sealed class WindowsMemoryAreaOperations : IMemoryAreaOperations
 
             if (!NativeMethods.FlushFileBuffers(handle))
             {
-                throw new Win32Exception(
-                    Marshal.GetLastPInvokeError(),
-                    $"{drive.Name}: volume cache flush failed.");
+                int flushError = Marshal.GetLastPInvokeError();
+                warnings.Add($"{drive.Name}: flush {flushError}");
+                if (firstError == 0)
+                {
+                    firstError = flushError;
+                    firstErrorDrive = drive.Name;
+                }
+
+                continue;
             }
 
             flushed++;
+        }
+
+        if (flushed == 0 && firstError != 0)
+        {
+            throw new Win32Exception(
+                firstError,
+                $"{firstErrorDrive}: no fixed volume could be flushed.");
         }
 
         return $"Flushed {flushed} fixed volumes." +

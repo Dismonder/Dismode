@@ -11,6 +11,63 @@ public sealed class ProBalanceSupervisorTests
     private static readonly DateTimeOffset Started =
         new(2026, 9, 6, 11, 0, 0, TimeSpan.Zero);
 
+    private static CpuProcessSample Sample(
+        int id,
+        int parent,
+        int startedMinute) =>
+        new(
+            id,
+            "p" + id,
+            new DateTimeOffset(2026, 9, 6, 11, startedMinute, 0, TimeSpan.Zero),
+            TimeSpan.Zero,
+            parent);
+
+    [TestMethod]
+    public void ForegroundTreeIncludesDescendantsOnly()
+    {
+        CpuProcessSample[] samples =
+        [
+            Sample(10, 1, 0),   // pierwszy plan
+            Sample(11, 10, 1),  // dziecko
+            Sample(12, 11, 2),  // wnuk
+            Sample(20, 1, 0),   // obcy
+            Sample(21, 20, 1),
+        ];
+
+        HashSet<int> tree = ProBalanceSupervisor.ForegroundTree(samples, 10);
+
+        Assert.AreEqual(3, tree.Count);
+        Assert.IsTrue(tree.IsSupersetOf([10, 11, 12]));
+    }
+
+    [TestMethod]
+    public void ForegroundTreeIgnoresParentIdReusedByAStranger()
+    {
+        // Rodzic o numerze pierwszego planu wystartowal PO dziecku, wiec ten
+        // numer nalezy juz do kogos innego.
+        CpuProcessSample[] samples =
+        [
+            Sample(10, 1, 30),
+            Sample(11, 10, 5),
+        ];
+
+        HashSet<int> tree = ProBalanceSupervisor.ForegroundTree(samples, 10);
+
+        Assert.AreEqual(1, tree.Count);
+        Assert.IsTrue(tree.Contains(10));
+    }
+
+    [TestMethod]
+    public void ForegroundTreeIsEmptyWithoutAForegroundProcess()
+    {
+        Assert.AreEqual(
+            0,
+            ProBalanceSupervisor.ForegroundTree([Sample(10, 1, 0)], 0).Count);
+        Assert.AreEqual(
+            0,
+            ProBalanceSupervisor.ForegroundTree([Sample(10, 1, 0)], 99).Count);
+    }
+
     [TestMethod]
     public async Task BusyBackgroundProcessIsRestrainedAndThenReleased()
     {
@@ -154,6 +211,87 @@ public sealed class ProBalanceSupervisorTests
                 + $"{actuator.Released.Count} zwolnieniach.");
     }
 
+    [TestMethod]
+    public async Task RefusedRestraintDoesNotKeepHoldingASlot()
+    {
+        AdvancingTimeProvider time = new(
+            new DateTimeOffset(2026, 9, 6, 12, 0, 0, TimeSpan.Zero));
+        StubInventory inventory = new();
+        RecordingActuator actuator = new() { Accept = false };
+        await using ProBalanceSupervisor supervisor = new(
+            inventory,
+            actuator,
+            static () => new HashSet<int>(),
+            timeProvider: time);
+
+        inventory.Set(cpuMilliseconds: 0);
+        await supervisor.TickAsync(CancellationToken.None);
+
+        int ticks = 0;
+        for (; ticks < 8 && actuator.Restrained.Count == 0; ticks++)
+        {
+            time.Advance(TimeSpan.FromSeconds(2));
+            inventory.Advance(1600);
+            await supervisor.TickAsync(CancellationToken.None);
+        }
+
+        Assert.AreEqual(1, actuator.Restrained.Count);
+
+        // A refused restraint must not stay in the engine's count of
+        // restrained processes, otherwise it eats one of the limited slots.
+        time.Advance(TimeSpan.FromSeconds(2));
+        inventory.Advance(1600);
+        IReadOnlyList<ProBalanceDecision> decisions =
+            await supervisor.TickAsync(CancellationToken.None);
+        Assert.AreEqual(0, decisions.Count);
+        Assert.AreEqual(
+            1,
+            actuator.Restrained.Count,
+            "Odrzucone ograniczenie nie moze byc ponawiane w czasie cooldownu.");
+    }
+
+    [TestMethod]
+    public void AbandonedRestraintFreesTheSlotAndStartsCooldown()
+    {
+        ProBalanceEngine engine = new(new ProBalanceSettings
+        {
+            MaximumRestrained = 1,
+            SustainedSamples = 1,
+        });
+        DateTimeOffset now = new(2026, 9, 6, 12, 0, 0, TimeSpan.Zero);
+        ProcessRuntimeKey first = new(1, Started);
+        ProcessRuntimeKey second = new(2, Started);
+
+        IReadOnlyList<ProBalanceDecision> decisions = engine.Evaluate(
+            [new(first, "a", 1.0, false, false)],
+            2.0,
+            now);
+        Assert.AreEqual(ProBalanceAction.Restrain, decisions[0].Action);
+
+        // The slot is taken, so a second hog is refused.
+        decisions = engine.Evaluate(
+            [
+                new(first, "a", 1.0, false, false),
+                new(second, "b", 0.9, false, false),
+            ],
+            2.0,
+            now);
+        Assert.AreEqual(0, decisions.Count);
+
+        engine.AbandonRestraint(first, now);
+        Assert.AreEqual(0, engine.Restrained.Count);
+
+        decisions = engine.Evaluate(
+            [
+                new(first, "a", 1.0, false, false),
+                new(second, "b", 0.9, false, false),
+            ],
+            2.0,
+            now);
+        Assert.AreEqual(1, decisions.Count);
+        Assert.AreEqual(second, decisions[0].RuntimeKey);
+    }
+
     private sealed class StubInventory(bool includeGameAndShell = false)
         : ICpuProcessSource
     {
@@ -217,6 +355,8 @@ public sealed class ProBalanceSupervisorTests
 
     private sealed class RecordingActuator : IProBalanceActuator
     {
+        public bool Accept { get; init; } = true;
+
         public List<ProcessRuntimeKey> Restrained { get; } = [];
 
         public List<ProcessRuntimeKey> Released { get; } = [];
@@ -226,7 +366,7 @@ public sealed class ProBalanceSupervisorTests
             CancellationToken cancellationToken)
         {
             Restrained.Add(runtimeKey);
-            return ValueTask.FromResult(true);
+            return ValueTask.FromResult(Accept);
         }
 
         public ValueTask<bool> ReleaseAsync(

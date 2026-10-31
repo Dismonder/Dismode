@@ -270,8 +270,11 @@ public static partial class InstalledGameDiscoveryService
                         new FileInfo(executable).Length
                             / (1024 * 1024),
                         5_000);
+                    string relativeExecutable = Path.GetRelativePath(
+                        contentDirectory,
+                        executable);
                     if (PenalizedExecutableTerms.Any(term =>
-                        executable.Contains(
+                        relativeExecutable.Contains(
                             term,
                             StringComparison.OrdinalIgnoreCase)))
                     {
@@ -383,7 +386,7 @@ public static partial class InstalledGameDiscoveryService
                 continue;
             }
 
-            foreach (string manifestPath in Directory.EnumerateFiles(
+            foreach (string manifestPath in EnumerateFilesSafely(
                          steamApps,
                          "appmanifest_*.acf",
                          SearchOption.TopDirectoryOnly))
@@ -444,19 +447,20 @@ public static partial class InstalledGameDiscoveryService
             return;
         }
 
-        foreach (string manifestPath in Directory.EnumerateFiles(
+        foreach (string manifestPath in EnumerateFilesSafely(
                      manifestsDirectory,
                      "*.item",
                      SearchOption.TopDirectoryOnly))
         {
             cancellationToken.ThrowIfCancellationRequested();
-            if (new FileInfo(manifestPath).Length > MaximumManifestBytes)
-            {
-                continue;
-            }
-
             try
             {
+                if (new FileInfo(manifestPath).Length
+                    > MaximumManifestBytes)
+                {
+                    continue;
+                }
+
                 using FileStream stream = File.OpenRead(manifestPath);
                 using JsonDocument document = JsonDocument.Parse(stream);
                 JsonElement root = document.RootElement;
@@ -597,8 +601,7 @@ public static partial class InstalledGameDiscoveryService
             return;
         }
 
-        string? executable = Directory
-            .EnumerateFiles(
+        string? executable = EnumerateFilesSafely(
                 versionsDirectory,
                 "RobloxPlayerBeta.exe",
                 SearchOption.AllDirectories)
@@ -678,7 +681,7 @@ public static partial class InstalledGameDiscoveryService
         }
     }
 
-    private static string? FindLikelyGameExecutable(
+    internal static string? FindLikelyGameExecutable(
         string installDirectory,
         string displayName,
         string installDirectoryName,
@@ -729,11 +732,17 @@ public static partial class InstalledGameDiscoveryService
                         score += 2_000;
                     }
 
+                    // Only the part below the install folder counts: the
+                    // game's own folder name and the library path may
+                    // legitimately contain words such as "Crash" or "Server".
+                    string relativeExecutable = Path.GetRelativePath(
+                        installDirectory,
+                        executable);
                     if (PenalizedExecutableTerms.Any(term =>
                         fileName.Contains(
                             term,
                             StringComparison.OrdinalIgnoreCase)
-                        || executable.Contains(
+                        || relativeExecutable.Contains(
                             term,
                             StringComparison.OrdinalIgnoreCase)))
                     {
@@ -758,8 +767,11 @@ public static partial class InstalledGameDiscoveryService
                              "*",
                              SearchOption.TopDirectoryOnly))
                 {
+                    string relativeChild = Path.GetRelativePath(
+                        installDirectory,
+                        child);
                     if (!PenalizedExecutableTerms.Any(term =>
-                        child.Contains(
+                        relativeChild.Contains(
                             term,
                             StringComparison.OrdinalIgnoreCase)))
                     {
@@ -782,10 +794,68 @@ public static partial class InstalledGameDiscoveryService
             .FirstOrDefault();
     }
 
-    private static Dictionary<string, string> ReadFlatVdf(
+    // A launcher rewriting a manifest (sharing violation) or a folder that
+    // vanishes mid-scan must not abort discovery of every other game.
+    private static IEnumerable<string> EnumerateFilesSafely(
+        string directory,
+        string searchPattern,
+        SearchOption searchOption)
+    {
+        IEnumerator<string> enumerator;
+        try
+        {
+            enumerator = Directory
+                .EnumerateFiles(directory, searchPattern, searchOption)
+                .GetEnumerator();
+        }
+        catch (Exception exception) when (
+            exception is
+                IOException
+                or UnauthorizedAccessException)
+        {
+            yield break;
+        }
+
+        using (enumerator)
+        {
+            while (true)
+            {
+                try
+                {
+                    if (!enumerator.MoveNext())
+                    {
+                        yield break;
+                    }
+                }
+                catch (Exception exception) when (
+                    exception is
+                        IOException
+                        or UnauthorizedAccessException)
+                {
+                    yield break;
+                }
+
+                yield return enumerator.Current;
+            }
+        }
+    }
+
+    internal static Dictionary<string, string> ReadFlatVdf(
         string path)
     {
-        string text = ReadSmallTextFile(path);
+        string text;
+        try
+        {
+            text = ReadSmallTextFile(path);
+        }
+        catch (Exception exception) when (
+            exception is
+                IOException
+                or UnauthorizedAccessException)
+        {
+            return new(StringComparer.OrdinalIgnoreCase);
+        }
+
         return VdfPairRegex()
             .Matches(text)
             .Select(match =>

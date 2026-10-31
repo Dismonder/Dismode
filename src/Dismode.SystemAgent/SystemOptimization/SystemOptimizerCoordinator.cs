@@ -490,11 +490,15 @@ internal sealed class SystemOptimizerCoordinator :
 
         for (int index = 0; index < activation.Selections.Count; index++)
         {
+            cancellationToken.ThrowIfCancellationRequested();
             TweakSelection selection = activation.Selections[index];
+
+            // The apply and its AppliedSelectionCount bookkeeping must not be
+            // split by a client disconnect, or restore would skip the tweak.
             SystemTweakRuntimeResult applied = await _runtime.ApplyAsync(
                     ToRuntimeRequest(activation, selection),
                     index,
-                    cancellationToken)
+                    CancellationToken.None)
                 .ConfigureAwait(false);
             if (!applied.Succeeded)
             {
@@ -512,7 +516,7 @@ internal sealed class SystemOptimizerCoordinator :
             };
             await _store.SetActiveGameSessionAsync(
                     activation,
-                    cancellationToken)
+                    CancellationToken.None)
                 .ConfigureAwait(false);
         }
 
@@ -653,7 +657,10 @@ internal sealed class SystemOptimizerCoordinator :
             if (active is not null)
             {
                 EnsureOwner(active.OwnerSid, ownerSid);
-                int appliedIndex = GetAppliedCandidateIndex(active);
+                int appliedIndex = await GetAppliedCandidateIndexAsync(
+                        active,
+                        cancellationToken)
+                    .ConfigureAwait(false);
                 if (appliedIndex >= 0)
                 {
                     SystemTweakRuntimeResult restored =
@@ -977,7 +984,10 @@ internal sealed class SystemOptimizerCoordinator :
         ExperimentPlan experiment,
         CancellationToken cancellationToken)
     {
-        int appliedIndex = GetAppliedCandidateIndex(experiment);
+        int appliedIndex = await GetAppliedCandidateIndexAsync(
+                experiment,
+                cancellationToken)
+            .ConfigureAwait(false);
         if (appliedIndex >= 0)
         {
             SystemTweakRuntimeResult restored = await _runtime.RestoreAsync(
@@ -1307,6 +1317,32 @@ internal sealed class SystemOptimizerCoordinator :
             : first == BenchmarkVariant.Baseline
                 ? BenchmarkVariant.Candidate
                 : BenchmarkVariant.Baseline;
+
+    private async ValueTask<int> GetAppliedCandidateIndexAsync(
+        ExperimentPlan experiment,
+        CancellationToken cancellationToken)
+    {
+        int appliedIndex = GetAppliedCandidateIndex(experiment);
+        if (appliedIndex >= 0
+            || experiment.State != ExperimentState.WaitingForScene
+            || GetExpectedVariant(experiment) != BenchmarkVariant.Candidate)
+        {
+            return appliedIndex;
+        }
+
+        // An invalid candidate capture returns to WaitingForScene with the
+        // candidate still applied. Restoring a never-applied index is a
+        // MissingPreparation failure, so rely on the recovery status that
+        // BeginStabilizationAsync leaves unclean for an applied candidate.
+        RecoveryStatus status = await _store.GetRecoveryStatusAsync(
+                cancellationToken)
+            .ConfigureAwait(false);
+        return status.Phase == RecoveryPhase.Capture
+            && status.ExperimentId == experiment.ExperimentId
+            && !status.IsJournalClean
+                ? experiment.CompletedCandidateCaptures
+                : -1;
+    }
 
     private static int GetAppliedCandidateIndex(ExperimentPlan experiment)
     {

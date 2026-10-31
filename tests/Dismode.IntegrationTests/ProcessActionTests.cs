@@ -476,6 +476,55 @@ public sealed class ProcessActionTests
         await harness.Process.WaitForExitAsync();
     }
 
+    [TestMethod]
+    public async Task GracefulCloseHashesEachPolledProcessOnlyOnce()
+    {
+        await using ProcessHarnessFixture harness =
+            await ProcessHarnessFixture.StartAsync(ignoreClose: true);
+        ProcessIdentity identity = await CaptureRequiredIdentityAsync(
+            harness.Process);
+        ApplicationRestartDescriptor restart = new(
+            identity.ExecutablePath,
+            Path.GetDirectoryName(identity.ExecutablePath)
+                ?? throw new AssertFailedException(
+                    "The harness executable directory is unavailable."),
+            arguments: null,
+            ApplicationRestartability.Restartable);
+        CountingIdentityProvider provider = new(harness.Process.Id);
+        ActionId actionId = ActionId.Create();
+        GracefulCloseApplicationAction action = new(
+            actionId,
+            identity,
+            restart,
+            provider,
+            closeTimeout: TimeSpan.FromMilliseconds(700));
+        ActionExecutionContext context = CreateContext(actionId);
+
+        PreparedAction<ApplicationProcessState> prepared =
+            await action.PrepareAsync(context, CancellationToken.None);
+        await Assert.ThrowsExactlyAsync<TimeoutException>(
+            () => action
+                .ApplyAsync(context, prepared, CancellationToken.None)
+                .AsTask());
+
+        // Prepare, the pre-close window check and the pre-mutation guard
+        // each capture fresh; the poll loop adds one for all its 100 ms
+        // iterations.
+        Assert.IsLessThanOrEqualTo(4, provider.ProcessCaptureCount);
+
+        harness.Process.Kill(entireProcessTree: true);
+        await harness.Process.WaitForExitAsync();
+    }
+
+    [TestMethod]
+    public void ProcessImagePathMatchesCurrentProcessPath()
+    {
+        Assert.AreEqual(
+            Environment.ProcessPath,
+            ProcessImagePath.TryRead(Environment.ProcessId),
+            ignoreCase: true);
+    }
+
     private static async ValueTask<ProcessIdentity> CaptureRequiredIdentityAsync(
         Process process)
     {
@@ -520,6 +569,40 @@ public sealed class ProcessActionTests
                 TimeSpan.FromMilliseconds(50),
                 timeout.Token);
         }
+    }
+
+    private sealed class CountingIdentityProvider(int countedProcessId)
+        : IProcessIdentityProvider
+    {
+        private readonly ProcessIdentityProvider _inner = new();
+        private int _processCaptureCount;
+
+        public int ProcessCaptureCount =>
+            Volatile.Read(ref _processCaptureCount);
+
+        public ValueTask<ProcessIdentity?> TryCaptureAsync(
+            int processId,
+            CancellationToken cancellationToken) =>
+            _inner.TryCaptureAsync(processId, cancellationToken);
+
+        public ValueTask<ProcessIdentity?> TryCaptureAsync(
+            Process process,
+            CancellationToken cancellationToken)
+        {
+            if (process.Id == countedProcessId)
+            {
+                Interlocked.Increment(ref _processCaptureCount);
+            }
+
+            return _inner.TryCaptureAsync(process, cancellationToken);
+        }
+
+        public ValueTask<bool> MatchesRuntimeIdentityAsync(
+            ProcessIdentity expectedIdentity,
+            CancellationToken cancellationToken) =>
+            _inner.MatchesRuntimeIdentityAsync(
+                expectedIdentity,
+                cancellationToken);
     }
 
     private sealed class SequencedIdentityProvider(

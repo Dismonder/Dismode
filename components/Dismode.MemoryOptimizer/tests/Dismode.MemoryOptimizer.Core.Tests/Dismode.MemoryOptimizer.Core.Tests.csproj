@@ -13,5 +13,7 @@
   <ItemGroup>
     <ProjectReference Include="..\..\src\Dismode.MemoryOptimizer.Core\Dismode.MemoryOptimizer.Core.csproj" />
     <Compile Include="..\..\src\Dismode.MemoryOptimizer\Presentation\*.cs" Link="Presentation\%(Filename)%(Extension)" />
+    <Compile Include="..\..\src\Dismode.MemoryService\MemoryUserRuntime.cs" Link="Service\MemoryUserRuntime.cs" />
+    <Compile Include="..\..\src\Dismode.MemoryService\SystemCpuSampler.cs" Link="Service\SystemCpuSampler.cs" />
   </ItemGroup>
 </Project>

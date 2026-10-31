@@ -2,6 +2,7 @@ using System.ComponentModel;
 using System.Diagnostics;
 using System.Globalization;
 using System.Runtime.InteropServices;
+using Dismode.Core.Performance;
 using Dismode.Core.Profiles;
 using Dismode.UI.Services;
 using Microsoft.UI.Windowing;
@@ -65,6 +66,7 @@ public sealed partial class PerformanceOverlayWindow : Window, IDisposable
     private nint _positionedMonitor;
     private uint _positionedDpi;
     private bool _requestedVisible;
+    private bool _showDisplayedFrames;
     private bool _isShown;
     private bool _layoutDirty = true;
     private bool _disposed;
@@ -155,7 +157,9 @@ public sealed partial class PerformanceOverlayWindow : Window, IDisposable
         string gameName,
         int? processId,
         double? framesPerSecond,
-        double? frameTimeMilliseconds)
+        double? frameTimeMilliseconds,
+        double? displayedFramesPerSecond = null,
+        int? droppedFrames = null)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
 
@@ -200,6 +204,22 @@ public sealed partial class PerformanceOverlayWindow : Window, IDisposable
             SourceStatusText.Text = processId is int id
                 ? $"PID {id}"
                 : string.Empty;
+            // Wyswietlone FPS tylko przy wlaczonym ustawieniu; bez niego
+            // napis zostaje taki jak dotychczas.
+            if (_showDisplayedFrames
+                && displayedFramesPerSecond is double displayedFps)
+            {
+                SourceStatusText.Text +=
+                    (SourceStatusText.Text.Length > 0 ? " | " : string.Empty)
+                    + "wyśw. "
+                    + displayedFps.ToString("0", CultureInfo.CurrentCulture)
+                    + " FPS"
+                    + (droppedFrames is int dropped
+                        ? " | zgub. "
+                            + dropped.ToString(CultureInfo.CurrentCulture)
+                        : string.Empty);
+            }
+
             RefreshVisibility();
             return;
         }
@@ -246,10 +266,10 @@ public sealed partial class PerformanceOverlayWindow : Window, IDisposable
 
         double[] sorted = [.. _frameTimeHistory];
         Array.Sort(sorted);
-        double worst = sorted[(int)(sorted.Length * 0.99)];
-        return worst <= 0
+        double low = FrameTimeStatistics.CalculateSlowestLow(sorted, 0.01d);
+        return low <= 0
             ? "—"
-            : (1000d / worst).ToString("0", CultureInfo.CurrentCulture)
+            : low.ToString("0", CultureInfo.CurrentCulture)
                 + " min 1%";
     }
 
@@ -272,6 +292,7 @@ public sealed partial class PerformanceOverlayWindow : Window, IDisposable
         ApplyWindowOpacity(preferences.OpacityPercent);
         OverlayScaleTransform.ScaleX = _scale;
         OverlayScaleTransform.ScaleY = _scale;
+        _showDisplayedFrames = preferences.IsDisplayTrackingEnabled;
         SetRequestedVisibility(
             preferences.IsEnabled && preferences.IsFpsTrackingEnabled);
     }
@@ -305,8 +326,22 @@ public sealed partial class PerformanceOverlayWindow : Window, IDisposable
         RefreshVisibility();
     }
 
-    private void OnForegroundTimerTick(object? sender, object args) =>
-        RefreshVisibility();
+    private void OnForegroundTimerTick(object? sender, object args)
+    {
+        try
+        {
+            RefreshVisibility();
+        }
+        catch (Exception exception) when (
+            exception is InvalidOperationException or Win32Exception)
+        {
+            // A monitor or window change can make positioning fail; an
+            // unhandled throw from the timer would end the app. Hide the
+            // overlay and retry on the next tick.
+            HideWindow();
+            _layoutDirty = true;
+        }
+    }
 
     private void RefreshVisibility()
     {

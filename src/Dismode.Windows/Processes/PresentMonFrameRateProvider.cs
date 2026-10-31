@@ -4,11 +4,13 @@ using System.Globalization;
 using System.Security.Cryptography;
 using System.Security.Principal;
 using System.Text;
+using Dismode.Core.Performance;
 using Dismode.Windows.NativeInterop;
+using Dismode.Windows.Sessions;
 
 namespace Dismode.Windows.Processes;
 
-public sealed class PresentMonFrameRateProvider : IFrameRateProvider
+public sealed class PresentMonFrameRateProvider : IFrameRateProvider, ISessionFrameRateStatisticsSource
 {
     private static readonly TimeSpan ObservationWindow =
         TimeSpan.FromSeconds(2);
@@ -19,11 +21,17 @@ public sealed class PresentMonFrameRateProvider : IFrameRateProvider
     private const int MaximumObservationsPerStream = 2_048;
     private const int MaximumInitialCaptureRestarts = 1;
     private const int PresentEventBufferSize = 8_192;
+    private static readonly TimeSpan UnexpectedExitBackoff =
+        TimeSpan.FromSeconds(10);
+    private static readonly TimeSpan StreamSummaryInterval =
+        TimeSpan.FromSeconds(10);
 
     private readonly string _executablePath;
     private readonly string _sessionName;
     private readonly string _legacySessionName;
     private readonly bool _trackGpu;
+    private readonly Func<CancellationToken, ValueTask<bool>>?
+        _displayTrackingSetting;
     private readonly TimeProvider _timeProvider;
     private readonly SemaphoreSlim _lifecycleGate = new(1, 1);
     private readonly object _observationSync = new();
@@ -39,20 +47,37 @@ public sealed class PresentMonFrameRateProvider : IFrameRateProvider
     private DateTimeOffset? _captureStartedAtUtc;
     private int _initialCaptureRestartCount;
     private bool _captureProducedFrame;
+    private string? _stoppedCaptureDiagnostic;
+    private string? _unexpectedExitMessage;
+    private int[] _unexpectedExitTargets = [];
+    private DateTimeOffset _unexpectedExitBackoffUntilUtc;
     private BenchmarkFrameCollector? _benchmarkCollector;
+    private SessionFrameRateStatisticsAccumulator? _sessionStatistics;
+    private FrameStreamKey? _statisticsStream;
+    private readonly Dictionary<FrameStreamKey, PendingStatistics>
+        _pendingStatistics = [];
+    private bool _captureTracksDisplay;
     private bool _disposed;
 
     public PresentMonFrameRateProvider(
         string? executablePath = null,
-        TimeProvider? timeProvider = null)
+        TimeProvider? timeProvider = null,
+        PresentMonCaptureRole captureRole = PresentMonCaptureRole.Session,
+        Func<CancellationToken, ValueTask<bool>>? displayTrackingSetting = null)
     {
         _executablePath = Path.GetFullPath(
             executablePath
             ?? PresentMonComponent.ResolveDefaultExecutablePath());
-        string identityKey = GetCurrentUserIdentityKey();
+        // Sesja gry zostaje przy dotychczasowej nazwie, bo po niej sprzatamy
+        // sierote ze starszych wydan. Nakladka dostaje wlasna — wspolna
+        // nazwa sprawiala, ze oba pomiary zatrzymywaly sie nawzajem.
+        string identityKey = captureRole == PresentMonCaptureRole.Session
+            ? GetCurrentUserIdentityKey()
+            : $"{GetCurrentUserIdentityKey()}|overlay";
         _sessionName = CreateCaptureSessionName(identityKey);
         _legacySessionName = CreateLegacyCaptureSessionName(identityKey);
         _trackGpu = false;
+        _displayTrackingSetting = displayTrackingSetting;
         _timeProvider = timeProvider ?? TimeProvider.System;
     }
 
@@ -60,7 +85,8 @@ public sealed class PresentMonFrameRateProvider : IFrameRateProvider
         string executablePath,
         string captureSessionIdentityKey,
         TimeProvider? timeProvider = null,
-        bool trackGpu = false)
+        bool trackGpu = false,
+        Func<CancellationToken, ValueTask<bool>>? displayTrackingSetting = null)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(
             captureSessionIdentityKey);
@@ -70,10 +96,31 @@ public sealed class PresentMonFrameRateProvider : IFrameRateProvider
         _legacySessionName = CreateLegacyCaptureSessionName(
             captureSessionIdentityKey);
         _trackGpu = trackGpu;
+        _displayTrackingSetting = displayTrackingSetting;
         _timeProvider = timeProvider ?? TimeProvider.System;
     }
 
     internal int? ActiveCaptureProcessId => _captureIdentity?.ProcessId;
+
+    internal string CaptureSessionName => _sessionName;
+
+    internal void SetSessionStatistics(SessionFrameRateStatisticsAccumulator statistics)
+    {
+        lock (_observationSync)
+        {
+            if (ReferenceEquals(_sessionStatistics, statistics))
+            {
+                return;
+            }
+
+            _sessionStatistics = statistics;
+            _statisticsStream = null;
+            _pendingStatistics.Clear();
+        }
+    }
+
+    void ISessionFrameRateStatisticsSource.SetSessionStatistics(
+        SessionFrameRateStatisticsAccumulator statistics) => SetSessionStatistics(statistics);
 
     public static PresentMonFrameRateProvider CreateBenchmarkProvider(
         string? executablePath = null,
@@ -161,6 +208,73 @@ public sealed class PresentMonFrameRateProvider : IFrameRateProvider
         CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(processIds);
+        FrameRateSample sample = await SampleCoreAsync(
+                processIds,
+                cancellationToken)
+            .ConfigureAwait(false);
+
+        // Wpis tylko przy zmianie: inaczej sekunda gry to linia w pliku.
+        string offered = string.Join(
+            ",",
+            processIds.Where(processId => processId > 0).Distinct().Order());
+        if (sample.Status != _lastLoggedStatus
+            || sample.ProcessId != _lastLoggedProcessId
+            || offered != _lastLoggedOffered)
+        {
+            _lastLoggedStatus = sample.Status;
+            _lastLoggedProcessId = sample.ProcessId;
+            _lastLoggedOffered = offered;
+            FrameCaptureLog.Write(
+                $"sample status={sample.Status} measured={sample.ProcessId} "
+                    + $"offered=[{offered}] "
+                    + $"fps={sample.FramesPerSecond?.ToString("F1", CultureInfo.InvariantCulture)} "
+                    + $"msg={sample.Message}"
+                    + $" candidates={DescribeCandidates(processIds)}");
+        }
+
+        return sample;
+    }
+
+    /// <summary>
+    /// The offered processes as the target selection sees them, for the log:
+    /// whether each has a window, its working set and name. Read only when a
+    /// log line is written, so it costs nothing per tick.
+    /// </summary>
+    private static string DescribeCandidates(
+        IReadOnlyCollection<int> processIds)
+    {
+        List<string> described = [];
+        foreach (int processId in processIds.Where(id => id > 0).Distinct())
+        {
+            try
+            {
+                using Process process = Process.GetProcessById(processId);
+                described.Add(
+                    $"{process.ProcessName}:{processId}"
+                        + $":win={process.MainWindowHandle != IntPtr.Zero}"
+                        + $":ws={process.WorkingSet64 / (1024 * 1024)}MB");
+            }
+            catch (Exception exception) when (
+                exception is not OutOfMemoryException)
+            {
+                // Tylko opis do dziennika; nie moze kosztowac probki.
+                described.Add($"?:{processId}");
+            }
+        }
+
+        return "[" + string.Join(" ", described) + "]";
+    }
+
+    private FrameRateStatus? _lastLoggedStatus;
+    private int? _lastLoggedProcessId;
+    private string? _lastLoggedOffered;
+    private DateTimeOffset _lastStreamSummaryUtc;
+    private string? _lastLoggedStderr;
+
+    private async ValueTask<FrameRateSample> SampleCoreAsync(
+        IReadOnlyCollection<int> processIds,
+        CancellationToken cancellationToken)
+    {
         ThrowIfDisposed();
         int[] targets = processIds
             .Where(processId => processId > 0)
@@ -186,6 +300,34 @@ public sealed class PresentMonFrameRateProvider : IFrameRateProvider
         try
         {
             ThrowIfDisposed();
+            DateTimeOffset nowUtc = _timeProvider.GetUtcNow();
+            if (_captureProcess is { HasExited: true }
+                && captureTargets.SequenceEqual(_targetProcessIds)
+                && !_captureProducedFrame
+                && !HasObservations())
+            {
+                // PresentMon died on its own before delivering a frame (no
+                // elevation, lost ETW session, crash). Keep its last words and
+                // back off instead of respawning it on every poll.
+                await StopCaptureCoreAsync().ConfigureAwait(false);
+                _unexpectedExitMessage =
+                    string.IsNullOrWhiteSpace(_stoppedCaptureDiagnostic)
+                        ? "PresentMon zakończył pomiar bez danych klatek."
+                        : _stoppedCaptureDiagnostic;
+                _unexpectedExitTargets = captureTargets;
+                _unexpectedExitBackoffUntilUtc =
+                    nowUtc + UnexpectedExitBackoff;
+                return FrameRateSample.Failed(_unexpectedExitMessage);
+            }
+
+            if (_unexpectedExitMessage is not null
+                && _captureProcess is null
+                && nowUtc < _unexpectedExitBackoffUntilUtc
+                && captureTargets.SequenceEqual(_unexpectedExitTargets))
+            {
+                return FrameRateSample.Failed(_unexpectedExitMessage);
+            }
+
             if (_captureProcess is not null
                 && !_captureProcess.HasExited
                 && captureTargets.SequenceEqual(_targetProcessIds))
@@ -194,6 +336,7 @@ public sealed class PresentMonFrameRateProvider : IFrameRateProvider
                 if (sample.Status == FrameRateStatus.Measuring)
                 {
                     _captureProducedFrame = true;
+                    _unexpectedExitMessage = null;
                     return sample;
                 }
 
@@ -208,21 +351,35 @@ public sealed class PresentMonFrameRateProvider : IFrameRateProvider
                         _initialCaptureRestartCount + 1;
                     await StopCaptureCoreAsync().ConfigureAwait(false);
                     _initialCaptureRestartCount = restartCount;
-                    StartCapture(captureTargets);
+                    StartCapture(captureTargets, _captureTracksDisplay);
                     return FrameRateSample.Restarting(
                         selectedTarget.Value);
                 }
 
                 // Restart nie pomogl, a PresentMon nadal chodzi i nie oddaje
-                // ani jednej klatki. Wczesniej wracalo stad "czekam na gre" —
-                // w kolko, bez konca i bez powodu. Gracz widzial myslniki
-                // i mial prawo uznac, ze pomiar jest zepsuty, bo byl.
+                // ani jednej klatki. To nie jest awaria: gra, ktora sie
+                // laduje, nie wyswietla nic — Valheim przez pierwsze ~30 s.
+                // Wczesniej zwracalismy tu blad obwiniajacy inne narzedzia
+                // pomiarowe, a na tej samej maszynie, przy tej samej usludze
+                // Intela, klatki przyszly, gdy tylko gra zaczela rysowac.
+                // Wieczne myslniki, ktore kiedys tu byly, mialy inna
+                // przyczyne: nakladka i sesja zatrzymywaly sobie nawzajem
+                // sesje ETW (patrz PresentMonCaptureRole). Mowimy wiec prawde:
+                // pomiar dziala i czeka.
                 if (!_captureProducedFrame
                     && _captureStartedAtUtc is DateTimeOffset stalledSince
                     && _timeProvider.GetUtcNow() - stalledSince
                         >= FirstFrameTimeout)
                 {
-                    return FrameRateSample.Failed(DescribeSilentCapture());
+                    return new(
+                        FrameRateStatus.WaitingForGame,
+                        FramesPerSecond: null,
+                        FrameTimeMilliseconds: null,
+                        selectedTarget.Value,
+                        "PresentMon działa, ale gra nie wyświetliła jeszcze "
+                            + "żadnej klatki — zwykle to ekran ładowania albo "
+                            + "zminimalizowane okno. Pomiar ruszy sam, gdy gra "
+                            + "zacznie rysować.");
                 }
 
                 return sample;
@@ -253,9 +410,12 @@ public sealed class PresentMonFrameRateProvider : IFrameRateProvider
                 };
             }
 
+            bool trackDisplay = await ReadDisplayTrackingAsync(
+                    cancellationToken)
+                .ConfigureAwait(false);
             try
             {
-                StartCapture(captureTargets);
+                StartCapture(captureTargets, trackDisplay);
                 return FrameRateSample.Starting(selectedTarget.Value);
             }
             catch (Exception exception) when (
@@ -298,11 +458,20 @@ public sealed class PresentMonFrameRateProvider : IFrameRateProvider
             .ConfigureAwait(false);
         try
         {
+            _unexpectedExitMessage = null;
             await StopCaptureCoreAsync().ConfigureAwait(false);
         }
         finally
         {
             _lifecycleGate.Release();
+        }
+    }
+
+    private bool HasObservations()
+    {
+        lock (_observationSync)
+        {
+            return _observations.Values.Any(stream => stream.Count > 0);
         }
     }
 
@@ -331,80 +500,6 @@ public sealed class PresentMonFrameRateProvider : IFrameRateProvider
 
         _lifecycleGate.Dispose();
         GC.SuppressFinalize(this);
-    }
-
-    /// <summary>
-    /// Names of tools that capture frames through the same ETW providers as
-    /// PresentMon. Only one of them gets the events; the rest see the session
-    /// start, deliver nothing, and report lost events. AMD ships one inside
-    /// Adrenalin and Intel ships one as a service, so a machine can easily
-    /// have two running before Dismode adds a third.
-    /// </summary>
-    private static readonly (string ProcessName, string Owner)[]
-        CompetingCaptureTools =
-        [
-            ("PresentMon-x64", "AMD Adrenalin (metryki wydajności)"),
-            ("PresentMon", "PresentMon firmy Intel"),
-            ("PresentMonService", "usługa PresentMon firmy Intel"),
-            ("RTSS", "RivaTuner Statistics Server"),
-            ("CapFrameX", "CapFrameX"),
-            ("FrameView", "NVIDIA FrameView"),
-        ];
-
-    /// <summary>
-    /// Explains a capture that runs but never produces a frame. Guessing is
-    /// worse than useless here, so the message names what is actually running
-    /// on this machine and repeats PresentMon's own last words verbatim.
-    /// </summary>
-    private string DescribeSilentCapture()
-    {
-        string diagnostic;
-        lock (_observationSync)
-        {
-            diagnostic = _lastDiagnostic ?? string.Empty;
-        }
-
-        string[] found = CompetingCaptureTools
-            .Where(tool => Process
-                .GetProcessesByName(tool.ProcessName)
-                .Any(process =>
-                {
-                    process.Dispose();
-                    return true;
-                }))
-            .Select(tool => tool.Owner)
-            .Distinct(StringComparer.Ordinal)
-            .ToArray();
-
-        StringBuilder message = new(
-            "PresentMon działa, ale nie dostaje ani jednej klatki.");
-        if (found.Length > 0)
-        {
-            message.Append(
-                " Na tym komputerze mierzy już co innego: ");
-            message.Append(string.Join(", ", found));
-            message.Append(
-                ". Zdarzenia klatek trafiają tylko do jednego odbiorcy, więc "
-                + "wyłącz tamten pomiar i spróbuj ponownie.");
-        }
-        else
-        {
-            message.Append(
-                " Najczęstsza przyczyna to porzucona sesja pomiaru, która "
-                + "została po wcześniejszym uruchomieniu i nadal przechwytuje "
-                + "zdarzenia klatek. Sprawdź poleceniem "
-                + "\"logman query -ets\", czy działa sesja o nazwie "
-                + "zaczynającej się od Dismode, i zatrzymaj ją poleceniem "
-                + "\"logman stop NAZWA -ets\".");
-        }
-
-        if (!string.IsNullOrWhiteSpace(diagnostic))
-        {
-            message.Append(" PresentMon zgłasza: ");
-            message.Append(diagnostic);
-        }
-
-        return message.ToString();
     }
 
     private bool _staleSessionsChecked;
@@ -449,7 +544,69 @@ public sealed class PresentMonFrameRateProvider : IFrameRateProvider
         }
     }
 
-    private void StartCapture(int[] targets)
+    // Ustawienie jest czytane przy starcie kazdego pomiaru; blad odczytu
+    // zostawia sledzenie wylaczone, czyli dotychczasowe zachowanie.
+    private async ValueTask<bool> ReadDisplayTrackingAsync(
+        CancellationToken cancellationToken)
+    {
+        if (_displayTrackingSetting is null)
+        {
+            return false;
+        }
+
+        try
+        {
+            return await _displayTrackingSetting(cancellationToken)
+                .ConfigureAwait(false);
+        }
+        catch (Exception exception) when (
+            exception is not OperationCanceledException
+                and not OutOfMemoryException)
+        {
+            return false;
+        }
+    }
+
+    internal static IReadOnlyList<string> BuildCaptureArguments(
+        IReadOnlyList<int> targets,
+        bool trackGpu,
+        bool trackDisplay,
+        string sessionName)
+    {
+        List<string> arguments = [];
+        foreach (int processId in targets)
+        {
+            arguments.Add("--process_id");
+            arguments.Add(
+                processId.ToString(CultureInfo.InvariantCulture));
+        }
+
+        arguments.Add("--output_stdout");
+        arguments.Add("--no_console_stats");
+        arguments.Add("--v2_metrics");
+        if (!trackDisplay)
+        {
+            arguments.Add("--no_track_display");
+        }
+
+        if (!trackGpu)
+        {
+            arguments.Add("--no_track_gpu");
+        }
+
+        arguments.Add("--no_track_input");
+        arguments.Add("--set_circular_buffer_size");
+        arguments.Add(
+            PresentEventBufferSize.ToString(
+                CultureInfo.InvariantCulture));
+        arguments.Add("--terminate_on_proc_exit");
+        arguments.Add("--stop_existing_session");
+        arguments.Add("--session_name");
+        arguments.Add(sessionName);
+        return arguments;
+    }
+
+    private void StartCapture(int[] targets, bool trackDisplay)
     {
         StopStaleSessionsOnce();
         if (targets.Length != 1)
@@ -473,30 +630,14 @@ public sealed class PresentMonFrameRateProvider : IFrameRateProvider
             StandardOutputEncoding = Encoding.UTF8,
             StandardErrorEncoding = Encoding.UTF8,
         };
-        foreach (int processId in targets)
+        foreach (string argument in BuildCaptureArguments(
+                     targets,
+                     _trackGpu,
+                     trackDisplay,
+                     _sessionName))
         {
-            startInfo.ArgumentList.Add("--process_id");
-            startInfo.ArgumentList.Add(
-                processId.ToString(CultureInfo.InvariantCulture));
+            startInfo.ArgumentList.Add(argument);
         }
-
-        startInfo.ArgumentList.Add("--output_stdout");
-        startInfo.ArgumentList.Add("--no_console_stats");
-        startInfo.ArgumentList.Add("--v2_metrics");
-        startInfo.ArgumentList.Add("--no_track_display");
-        if (!_trackGpu)
-        {
-            startInfo.ArgumentList.Add("--no_track_gpu");
-        }
-        startInfo.ArgumentList.Add("--no_track_input");
-        startInfo.ArgumentList.Add("--set_circular_buffer_size");
-        startInfo.ArgumentList.Add(
-            PresentEventBufferSize.ToString(
-                CultureInfo.InvariantCulture));
-        startInfo.ArgumentList.Add("--terminate_on_proc_exit");
-        startInfo.ArgumentList.Add("--stop_existing_session");
-        startInfo.ArgumentList.Add("--session_name");
-        startInfo.ArgumentList.Add(_sessionName);
 
         Process process = new()
         {
@@ -513,6 +654,9 @@ public sealed class PresentMonFrameRateProvider : IFrameRateProvider
             }
 
             processStarted = true;
+            FrameCaptureLog.Write(
+                $"capture start presentmon={process.Id} target={targets[0]} "
+                    + $"args={string.Join(' ', startInfo.ArgumentList)}");
             CaptureProcessIdentity captureIdentity =
                 CaptureOwnedChildIdentity(process);
             CancellationTokenSource captureCancellation = new();
@@ -522,6 +666,7 @@ public sealed class PresentMonFrameRateProvider : IFrameRateProvider
             _targetProcessIds = [.. targets];
             _captureStartedAtUtc = _timeProvider.GetUtcNow();
             _captureProducedFrame = false;
+            _captureTracksDisplay = trackDisplay;
             lock (_observationSync)
             {
                 _observations.Clear();
@@ -559,7 +704,7 @@ public sealed class PresentMonFrameRateProvider : IFrameRateProvider
         HashSet<int> targets,
         CancellationToken cancellationToken)
     {
-        PresentMonCsvParser parser = new();
+        PresentMonCsvParser parser = new(_captureTracksDisplay);
         try
         {
             while (true)
@@ -626,6 +771,15 @@ public sealed class PresentMonFrameRateProvider : IFrameRateProvider
                 {
                     _lastDiagnostic = line.Trim();
                 }
+
+                // Powtorzona linia (np. utracone zdarzenia co sekunde) idzie
+                // do pliku raz, inaczej zalalaby dziennik.
+                string trimmed = line.Trim();
+                if (trimmed != _lastLoggedStderr)
+                {
+                    _lastLoggedStderr = trimmed;
+                    FrameCaptureLog.Write("presentmon stderr: " + trimmed);
+                }
             }
         }
         catch (OperationCanceledException)
@@ -655,6 +809,34 @@ public sealed class PresentMonFrameRateProvider : IFrameRateProvider
         lock (_observationSync)
         {
             _benchmarkCollector?.Add(frame);
+            if (_sessionStatistics is not null)
+            {
+                if (key == _statisticsStream)
+                {
+                    _sessionStatistics.Add(
+                        frame.FrameTimeMilliseconds,
+                        frame.DisplayedTimeMilliseconds,
+                        frame.IsDropped);
+                }
+                else
+                {
+                    if (!_pendingStatistics.TryGetValue(key, out PendingStatistics? pending))
+                    {
+                        pending = new();
+                        _pendingStatistics.Add(key, pending);
+                    }
+
+                    pending.Present.Add(frame.FrameTimeMilliseconds);
+                    if (frame.DisplayedTimeMilliseconds is double displayed)
+                    {
+                        (pending.Displayed ??= new()).Add(displayed);
+                    }
+                    else if (frame.IsDropped)
+                    {
+                        pending.Dropped++;
+                    }
+                }
+            }
             if (!_observations.TryGetValue(
                     key,
                     out Queue<FrameObservation>? stream))
@@ -664,7 +846,11 @@ public sealed class PresentMonFrameRateProvider : IFrameRateProvider
             }
 
             stream.Enqueue(
-                new(observedAtUtc, frame.FrameTimeMilliseconds));
+                new(
+                    observedAtUtc,
+                    frame.FrameTimeMilliseconds,
+                    frame.DisplayTracked,
+                    frame.DisplayedTimeMilliseconds));
             while (stream.Count > MaximumObservationsPerStream)
             {
                 _ = stream.Dequeue();
@@ -676,10 +862,49 @@ public sealed class PresentMonFrameRateProvider : IFrameRateProvider
 
     private FrameRateSample CreateCurrentSample()
     {
+        FrameRateSample sample = CreateCurrentSampleCore(
+            out string? streamSummary);
+
+        // Zapis poza blokada: ta sama blokada chroni czytnik klatek, a dysk
+        // albo antywirus potrafi zatrzymac zapis na dluzej.
+        if (streamSummary is not null)
+        {
+            FrameCaptureLog.Write(streamSummary);
+        }
+
+        return sample;
+    }
+
+    private FrameRateSample CreateCurrentSampleCore(
+        out string? streamSummary)
+    {
+        streamSummary = null;
         DateTimeOffset now = _timeProvider.GetUtcNow();
         lock (_observationSync)
         {
             RemoveStaleObservations(now);
+            if (now - _lastStreamSummaryUtc >= StreamSummaryInterval)
+            {
+                _lastStreamSummaryUtc = now;
+                streamSummary =
+                    "streams "
+                        + (_observations.Count == 0
+                            ? "none"
+                            : string.Join(
+                                " ",
+                                _observations.Select(pair =>
+                                    $"pid={pair.Key.ProcessId}"
+                                        + $"/sc={pair.Key.SwapChainAddress}"
+                                        + $"/n={pair.Value.Count}"
+                                        + "/avgMs="
+                                        + pair.Value
+                                            .Average(observation =>
+                                                observation.FrameTimeMilliseconds)
+                                            .ToString(
+                                                "F2",
+                                                CultureInfo.InvariantCulture))));
+            }
+
             KeyValuePair<FrameStreamKey, Queue<FrameObservation>>? best =
                 _observations
                     .Where(pair => pair.Value.Count > 0)
@@ -711,13 +936,53 @@ public sealed class PresentMonFrameRateProvider : IFrameRateProvider
                     "PresentMon zwrócił nieprawidłowy czas klatki.");
             }
 
+            SelectStatisticsStream(best.Value.Key);
+
+            // Pola wyswietlania tylko przy sledzeniu wyswietlania; bez niego
+            // (ustawienie wylaczone albo brak kolumny) probka jest taka jak
+            // dotychczas.
+            double? displayedFramesPerSecond = null;
+            int? droppedFrames = null;
+            if (best.Value.Value.Any(observation => observation.DisplayTracked))
+            {
+                int displayedCount = 0;
+                double displayedTotal = 0d;
+                int dropped = 0;
+                foreach (FrameObservation observation in best.Value.Value)
+                {
+                    if (observation.DisplayedTimeMilliseconds is double displayed)
+                    {
+                        displayedCount++;
+                        displayedTotal += displayed;
+                    }
+                    else if (observation.DisplayTracked)
+                    {
+                        dropped++;
+                    }
+                }
+
+                if (displayedCount > 0)
+                {
+                    double displayedFps = 1000d * displayedCount / displayedTotal;
+                    if (double.IsFinite(displayedFps)
+                        && displayedFps is > 0 and <= 10_000)
+                    {
+                        displayedFramesPerSecond = displayedFps;
+                    }
+                }
+
+                droppedFrames = dropped;
+            }
+
             return new(
                 FrameRateStatus.Measuring,
                 framesPerSecond,
                 averageFrameTime,
                 best.Value.Key.ProcessId,
                 $"FPS zmierzony przez PresentMon {PresentMonComponent.Version} "
-                + "dla zweryfikowanego PID gry.");
+                + "dla zweryfikowanego PID gry.",
+                displayedFramesPerSecond,
+                droppedFrames);
         }
     }
 
@@ -736,8 +1001,26 @@ public sealed class PresentMonFrameRateProvider : IFrameRateProvider
             if (stream.Count == 0)
             {
                 _ = _observations.Remove(key);
+                _pendingStatistics.Remove(key);
             }
         }
+    }
+
+    private void SelectStatisticsStream(FrameStreamKey key)
+    {
+        // Pierwszy odczyt wybiera strumien jak pomiar okienkowy. Histogram
+        // zachowuje tez klatki sprzed tego wyboru, bez limitu kolejki wykresu.
+        // Po wyborze kazda klatka tego strumienia trafia wprost do sesji.
+        if (_pendingStatistics.Remove(key, out PendingStatistics? pending))
+        {
+            _sessionStatistics?.Merge(
+                pending.Present,
+                pending.Displayed,
+                pending.Dropped);
+        }
+
+        _statisticsStream = key;
+        _pendingStatistics.Clear();
     }
 
     internal static int? SelectCaptureTargetProcessId(
@@ -875,6 +1158,13 @@ public sealed class PresentMonFrameRateProvider : IFrameRateProvider
             .ConfigureAwait(false);
         captureCancellation?.Dispose();
         process.Dispose();
+        lock (_observationSync)
+        {
+            // Readers have drained, so this is PresentMon's final word;
+            // ResetCaptureState is about to clear it.
+            _stoppedCaptureDiagnostic = _lastDiagnostic;
+        }
+
         ResetCaptureState();
         if (readerFailure is not null)
         {
@@ -1153,6 +1443,17 @@ public sealed class PresentMonFrameRateProvider : IFrameRateProvider
         _initialCaptureRestartCount = 0;
         lock (_observationSync)
         {
+            if (_statisticsStream is null && _observations.Count > 0)
+            {
+                FrameStreamKey best = _observations
+                    .OrderByDescending(pair => pair.Value.Count)
+                    .ThenByDescending(pair => pair.Value.Last().ObservedAtUtc)
+                    .First().Key;
+                SelectStatisticsStream(best);
+            }
+
+            _statisticsStream = null;
+            _pendingStatistics.Clear();
             _observations.Clear();
             _lastDiagnostic = null;
         }
@@ -1202,7 +1503,19 @@ public sealed class PresentMonFrameRateProvider : IFrameRateProvider
 
     private readonly record struct FrameObservation(
         DateTimeOffset ObservedAtUtc,
-        double FrameTimeMilliseconds);
+        double FrameTimeMilliseconds,
+        bool DisplayTracked = false,
+        double? DisplayedTimeMilliseconds = null);
+
+    private sealed class PendingStatistics
+    {
+        internal FrameTimeHistogram Present { get; } = new();
+
+        // Tworzony przy pierwszej wyswietlonej klatce (~2,4 MB).
+        internal FrameTimeHistogram? Displayed { get; set; }
+
+        internal int Dropped { get; set; }
+    }
 
     private readonly record struct CaptureTargetCandidate(
         int ProcessId,

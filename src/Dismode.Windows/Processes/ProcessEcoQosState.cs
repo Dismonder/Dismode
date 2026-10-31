@@ -1,3 +1,9 @@
+using System.Text.Json.Serialization;
+
 namespace Dismode.Windows.Processes;
 
-public sealed record ProcessEcoQosState(bool ExecutionSpeedThrottled);
+[JsonConverter(typeof(ProcessEcoQosStateJsonConverter))]
+public sealed record ProcessEcoQosState(EcoQosMode Mode)
+{
+    public bool ExecutionSpeedThrottled => Mode == EcoQosMode.On;
+}

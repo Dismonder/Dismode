@@ -8,6 +8,9 @@ namespace Dismode.Windows.Processes;
 internal static class ProcessPowerThrottlingController
 {
     internal static ProcessEcoQosState Read(Process process)
+        => new(ReadMode(ReadNative(process)));
+
+    private static ProcessPowerThrottlingState ReadNative(Process process)
     {
         ProcessPowerThrottlingState state = new()
         {
@@ -24,24 +27,57 @@ internal static class ProcessPowerThrottlingController
             throw new Win32Exception();
         }
 
-        bool executionSpeedThrottled =
-            (state.StateMask
-                & ProcessNativeMethods.ProcessPowerThrottlingExecutionSpeed) != 0;
-        return new(executionSpeedThrottled);
+        return state;
     }
 
-    internal static void Set(Process process, bool enabled)
+    internal static EcoQosMode ReadMode(ProcessPowerThrottlingState state)
     {
-        ProcessPowerThrottlingState state = new()
+        const uint executionSpeed = ProcessNativeMethods.ProcessPowerThrottlingExecutionSpeed;
+        return (state.ControlMask & executionSpeed) == 0
+            ? EcoQosMode.SystemManaged
+            : (state.StateMask & executionSpeed) != 0 ? EcoQosMode.On : EcoQosMode.Off;
+    }
+
+    internal static ProcessPowerThrottlingState WithMode(
+        ProcessPowerThrottlingState state,
+        EcoQosMode mode)
+    {
+        if (!Enum.IsDefined(mode))
         {
-            Version =
-                ProcessNativeMethods.ProcessPowerThrottlingCurrentVersion,
-            ControlMask =
-                ProcessNativeMethods.ProcessPowerThrottlingExecutionSpeed,
-            StateMask = enabled
-                ? ProcessNativeMethods.ProcessPowerThrottlingExecutionSpeed
-                : 0,
-        };
+            throw new ArgumentOutOfRangeException(nameof(mode));
+        }
+
+        const uint executionSpeed = ProcessNativeMethods.ProcessPowerThrottlingExecutionSpeed;
+        state.ControlMask = (state.ControlMask & ~executionSpeed)
+            | (mode == EcoQosMode.SystemManaged ? 0u : executionSpeed);
+        state.StateMask = (state.StateMask & ~executionSpeed)
+            | (mode == EcoQosMode.On ? executionSpeed : 0u);
+        return state;
+    }
+
+    internal static void Set(Process process, EcoQosMode mode, EcoQosMode expectedMode)
+    {
+        ProcessPowerThrottlingState original = ReadNative(process);
+        EcoQosMode currentMode = ReadMode(original);
+        if (currentMode == mode)
+        {
+            return;
+        }
+
+        if (currentMode != expectedMode)
+        {
+            throw new InvalidOperationException(
+                "Wykryto zewnętrzną zmianę trybu EcoQoS; zachowano bieżący stan.");
+        }
+
+        // Modyfikujemy tylko ExecutionSpeed; pozostale bity naleza do innych ustawien.
+        ProcessPowerThrottlingState state = WithMode(original, mode);
+        ProcessPowerThrottlingState latest = ReadNative(process);
+        if (latest.ControlMask != original.ControlMask || latest.StateMask != original.StateMask)
+        {
+            throw new InvalidOperationException(
+                "Stan ograniczania mocy procesu zmienił się przed zapisem EcoQoS.");
+        }
 
         if (ProcessNativeMethods.SetProcessInformation(
                 process.SafeHandle,

@@ -139,6 +139,8 @@ public sealed partial class MainWindow : Window, IDisposable
     private bool _isLoadingOptimizationPreferences;
     private bool _isLoadingOverlayPreferences;
     private bool _suppressFpsSettingEvents;
+    // Czytane przez watek pomiaru nakladki przy starcie PresentMon.
+    private volatile bool _displayTrackingEnabled;
     private bool _isOverlaySettingsSaveRunning;
     private int _frameRateTrackingUpdateRevision;
     private bool _isLoadingUpdatePreferences;
@@ -1017,6 +1019,38 @@ public sealed partial class MainWindow : Window, IDisposable
         object sender,
         RoutedEventArgs args) =>
         ApplyFpsOverlaySettingFromToggle(sender);
+
+    private void OnDisplayedFramesSettingChanged(
+        object sender,
+        RoutedEventArgs args)
+    {
+        if (_suppressFpsSettingEvents)
+        {
+            return;
+        }
+
+        _displayTrackingEnabled = DisplayedFramesSettingsToggleSwitch.IsOn;
+        ApplyOverlaySettingsFromControls(scheduleSave: true);
+    }
+
+    private void SetDisplayTrackingToggleValue(bool enabled)
+    {
+        if (DisplayedFramesSettingsToggleSwitch is null)
+        {
+            return;
+        }
+
+        _suppressFpsSettingEvents = true;
+        try
+        {
+            DisplayedFramesSettingsToggleSwitch.IsOn = enabled;
+            _displayTrackingEnabled = enabled;
+        }
+        finally
+        {
+            _suppressFpsSettingEvents = false;
+        }
+    }
 
     /// <summary>
     /// Fills in what the machine actually reports, so the setting below is read
@@ -3214,13 +3248,17 @@ public sealed partial class MainWindow : Window, IDisposable
                 _lifetime.Token);
             ClearPreparedPlan();
             ApplyCompletedSession(completed);
-            await RefreshDashboardRecoveryStatusAsync(_lifetime.Token);
-            await LoadHistoryAsync(_lifetime.Token);
+            bool refreshed = await TryRefreshAfterSessionEndAsync(
+                _lifetime.Token);
             ShowInfo(
                 PlanInfoBar,
-                InfoBarSeverity.Success,
+                refreshed
+                    ? InfoBarSeverity.Success
+                    : InfoBarSeverity.Warning,
                 "Aplikacje przywrócone",
-                completed.Message);
+                refreshed
+                    ? completed.Message
+                    : completed.Message + HistoryRefreshFailedSuffix);
         }
         catch (OperationCanceledException)
             when (_lifetime.IsCancellationRequested)
@@ -3268,13 +3306,17 @@ public sealed partial class MainWindow : Window, IDisposable
                 active.ProfileId,
                 _lifetime.Token);
             ApplyCompletedSession(result);
-            await RefreshDashboardRecoveryStatusAsync(_lifetime.Token);
-            await LoadHistoryAsync(_lifetime.Token);
+            bool refreshed = await TryRefreshAfterSessionEndAsync(
+                _lifetime.Token);
             ShowInfo(
                 PlanInfoBar,
-                InfoBarSeverity.Success,
+                refreshed
+                    ? InfoBarSeverity.Success
+                    : InfoBarSeverity.Warning,
                 "Gra zakończona natychmiast",
-                result.Message);
+                refreshed
+                    ? result.Message
+                    : result.Message + HistoryRefreshFailedSuffix);
         }
         catch (OperationCanceledException)
             when (_lifetime.IsCancellationRequested)
@@ -3314,12 +3356,25 @@ public sealed partial class MainWindow : Window, IDisposable
                 UpdateDashboardSystemMetrics();
             }
 
-            await RefreshActiveSessionCoreAsync(_lifetime.Token);
-            await OptimizeDetectedGameAutomaticallyAsync(_lifetime.Token);
+            // Read once: after Dispose the source no longer hands out a token.
+            CancellationToken token = _lifetime.Token;
+            await RefreshActiveSessionCoreAsync(token);
+            await OptimizeDetectedGameAutomaticallyAsync(token);
         }
         catch (OperationCanceledException)
             when (_lifetime.IsCancellationRequested)
         {
+        }
+        catch (ObjectDisposedException) when (_disposed)
+        {
+        }
+        catch (Exception exception) when (IsExpectedUiFailure(exception))
+        {
+            ShowInfo(
+                PlanInfoBar,
+                InfoBarSeverity.Warning,
+                "Nie odświeżono stanu sesji",
+                exception.Message);
         }
         finally
         {
@@ -4339,6 +4394,29 @@ public sealed partial class MainWindow : Window, IDisposable
         UpdateDashboardRecoveryState(_activeSession);
     }
 
+    private const string HistoryRefreshFailedSuffix =
+        " Historia nie została odświeżona.";
+
+    /// <summary>
+    /// Refreshes recovery status and history after a session has already
+    /// ended. A failure here must not be reported as a failed session end.
+    /// </summary>
+    private async Task<bool> TryRefreshAfterSessionEndAsync(
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            await RefreshDashboardRecoveryStatusAsync(cancellationToken);
+            await LoadHistoryAsync(cancellationToken);
+            return true;
+        }
+        catch (Exception exception) when (IsExpectedUiFailure(exception)
+            && exception is not ObjectDisposedException)
+        {
+            return false;
+        }
+    }
+
     private async Task RefreshActiveSessionCoreAsync(
         CancellationToken cancellationToken)
     {
@@ -4386,8 +4464,15 @@ public sealed partial class MainWindow : Window, IDisposable
                 await SuppressRunningInstancesOfEndedSessionAsync(
                     previous.ProfileId,
                     cancellationToken);
-                await RefreshDashboardRecoveryStatusAsync(cancellationToken);
-                await LoadHistoryAsync(cancellationToken);
+                if (!await TryRefreshAfterSessionEndAsync(cancellationToken))
+                {
+                    ShowInfo(
+                        PlanInfoBar,
+                        InfoBarSeverity.Warning,
+                        "Sesja zakończona",
+                        HistoryRefreshFailedSuffix.TrimStart());
+                }
+
                 _ = CompleteDeferredStartupAsync(cancellationToken);
                 _ = CompleteDeferredAutomaticUpdateAsync(cancellationToken);
             }
@@ -5217,7 +5302,9 @@ public sealed partial class MainWindow : Window, IDisposable
                     _loadedPreferences.GamePriority,
                     _loadedPreferences.BackgroundRules,
                     DateTimeOffset.UtcNow,
-                    enabled);
+                    enabled,
+                    _loadedPreferences.PinGameToPreferredCores,
+                    _loadedPreferences.KeepAwakeDuringSession);
             }
         }
         catch (OperationCanceledException)
@@ -5232,6 +5319,102 @@ public sealed partial class MainWindow : Window, IDisposable
                 "Nie zapisano wyjątku automatu dla gry",
                 "Ustawienie działa do ponownego uruchomienia. "
                 + exception.Message);
+        }
+    }
+
+    /// <summary>
+    /// Przypinanie gry do rdzeni wydajnych per gra. Zapis od razu, tak jak
+    /// wyjatek automatu; sesja czyta wartosc przy starcie.
+    /// </summary>
+    private async void OnPinGameToPreferredCoresCheckBoxClicked(
+        object sender,
+        RoutedEventArgs args)
+    {
+        if (ProfilesList.SelectedItem is not ProfileListItem selected
+            || PinGameToPreferredCoresCheckBox is null)
+        {
+            return;
+        }
+
+        bool enabled = PinGameToPreferredCoresCheckBox.IsChecked != false;
+        try
+        {
+            await _userDataStore.SetGamePinningForProfileAsync(
+                selected.Profile.ProfileId,
+                enabled,
+                _lifetime.Token);
+            if (_loadedPreferences is not null
+                && _loadedPreferences.ProfileId == selected.Profile.ProfileId)
+            {
+                _loadedPreferences = new(
+                    _loadedPreferences.ProfileId,
+                    _loadedPreferences.GamePriority,
+                    _loadedPreferences.BackgroundRules,
+                    DateTimeOffset.UtcNow,
+                    _loadedPreferences.AutoOptimizeWhenDetected,
+                    enabled,
+                    _loadedPreferences.KeepAwakeDuringSession);
+            }
+        }
+        catch (OperationCanceledException)
+            when (_lifetime.IsCancellationRequested)
+        {
+        }
+        catch (Exception exception) when (IsExpectedUiFailure(exception))
+        {
+            ShowInfo(
+                PlanInfoBar,
+                InfoBarSeverity.Error,
+                "Nie zapisano przypinania gry do rdzeni",
+                exception.Message);
+        }
+    }
+
+    /// <summary>
+    /// Utrzymanie ekranu i systemu w trakcie sesji, per gra. Zapis od razu;
+    /// sesja czyta wartosc przy starcie.
+    /// </summary>
+    private async void OnKeepAwakeDuringSessionCheckBoxClicked(
+        object sender,
+        RoutedEventArgs args)
+    {
+        if (ProfilesList.SelectedItem is not ProfileListItem selected
+            || KeepAwakeDuringSessionCheckBox is null)
+        {
+            return;
+        }
+
+        bool enabled = KeepAwakeDuringSessionCheckBox.IsChecked != false;
+        try
+        {
+            await _userDataStore.SetKeepAwakeForProfileAsync(
+                selected.Profile.ProfileId,
+                enabled,
+                _lifetime.Token);
+            if (_loadedPreferences is not null
+                && _loadedPreferences.ProfileId == selected.Profile.ProfileId)
+            {
+                _loadedPreferences = new(
+                    _loadedPreferences.ProfileId,
+                    _loadedPreferences.GamePriority,
+                    _loadedPreferences.BackgroundRules,
+                    DateTimeOffset.UtcNow,
+                    _loadedPreferences.AutoOptimizeWhenDetected,
+                    _loadedPreferences.PinGameToPreferredCores,
+                    enabled);
+            }
+        }
+        catch (OperationCanceledException)
+            when (_lifetime.IsCancellationRequested)
+        {
+        }
+        catch (Exception exception) when (IsExpectedUiFailure(exception))
+        {
+            ShowInfo(
+                PlanInfoBar,
+                InfoBarSeverity.Error,
+                "Nie zapisano utrzymania ekranu w trakcie sesji",
+                exception.Message);
         }
     }
 
@@ -5490,6 +5673,8 @@ public sealed partial class MainWindow : Window, IDisposable
             _isLoadingOverlayPreferences = true;
             SetFpsTrackingToggleValues(preferences.IsFpsTrackingEnabled);
             SetFpsOverlayToggleValues(preferences.IsEnabled);
+            SetDisplayTrackingToggleValue(
+                preferences.IsDisplayTrackingEnabled);
             OverlayOpacitySlider.Value = preferences.OpacityPercent;
             OverlaySizeSlider.Value = preferences.ScalePercent;
             OverlayCornerSelector.SelectedIndex =
@@ -5595,6 +5780,7 @@ public sealed partial class MainWindow : Window, IDisposable
         new(
             FpsOverlayToggleSwitch.IsOn,
             FpsTrackingToggleSwitch.IsOn,
+            DisplayedFramesSettingsToggleSwitch.IsOn,
             GetOverlayOpacityPercent(),
             GetOverlayScalePercent(),
             GetSelectedOverlayCorner(),
@@ -5694,16 +5880,25 @@ public sealed partial class MainWindow : Window, IDisposable
         _overlayPollInFlight = true;
         try
         {
-            _foregroundGameWatcher ??= new();
+            _foregroundGameWatcher ??= new(
+                displayTrackingSetting: _ =>
+                    ValueTask.FromResult(_displayTrackingEnabled));
+            CancellationToken token = _lifetime.Token;
             ForegroundGameSample sample = await _foregroundGameWatcher
-                .SampleAsync(_lifetime.Token);
+                .SampleAsync(token);
+            if (_disposed || token.IsCancellationRequested)
+            {
+                return;
+            }
 
             _performanceOverlay ??= new();
             _performanceOverlay.Update(
                 sample.ProcessName,
                 sample.ProcessId,
                 sample.FramesPerSecond,
-                sample.FrameTimeMilliseconds);
+                sample.FrameTimeMilliseconds,
+                sample.DisplayedFramesPerSecond,
+                sample.DroppedFrames);
             _performanceOverlay.ApplyPreferences(
                 CreatePerformanceOverlayPreferencesFromControls());
         }
@@ -6387,6 +6582,10 @@ public sealed partial class MainWindow : Window, IDisposable
             // programowej zmianie, wiec nic sie tu nie zapisuje ponownie.
             AutoOptimizeGameCheckBox.IsChecked =
                 preferences.AutoOptimizeWhenDetected;
+            PinGameToPreferredCoresCheckBox.IsChecked =
+                preferences.PinGameToPreferredCores;
+            KeepAwakeDuringSessionCheckBox.IsChecked =
+                preferences.KeepAwakeDuringSession;
         }
         catch (OperationCanceledException)
             when (_lifetime.IsCancellationRequested)
@@ -6651,7 +6850,11 @@ public sealed partial class MainWindow : Window, IDisposable
             rules,
             DateTimeOffset.UtcNow,
             autoOptimizeWhenDetected:
-                AutoOptimizeGameCheckBox.IsChecked != false);
+                AutoOptimizeGameCheckBox.IsChecked != false,
+            pinGameToPreferredCores:
+                PinGameToPreferredCoresCheckBox.IsChecked != false,
+            keepAwakeDuringSession:
+                KeepAwakeDuringSessionCheckBox.IsChecked != false);
         await _userDataStore.SaveOptimizationPreferencesAsync(
             preferences,
             cancellationToken);
@@ -7060,9 +7263,12 @@ public sealed partial class MainWindow : Window, IDisposable
             string gameModeDesc = report.GameModeEnabled
                 ? "Włączony (Optymalnie)"
                 : "Wyłączony";
-            string dvrDesc = report.BackgroundRecordingEnabled
-                ? "Włączone (Zużywa zasoby GPU)"
-                : "Wyłączone (Optymalnie)";
+            string dvrDesc = report.BackgroundRecordingEnabled switch
+            {
+                true => "Włączone (Zużywa zasoby GPU)",
+                false => "Wyłączone (Optymalnie)",
+                null => "Nieznane",
+            };
 
             DiagnosticsGamingEnvironmentText.Text =
                 $"Planowanie GPU (HAGS): {hagsDesc}\n"

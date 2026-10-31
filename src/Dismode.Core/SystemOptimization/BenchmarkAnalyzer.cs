@@ -1,4 +1,5 @@
 using Dismode.Contracts.SystemOptimization;
+using Dismode.Core.Performance;
 
 namespace Dismode.Core.SystemOptimization;
 
@@ -54,12 +55,12 @@ public static class BenchmarkAnalyzer
 
         Array.Sort(validFrameTimes);
         double averageFrameTime = validFrameTimes.Average();
-        double median = Percentile(validFrameTimes, 0.50d);
-        double p95 = Percentile(validFrameTimes, 0.95d);
-        double p99 = Percentile(validFrameTimes, 0.99d);
-        double onePercentLow = CalculateSlowestLow(validFrameTimes, 0.01d);
-        double pointOnePercentLow = CalculateSlowestLow(validFrameTimes, 0.001d);
-        double hitchThreshold = Math.Max(50d, median * 3d);
+        double median = FrameTimeStatistics.Percentile(validFrameTimes, 0.50d);
+        double p95 = FrameTimeStatistics.Percentile(validFrameTimes, 0.95d);
+        double p99 = FrameTimeStatistics.Percentile(validFrameTimes, 0.99d);
+        double onePercentLow = FrameTimeStatistics.CalculateSlowestLow(validFrameTimes, 0.01d);
+        double pointOnePercentLow = FrameTimeStatistics.CalculateSlowestLow(validFrameTimes, 0.001d);
+        double hitchThreshold = FrameTimeStatistics.HitchThreshold(median);
         int hitchCount = validFrameTimes.Count(value => value > hitchThreshold);
         double hitchRate = hitchCount * 100d / validFrameTimes.Length;
         BlockStability stability = CalculateBlockStability(
@@ -86,35 +87,6 @@ public static class BenchmarkAnalyzer
             AverageCpuPercent: capture.AverageCpuPercent,
             AverageGpuBusyPercent: capture.AverageGpuBusyPercent,
             AverageUsedRamBytes: capture.AverageUsedRamBytes);
-    }
-
-    private static double Percentile(double[] sortedValues, double percentile)
-    {
-        double position = percentile * (sortedValues.Length - 1);
-        int lower = (int)Math.Floor(position);
-        int upper = (int)Math.Ceiling(position);
-        if (lower == upper)
-        {
-            return sortedValues[lower];
-        }
-
-        double fraction = position - lower;
-        return sortedValues[lower]
-            + ((sortedValues[upper] - sortedValues[lower]) * fraction);
-    }
-
-    private static double CalculateSlowestLow(
-        double[] sortedFrameTimes,
-        double fraction)
-    {
-        int sampleCount = Math.Max(
-            1,
-            (int)Math.Ceiling(sortedFrameTimes.Length * fraction));
-        double slowestAverage = sortedFrameTimes
-            .AsSpan(sortedFrameTimes.Length - sampleCount, sampleCount)
-            .ToArray()
-            .Average();
-        return 1000d / slowestAverage;
     }
 
     private static BlockStability CalculateBlockStability(

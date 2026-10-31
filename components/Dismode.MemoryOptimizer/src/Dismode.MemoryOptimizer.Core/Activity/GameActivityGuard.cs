@@ -105,15 +105,17 @@ public static class GameActivityEvaluator
             {
                 foreach (string executable in game.ExecutableNames)
                 {
-                    knownExecutables.Add(Path.GetFileNameWithoutExtension(
-                        executable));
+                    knownExecutables.Add(
+                        MemoryOptimizerSettings.NormalizeProcessName(
+                            executable));
                 }
             }
         }
 
         foreach (RunningProcessInfo process in processes)
         {
-            string name = Path.GetFileNameWithoutExtension(process.Name);
+            string name = MemoryOptimizerSettings.NormalizeProcessName(
+                process.Name);
             if (knownExecutables.Contains(name))
             {
                 return new(

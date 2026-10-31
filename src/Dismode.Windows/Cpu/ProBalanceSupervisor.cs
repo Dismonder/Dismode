@@ -43,6 +43,7 @@ public sealed class ProBalanceSupervisor : IAsyncDisposable
     // Jawnie podany odstep jest staly (testy, wlasny rytm wolajacego).
     // Bez niego rytm wybiera ProBalanceCadence z ustawien.
     private readonly TimeSpan? _fixedInterval;
+    private readonly Func<int> _foregroundProcessId;
     private readonly SemaphoreSlim _gate = new(1, 1);
     private double _lastBackgroundCores;
     private int _lastRestrainedCount;
@@ -56,7 +57,8 @@ public sealed class ProBalanceSupervisor : IAsyncDisposable
         Func<IReadOnlySet<int>> gameProcessIds,
         ProBalanceSettings? settings = null,
         TimeProvider? timeProvider = null,
-        TimeSpan? interval = null)
+        TimeSpan? interval = null,
+        Func<int>? foregroundProcessId = null)
     {
         ArgumentNullException.ThrowIfNull(processes);
         ArgumentNullException.ThrowIfNull(actuator);
@@ -79,6 +81,8 @@ public sealed class ProBalanceSupervisor : IAsyncDisposable
         _engine = new(_settings);
         _timeProvider = timeProvider ?? TimeProvider.System;
         _fixedInterval = interval;
+        _foregroundProcessId =
+            foregroundProcessId ?? ForegroundProcess.GetProcessId;
     }
 
     /// <summary>
@@ -169,7 +173,12 @@ public sealed class ProBalanceSupervisor : IAsyncDisposable
         List<ProBalanceObservation> observations = [];
         HashSet<ProcessRuntimeKey> seen = [];
 
-        foreach (CpuProcessSample sample in _processes.Capture())
+        IReadOnlyList<CpuProcessSample> samples = _processes.Capture();
+        HashSet<int> foregroundTree = ForegroundTree(
+            samples,
+            _settings.ExcludeForeground ? SafeForegroundProcessId() : 0);
+
+        foreach (CpuProcessSample sample in samples)
         {
             cancellationToken.ThrowIfCancellationRequested();
             ProcessRuntimeKey key = new(
@@ -185,7 +194,9 @@ public sealed class ProBalanceSupervisor : IAsyncDisposable
                 sample.Name,
                 cpuCores,
                 BackgroundApplicationGuard.IsProtectedProcessName(sample.Name),
-                gameIds.Contains(sample.ProcessId)));
+                gameIds.Contains(sample.ProcessId),
+                sample.SessionId == 0,
+                foregroundTree.Contains(sample.ProcessId)));
         }
 
         foreach (ProcessRuntimeKey key in _previous.Keys.ToArray())
@@ -220,6 +231,86 @@ public sealed class ProBalanceSupervisor : IAsyncDisposable
         _lastRestrainedCount = _engine.Restrained.Count;
         return decisions;
     }
+
+    private int SafeForegroundProcessId()
+    {
+        try
+        {
+            return _foregroundProcessId();
+        }
+        catch (Exception exception) when (
+            exception is InvalidOperationException
+                or System.ComponentModel.Win32Exception)
+        {
+            return 0;
+        }
+    }
+
+    /// <summary>
+    /// The foreground process and everything it started, as process ids.
+    /// A browser's window belongs to one process while the work happens in its
+    /// helpers, so excluding only the window's owner would leave the part the
+    /// user is actually waiting on exposed.
+    /// <para>
+    /// Windows hands out ids again, so a parent link only counts when the
+    /// parent was already running when the child started; otherwise the id
+    /// now belongs to a stranger and the chain stops there.
+    /// </para>
+    /// </summary>
+    internal static HashSet<int> ForegroundTree(
+        IReadOnlyList<CpuProcessSample> samples,
+        int foregroundId)
+    {
+        HashSet<int> tree = [];
+        if (foregroundId <= 0)
+        {
+            return tree;
+        }
+
+        Dictionary<int, CpuProcessSample> byId = [];
+        foreach (CpuProcessSample sample in samples)
+        {
+            byId[sample.ProcessId] = sample;
+        }
+
+        if (!byId.ContainsKey(foregroundId))
+        {
+            return tree;
+        }
+
+        _ = tree.Add(foregroundId);
+        foreach (CpuProcessSample sample in samples)
+        {
+            CpuProcessSample current = sample;
+
+            // Glebokosc ograniczona, bo cykl w danych (ponowne uzycie numeru)
+            // nie moze zapetlic przebiegu trwajacego w trakcie gry.
+            for (int depth = 0; depth < MaximumTreeDepth; depth++)
+            {
+                if (current.ParentProcessId <= 0
+                    || !byId.TryGetValue(
+                        current.ParentProcessId,
+                        out CpuProcessSample? parent)
+                    || parent.StartedAtUtc > current.StartedAtUtc)
+                {
+                    break;
+                }
+
+                if (parent.ProcessId == foregroundId
+                    || tree.Contains(parent.ProcessId))
+                {
+                    _ = tree.Add(sample.ProcessId);
+                    break;
+                }
+
+                current = parent;
+            }
+        }
+
+        return tree;
+    }
+
+    private const int MaximumTreeDepth = 16;
 
     public async ValueTask DisposeAsync()
     {
@@ -324,16 +415,26 @@ public sealed class ProBalanceSupervisor : IAsyncDisposable
     {
         try
         {
-            _ = decision.Action switch
+            if (decision.Action == ProBalanceAction.Restrain)
             {
-                ProBalanceAction.Restrain => await _actuator
+                if (!await _actuator
                     .RestrainAsync(decision.RuntimeKey, CancellationToken.None)
-                    .ConfigureAwait(false),
-                ProBalanceAction.Release => await _actuator
+                    .ConfigureAwait(false))
+                {
+                    // Aktuator nic nie zmienil (np. priorytet powyzej Normal),
+                    // wiec silnik nie moze dalej liczyc tego procesu jako
+                    // ograniczonego i trzymac przez niego miejsca z limitu.
+                    _engine.AbandonRestraint(
+                        decision.RuntimeKey,
+                        _timeProvider.GetUtcNow());
+                }
+            }
+            else if (decision.Action == ProBalanceAction.Release)
+            {
+                _ = await _actuator
                     .ReleaseAsync(decision.RuntimeKey, CancellationToken.None)
-                    .ConfigureAwait(false),
-                _ => false,
-            };
+                    .ConfigureAwait(false);
+            }
         }
         catch (Exception exception) when (
             exception is InvalidOperationException

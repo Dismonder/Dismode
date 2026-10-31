@@ -505,7 +505,8 @@ public sealed class BackgroundConfinementSessionTests
                     journalForActuator,
                     sessionId,
                     backgroundCpuSetIds: cornerCpuSetIds,
-                    backgroundAffinityMask: corner.Mask)),
+                    backgroundAffinityMask: corner.Mask,
+                    lowerBackgroundGpuPriority: true)),
             // Nadzorca widzi wylacznie nasz proces liczacy. Na maszynie,
             // na ktorej rownolegle ktos mierzy z wlasnymi hogami, prawdziwy
             // aktuator zlapalby najciezsze z NICH — i zostawil je ograniczone,
@@ -521,6 +522,7 @@ public sealed class BackgroundConfinementSessionTests
             nint originalAffinity = hog.ProcessorAffinity;
             ProcessPriorityClass originalPriority = hog.PriorityClass;
             uint originalIoPriority = ReadIoPriority(hog);
+            int originalGpuPriority = ReadGpuPriority(hog);
 
             ManualGameProfile profile = await CreateGameProfileAsync(
                 gameReadyFile);
@@ -553,6 +555,12 @@ public sealed class BackgroundConfinementSessionTests
                 ProcessCpuSets.TryRead(hog.Id) ?? [],
                 "Warunek testu: petla miala nadac procesowi domyslne zbiory "
                     + "CPU, inaczej nie ma czego czyscic po restarcie.");
+            Assert.IsTrue(
+                await WaitUntilAsync(
+                    () => ReadGpuPriority(hog)
+                        == GpuPriorityNativeMethods.BelowNormal,
+                    TimeSpan.FromSeconds(15)),
+                "Warunek testu: petla miala obnizyc klase GPU procesu.");
 
             // Ksiega musiala zapisac punkt kontrolny z tym ograniczeniem,
             // zanim host padnie — inaczej nastepny start nie ma czego czytac.
@@ -621,6 +629,11 @@ public sealed class BackgroundConfinementSessionTests
                     + "zamykac.");
             Assert.AreEqual(originalPriority, hog.PriorityClass);
             Assert.AreEqual(originalIoPriority, ReadIoPriority(hog));
+            Assert.AreEqual(
+                originalGpuPriority,
+                ReadGpuPriority(hog),
+                "Po restarcie hosta klasa GPU zostala obnizona. Odtwarzanie "
+                    + "z punktu kontrolnego nie cofnelo priorytetu GPU.");
             Assert.IsEmpty(
                 ProcessCpuSets.TryRead(hog.Id) ?? [],
                 "Po restarcie hosta domyslne zbiory CPU zostaly na procesie. "
@@ -941,6 +954,19 @@ public sealed class BackgroundConfinementSessionTests
         }
 
         return condition();
+    }
+
+    private static int ReadGpuPriority(Process process)
+    {
+        int status = GpuPriorityNativeMethods
+            .D3DKMTGetProcessSchedulingPriorityClass(
+                process.Handle,
+                out int priorityClass);
+        Assert.AreEqual(
+            GpuPriorityNativeMethods.StatusSuccess,
+            status,
+            $"D3DKMTGetProcessSchedulingPriorityClass zwrocil 0x{status:X8}.");
+        return priorityClass;
     }
 
     private static uint ReadIoPriority(Process process)

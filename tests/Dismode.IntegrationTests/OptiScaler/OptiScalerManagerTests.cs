@@ -839,6 +839,146 @@ public sealed class OptiScalerManagerTests
     }
 
     [TestMethod]
+    public async Task ReinstallKeepsACompanionDismodeInstalledEarlier()
+    {
+        // Pierwsza instalacja polozyla dinput8.dll (REFramework) i wpisala go
+        // do manifestu. Ponowna instalacja widzi, ze wymaganie jest spelnione,
+        // wiec nie dolacza go do payloadu — i bez poprawki Deploy uznawal go
+        // za zbedny i kasowal, po czym gra padala na starcie.
+        using OptiScalerTestContext context = new();
+        const string profile = "profile-re9";
+        string game = context.CreateGameFile("re9.exe", "game");
+        string dxgi = context.CreateGameFile("dxgi.dll", "optiscaler 1");
+        string companion = context.CreateGameFile(
+            "dinput8.dll",
+            "reframework od dismode");
+        string key = Convert.ToHexString(
+                SHA256.HashData(Encoding.UTF8.GetBytes(profile)))
+            .ToLowerInvariant();
+        string manifestPath = Path.Combine(
+            context.StateDirectory,
+            "Installations",
+            key + ".json");
+        Directory.CreateDirectory(Path.GetDirectoryName(manifestPath)!);
+        File.WriteAllText(
+            manifestPath,
+            JsonSerializer.Serialize(
+                new
+                {
+                    schemaVersion = 1,
+                    profileId = profile,
+                    packageVersion = "1.0.0",
+                    targetExecutablePath = game,
+                    targetDirectory = context.GameDirectory,
+                    proxy = (int)OptiScalerProxy.Dxgi,
+                    installedAtUtc = DateTimeOffset.UtcNow,
+                    files = new[]
+                    {
+                        new
+                        {
+                            relativePath = "dxgi.dll",
+                            installedSha256 = FileSha256(dxgi),
+                            originalBackupRelativePath = (string?)null,
+                        },
+                        new
+                        {
+                            relativePath = "dinput8.dll",
+                            installedSha256 = FileSha256(companion),
+                            originalBackupRelativePath = (string?)null,
+                        },
+                    },
+                    channel = (int)OptiScalerReleaseChannel.DlssNeuralRendering,
+                }));
+        context.CreatePayloadFile("OptiScaler.dll", "optiscaler 2");
+        context.CreatePayloadIni(withBom: false, complete: true);
+        OptiScalerManager manager = context.CreateManager();
+
+        OptiScalerOperationResult upgraded = await manager.InstallAsync(
+            new OptiScalerInstallRequest(
+                profile,
+                game,
+                context.GameDirectory,
+                OptiScalerProxy.Dxgi,
+                OfflineUseConfirmed: true),
+            CancellationToken.None);
+
+        Assert.IsTrue(upgraded.Succeeded, upgraded.Message);
+        Assert.AreEqual("optiscaler 2", File.ReadAllText(dxgi));
+        Assert.AreEqual(
+            "reframework od dismode",
+            File.ReadAllText(companion),
+            "Aktualizacja nie moze usunac REFramework zainstalowanego przez "
+                + "Dismode.");
+        StringAssert.Contains(
+            File.ReadAllText(manifestPath),
+            "dinput8.dll");
+        string temporary = Path.Combine(context.StateDirectory, "Temporary");
+        Assert.IsFalse(
+            Directory.Exists(temporary)
+                && Directory.GetDirectories(temporary, "companion-*").Length > 0,
+            "Tymczasowy katalog skladnika ma byc sprzatniety.");
+
+        OptiScalerOperationResult removed = await manager.RemoveAsync(
+            profile,
+            CancellationToken.None);
+
+        Assert.IsTrue(removed.Succeeded, removed.Message);
+        Assert.IsFalse(
+            File.Exists(companion),
+            "Deinstalacja nadal ma usuwac skladnik, ktory polozyl Dismode.");
+        Assert.IsFalse(File.Exists(dxgi));
+    }
+
+    [TestMethod]
+    public async Task RemoveRunsItsFileWorkOffTheCallingThread()
+    {
+        using OptiScalerTestContext context = new();
+        string game = context.CreateGameFile("Game.exe", "game");
+        context.CreatePayloadFile("OptiScaler.dll", "proxy");
+        context.CreatePayloadIni(withBom: false, complete: true);
+        context.PackageSource.PayloadDirectory = context.PayloadDirectory;
+        int workThread = -1;
+        OptiScalerManager manager = new(
+            context.StateDirectory,
+            context.PackageSource,
+            new CopyingArchiveExtractor(context.PayloadDirectory),
+            _ =>
+            {
+                workThread = Environment.CurrentManagedThreadId;
+                return false;
+            });
+        OptiScalerOperationResult installed = await manager.InstallAsync(
+            new OptiScalerInstallRequest(
+                "profile-thread",
+                game,
+                context.GameDirectory,
+                OptiScalerProxy.Dxgi,
+                OfflineUseConfirmed: true),
+            CancellationToken.None);
+        Assert.IsTrue(installed.Succeeded, installed.Message);
+
+        // A dedicated thread is never a pool thread, so the work cannot end up
+        // on it by accident the way it could on a busy pool worker.
+        int callerThread = -1;
+        OptiScalerOperationResult removed = await Task.Factory.StartNew(
+                () =>
+                {
+                    callerThread = Environment.CurrentManagedThreadId;
+                    return manager.RemoveAsync(
+                        "profile-thread",
+                        CancellationToken.None).AsTask();
+                },
+                CancellationToken.None,
+                TaskCreationOptions.LongRunning,
+                TaskScheduler.Default)
+            .Unwrap();
+
+        Assert.IsTrue(removed.Succeeded, removed.Message);
+        Assert.AreNotEqual(-1, workThread);
+        Assert.AreNotEqual(callerThread, workThread);
+    }
+
+    [TestMethod]
     public async Task GameIsBlockedWhenProxyIsNotTheOneItLoads()
     {
         // Diablo II: Resurrected laduje OptiScalera tylko jako winmm.dll.

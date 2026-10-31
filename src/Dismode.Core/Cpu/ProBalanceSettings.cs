@@ -114,11 +114,37 @@ public sealed record ProBalanceSettings
     public bool LowerBackgroundIoPriority { get; init; } = true;
 
     /// <summary>
+    /// Czy ograniczanemu procesowi obnizac takze klase priorytetu GPU.
+    /// <para>
+    /// Trzeci zasob, o ktory gra rywalizuje z tlem, obok rdzeni i dysku.
+    /// Mechanizm jest odwracalny i dziennikowany, ale jego wplyw na czas
+    /// klatki jest <b>niezmierzony</b> — dlatego domyslnie wylaczony i wlaczany
+    /// tylko presetem agresywnym, ktorego progi tez nie sa zmierzone.
+    /// </para>
+    /// </summary>
+    public bool LowerBackgroundGpuPriority { get; init; }
+
+    /// <summary>
     /// Czy ograniczanemu procesowi wlaczac takze EcoQoS: Windows obniza mu
     /// taktowanie, a na procesorze hybrydowym kieruje go na rdzenie
     /// energooszczedne. Dziennikowane i cofane jak pozostale dzwignie.
     /// </summary>
     public bool ApplyEcoQos { get; init; }
+
+    /// <summary>
+    /// Czy pomijac uslugi (procesy sesji 0). Usluga nie jest aplikacja, ktora
+    /// uzytkownik widzi, a jej wolniejsza praca potrafi zatrzymac cos, czego
+    /// ta petla nie widzi: aktualizacje, indeks, sterownik drukarki.
+    /// </summary>
+    public bool ExcludeServices { get; init; } = true;
+
+    /// <summary>
+    /// Czy pomijac program z pierwszego planu i jego procesy potomne. Gdy
+    /// uzytkownik przelaczy sie z gry na przegladarke, to jest teraz to, co
+    /// ma dzialac plynnie — a przegladarka jest wlasnie typowym sprawca
+    /// obciazenia tla. Proces, ktory wchodzi na pierwszy plan, jest zwalniany.
+    /// </summary>
+    public bool ExcludeForeground { get; init; } = true;
 
     /// <summary>
     /// Odstep miedzy probkami, gdy tlo jest ponizej bramki i nic nie jest
@@ -155,6 +181,7 @@ public sealed record ProBalanceSettings
         Cooldown = TimeSpan.FromSeconds(10),
         MaximumRestrained = 8,
         LowerBackgroundIoPriority = true,
+        LowerBackgroundGpuPriority = true,
         ApplyEcoQos = true,
         CalmInterval = TimeSpan.FromSeconds(1),
         BusyInterval = TimeSpan.FromMilliseconds(500),

@@ -37,6 +37,15 @@ public sealed class ProBalanceAggressiveTests
     }
 
     [TestMethod]
+    public void GpuPriorityIsOffByDefaultAndOnlyTheAggressivePresetEnablesIt()
+    {
+        // Wplyw na czas klatki jest niezmierzony, wiec ostrozne ustawienia
+        // domyslne go nie wlaczaja.
+        Assert.IsFalse(new ProBalanceSettings().LowerBackgroundGpuPriority);
+        Assert.IsTrue(ProBalanceSettings.Aggressive.LowerBackgroundGpuPriority);
+    }
+
+    [TestMethod]
     public void AggressivePresetCatchesModerateHogAfterTwoSamples()
     {
         // 0,6 rdzenia jest ponizej ostroznego progu (0,75), wiec domyslne

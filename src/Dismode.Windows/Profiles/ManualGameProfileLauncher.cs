@@ -166,6 +166,8 @@ public sealed class ManualGameProfileLauncher
         using StartedProcess process =
             DesktopUserProcessStarter.Start(startInfo);
 
+        // Deliberately not linked to the caller: once the game is started,
+        // its identity must be captured so the session can track it.
         using CancellationTokenSource timeout =
             new(IdentityObservationTimeout);
 
@@ -254,8 +256,8 @@ public sealed class ManualGameProfileLauncher
     {
         string processName = Path.GetFileNameWithoutExtension(
             profile.ExecutablePath);
-        int currentSessionId =
-            Process.GetCurrentProcess().SessionId;
+        using Process currentProcess = Process.GetCurrentProcess();
+        int currentSessionId = currentProcess.SessionId;
         List<ProcessIdentity> matches = [];
         foreach (Process process in Process.GetProcessesByName(processName))
         {

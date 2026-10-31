@@ -105,13 +105,19 @@ public sealed class AppendOnlyRecoveryJournal : IRecoveryJournal, IDisposable
             serializedEntry.CopyTo(line, 0);
             line[^1] = (byte)'\n';
 
+            // Cancellation is honoured only before the record starts. Once the
+            // bytes may be on disk, a cancelled write would leave a record the
+            // in-memory chain does not know about and fault the writer for the
+            // life of the process, so the short write runs to completion.
+            cancellationToken.ThrowIfCancellationRequested();
+
             try
             {
                 await _writeStream!
-                    .WriteAsync(line, cancellationToken)
+                    .WriteAsync(line, CancellationToken.None)
                     .ConfigureAwait(false);
                 await _writeStream
-                    .FlushAsync(cancellationToken)
+                    .FlushAsync(CancellationToken.None)
                     .ConfigureAwait(false);
                 _writeStream.Flush(flushToDisk: true);
             }

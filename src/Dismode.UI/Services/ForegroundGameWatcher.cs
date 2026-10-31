@@ -10,7 +10,9 @@ public sealed record ForegroundGameSample(
     string ProcessName,
     double? FramesPerSecond,
     double? FrameTimeMilliseconds,
-    bool IsPresenting);
+    bool IsPresenting,
+    double? DisplayedFramesPerSecond = null,
+    int? DroppedFrames = null);
 
 /// <summary>
 /// Watches whatever the user is actually looking at and reports its frame rate,
@@ -51,9 +53,15 @@ public sealed class ForegroundGameWatcher : IAsyncDisposable
     private int? _attachedProcessId;
     private bool _disposed;
 
-    public ForegroundGameWatcher(IFrameRateProvider? frameRates = null)
+    public ForegroundGameWatcher(
+        IFrameRateProvider? frameRates = null,
+        Func<CancellationToken, ValueTask<bool>>? displayTrackingSetting = null)
     {
-        _frameRates = frameRates ?? new PresentMonFrameRateProvider();
+        // Wlasna sesja ETW nakladki: ze wspolna nazwa pomiar nakladki
+        // i pomiar sesji gry zatrzymywaly sie nawzajem.
+        _frameRates = frameRates ?? new PresentMonFrameRateProvider(
+            captureRole: PresentMonCaptureRole.Overlay,
+            displayTrackingSetting: displayTrackingSetting);
     }
 
     public async ValueTask<ForegroundGameSample> SampleAsync(
@@ -84,7 +92,9 @@ public sealed class ForegroundGameWatcher : IAsyncDisposable
                 processName,
                 sample.FramesPerSecond,
                 sample.FrameTimeMilliseconds,
-                sample.FramesPerSecond is > 0);
+                sample.FramesPerSecond is > 0,
+                sample.DisplayedFramesPerSecond,
+                sample.DroppedFrames);
         }
         catch (Exception exception) when (
             exception is InvalidOperationException

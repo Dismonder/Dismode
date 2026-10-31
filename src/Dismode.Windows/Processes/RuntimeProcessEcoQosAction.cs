@@ -43,7 +43,7 @@ public sealed class RuntimeProcessEcoQosAction :
             await ReadCurrentStateCoreAsync(cancellationToken)
                 .ConfigureAwait(false);
         if (!original.IsRunning
-            || original.ExecutionSpeedThrottled is null)
+            || original.Mode is null)
         {
             throw new InvalidOperationException(
                 "The optional background process is no longer running.");
@@ -53,7 +53,7 @@ public sealed class RuntimeProcessEcoQosAction :
             original,
             new(
                 IsRunning: true,
-                ExecutionSpeedThrottled: _desiredEnabled),
+                Mode: _desiredEnabled ? EcoQosMode.On : EcoQosMode.Off),
             DateTimeOffset.UtcNow);
     }
 
@@ -92,7 +92,10 @@ public sealed class RuntimeProcessEcoQosAction :
                 .ConfigureAwait(false);
         ProcessPowerThrottlingController.Set(
             process,
-            _desiredEnabled);
+            preparedAction.DesiredState.Mode
+                ?? throw new InvalidDataException("Brak docelowego trybu EcoQoS."),
+            preparedAction.OriginalState.Mode
+                ?? throw new InvalidDataException("Brak pierwotnego trybu EcoQoS."));
         if (_desiredEnabled)
         {
             _ = ProcessMemoryTrimmer.TryTrimWorkingSet(process, out _);
@@ -135,9 +138,11 @@ public sealed class RuntimeProcessEcoQosAction :
                 .ConfigureAwait(false);
         ProcessPowerThrottlingController.Set(
             process,
-            preparedAction.OriginalState.ExecutionSpeedThrottled
+            preparedAction.OriginalState.Mode
                 ?? throw new InvalidDataException(
-                    "The original EcoQoS state is missing."));
+                    "Brak pierwotnego trybu EcoQoS."),
+            preparedAction.DesiredState.Mode
+                ?? throw new InvalidDataException("Brak docelowego trybu EcoQoS."));
     }
 
     public ValueTask<ActionVerificationResult>
@@ -178,7 +183,7 @@ public sealed class RuntimeProcessEcoQosAction :
         {
             return new(
                 IsRunning: false,
-                ExecutionSpeedThrottled: null);
+                Mode: null);
         }
 
         using Process process =
@@ -191,7 +196,7 @@ public sealed class RuntimeProcessEcoQosAction :
             ProcessPowerThrottlingController.Read(process);
         return new(
             IsRunning: true,
-            state.ExecutionSpeedThrottled);
+            state.Mode);
     }
 
     private async ValueTask<ActionVerificationResult> VerifyStateAsync(

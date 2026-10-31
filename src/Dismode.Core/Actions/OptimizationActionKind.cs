@@ -18,4 +18,5 @@ public enum OptimizationActionKind
     RestrictProcessAffinity = 13,
     LowerProcessMemoryPriority = 14,
     LowerProcessIoPriority = 15,
+    LowerProcessGpuPriority = 16,
 }

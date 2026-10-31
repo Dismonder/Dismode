@@ -19,9 +19,13 @@
   <ItemGroup>
     <Compile Include="..\..\tools\Dismode.UpdatePublisher\UpdatePublisherTrust.cs"
              Link="Updates\UpdatePublisherTrust.cs" />
+    <Compile Include="..\..\tools\Dismode.UpdatePublisher\PackageRestagePolicy.cs"
+             Link="Updates\PackageRestagePolicy.cs" />
     <Compile Include="..\..\src\Dismode.UI\Services\MemoryOptimizerComponentStatus.cs"
              Link="UI\MemoryOptimizerComponentStatus.cs" />
     <Compile Include="..\..\src\Dismode.UI\Services\SystemOptimizerComponentStatus.cs"
              Link="UI\SystemOptimizerComponentStatus.cs" />
+    <Compile Include="..\..\src\Dismode.UI\Services\TacticalAudioService.cs"
+             Link="UI\TacticalAudioService.cs" />
   </ItemGroup>
 </Project>

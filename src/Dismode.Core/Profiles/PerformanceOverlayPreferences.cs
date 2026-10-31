@@ -125,6 +125,29 @@ public sealed record PerformanceOverlayPreferences
 
     public PerformanceOverlayPreferences(
         bool isEnabled,
+        bool isFpsTrackingEnabled,
+        bool isDisplayTrackingEnabled,
+        int opacityPercent,
+        int scalePercent,
+        PerformanceOverlayCorner corner,
+        PerformanceOverlayStyle style,
+        PerformanceOverlayTheme theme,
+        DateTimeOffset updatedAtUtc)
+        : this(
+            isEnabled,
+            isFpsTrackingEnabled,
+            opacityPercent,
+            scalePercent,
+            corner,
+            style,
+            theme,
+            updatedAtUtc)
+    {
+        IsDisplayTrackingEnabled = isDisplayTrackingEnabled;
+    }
+
+    public PerformanceOverlayPreferences(
+        bool isEnabled,
         int opacityPercent,
         int scalePercent,
         PerformanceOverlayCorner corner,
@@ -143,6 +166,12 @@ public sealed record PerformanceOverlayPreferences
     public bool IsEnabled { get; }
 
     public bool IsFpsTrackingEnabled { get; }
+
+    /// <summary>
+    /// Opt-in: sledzi klatki az do wyswietlenia (wyswietlone FPS i zgubione
+    /// klatki). Domyslnie wylaczone; narzut ETW nie jest zmierzony.
+    /// </summary>
+    public bool IsDisplayTrackingEnabled { get; }
 
     public int OpacityPercent { get; }
 
