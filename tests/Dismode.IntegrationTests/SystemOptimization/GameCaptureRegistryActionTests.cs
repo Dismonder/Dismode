@@ -84,6 +84,26 @@ public sealed class GameCaptureRegistryActionTests
     }
 
     [TestMethod]
+    public async Task PolicyDisabledAfterApplyStillRestoresOriginalValue()
+    {
+        FakeCaptureAdapter adapter = new(new(UserSid, true, RegistryValueKind.DWord, "1", true));
+        GameCaptureRegistryState original = adapter.State;
+        ActionExecutionContext context = CreateContext();
+        GameCaptureRegistryAction action = new(context.ActionId, UserSid, adapter);
+        using AppendOnlyRecoveryJournal journal = new(JournalPath());
+        ActionExecutionResult applied = await new TransactionCoordinator<GameCaptureRegistryState>(journal)
+            .ExecuteAsync(action, context, CancellationToken.None);
+        Assert.AreEqual(ActionExecutionStatus.AppliedAndVerified, applied.Status);
+        adapter.State = adapter.State with { IsPolicyAllowed = false };
+
+        ActionRecoveryResult result = await new ActionRecoveryCoordinator<GameCaptureRegistryState>(journal)
+            .RecoverAsync(action, context, CancellationToken.None);
+        Assert.AreEqual(ActionRecoveryStatus.Restored, result.Status);
+        Assert.AreEqual(original with { IsPolicyAllowed = false }, adapter.State);
+        Assert.AreEqual(2, adapter.Writes);
+    }
+
+    [TestMethod]
     public async Task DisabledOrAmbiguousPolicyBlocksWithoutWrites()
     {
         FakeCaptureAdapter adapter = new(new(UserSid, true, RegistryValueKind.DWord, "1", false));
@@ -290,7 +310,8 @@ public sealed class GameCaptureRegistryActionTests
                 throw new UnauthorizedAccessException();
             }
 
-            State = desired;
+            // Zapis wartosci nie zmienia polityki AllowGameDVR.
+            State = desired with { IsPolicyAllowed = State.IsPolicyAllowed };
             Deleted = !desired.IsPresent;
             Writes++;
         }

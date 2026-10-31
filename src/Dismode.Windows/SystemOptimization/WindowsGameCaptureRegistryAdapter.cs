@@ -75,7 +75,9 @@ public sealed class WindowsGameCaptureRegistryAdapter : IGameCaptureRegistryAdap
 
         object? value = desired.IsPresent ? DeserializeValue(desired) : null;
         GameCaptureRegistryState current = await ReadAsync(expected.UserSid, cancellationToken).ConfigureAwait(false);
-        if (current != expected || !current.IsPolicyAllowed)
+        // Zastosowanie oczekuje dozwolonej polityki; przywracanie dziala takze po jej zmianie.
+        if (current.WithoutPolicy() != expected.WithoutPolicy()
+            || (expected.IsPolicyAllowed && !current.IsPolicyAllowed))
         {
             throw new InvalidOperationException("Polityka lub ustawienie Game DVR zmieniło się przed zapisem.");
         }

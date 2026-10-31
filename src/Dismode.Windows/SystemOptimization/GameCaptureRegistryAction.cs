@@ -122,7 +122,8 @@ public sealed class GameCaptureRegistryAction :
         GameCaptureRegistryState originalState,
         GameCaptureRegistryState appliedState,
         GameCaptureRegistryState currentState) =>
-        ThreeWayReconciler.Decide(originalState, appliedState, currentState);
+        // Polityka blokuje tylko zastosowanie; przywracanie porownuje sama wartosc.
+        ThreeWayReconciler.Decide(originalState.WithoutPolicy(), appliedState.WithoutPolicy(), currentState.WithoutPolicy());
 
     private GameCaptureRegistryState DisabledState() =>
         new(_userSid, true, RegistryValueKind.DWord, "0", true);
@@ -133,7 +134,7 @@ public sealed class GameCaptureRegistryAction :
     {
         GameCaptureRegistryState current = await _adapter.ReadAsync(_userSid, cancellationToken)
             .ConfigureAwait(false);
-        return current == expected
+        return current.WithoutPolicy() == expected.WithoutPolicy()
             ? ActionVerificationResult.Verified()
             : ActionVerificationResult.Failed("Odczyt Game DVR nie zgadza się ze stanem oczekiwanym.");
     }
@@ -144,7 +145,10 @@ public sealed record GameCaptureRegistryState(
     bool IsPresent,
     RegistryValueKind? ValueKind,
     string? ValueJson,
-    bool IsPolicyAllowed);
+    bool IsPolicyAllowed)
+{
+    public GameCaptureRegistryState WithoutPolicy() => this with { IsPolicyAllowed = true };
+}
 
 public interface IGameCaptureRegistryAdapter
 {
