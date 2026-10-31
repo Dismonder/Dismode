@@ -15,8 +15,9 @@ public sealed class UiResourceReferenceTests
     private static readonly string[] ExpectedOverlayModes =
     [
         "MinimalText|Tylko FPS",
-        "CompactBar|FPS + ms",
-        "FullDeck|Wszystkie szczegóły",
+        "FpsAndLows|FPS + minimum",
+        "CompactBar|Kompakt w jednej linii",
+        "FullDeck|Pełne szczegóły",
     ];
 
     private static readonly string[] ExpectedDashboardRows = ["Auto", "*"];
@@ -105,32 +106,18 @@ public sealed class UiResourceReferenceTests
     }
 
     [TestMethod]
-    public void PerformanceOverlayHasOneLayoutAndNoAccentPalette()
+    public void PerformanceOverlayOffersFourStylesWithoutAnAccentPalette()
     {
-        // Trzy uklady i siedem nazwanych kolorow akcentu byly wyborem bez
-        // znaczenia: nie zmienialy tego, co panel pokazuje, ani czy dziala.
         string settings = LoadUiSource("MainWindow.xaml");
-
-        Assert.IsFalse(
-            settings.Contains("OverlayThemeSelector", StringComparison.Ordinal),
-            "Paleta kolorow akcentu powinna byc usunieta.");
-        Assert.IsFalse(
-            settings.Contains("OverlayStyleSelector", StringComparison.Ordinal),
-            "Wybor ukladu nakladki powinien byc usuniety.");
-
-        XDocument overlay = LoadUiXaml("PerformanceOverlayWindow.xaml");
-        foreach (string gone in new[]
-        {
-            "CompactBarLayout",
-            "MinimalTextLayout",
-            "CompactFpsValueText",
-        })
-        {
-            Assert.IsNull(
-                overlay.Descendants().FirstOrDefault(element =>
-                    (string?)element.Attribute(XamlNamespace + "Name") == gone),
-                $"Element {gone} nalezy do usunietych ukladow.");
-        }
+        Assert.IsFalse(settings.Contains("OverlayThemeSelector", StringComparison.Ordinal));
+        XDocument mainWindow = LoadUiXaml("MainWindow.xaml");
+        XElement selector = FindNamedElement(mainWindow, "OverlayStyleSelector");
+        string[] actual = selector.Elements()
+            .Select(element => $"{element.Attribute("Tag")?.Value}|{element.Attribute("Content")?.Value}")
+            .ToArray();
+        CollectionAssert.AreEqual(ExpectedOverlayModes, actual);
+        Assert.AreEqual("3", selector.Attribute("SelectedIndex")?.Value);
+        Assert.IsNotNull(FindNamedElement(mainWindow, "OverlayStyleSketchText"));
     }
 
     [TestMethod]
@@ -485,7 +472,6 @@ public sealed class UiResourceReferenceTests
             .ToHashSet(StringComparer.Ordinal);
         string[] requiredTargets =
         [
-            "ProfilesHeaderActions.(Grid.Row)",
             "PlanSecondarySection.(Grid.Row)",
             "HistoryHeaderAction.(Grid.Row)",
             "CheckForUpdatesButton.(Grid.Row)",
