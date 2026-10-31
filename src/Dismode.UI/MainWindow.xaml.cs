@@ -37,7 +37,9 @@ namespace Dismode.UI;
 
 public sealed partial class MainWindow : Window, IDisposable
 {
-    private const int MaximumRecentHistoryItems = 100;
+    // The store's page limit: the results page groups sessions per game, so a
+    // rarely played game must not lose its sessions to the most recent 100.
+    private const int MaximumRecentHistoryItems = 1000;
     private const int DashboardFrameHistoryLimit = 90;
     private const int StandardMaximumBackgroundProcesses = 32;
     private const int AggressiveMaximumBackgroundProcesses = 64;
@@ -106,6 +108,17 @@ public sealed partial class MainWindow : Window, IDisposable
     private ProfileListItem? _libraryHero;
     private readonly Queue<double> _dashboardFrameTimes = [];
     private readonly ObservableCollection<HistoryListItem> _history = [];
+    private readonly ObservableCollection<HistoryGameTile> _historyGames = [];
+    private IReadOnlyList<Core.History.GameSessionHistory> _historyByGame = [];
+    private IReadOnlyList<Core.History.SessionSummary> _allHistory = [];
+
+    /// <summary>
+    /// The game whose sessions the results page shows; null shows the tiles
+    /// of all games. The name covers a game opened from the library before
+    /// it has any session.
+    /// </summary>
+    private (Core.Domain.Identifiers.GameProfileId ProfileId, string DisplayName)?
+        _historyGame;
     private readonly ObservableCollection<SessionPlanActionListItem>
         _planActions = [];
     private readonly ObservableCollection<BackgroundApplicationListItem>
@@ -319,11 +332,13 @@ public sealed partial class MainWindow : Window, IDisposable
         {
             _gameDetectionIndex.Invalidate();
             ApplyLibraryFilter();
+            RebuildHistoryTiles();
         };
         ApplyLibraryFilter();
         DashboardGameRail.ItemsSource = _profiles;
         GameProfileSelector.ItemsSource = _profiles;
         HistoryList.ItemsSource = _history;
+        HistoryGamesGrid.ItemsSource = _historyGames;
         PlanActionsList.ItemsSource = _planActions;
         BackgroundApplicationsList.ItemsSource =
             _backgroundApplications;
@@ -1358,6 +1373,13 @@ public sealed partial class MainWindow : Window, IDisposable
         if (sender is FrameworkElement { Tag: string selectedTag }
             && DashboardPage is not null)
         {
+            if (selectedTag == "history" && _historyGame is not null)
+            {
+                // The top tab always opens the overview of all games.
+                _historyGame = null;
+                ShowHistoryView();
+            }
+
             NavigateToPage(selectedTag);
         }
     }
@@ -1657,6 +1679,20 @@ public sealed partial class MainWindow : Window, IDisposable
             hero,
             keepWindowHidden: false,
             _lifetime.Token);
+    }
+
+    private void OnLibraryHeroResultsClicked(
+        object sender,
+        RoutedEventArgs args)
+    {
+        if (_libraryHero is not { } hero)
+        {
+            return;
+        }
+
+        NavigateToPage("history");
+        _historyGame = (hero.Profile.ProfileId, hero.DisplayName);
+        ShowHistoryView();
     }
 
     private void OnLibraryHeroPlanClicked(object sender, RoutedEventArgs args)
@@ -6297,18 +6333,94 @@ public sealed partial class MainWindow : Window, IDisposable
             await _userDataStore.ListRecentAsync(
                 MaximumRecentHistoryItems,
                 cancellationToken);
+        _allHistory = history;
+        _historyByGame = Core.History.GameSessionHistory.GroupByGame(history);
+        RebuildHistoryTiles();
+        HistoryCountText.Text = history.Count.ToString(
+            System.Globalization.CultureInfo.CurrentCulture);
+        ShowHistoryView();
+    }
+
+    /// <summary>
+    /// Pairs every game with history with its library profile for artwork.
+    /// Runs again when the library reloads, because that replaces the
+    /// profile items the tiles point at.
+    /// </summary>
+    private void RebuildHistoryTiles()
+    {
+        _historyGames.Clear();
+        foreach (Core.History.GameSessionHistory game in _historyByGame)
+        {
+            _historyGames.Add(new(
+                game,
+                _profiles.FirstOrDefault(item =>
+                    item.Profile.ProfileId == game.ProfileId)));
+        }
+    }
+
+    /// <summary>
+    /// Shows either the tiles of all games or the sessions of the chosen
+    /// game, with the counters above scoped to what is shown.
+    /// </summary>
+    private void ShowHistoryView()
+    {
+        if (HistoryGamesGrid is null)
+        {
+            return;
+        }
+
         _history.Clear();
-        foreach (Core.History.SessionSummary summary in history)
+        if (_historyGame is not { } selected)
+        {
+            HistoryGamesGrid.Visibility = Visibility.Visible;
+            HistoryGameHeader.Visibility = Visibility.Collapsed;
+            HistoryList.Visibility = Visibility.Collapsed;
+            HistoryEmptyText.Visibility = _historyByGame.Count == 0
+                ? Visibility.Visible
+                : Visibility.Collapsed;
+            UpdateHistorySummary(
+                Core.History.SessionHistoryTotals.Compute(_allHistory));
+            return;
+        }
+
+        Core.History.GameSessionHistory? game = _historyByGame
+            .FirstOrDefault(item => item.ProfileId == selected.ProfileId);
+        IReadOnlyList<Core.History.SessionSummary> sessions =
+            game?.Sessions ?? [];
+        foreach (Core.History.SessionSummary summary in sessions)
         {
             _history.Add(new(summary));
         }
 
-        HistoryEmptyText.Visibility = _history.Count == 0
+        HistoryGamesGrid.Visibility = Visibility.Collapsed;
+        HistoryGameHeader.Visibility = Visibility.Visible;
+        HistoryList.Visibility = Visibility.Visible;
+        HistoryGameTitleText.Text = game?.GameDisplayName
+            ?? selected.DisplayName;
+        HistoryEmptyText.Visibility = sessions.Count == 0
             ? Visibility.Visible
             : Visibility.Collapsed;
-        HistoryCountText.Text = _history.Count.ToString(
-            System.Globalization.CultureInfo.CurrentCulture);
-        UpdateHistorySummary();
+        UpdateHistorySummary(
+            game?.Totals ?? Core.History.SessionHistoryTotals.Compute([]));
+    }
+
+    private void OnHistoryGameClicked(object sender, ItemClickEventArgs args)
+    {
+        if (args.ClickedItem is not HistoryGameTile tile)
+        {
+            return;
+        }
+
+        TacticalAudioService.Instance.PlayClick();
+        _historyGame = (tile.History.ProfileId, tile.GameDisplayName);
+        ShowHistoryView();
+    }
+
+    private void OnHistoryBackClicked(object sender, RoutedEventArgs args)
+    {
+        TacticalAudioService.Instance.PlayClick();
+        _historyGame = null;
+        ShowHistoryView();
     }
 
     /// <summary>
@@ -6316,14 +6428,14 @@ public sealed partial class MainWindow : Window, IDisposable
     /// "what happened last time"; the strip answers "what has Dismode
     /// actually done for me", which the page could not show before.
     /// </summary>
-    private void UpdateHistorySummary()
+    private void UpdateHistorySummary(Core.History.SessionHistoryTotals totals)
     {
         if (HistorySummaryPanel is null)
         {
             return;
         }
 
-        if (_history.Count == 0)
+        if (totals.SessionCount == 0)
         {
             HistorySummaryPanel.Visibility = Visibility.Collapsed;
             return;
@@ -6331,26 +6443,14 @@ public sealed partial class MainWindow : Window, IDisposable
 
         HistorySummaryPanel.Visibility = Visibility.Visible;
 
-        TimeSpan played = TimeSpan.Zero;
-        int appliedActions = 0;
-        int troubled = 0;
-        foreach (HistoryListItem item in _history)
-        {
-            Core.History.SessionSummary summary = item.Summary;
-            played += summary.Duration;
-            appliedActions += summary.AppliedActionCount;
-            if (summary.ErrorCount > 0 || summary.ConflictCount > 0)
-            {
-                troubled++;
-            }
-        }
-
-        HistorySessionsValueText.Text = _history.Count.ToString(
+        TimeSpan played = totals.TotalDuration;
+        int troubled = totals.TroubledSessionCount;
+        HistorySessionsValueText.Text = totals.SessionCount.ToString(
             System.Globalization.CultureInfo.CurrentCulture);
         HistoryPlaytimeValueText.Text = played.TotalHours >= 1
             ? $"{played.TotalHours:0.#} godz."
             : $"{played.TotalMinutes:0} min";
-        HistoryActionsValueText.Text = appliedActions.ToString(
+        HistoryActionsValueText.Text = totals.AppliedActionCount.ToString(
             System.Globalization.CultureInfo.CurrentCulture);
         HistoryTroubledValueText.Text = troubled.ToString(
             System.Globalization.CultureInfo.CurrentCulture);
