@@ -26,6 +26,7 @@ using Dismode.Windows.Security;
 using Dismode.Windows.Sessions;
 using Microsoft.UI.Windowing;
 using Microsoft.UI.Xaml;
+using Microsoft.UI.Xaml.Automation;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Controls.Primitives;
 using Microsoft.UI.Xaml.Media;
@@ -403,7 +404,13 @@ public sealed partial class MainWindow : Window, IDisposable
             AppWindow.Resize(new(1240, 820));
         }
 
-        UpdateTitleBarTheme(ElementTheme.Dark);
+        ThemeSelector.SelectedIndex = CreateSettingsThemePreferences().Load() switch
+        {
+            "Dark" => 0,
+            "Light" => 1,
+            _ => 2,
+        };
+        UpdateTitleBarTheme(RootLayout.ActualTheme);
         UpdateDashboardSystemMetrics();
         DiagnosticsProtocolText.Text =
             $"v{ProtocolInfo.CurrentVersion}; limit "
@@ -411,6 +418,9 @@ public sealed partial class MainWindow : Window, IDisposable
         DiagnosticsPlatformText.Text =
             WindowsPlatformSupport.DescribeCurrentSystem();
         DiagnosticsUserText.Text = RedactSid(_userSid);
+        SetSettingsStatus(DiagnosticsSessionHostDot, DashboardStatusKind.Pending);
+        SetSettingsStatus(DiagnosticsSystemAgentDot, DashboardStatusKind.Pending);
+        SetSettingsStatus(DiagnosticsCpuDot, DashboardStatusKind.Pending);
         UpdateGamingDiagnostics();
         UpdatesCurrentVersionText.Text =
             ProductInformation.FullDisplayName;
@@ -960,6 +970,7 @@ public sealed partial class MainWindow : Window, IDisposable
         object sender,
         RoutedEventArgs args)
     {
+        UpdateGamingDiagnostics();
         await RefreshDiagnosticsAsync(_lifetime.Token);
         await RefreshMemoryOptimizerStatusAsync(_lifetime.Token);
         await RefreshSystemOptimizerStatusAsync(_lifetime.Token);
@@ -1121,6 +1132,9 @@ public sealed partial class MainWindow : Window, IDisposable
     /// </summary>
     private void ApplyCpuTopologyDescription(CpuTopology? topology)
     {
+        SetSettingsStatus(DiagnosticsCpuDot,
+            topology is null || topology.Processors.Count == 0
+                ? DashboardStatusKind.Warning : DashboardStatusKind.Ready);
         if (topology is null || topology.Processors.Count == 0)
         {
             CpuTopologyText.Text =
@@ -3800,7 +3814,7 @@ public sealed partial class MainWindow : Window, IDisposable
         object sender,
         SelectionChangedEventArgs args)
     {
-        if (ThemeSelector.SelectedItem is not ComboBoxItem item)
+        if (ThemeSelector.SelectedItem is not RadioButton item)
         {
             return;
         }
@@ -3816,6 +3830,36 @@ public sealed partial class MainWindow : Window, IDisposable
             selectedTheme == ElementTheme.Default
                 ? RootLayout.ActualTheme
                 : selectedTheme);
+        if (_isLoaded)
+        {
+            CreateSettingsThemePreferences().Save(item.Tag?.ToString() ?? "Default");
+        }
+    }
+
+    private static SettingsThemePreferences CreateSettingsThemePreferences()
+    {
+        string path = Path.Combine(DismodeStoragePaths.UserDataDirectory, "appearance-theme.txt");
+        return new(
+            () => File.Exists(path) ? File.ReadAllText(path).Trim() : null,
+            theme =>
+            {
+                Directory.CreateDirectory(DismodeStoragePaths.UserDataDirectory);
+                File.WriteAllText(path, theme);
+            });
+    }
+
+    private static void SetSettingsStatus(
+        Microsoft.UI.Xaml.Shapes.Ellipse dot,
+        DashboardStatusKind status)
+    {
+        dot.Fill = new SolidColorBrush(GetDashboardStatusColor(status));
+        AutomationProperties.SetName(dot, status switch
+        {
+            DashboardStatusKind.Ready => "Gotowe",
+            DashboardStatusKind.Warning => "Wymaga uwagi",
+            DashboardStatusKind.Error => "Błąd",
+            _ => "Sprawdzanie…",
+        });
     }
 
     private void UpdateTitleBarTheme(ElementTheme theme)
@@ -4386,6 +4430,8 @@ public sealed partial class MainWindow : Window, IDisposable
         {
             DiagnosticsSessionHostText.Text =
                 $"Błąd diagnostyki: {exception.Message}";
+            SetSettingsStatus(DiagnosticsSessionHostDot, DashboardStatusKind.Error);
+            SetSettingsStatus(DiagnosticsSystemAgentDot, DashboardStatusKind.Error);
         }
         finally
         {
@@ -4396,6 +4442,8 @@ public sealed partial class MainWindow : Window, IDisposable
     private async Task RefreshDiagnosticsCoreAsync(
         CancellationToken cancellationToken)
     {
+        SetSettingsStatus(DiagnosticsSessionHostDot, DashboardStatusKind.Pending);
+        SetSettingsStatus(DiagnosticsSystemAgentDot, DashboardStatusKind.Pending);
         Task<DiagnosticsEndpointSnapshot> sessionHostTask =
             _diagnostics.ProbeAsync(
                 "SessionHost",
@@ -4408,6 +4456,13 @@ public sealed partial class MainWindow : Window, IDisposable
                 cancellationToken);
         DiagnosticsEndpointSnapshot[] endpoints =
             await Task.WhenAll(sessionHostTask, systemAgentTask);
+
+        SetSettingsStatus(DiagnosticsSessionHostDot, !endpoints[0].IsAvailable
+            ? DashboardStatusKind.Error : endpoints[0].IsCompatible
+                ? DashboardStatusKind.Ready : DashboardStatusKind.Warning);
+        SetSettingsStatus(DiagnosticsSystemAgentDot, !endpoints[1].IsAvailable
+            ? DashboardStatusKind.Error : endpoints[1].IsCompatible
+                ? DashboardStatusKind.Ready : DashboardStatusKind.Warning);
 
         ApplyEndpointSnapshot(
             endpoints[0],
@@ -7522,6 +7577,8 @@ public sealed partial class MainWindow : Window, IDisposable
 
     private void UpdateGamingDiagnostics()
     {
+        SetSettingsStatus(DiagnosticsPlatformDot, WindowsPlatformSupport.IsSupported
+            ? DashboardStatusKind.Ready : DashboardStatusKind.Warning);
         try
         {
             WindowsGamingDiagnosticReport report =
@@ -7551,12 +7608,16 @@ public sealed partial class MainWindow : Window, IDisposable
                 "\n\n",
                 report.Recommendations.Select(
                     r => $"• {r.Title}\n  {r.Description}"));
+            SetSettingsStatus(DiagnosticsGamingDot, report.Recommendations.All(
+                recommendation => recommendation.Severity == DiagnosticSeverity.Success)
+                ? DashboardStatusKind.Ready : DashboardStatusKind.Warning);
         }
         catch (Exception exception)
         {
             DiagnosticsGamingEnvironmentText.Text =
                 $"Błąd odczytu konfiguracji gamingowej: {exception.Message}";
             DiagnosticsGamingRecommendationsText.Text = string.Empty;
+            SetSettingsStatus(DiagnosticsGamingDot, DashboardStatusKind.Error);
         }
     }
 

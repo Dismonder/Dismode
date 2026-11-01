@@ -39,13 +39,6 @@
             <Setter Target="AvailableUpdateCard.(Grid.Column)" Value="0" />
             <Setter Target="UpdatesTrustCard.(Grid.Row)" Value="3" />
             <Setter Target="UpdatesTrustCard.(Grid.Column)" Value="0" />
-            <Setter Target="DiagnosticsHeaderActions.(Grid.Row)" Value="1" />
-            <Setter Target="DiagnosticsHeaderActions.(Grid.Column)" Value="0" />
-            <Setter Target="DiagnosticsHeaderActions.Margin" Value="0,12,0,0" />
-            <Setter Target="DiagnosticsPrimaryColumn.Width" Value="*" />
-            <Setter Target="DiagnosticsSecondaryColumn.Width" Value="0" />
-            <Setter Target="DiagnosticsStatusCard.(Grid.Row)" Value="1" />
-            <Setter Target="DiagnosticsStatusCard.(Grid.Column)" Value="0" />
           </VisualState.Setters>
         </VisualState>
         <VisualState x:Name="ExpandedWindowLayout">
@@ -2808,246 +2801,308 @@ CPU —   GPU —
           </ScrollViewer>
 
           <!-- DIAGNOSTICS & SETTINGS PAGE -->
-          <ScrollViewer
-              x:Name="DiagnosticsPage"
-              HorizontalScrollBarVisibility="Disabled"
-              VerticalScrollBarVisibility="Auto"
-              Visibility="Collapsed">
-            <StackPanel
-                MaxWidth="1440"
-                Margin="24,18,24,40"
-                HorizontalAlignment="Stretch"
-                Spacing="14">
-
-              <!-- Bento Header -->
-              <Border
-                  Style="{StaticResource DismodeDeckHeaderStyle}">
-                <Grid x:Name="DiagnosticsHeaderGrid" ColumnSpacing="20" RowSpacing="12">
-                  <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="*" />
-                    <ColumnDefinition Width="Auto" />
-                  </Grid.ColumnDefinitions>
-                  <Grid.RowDefinitions>
-                    <RowDefinition Height="Auto" />
-                    <RowDefinition Height="Auto" />
-                  </Grid.RowDefinitions>
-                  <StackPanel VerticalAlignment="Center" Spacing="4">
-                    <TextBlock
-                        Style="{StaticResource DismodeEyebrowStyle}"
-                        Text="DISMODE / CENTRUM KONDYCJI PC" />
-                    <TextBlock
-                        Style="{StaticResource DismodePageTitleStyle}"
-                        Text="Diagnostyka i Ustawienia" />
-                    <TextBlock
-                        Foreground="{ThemeResource DismodeMutedTextBrush}"
-                        FontSize="13"
-                        Text="Sprawdź stan optymalizacji Windows, silnika Dismode oraz dostosuj wygląd aplikacji."
-                        TextWrapping="Wrap" />
-                  </StackPanel>
-                  <StackPanel x:Name="DiagnosticsHeaderActions" Grid.Column="1" VerticalAlignment="Center" Orientation="Horizontal" Spacing="10">
-                    <Button
-                        Style="{StaticResource DismodeSecondaryButtonStyle}"
-                        Click="OnRefreshDiagnosticsClicked">
-                      <StackPanel Orientation="Horizontal" Spacing="8">
-                        <FontIcon FontSize="15" Glyph="&#xE72C;" />
-                        <TextBlock Text="Sprawdź ponownie" />
-                      </StackPanel>
-                    </Button>
-                  </StackPanel>
+          <ScrollViewer x:Name="DiagnosticsPage" HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto" Visibility="Collapsed">
+            <ScrollViewer.Resources>
+              <Style x:Key="SettingsSectionTitleStyle" TargetType="TextBlock">
+                <Setter Property="FontSize" Value="14"/>
+                <Setter Property="FontWeight" Value="SemiBold"/>
+                <Setter Property="Foreground" Value="{ThemeResource DismodeMutedTextBrush}"/>
+              </Style>
+              <Style x:Key="SettingsThemeCardStyle" TargetType="RadioButton">
+                <Setter Property="HorizontalAlignment" Value="Stretch"/>
+                <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
+                <Setter Property="Template">
+                  <Setter.Value>
+                    <ControlTemplate TargetType="RadioButton">
+                      <Border x:Name="ThemeCard" MinWidth="168" Padding="16" CornerRadius="11" BorderThickness="1" Background="{ThemeResource DismodePanelBrush}" BorderBrush="{ThemeResource DismodeCardEdgeBrush}">
+                        <VisualStateManager.VisualStateGroups>
+                          <VisualStateGroup x:Name="CommonStates">
+                            <VisualState x:Name="Normal"/>
+                            <VisualState x:Name="PointerOver">
+                              <VisualState.Setters>
+                                <Setter Target="ThemeCard.BorderBrush" Value="{ThemeResource DismodeAccentBrush}"/>
+                              </VisualState.Setters>
+                            </VisualState>
+                            <VisualState x:Name="Pressed">
+                              <VisualState.Setters>
+                                <Setter Target="ThemeCard.Opacity" Value="0.65"/>
+                              </VisualState.Setters>
+                            </VisualState>
+                            <VisualState x:Name="Disabled">
+                              <VisualState.Setters>
+                                <Setter Target="ThemeCard.Opacity" Value="0.4"/>
+                              </VisualState.Setters>
+                            </VisualState>
+                          </VisualStateGroup>
+                          <VisualStateGroup x:Name="CheckStates">
+                            <VisualState x:Name="Unchecked"/>
+                            <VisualState x:Name="Checked">
+                              <VisualState.Setters>
+                                <Setter Target="ThemeCard.BorderBrush" Value="{ThemeResource DismodeAccentBrush}"/>
+                                <Setter Target="ThemeCard.Background" Value="{ThemeResource DismodeAccentSoftBrush}"/>
+                              </VisualState.Setters>
+                            </VisualState>
+                          </VisualStateGroup>
+                        </VisualStateManager.VisualStateGroups>
+                        <ContentPresenter Content="{TemplateBinding Content}" HorizontalContentAlignment="Stretch"/>
+                      </Border>
+                    </ControlTemplate>
+                  </Setter.Value>
+                </Setter>
+              </Style>
+            </ScrollViewer.Resources>
+            <StackPanel MaxWidth="1280" Margin="32,24,32,40" HorizontalAlignment="Stretch" Spacing="24">
+              <TextBlock Style="{StaticResource DismodePageTitleStyle}" Text="Ustawienia"/>
+              <StackPanel Spacing="8">
+                <Grid>
+                  <TextBlock Style="{StaticResource SettingsSectionTitleStyle}" Text="Stan komputera" VerticalAlignment="Center"/>
+                  <Button HorizontalAlignment="Right" Padding="8" Style="{StaticResource DismodeSecondaryButtonStyle}" Click="OnRefreshDiagnosticsClicked" ToolTipService.ToolTip="Sprawdź ponownie" AutomationProperties.Name="Sprawdź ponownie">
+                    <FontIcon FontSize="16" Glyph=""/>
+                  </Button>
                 </Grid>
-              </Border>
-
-              <Grid x:Name="DiagnosticsSectionsGrid" ColumnSpacing="16" RowSpacing="16">
-                <Grid.ColumnDefinitions>
-                  <ColumnDefinition x:Name="DiagnosticsPrimaryColumn" Width="1.15*" />
-                  <ColumnDefinition x:Name="DiagnosticsSecondaryColumn" Width="0.85*" />
-                </Grid.ColumnDefinitions>
-                <Grid.RowDefinitions>
-                  <RowDefinition Height="Auto" />
-                  <RowDefinition Height="Auto" />
-                  <RowDefinition Height="Auto" />
-                  <RowDefinition Height="Auto" />
-                  <RowDefinition Height="Auto" />
-                </Grid.RowDefinitions>
-
-                <!-- Gaming & GPU Windows 11 Diagnostics Card -->
-                <Border
-                    x:Name="DiagnosticsGamingCard"
-                    VerticalAlignment="Top"
-                    Style="{StaticResource DismodeDeckCardStyle}">
-                  <StackPanel Spacing="12">
-                    <StackPanel Orientation="Horizontal" Spacing="8">
-                      <FontIcon Foreground="{ThemeResource DismodeAccentBrush}" FontSize="18" Glyph="&#xE790;" />
-                      <TextBlock
-                          FontSize="18"
-                          FontWeight="SemiBold"
-                          Text="Konfiguracja gamingowa Windows &amp; GPU" />
-                    </StackPanel>
-                    <TextBlock
-                        x:Name="DiagnosticsGamingEnvironmentText"
-                        Foreground="{ThemeResource DismodeAccentBrush}"
-                        FontSize="14"
-                        FontWeight="SemiBold"
-                        IsTextSelectionEnabled="True"
-                        Text="Badanie konfiguracji..."
-                        TextWrapping="Wrap" />
-                    <TextBlock
-                        x:Name="DiagnosticsGamingRecommendationsText"
-                        Foreground="{ThemeResource DismodeMutedTextBrush}"
-                        FontSize="13"
-                        IsTextSelectionEnabled="True"
-                        Text=""
-                        TextWrapping="Wrap" />
-                  </StackPanel>
-                </Border>
-
-                <!-- System & Modules Status Card -->
-                <Border
-                    x:Name="DiagnosticsStatusCard"
-                    Grid.Column="1"
-                    VerticalAlignment="Top"
-                    Style="{StaticResource DismodeDeckCardStyle}">
-                  <StackPanel Spacing="12">
-                    <TextBlock
-                        FontSize="18"
-                        FontWeight="SemiBold"
-                        Text="Status silnika Dismode" />
-
-                    <Grid RowSpacing="10" ColumnSpacing="12">
+                <controls:SettingsTilePanel MinimumItemWidth="192" MaximumColumns="5">
+                  <Border x:Name="DiagnosticsGamingCard" VerticalAlignment="Top" Style="{StaticResource DismodeDeckCardStyle}" Padding="16,12" AutomationProperties.Name="Windows i GPU">
+                    <ToolTipService.ToolTip>
+                      <ToolTip>
+                        <StackPanel MaxWidth="440" Spacing="8">
+                          <TextBlock x:Name="DiagnosticsGamingEnvironmentText" Foreground="{ThemeResource DismodeAccentBrush}" FontSize="14" FontWeight="SemiBold" IsTextSelectionEnabled="True" Text="Badanie konfiguracji..." TextWrapping="Wrap"/>
+                          <TextBlock x:Name="DiagnosticsGamingRecommendationsText" Foreground="{ThemeResource DismodeMutedTextBrush}" FontSize="13" IsTextSelectionEnabled="True" Text="" TextWrapping="Wrap"/>
+                        </StackPanel>
+                      </ToolTip>
+                    </ToolTipService.ToolTip>
+                    <Grid ColumnSpacing="8">
                       <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="Auto" />
-                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto"/>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="Auto"/>
                       </Grid.ColumnDefinitions>
-                      <Grid.RowDefinitions>
-                        <RowDefinition Height="Auto" />
-                        <RowDefinition Height="Auto" />
-                        <RowDefinition Height="Auto" />
-                      </Grid.RowDefinitions>
-
-                      <TextBlock FontWeight="SemiBold" FontSize="13" Text="Silnik optymalizacji:" />
-                      <TextBlock
-                          x:Name="DiagnosticsSessionHostText"
-                          Grid.Column="1"
-                          Foreground="{ThemeResource DismodeSuccessBrush}"
-                          FontSize="13"
-                          Text="Gotowy"
-                          TextWrapping="Wrap" />
-
-                      <TextBlock Grid.Row="1" FontWeight="SemiBold" FontSize="13" Text="Agent diagnostyczny:" />
-                      <TextBlock
-                          x:Name="DiagnosticsSystemAgentText"
-                          Grid.Row="1"
-                          Grid.Column="1"
-                          Foreground="{ThemeResource DismodeSuccessBrush}"
-                          FontSize="13"
-                          Text="Gotowy"
-                          TextWrapping="Wrap" />
-
-                      <TextBlock Grid.Row="2" FontWeight="SemiBold" FontSize="13" Text="System operacyjny:" />
-                      <TextBlock
-                          x:Name="DiagnosticsPlatformText"
-                          Grid.Row="2"
-                          Grid.Column="1"
-                          FontSize="13"
-                          Text="Windows"
-                          TextWrapping="Wrap" />
+                      <FontIcon FontSize="16" Glyph="" Foreground="{ThemeResource DismodeMutedTextBrush}"/>
+                      <TextBlock Grid.Column="1" FontSize="12" Text="Windows i GPU" TextWrapping="Wrap" VerticalAlignment="Center"/>
+                      <Ellipse x:Name="DiagnosticsGamingDot" Grid.Column="2" Width="8" Height="8" Fill="{ThemeResource DismodeMutedTextBrush}" VerticalAlignment="Center"/>
                     </Grid>
-                    <!-- Hidden bindings for internal IPC / User SIDs to prevent C# errors -->
-                    <StackPanel Visibility="Collapsed">
-                      <TextBlock x:Name="DiagnosticsProtocolText" />
-                      <TextBlock x:Name="DiagnosticsUserText" />
-                    </StackPanel>
-                  </StackPanel>
-                </Border>
-
-                <Border
-                    x:Name="SettingsAppearanceCard"
-                    Grid.Row="1"
-                    VerticalAlignment="Top"
-                    Style="{StaticResource DismodeDeckCardStyle}">
-                  <StackPanel Spacing="12">
-                    <TextBlock
-                        FontSize="18"
-                        FontWeight="SemiBold"
-                        Text="Wygląd i efekty" />
-                    <StackPanel Spacing="8" Margin="0,6,0,0">
-                      <TextBlock
-                          FontWeight="SemiBold"
-                          FontSize="13"
-                          Text="Motyw aplikacji" />
-                      <ComboBox
-                          x:Name="ThemeSelector"
-                          HorizontalAlignment="Stretch"
-                          AutomationProperties.Name="Motyw aplikacji"
-                          SelectedIndex="2"
-                          SelectionChanged="OnThemeSelectionChanged">
-                        <ComboBoxItem Content="Ciemny (Domyślny)" Tag="Dark" />
-                        <ComboBoxItem Content="Jasny" Tag="Light" />
-                        <ComboBoxItem Content="Zgodny z systemem" Tag="Default" />
-                      </ComboBox>
-                    </StackPanel>
-
-                    <!-- SFX and VFX Settings -->
-                    <StackPanel Spacing="10" Margin="0,10,0,0">
-                      <TextBlock
-                          FontWeight="SemiBold"
-                          FontSize="13"
-                          Text="Efekty gamingowe (SFX / VFX)" />
-
-                      <Grid ColumnSpacing="12">
-                        <Grid.ColumnDefinitions>
-                          <ColumnDefinition Width="*" />
-                          <ColumnDefinition Width="Auto" />
-                        </Grid.ColumnDefinitions>
-                        <StackPanel VerticalAlignment="Center">
-                          <TextBlock FontSize="13" Text="Dźwięki interfejsu (SFX)" />
-                          <TextBlock Foreground="{ThemeResource DismodeMutedTextBrush}" FontSize="11" Text="Dźwięki startu sesji, powiadomień i przełączników." />
+                  </Border>
+                  <Border x:Name="DiagnosticsStatusCard" VerticalAlignment="Top" Style="{StaticResource DismodeDeckCardStyle}" Padding="16,12" AutomationProperties.Name="Silnik Dismode">
+                    <ToolTipService.ToolTip>
+                      <ToolTip>
+                        <StackPanel MaxWidth="440" Spacing="8">
+                          <TextBlock x:Name="DiagnosticsSessionHostText" Foreground="{ThemeResource DismodeSuccessBrush}" FontSize="13" Text="Sprawdzanie…" TextWrapping="Wrap"/>
                         </StackPanel>
-                        <ToggleSwitch
-                            x:Name="SfxToggleSwitch"
-                            AutomationProperties.Name="Dźwięki interfejsu"
-                            Grid.Column="1"
-                            IsOn="True"
-                            OffContent="WYŁ."
-                            OnContent="WŁ."
-                            Toggled="OnSfxToggled" />
-                      </Grid>
-
-                      <Grid ColumnSpacing="12">
-                        <Grid.ColumnDefinitions>
-                          <ColumnDefinition Width="*" />
-                          <ColumnDefinition Width="Auto" />
-                        </Grid.ColumnDefinitions>
-                        <StackPanel VerticalAlignment="Center">
-                          <TextBlock FontSize="13" Text="Efekty wizualne (VFX)" />
-                          <TextBlock Foreground="{ThemeResource DismodeMutedTextBrush}" FontSize="11" Text="Animacje pulsowania, poświaty i przejść Bento." />
+                      </ToolTip>
+                    </ToolTipService.ToolTip>
+                    <Grid ColumnSpacing="8">
+                      <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto"/>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="Auto"/>
+                      </Grid.ColumnDefinitions>
+                      <FontIcon FontSize="16" Glyph="" Foreground="{ThemeResource DismodeMutedTextBrush}"/>
+                      <TextBlock Grid.Column="1" FontSize="12" Text="Silnik Dismode" TextWrapping="Wrap" VerticalAlignment="Center"/>
+                      <Ellipse x:Name="DiagnosticsSessionHostDot" Grid.Column="2" Width="8" Height="8" Fill="{ThemeResource DismodeMutedTextBrush}" VerticalAlignment="Center"/>
+                    </Grid>
+                  </Border>
+                  <Border Style="{StaticResource DismodeDeckCardStyle}" Padding="16,12" AutomationProperties.Name="Agent diagnostyczny">
+                    <ToolTipService.ToolTip>
+                      <ToolTip>
+                        <StackPanel MaxWidth="440" Spacing="8">
+                          <TextBlock x:Name="DiagnosticsSystemAgentText" Foreground="{ThemeResource DismodeSuccessBrush}" FontSize="13" Text="Sprawdzanie…" TextWrapping="Wrap"/>
                         </StackPanel>
-                        <ToggleSwitch
-                            x:Name="VfxToggleSwitch"
-                            AutomationProperties.Name="Efekty wizualne"
-                            Grid.Column="1"
-                            IsOn="True"
-                            OffContent="WYŁ."
-                            OnContent="WŁ."
-                            Toggled="OnVfxToggled" />
-                      </Grid>
-                    </StackPanel>
-                  </StackPanel>
+                      </ToolTip>
+                    </ToolTipService.ToolTip>
+                    <Grid ColumnSpacing="8">
+                      <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto"/>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="Auto"/>
+                      </Grid.ColumnDefinitions>
+                      <FontIcon FontSize="16" Glyph="" Foreground="{ThemeResource DismodeMutedTextBrush}"/>
+                      <TextBlock Grid.Column="1" FontSize="12" Text="Agent diagnostyczny" TextWrapping="Wrap" VerticalAlignment="Center"/>
+                      <Ellipse x:Name="DiagnosticsSystemAgentDot" Grid.Column="2" Width="8" Height="8" Fill="{ThemeResource DismodeMutedTextBrush}" VerticalAlignment="Center"/>
+                    </Grid>
+                  </Border>
+                  <Border Style="{StaticResource DismodeDeckCardStyle}" Padding="16,12" AutomationProperties.Name="System operacyjny">
+                    <ToolTipService.ToolTip>
+                      <ToolTip>
+                        <StackPanel MaxWidth="440" Spacing="8">
+                          <TextBlock x:Name="DiagnosticsPlatformText" FontSize="13" Text="Windows" TextWrapping="Wrap"/>
+                        </StackPanel>
+                      </ToolTip>
+                    </ToolTipService.ToolTip>
+                    <Grid ColumnSpacing="8">
+                      <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto"/>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="Auto"/>
+                      </Grid.ColumnDefinitions>
+                      <FontIcon FontSize="16" Glyph="" Foreground="{ThemeResource DismodeMutedTextBrush}"/>
+                      <TextBlock Grid.Column="1" FontSize="12" Text="System operacyjny" TextWrapping="Wrap" VerticalAlignment="Center"/>
+                      <Ellipse x:Name="DiagnosticsPlatformDot" Grid.Column="2" Width="8" Height="8" Fill="{ThemeResource DismodeMutedTextBrush}" VerticalAlignment="Center"/>
+                    </Grid>
+                  </Border>
+                  <Border Style="{StaticResource DismodeDeckCardStyle}" Padding="16,12" AutomationProperties.Name="Procesor">
+                    <ToolTipService.ToolTip>
+                      <ToolTip>
+                        <StackPanel MaxWidth="440" Spacing="8">
+                          <TextBlock x:Name="CpuTopologyText" Foreground="{ThemeResource DismodeMutedTextBrush}" FontSize="11" Text="Odczytywanie topologii procesora…" TextWrapping="Wrap"/>
+                        </StackPanel>
+                      </ToolTip>
+                    </ToolTipService.ToolTip>
+                    <Grid ColumnSpacing="8">
+                      <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto"/>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="Auto"/>
+                      </Grid.ColumnDefinitions>
+                      <FontIcon FontSize="16" Glyph="" Foreground="{ThemeResource DismodeMutedTextBrush}"/>
+                      <TextBlock Grid.Column="1" FontSize="12" Text="Procesor" TextWrapping="Wrap" VerticalAlignment="Center"/>
+                      <Ellipse x:Name="DiagnosticsCpuDot" Grid.Column="2" Width="8" Height="8" Fill="{ThemeResource DismodeMutedTextBrush}" VerticalAlignment="Center"/>
+                    </Grid>
+                  </Border>
+                </controls:SettingsTilePanel>
+              </StackPanel>
+              <StackPanel x:Name="SettingsPerformanceCard" Spacing="8">
+                <TextBlock Style="{StaticResource SettingsSectionTitleStyle}" Text="Gra i pomiar"/>
+                <controls:SettingsTilePanel>
+                  <controls:SettingsOptionTile Title="Pomiar FPS" Benefit="Zobacz, jak płynnie działa gra." Glyph="">
+                    <controls:SettingsOptionTile.Details>
+                      <TextBlock FontSize="12" TextWrapping="Wrap" Text="Wyłączenie zatrzymuje pomiar i czyści telemetrię sesji."/>
+                    </controls:SettingsOptionTile.Details>
+                    <controls:SettingsOptionTile.Option>
+                      <ToggleSwitch x:Name="FpsTrackingSettingsToggleSwitch" AutomationProperties.Name="Włącz pomiar FPS w ustawieniach" IsOn="True" Toggled="OnFpsTrackingSettingChanged" MinWidth="40" OnContent="" OffContent=""/>
+                    </controls:SettingsOptionTile.Option>
+                  </controls:SettingsOptionTile>
+                  <controls:SettingsOptionTile Title="Nakładka FPS" Benefit="Miej FPS na oku podczas gry." Glyph="">
+                    <controls:SettingsOptionTile.Details>
+                      <TextBlock FontSize="12" TextWrapping="Wrap" Text="Wyłączenie ukrywa HUD, ale nie zatrzymuje pomiaru."/>
+                    </controls:SettingsOptionTile.Details>
+                    <controls:SettingsOptionTile.Option>
+                      <ToggleSwitch x:Name="FpsOverlaySettingsToggleSwitch" AutomationProperties.Name="Włącz nakładkę FPS w ustawieniach" IsOn="True" Toggled="OnFpsOverlaySettingChanged" MinWidth="40" OnContent="" OffContent=""/>
+                    </controls:SettingsOptionTile.Option>
+                  </controls:SettingsOptionTile>
+                  <controls:SettingsOptionTile Title="Wyświetlone FPS i zgubione klatki" Benefit="Sprawdź, które klatki docierają na ekran." Glyph="">
+                    <controls:SettingsOptionTile.Details>
+                      <TextBlock FontSize="12" TextWrapping="Wrap" Text="Opcjonalne. Śledzi klatki aż do ekranu, więc pomiar zużywa trochę więcej zasobów. Działa od następnego pomiaru."/>
+                    </controls:SettingsOptionTile.Details>
+                    <controls:SettingsOptionTile.Option>
+                      <ToggleSwitch x:Name="DisplayedFramesSettingsToggleSwitch" AutomationProperties.Name="Włącz śledzenie wyświetlonych klatek w ustawieniach" IsOn="False" Toggled="OnDisplayedFramesSettingChanged" MinWidth="40" OnContent="" OffContent=""/>
+                    </controls:SettingsOptionTile.Option>
+                  </controls:SettingsOptionTile>
+                  <controls:SettingsOptionTile Title="Dane z biblioteki producenta GPU" Benefit="Sprawdzaj temperaturę, zegar i moc GPU." Glyph="">
+                    <controls:SettingsOptionTile.Details>
+                      <TextBlock FontSize="12" TextWrapping="Wrap" Text="Temperatura, zegar i moc GPU. Opcja ładuje podpisaną bibliotekę sterownika."/>
+                    </controls:SettingsOptionTile.Details>
+                    <controls:SettingsOptionTile.Option>
+                      <ToggleSwitch x:Name="VendorTelemetrySettingsToggleSwitch" AutomationProperties.Name="Włącz dane z biblioteki producenta GPU w ustawieniach" IsOn="False" Toggled="OnVendorTelemetrySettingChanged" MinWidth="40" OnContent="" OffContent=""/>
+                    </controls:SettingsOptionTile.Option>
+                  </controls:SettingsOptionTile>
+                  <controls:SettingsOptionTile Title="Ograniczaj procesy tła w trakcie gry" Benefit="Zostaw grze więcej miejsca na procesorze." Glyph="">
+                    <controls:SettingsOptionTile.Details>
+                      <TextBlock x:Name="ProBalanceDescriptionText" Foreground="{ThemeResource DismodeMutedTextBrush}" FontSize="11" Text="Dismode zamyka procesy, które zaczynają zjadać procesor już w trakcie gry, w ćwiartce rdzeni, obniża im priorytet i priorytet dysku, a po sesji oddaje wszystko — także ich procesom potomnym. Zmierzone pod pełnym obciążeniem (7 Days To Die): p99 czasu klatki 16,80 ms bez tego, 10,65 ms z tym; przy lekkim tle pętla milczy. Powłoki, anti-cheat i samej gry nie dotyka." TextWrapping="Wrap"/>
+                    </controls:SettingsOptionTile.Details>
+                    <controls:SettingsOptionTile.Option>
+                      <ToggleSwitch x:Name="ProBalanceToggleSwitch" AutomationProperties.Name="Ograniczaj procesy tła w trakcie gry" IsOn="True" Toggled="OnProBalanceSettingChanged" MinWidth="40" OnContent="" OffContent=""/>
+                    </controls:SettingsOptionTile.Option>
+                  </controls:SettingsOptionTile>
+                  <controls:SettingsOptionTile Title="Automatycznie optymalizuj wykrytą grę" Benefit="Stosuj zapisane reguły także poza Dismode." Glyph="">
+                    <controls:SettingsOptionTile.Details>
+                      <TextBlock FontSize="12" TextWrapping="Wrap" Text="Gdy gra z biblioteki wystartuje poza Dismodeem, Dismode sam do niej dołączy i zastosuje jej zapisane reguły — także gdy okno jest schowane w zasobniku. Nigdy nie uruchamia gry samodzielnie. Sesję zakończoną ręcznie zostawia w spokoju do następnego uruchomienia tej gry. Ten sam przełącznik jest w menu ikony zasobnika."/>
+                    </controls:SettingsOptionTile.Details>
+                    <controls:SettingsOptionTile.Option>
+                      <ToggleSwitch x:Name="AutoOptimizeDetectedGamesToggleSwitch" AutomationProperties.Name="Automatycznie optymalizuj wykrytą grę" IsOn="True" Toggled="OnAutoOptimizeDetectedGamesSettingChanged" MinWidth="40" OnContent="" OffContent=""/>
+                    </controls:SettingsOptionTile.Option>
+                  </controls:SettingsOptionTile>
+                </controls:SettingsTilePanel>
+                <Border Style="{StaticResource DismodeDeckCardStyle}" Padding="16,12">
+                  <Grid ColumnSpacing="16">
+                    <Grid.ColumnDefinitions>
+                      <ColumnDefinition Width="*"/>
+                      <ColumnDefinition Width="Auto"/>
+                    </Grid.ColumnDefinitions>
+                    <TextBlock Text="Reguły dla wszystkich gier" FontSize="12" TextWrapping="Wrap" VerticalAlignment="Center">
+                      <ToolTipService.ToolTip>
+                        <ToolTip MaxWidth="440">
+                          <TextBlock x:Name="GlobalRulesSummaryText" Foreground="{ThemeResource DismodeMutedTextBrush}" FontSize="11" Text="Brak. Zapiszesz je na stronie planu polem „także dla wszystkich innych gier”; reguła zapisana dla konkretnej gry ma pierwszeństwo." TextWrapping="Wrap"/>
+                        </ToolTip>
+                      </ToolTipService.ToolTip>
+                    </TextBlock>
+                    <Button x:Name="ClearGlobalRulesButton" Grid.Column="1" Content="Wyczyść" AutomationProperties.Name="Wyczyść reguły dla wszystkich gier" IsEnabled="False" Click="OnClearGlobalRulesClicked" Style="{StaticResource DismodeSecondaryButtonStyle}"/>
+                  </Grid>
                 </Border>
-
-                <Border
-                    x:Name="SettingsPerformanceCard"
-                    Grid.Row="1"
-                    Grid.Column="1"
-                    VerticalAlignment="Top"
-                    Style="{StaticResource DismodeDeckCardStyle}">
-                  <StackPanel Spacing="12">
-                    <!-- FPS tracking and overlay can be disabled independently. -->
+              </StackPanel>
+              <StackPanel x:Name="SettingsAppearanceCard" Spacing="8">
+                <TextBlock Style="{StaticResource SettingsSectionTitleStyle}" Text="Wygląd i efekty"/>
+                <RadioButtons x:Name="ThemeSelector" MaxColumns="3" SelectedIndex="2" AutomationProperties.Name="Motyw aplikacji" SelectionChanged="OnThemeSelectionChanged">
+                  <RadioButton Tag="Dark" AutomationProperties.Name="Ciemny" Style="{StaticResource SettingsThemeCardStyle}">
                     <StackPanel Spacing="8">
-                      <ToggleSwitch x:Name="EdgePanelSettingsToggleSwitch"
-                          Header="Panel przy krawędzi ekranu" IsOn="True"
-                          OnContent="Włączony" OffContent="Wyłączony"
-                          Toggled="OnEdgePanelSettingChanged" />
+                      <Grid Height="32" ColumnSpacing="8">
+                        <Grid.ColumnDefinitions>
+                          <ColumnDefinition Width="*"/>
+                          <ColumnDefinition Width="*"/>
+                          <ColumnDefinition Width="16"/>
+                        </Grid.ColumnDefinitions>
+                        <Border Background="#101820" BorderBrush="{ThemeResource DismodeCardEdgeBrush}" BorderThickness="1" CornerRadius="4"/>
+                        <Border Grid.Column="1" Background="#263A4B" BorderBrush="{ThemeResource DismodeCardEdgeBrush}" BorderThickness="1" CornerRadius="4"/>
+                        <Border Grid.Column="2" Background="{ThemeResource DismodeAccentBrush}" CornerRadius="4"/>
+                      </Grid>
+                      <TextBlock Text="Ciemny" FontSize="13" TextWrapping="Wrap"/>
+                    </StackPanel>
+                  </RadioButton>
+                  <RadioButton Tag="Light" AutomationProperties.Name="Jasny" Style="{StaticResource SettingsThemeCardStyle}">
+                    <StackPanel Spacing="8">
+                      <Grid Height="32" ColumnSpacing="8">
+                        <Grid.ColumnDefinitions>
+                          <ColumnDefinition Width="*"/>
+                          <ColumnDefinition Width="*"/>
+                          <ColumnDefinition Width="16"/>
+                        </Grid.ColumnDefinitions>
+                        <Border Background="#F1F6FA" BorderBrush="{ThemeResource DismodeCardEdgeBrush}" BorderThickness="1" CornerRadius="4"/>
+                        <Border Grid.Column="1" Background="#CBD6E0" BorderBrush="{ThemeResource DismodeCardEdgeBrush}" BorderThickness="1" CornerRadius="4"/>
+                        <Border Grid.Column="2" Background="{ThemeResource DismodeAccentBrush}" CornerRadius="4"/>
+                      </Grid>
+                      <TextBlock Text="Jasny" FontSize="13" TextWrapping="Wrap"/>
+                    </StackPanel>
+                  </RadioButton>
+                  <RadioButton Tag="Default" AutomationProperties.Name="Zgodny z systemem" Style="{StaticResource SettingsThemeCardStyle}">
+                    <StackPanel Spacing="8">
+                      <Grid Height="32" ColumnSpacing="8">
+                        <Grid.ColumnDefinitions>
+                          <ColumnDefinition Width="*"/>
+                          <ColumnDefinition Width="*"/>
+                          <ColumnDefinition Width="16"/>
+                        </Grid.ColumnDefinitions>
+                        <Border Background="#101820" BorderBrush="{ThemeResource DismodeCardEdgeBrush}" BorderThickness="1" CornerRadius="4"/>
+                        <Border Grid.Column="1" Background="#F1F6FA" BorderBrush="{ThemeResource DismodeCardEdgeBrush}" BorderThickness="1" CornerRadius="4"/>
+                        <Border Grid.Column="2" Background="{ThemeResource DismodeAccentBrush}" CornerRadius="4"/>
+                      </Grid>
+                      <TextBlock Text="Zgodny z systemem" FontSize="13" TextWrapping="Wrap"/>
+                    </StackPanel>
+                  </RadioButton>
+                </RadioButtons>
+                <controls:SettingsTilePanel>
+                  <controls:SettingsOptionTile Title="Dźwięki interfejsu" Benefit="Usłysz potwierdzenia działań w aplikacji." Glyph="">
+                    <controls:SettingsOptionTile.Details>
+                      <TextBlock FontSize="12" TextWrapping="Wrap" Text="Dźwięki startu sesji, powiadomień i przełączników."/>
+                    </controls:SettingsOptionTile.Details>
+                    <controls:SettingsOptionTile.Option>
+                      <ToggleSwitch x:Name="SfxToggleSwitch" AutomationProperties.Name="Dźwięki interfejsu" IsOn="True" Toggled="OnSfxToggled" MinWidth="40" OnContent="" OffContent=""/>
+                    </controls:SettingsOptionTile.Option>
+                  </controls:SettingsOptionTile>
+                  <controls:SettingsOptionTile Title="Efekty wizualne" Benefit="Korzystaj z płynnych przejść i poświat." Glyph="">
+                    <controls:SettingsOptionTile.Details>
+                      <TextBlock FontSize="12" TextWrapping="Wrap" Text="Animacje pulsowania, poświaty i przejść Bento."/>
+                    </controls:SettingsOptionTile.Details>
+                    <controls:SettingsOptionTile.Option>
+                      <ToggleSwitch x:Name="VfxToggleSwitch" AutomationProperties.Name="Efekty wizualne" IsOn="True" Toggled="OnVfxToggled" MinWidth="40" OnContent="" OffContent=""/>
+                    </controls:SettingsOptionTile.Option>
+                  </controls:SettingsOptionTile>
+                  <Border Style="{StaticResource DismodeDeckCardStyle}" Padding="16">
+                    <StackPanel Spacing="8">
+                      <Grid>
+                        <FontIcon HorizontalAlignment="Left" FontSize="20" Glyph="" Foreground="{ThemeResource DismodeAccentBrush}"/>
+                        <Border HorizontalAlignment="Right" Padding="8,4" Background="{ThemeResource DismodePanelBrush}" BorderBrush="{ThemeResource DismodeCardEdgeBrush}" BorderThickness="1" CornerRadius="4">
+                          <TextBlock Text="Alt+D" FontSize="12"/>
+                        </Border>
+                      </Grid>
+                      <ToggleSwitch x:Name="EdgePanelSettingsToggleSwitch" IsOn="True" Toggled="OnEdgePanelSettingChanged" Header="Panel przy krawędzi ekranu" AutomationProperties.Name="Panel przy krawędzi ekranu" MinWidth="40" OnContent="" OffContent=""/>
                       <StackPanel x:Name="EdgeHandleTransparencyRow" Spacing="4">
                         <Grid ColumnSpacing="8">
                           <Grid.ColumnDefinitions>
@@ -3062,351 +3117,82 @@ CPU —   GPU —
                             Value="50" TickFrequency="5" SnapsTo="StepValues"
                             AutomationProperties.Name="Przezroczystość uchwytu" ValueChanged="OnEdgeHandleTransparencyChanged" />
                       </StackPanel>
-                      <TextBlock Text="Alt+D" FontSize="12"
-                          Foreground="{ThemeResource DismodeMutedTextBrush}" />
                     </StackPanel>
-                    <StackPanel Spacing="10" Margin="0,10,0,0">
-                      <TextBlock
-                          FontWeight="SemiBold"
-                          FontSize="13"
-                          Text="Śledzenie wydajności" />
-
-                      <Grid ColumnSpacing="12">
-                        <Grid.ColumnDefinitions>
-                          <ColumnDefinition Width="*" />
-                          <ColumnDefinition Width="Auto" />
-                        </Grid.ColumnDefinitions>
-                        <StackPanel VerticalAlignment="Center" Spacing="2">
-                          <TextBlock FontSize="13" Text="Pomiar FPS" />
-                          <TextBlock
-                              Foreground="{ThemeResource DismodeMutedTextBrush}"
-                              FontSize="11"
-                              Text="Wyłączenie zatrzymuje pomiar i czyści telemetrię sesji."
-                              TextWrapping="Wrap" />
+                  </Border>
+                </controls:SettingsTilePanel>
+              </StackPanel>
+              <StackPanel Spacing="8">
+                <TextBlock Style="{StaticResource SettingsSectionTitleStyle}" Text="Optymalizatory"/>
+                <controls:SettingsTilePanel MaximumColumns="2">
+                  <Border x:Name="MemoryOptimizerCard" Style="{StaticResource DismodeDeckCardStyle}" Padding="16">
+                    <Grid ColumnSpacing="16">
+                      <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="Auto"/>
+                      </Grid.ColumnDefinitions>
+                      <StackPanel Spacing="8" VerticalAlignment="Center">
+                        <StackPanel Orientation="Horizontal" Spacing="8">
+                          <FontIcon Foreground="{ThemeResource DismodeAccentBrush}" FontSize="20" Glyph=""/>
+                          <TextBlock Text="Memory Optimizer" FontSize="15" FontWeight="SemiBold" VerticalAlignment="Center"/>
                         </StackPanel>
-                        <ToggleSwitch
-                            x:Name="FpsTrackingSettingsToggleSwitch"
-                            Grid.Column="1"
-                            AutomationProperties.Name="Włącz pomiar FPS w ustawieniach"
-                            IsOn="True"
-                            OffContent="WYŁ."
-                            OnContent="WŁ."
-                            Toggled="OnFpsTrackingSettingChanged" />
-                      </Grid>
-
-                      <Grid ColumnSpacing="12">
-                        <Grid.ColumnDefinitions>
-                          <ColumnDefinition Width="*" />
-                          <ColumnDefinition Width="Auto" />
-                        </Grid.ColumnDefinitions>
-                        <StackPanel VerticalAlignment="Center" Spacing="2">
-                          <TextBlock FontSize="13" Text="Nakładka FPS" />
-                          <TextBlock
-                              Foreground="{ThemeResource DismodeMutedTextBrush}"
-                              FontSize="11"
-                              Text="Wyłączenie ukrywa HUD, ale nie zatrzymuje pomiaru."
-                              TextWrapping="Wrap" />
+                        <TextBlock x:Name="MemoryOptimizerStatusText" Foreground="{ThemeResource DismodeAccentBrush}" FontSize="13" FontWeight="SemiBold" Text="Sprawdzanie stanu..." TextWrapping="Wrap"/>
+                      </StackPanel>
+                      <Button x:Name="OpenMemoryOptimizerButton" Grid.Column="1" VerticalAlignment="Center" Click="OnOpenMemoryOptimizerClicked" Style="{StaticResource DismodeSecondaryButtonStyle}" Content="Otwórz" AutomationProperties.Name="Otwórz ustawienia">
+                        <ToolTipService.ToolTip>
+                          <ToolTip MaxWidth="440">
+                            <TextBlock x:Name="MemoryOptimizerDetailsText" Foreground="{ThemeResource DismodeMutedTextBrush}" FontSize="12" Text="Opcjonalny komponent GPL działa niezależnie od części gamingowej." TextWrapping="Wrap"/>
+                          </ToolTip>
+                        </ToolTipService.ToolTip>
+                      </Button>
+                    </Grid>
+                  </Border>
+                  <Border x:Name="SystemOptimizerCard" Style="{StaticResource DismodeDeckCardStyle}" Padding="16">
+                    <Grid ColumnSpacing="16">
+                      <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="Auto"/>
+                      </Grid.ColumnDefinitions>
+                      <StackPanel Spacing="8" VerticalAlignment="Center">
+                        <StackPanel Orientation="Horizontal" Spacing="8">
+                          <FontIcon Foreground="{ThemeResource DismodeAccentBrush}" FontSize="20" Glyph=""/>
+                          <TextBlock Text="System Optimizer" FontSize="15" FontWeight="SemiBold" VerticalAlignment="Center"/>
                         </StackPanel>
-                        <ToggleSwitch
-                            x:Name="FpsOverlaySettingsToggleSwitch"
-                            Grid.Column="1"
-                            AutomationProperties.Name="Włącz nakładkę FPS w ustawieniach"
-                            IsOn="True"
-                            OffContent="WYŁ."
-                            OnContent="WŁ."
-                            Toggled="OnFpsOverlaySettingChanged" />
-                      </Grid>
-
-                      <Grid ColumnSpacing="12">
-                        <Grid.ColumnDefinitions>
-                          <ColumnDefinition Width="*" />
-                          <ColumnDefinition Width="Auto" />
-                        </Grid.ColumnDefinitions>
-                        <StackPanel VerticalAlignment="Center" Spacing="2">
-                          <TextBlock FontSize="13" Text="Wyświetlone FPS i zgubione klatki" />
-                          <TextBlock
-                              Foreground="{ThemeResource DismodeMutedTextBrush}"
-                              FontSize="11"
-                              Text="Opcjonalne. Śledzi klatki aż do ekranu, więc pomiar zużywa trochę więcej zasobów. Działa od następnego pomiaru."
-                              TextWrapping="Wrap" />
-                        </StackPanel>
-                        <ToggleSwitch
-                            x:Name="DisplayedFramesSettingsToggleSwitch"
-                            Grid.Column="1"
-                            AutomationProperties.Name="Włącz śledzenie wyświetlonych klatek w ustawieniach"
-                            IsOn="False"
-                            OffContent="WYŁ."
-                            OnContent="WŁ."
-                            Toggled="OnDisplayedFramesSettingChanged" />
-                      </Grid>
-
-                      <Grid ColumnSpacing="12">
-                        <Grid.ColumnDefinitions>
-                          <ColumnDefinition Width="*" />
-                          <ColumnDefinition Width="Auto" />
-                        </Grid.ColumnDefinitions>
-                        <StackPanel VerticalAlignment="Center" Spacing="2">
-                          <TextBlock FontSize="13" Text="Dane z biblioteki producenta GPU" />
-                          <TextBlock
-                              Foreground="{ThemeResource DismodeMutedTextBrush}"
-                              FontSize="11"
-                              Text="Temperatura, zegar i moc GPU. Opcja ładuje podpisaną bibliotekę sterownika."
-                              TextWrapping="Wrap" />
-                        </StackPanel>
-                        <ToggleSwitch
-                            x:Name="VendorTelemetrySettingsToggleSwitch"
-                            Grid.Column="1"
-                            AutomationProperties.Name="Włącz dane z biblioteki producenta GPU w ustawieniach"
-                            IsOn="False"
-                            OffContent="WYŁ."
-                            OnContent="WŁ."
-                            Toggled="OnVendorTelemetrySettingChanged" />
-                      </Grid>
-                    </StackPanel>
-
-                    <!-- Procesor: co Dismode wykrył i co wolno mu z tym
-                         zrobić. Opis stanu jest odczytem z maszyny, nie
-                         obietnicą — na jednorodnym procesorze przypinanie do
-                         rdzeni nic nie daje i pole to mówi. -->
-                    <StackPanel Spacing="10" Margin="0,18,0,0">
-                      <TextBlock
-                          FontWeight="SemiBold"
-                          FontSize="13"
-                          Text="Procesor" />
-
-                      <TextBlock
-                          x:Name="CpuTopologyText"
-                          Foreground="{ThemeResource DismodeMutedTextBrush}"
-                          FontSize="11"
-                          Text="Odczytywanie topologii procesora…"
-                          TextWrapping="Wrap" />
-
-                      <Grid ColumnSpacing="12">
-                        <Grid.ColumnDefinitions>
-                          <ColumnDefinition Width="*" />
-                          <ColumnDefinition Width="Auto" />
-                        </Grid.ColumnDefinitions>
-                        <StackPanel VerticalAlignment="Center" Spacing="2">
-                          <TextBlock
-                              FontSize="13"
-                              Text="Ograniczaj procesy tła w trakcie gry" />
-                          <TextBlock
-                              x:Name="ProBalanceDescriptionText"
-                              Foreground="{ThemeResource DismodeMutedTextBrush}"
-                              FontSize="11"
-                              Text="Dismode zamyka procesy, które zaczynają zjadać procesor już w trakcie gry, w ćwiartce rdzeni, obniża im priorytet i priorytet dysku, a po sesji oddaje wszystko — także ich procesom potomnym. Zmierzone pod pełnym obciążeniem (7 Days To Die): p99 czasu klatki 16,80 ms bez tego, 10,65 ms z tym; przy lekkim tle pętla milczy. Powłoki, anti-cheat i samej gry nie dotyka."
-                              TextWrapping="Wrap" />
-                        </StackPanel>
-                        <!-- Domyślnie włączone (2026-09-11, decyzja Damiana):
-                             to jedyny mechanizm z udowodnionym zyskiem, a stan
-                             przełącznika nie jest zapisywany, więc „wyłączone"
-                             znaczyło „wyłączone przy każdym starcie". -->
-                        <ToggleSwitch
-                            x:Name="ProBalanceToggleSwitch"
-                            Grid.Column="1"
-                            AutomationProperties.Name="Ograniczaj procesy tła w trakcie gry"
-                            IsOn="True"
-                            OffContent="WYŁ."
-                            OnContent="WŁ."
-                            Toggled="OnProBalanceSettingChanged" />
-                      </Grid>
-                    </StackPanel>
-
-                    <!-- Gra uruchomiona poza Dismodeem: ten sam
-                         „Optymalizuj w locie" co na banerze pulpitu, tylko
-                         bez klikania i także wtedy, gdy okno siedzi
-                         w zasobniku. Ta sama pozycja jest w menu ikony. -->
-                    <StackPanel Spacing="10" Margin="0,18,0,0">
-                      <TextBlock
-                          FontWeight="SemiBold"
-                          FontSize="13"
-                          Text="Wykrywanie gier" />
-
-                      <Grid ColumnSpacing="12">
-                        <Grid.ColumnDefinitions>
-                          <ColumnDefinition Width="*" />
-                          <ColumnDefinition Width="Auto" />
-                        </Grid.ColumnDefinitions>
-                        <StackPanel VerticalAlignment="Center" Spacing="2">
-                          <TextBlock
-                              FontSize="13"
-                              Text="Automatycznie optymalizuj wykrytą grę" />
-                          <TextBlock
-                              Foreground="{ThemeResource DismodeMutedTextBrush}"
-                              FontSize="11"
-                              Text="Gdy gra z biblioteki wystartuje poza Dismodeem, Dismode sam do niej dołączy i zastosuje jej zapisane reguły — także gdy okno jest schowane w zasobniku. Nigdy nie uruchamia gry samodzielnie. Sesję zakończoną ręcznie zostawia w spokoju do następnego uruchomienia tej gry. Ten sam przełącznik jest w menu ikony zasobnika."
-                              TextWrapping="Wrap" />
-                        </StackPanel>
-                        <ToggleSwitch
-                            x:Name="AutoOptimizeDetectedGamesToggleSwitch"
-                            Grid.Column="1"
-                            AutomationProperties.Name="Automatycznie optymalizuj wykrytą grę"
-                            IsOn="True"
-                            OffContent="WYŁ."
-                            OnContent="WŁ."
-                            Toggled="OnAutoOptimizeDetectedGamesSettingChanged" />
-                      </Grid>
-
-                      <Grid ColumnSpacing="12">
-                        <Grid.ColumnDefinitions>
-                          <ColumnDefinition Width="*" />
-                          <ColumnDefinition Width="Auto" />
-                        </Grid.ColumnDefinitions>
-                        <StackPanel VerticalAlignment="Center" Spacing="2">
-                          <TextBlock FontSize="13" Text="Reguły dla wszystkich gier" />
-                          <TextBlock
-                              x:Name="GlobalRulesSummaryText"
-                              Foreground="{ThemeResource DismodeMutedTextBrush}"
-                              FontSize="11"
-                              Text="Brak. Zapiszesz je na stronie planu polem „także dla wszystkich innych gier”; reguła zapisana dla konkretnej gry ma pierwszeństwo."
-                              TextWrapping="Wrap" />
-                        </StackPanel>
-                        <Button
-                            x:Name="ClearGlobalRulesButton"
-                            Grid.Column="1"
-                            VerticalAlignment="Center"
-                            AutomationProperties.Name="Wyczyść reguły dla wszystkich gier"
-                            Content="Wyczyść"
-                            IsEnabled="False"
-                            Click="OnClearGlobalRulesClicked" />
-                      </Grid>
-                    </StackPanel>
+                        <TextBlock x:Name="SystemOptimizerStatusText" Foreground="{ThemeResource DismodeAccentBrush}" FontSize="13" FontWeight="SemiBold" Text="Sprawdzanie stanu..." TextWrapping="Wrap"/>
+                      </StackPanel>
+                      <Button x:Name="OpenSystemOptimizerButton" Grid.Column="1" VerticalAlignment="Center" Click="OnOpenSystemOptimizerClicked" Style="{StaticResource DismodeSecondaryButtonStyle}" Content="Otwórz" AutomationProperties.Name="Otwórz optymalizator">
+                        <ToolTipService.ToolTip>
+                          <ToolTip MaxWidth="440">
+                            <TextBlock x:Name="SystemOptimizerProfileText" Foreground="{ThemeResource DismodeMutedTextBrush}" FontSize="12" Text="Brak aktywnego profilu systemowego." TextTrimming="CharacterEllipsis" TextWrapping="Wrap"/>
+                          </ToolTip>
+                        </ToolTipService.ToolTip>
+                      </Button>
+                    </Grid>
+                  </Border>
+                </controls:SettingsTilePanel>
+              </StackPanel>
+              <Border x:Name="SettingsUpdatesCard" Style="{StaticResource DismodeDeckCardStyle}" Padding="16">
+                <Grid ColumnSpacing="16">
+                  <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="Auto"/>
+                  </Grid.ColumnDefinitions>
+                  <StackPanel Spacing="8">
+                    <TextBlock Style="{StaticResource SettingsSectionTitleStyle}" Text="Aktualizacje"/>
+                    <TextBlock x:Name="SettingsVersionText" FontSize="13" FontWeight="Medium" Text="Dismode Gaming Edition"/>
                   </StackPanel>
-                </Border>
-
-                <Border
-                    x:Name="SettingsUpdatesCard"
-                    Grid.Row="2"
-                    Grid.ColumnSpan="2"
-                    VerticalAlignment="Top"
-                    Style="{StaticResource DismodeDeckCardStyle}">
-                  <StackPanel Spacing="12">
-                    <!-- Updates & Version in Settings -->
-                    <StackPanel Spacing="10" Margin="0,10,0,0">
-                      <TextBlock
-                          FontWeight="SemiBold"
-                          FontSize="13"
-                          Text="Aktualizacje i Wydania" />
-
-                      <Grid ColumnSpacing="12">
-                        <Grid.ColumnDefinitions>
-                          <ColumnDefinition Width="*" />
-                          <ColumnDefinition Width="Auto" />
-                        </Grid.ColumnDefinitions>
-                        <StackPanel VerticalAlignment="Center" Spacing="2">
-                          <TextBlock
-                              x:Name="SettingsVersionText"
-                              FontSize="13"
-                              FontWeight="Medium"
-                              Text="Dismode Gaming Edition" />
-                          <TextBlock
-                              x:Name="SettingsUpdatesStatusText"
-                              Foreground="{ThemeResource DismodeMutedTextBrush}"
-                              FontSize="11"
-                              Text="Wyszukaj najnowsze aktualizacje i pakiety." />
-                        </StackPanel>
-                        <Button
-                            x:Name="CheckForUpdatesInSettingsButton"
-                            Grid.Column="1"
-                            Style="{StaticResource DismodeSecondaryButtonStyle}"
-                            Click="OnCheckForUpdatesInSettingsClicked">
-                          <StackPanel Orientation="Horizontal" Spacing="6">
-                            <FontIcon FontSize="12" Glyph="&#xE72C;" />
-                            <TextBlock FontSize="12" Text="Sprawdź" />
-                          </StackPanel>
-                        </Button>
-                      </Grid>
-                    </StackPanel>
-                  </StackPanel>
-                </Border>
-
-                <Border
-                    x:Name="MemoryOptimizerCard"
-                    Grid.Row="3"
-                    Grid.ColumnSpan="2"
-                    Style="{StaticResource DismodeDeckCardStyle}">
-                  <Grid ColumnSpacing="18">
-                    <Grid.ColumnDefinitions>
-                      <ColumnDefinition Width="Auto" />
-                      <ColumnDefinition Width="*" />
-                      <ColumnDefinition Width="Auto" />
-                    </Grid.ColumnDefinitions>
-                    <Border Width="46" Height="46" Background="{ThemeResource DismodeAccentSoftBrush}" CornerRadius="12">
-                      <FontIcon HorizontalAlignment="Center" VerticalAlignment="Center" Foreground="{ThemeResource DismodeAccentBrush}" FontSize="22" Glyph="&#xE950;" />
-                    </Border>
-                    <StackPanel Grid.Column="1" VerticalAlignment="Center" Spacing="3">
-                      <TextBlock FontSize="18" FontWeight="SemiBold" Text="Memory Optimizer" />
-                      <TextBlock x:Name="MemoryOptimizerStatusText" Foreground="{ThemeResource DismodeAccentBrush}" FontSize="13" FontWeight="SemiBold" Text="Sprawdzanie stanu..." />
-                      <TextBlock x:Name="MemoryOptimizerDetailsText" Foreground="{ThemeResource DismodeMutedTextBrush}" FontSize="12" Text="Opcjonalny komponent GPL działa niezależnie od części gamingowej." TextWrapping="Wrap" />
-                    </StackPanel>
-                    <Button
-                        x:Name="OpenMemoryOptimizerButton"
-                        Grid.Column="2"
-                        VerticalAlignment="Center"
-                        Style="{StaticResource DismodeSecondaryButtonStyle}"
-                        Click="OnOpenMemoryOptimizerClicked"
-                        Content="Otwórz ustawienia" />
-                  </Grid>
-                </Border>
-
-                <Border
-                    x:Name="SystemOptimizerCard"
-                    Grid.Row="4"
-                    Grid.ColumnSpan="2"
-                    Style="{StaticResource DismodeDeckCardStyle}">
-                  <Grid ColumnSpacing="18">
-                    <Grid.ColumnDefinitions>
-                      <ColumnDefinition Width="Auto" />
-                      <ColumnDefinition Width="*" />
-                      <ColumnDefinition Width="Auto" />
-                    </Grid.ColumnDefinitions>
-                    <Border
-                        Width="46"
-                        Height="46"
-                        Background="{ThemeResource DismodeAccentSoftBrush}"
-                        CornerRadius="12">
-                      <FontIcon
-                          HorizontalAlignment="Center"
-                          VerticalAlignment="Center"
-                          Foreground="{ThemeResource DismodeAccentBrush}"
-                          FontSize="22"
-                          Glyph="&#xE9D2;" />
-                    </Border>
-                    <StackPanel
-                        Grid.Column="1"
-                        VerticalAlignment="Center"
-                        Spacing="3">
-                      <TextBlock
-                          FontSize="18"
-                          FontWeight="SemiBold"
-                          Text="System Optimizer" />
-                      <TextBlock
-                          x:Name="SystemOptimizerStatusText"
-                          Foreground="{ThemeResource DismodeAccentBrush}"
-                          FontSize="13"
-                          FontWeight="SemiBold"
-                          Text="Sprawdzanie stanu..." />
-                      <TextBlock
-                          x:Name="SystemOptimizerProfileText"
-                          Height="18"
-                          MaxLines="1"
-                          Foreground="{ThemeResource DismodeMutedTextBrush}"
-                          FontSize="12"
-                          Text="Brak aktywnego profilu systemowego."
-                          TextTrimming="CharacterEllipsis"
-                          TextWrapping="NoWrap" />
-                    </StackPanel>
-                    <Button
-                        x:Name="OpenSystemOptimizerButton"
-                        Grid.Column="2"
-                        Width="164"
-                        VerticalAlignment="Center"
-                        Style="{StaticResource DismodeSecondaryButtonStyle}"
-                        Click="OnOpenSystemOptimizerClicked"
-                        Content="Otwórz optymalizator" />
-                  </Grid>
-                </Border>
-              </Grid>
+                  <Button x:Name="CheckForUpdatesInSettingsButton" Grid.Column="1" VerticalAlignment="Center" Style="{StaticResource DismodeSecondaryButtonStyle}" Click="OnCheckForUpdatesInSettingsClicked" Content="Sprawdź" AutomationProperties.Name="Sprawdź aktualizacje">
+                    <ToolTipService.ToolTip>
+                      <ToolTip MaxWidth="440">
+                        <TextBlock x:Name="SettingsUpdatesStatusText" Foreground="{ThemeResource DismodeMutedTextBrush}" FontSize="11" Text="Wyszukaj najnowsze aktualizacje i pakiety."/>
+                      </ToolTip>
+                    </ToolTipService.ToolTip>
+                  </Button>
+                </Grid>
+              </Border>
+              <StackPanel Visibility="Collapsed">
+                <TextBlock x:Name="DiagnosticsProtocolText"/>
+                <TextBlock x:Name="DiagnosticsUserText"/>
+              </StackPanel>
             </StackPanel>
           </ScrollViewer>
     </Grid>
