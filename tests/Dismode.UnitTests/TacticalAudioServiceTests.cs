@@ -10,14 +10,38 @@ namespace Dismode.UnitTests;
 public sealed class TacticalAudioServiceTests
 {
     [TestMethod]
+    public async Task PanelActionsSilenceNestedAsyncSoundsWithoutMutingOtherActions()
+    {
+        Assert.IsFalse(TacticalAudioService.IsPanelActionSilent);
+        TaskCompletionSource entered = new();
+        TaskCompletionSource release = new();
+        Task action = Task.Run(async () =>
+        {
+            using IDisposable silence = TacticalAudioService.SilencePanelAction();
+            Assert.IsTrue(TacticalAudioService.IsPanelActionSilent);
+            using (TacticalAudioService.SilencePanelAction())
+            {
+                await Task.Yield();
+                Assert.IsTrue(TacticalAudioService.IsPanelActionSilent);
+            }
+            entered.SetResult();
+            await release.Task.WaitAsync(TimeSpan.FromSeconds(5));
+            Assert.IsTrue(TacticalAudioService.IsPanelActionSilent);
+        });
+        await entered.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        Assert.IsFalse(TacticalAudioService.IsPanelActionSilent);
+        release.SetResult();
+        await action.WaitAsync(TimeSpan.FromSeconds(5));
+        Assert.IsFalse(TacticalAudioService.IsPanelActionSilent);
+    }
+
+    [TestMethod]
     [DataRow("SessionStart", 450)]
     [DataRow("SessionStop", 450)]
     [DataRow("Click", 30)]
     [DataRow("Toggle", 80)]
     [DataRow("Success", 500)]
     [DataRow("Warning", 450)]
-    [DataRow("PanelOpen", 250)]
-    [DataRow("PanelClose", 250)]
     public void SynthesizedSoundIsDeterministicAndSafe(string name, int maximumMilliseconds)
     {
         MethodInfo? synthesizer = typeof(TacticalAudioService).GetMethod(

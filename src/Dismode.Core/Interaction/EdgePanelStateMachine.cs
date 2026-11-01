@@ -4,7 +4,11 @@ public enum EdgePanelState { Closed, Opening, Open, Closing }
 
 public sealed class EdgePanelStateMachine(TimeProvider clock)
 {
-    public static TimeSpan AnimationDuration => TimeSpan.FromMilliseconds(180);
+    public static TimeSpan AnimationDuration => TimeSpan.FromMilliseconds(240);
+    public static TimeSpan CloseAnimationDuration => TimeSpan.FromMilliseconds(160);
+    public static TimeSpan HoverDwellDuration => TimeSpan.FromMilliseconds(250);
+    public static TimeSpan LeaveGraceDuration => TimeSpan.FromMilliseconds(700);
+
     private readonly TimeProvider _clock = clock ?? throw new ArgumentNullException(nameof(clock));
     private long _transitionStarted;
     private long _pointerChanged;
@@ -15,6 +19,21 @@ public sealed class EdgePanelStateMachine(TimeProvider clock)
 
     public EdgePanelState State { get; private set; }
     public double Reveal { get; private set; }
+    public bool AnimationsEnabled { get; set; } = true;
+    public bool IsDialogOpen { get; private set; }
+    public bool HasPointerEntered => _inside || _leavePending;
+    public bool NeedsTimer => State != EdgePanelState.Closed || (_inside && !_waitForLeave);
+
+    public void SetDialogOpen(bool isOpen)
+    {
+        if (IsDialogOpen == isOpen)
+        {
+            return;
+        }
+
+        IsDialogOpen = isOpen;
+        _pointerChanged = _clock.GetTimestamp();
+    }
 
     public void SetPointerInside(bool inside)
     {
@@ -38,6 +57,11 @@ public sealed class EdgePanelStateMachine(TimeProvider clock)
 
     public void Toggle()
     {
+        if (IsDialogOpen)
+        {
+            return;
+        }
+
         if (State is EdgePanelState.Open or EdgePanelState.Opening)
         {
             Close();
@@ -52,6 +76,11 @@ public sealed class EdgePanelStateMachine(TimeProvider clock)
 
     public void Close()
     {
+        if (IsDialogOpen)
+        {
+            return;
+        }
+
         _waitForLeave = _inside;
         if (State is not (EdgePanelState.Closed or EdgePanelState.Closing))
         {
@@ -63,9 +92,10 @@ public sealed class EdgePanelStateMachine(TimeProvider clock)
     {
         if (State is EdgePanelState.Opening or EdgePanelState.Closing)
         {
-            double progress = Math.Clamp(_clock.GetElapsedTime(_transitionStarted).TotalMilliseconds
-                / AnimationDuration.TotalMilliseconds, 0, 1);
-            double eased = 1 - Math.Pow(1 - progress, 3);
+            double progress = !AnimationsEnabled ? 1 : Math.Clamp(_clock.GetElapsedTime(_transitionStarted).TotalMilliseconds
+                / (State == EdgePanelState.Opening ? AnimationDuration : CloseAnimationDuration).TotalMilliseconds, 0, 1);
+            double eased = State == EdgePanelState.Opening
+                ? (progress >= 1 ? 1 : 1 - Math.Pow(2, -10 * progress)) : progress * progress * progress;
             Reveal = _transitionFrom + ((State == EdgePanelState.Opening ? 1 : 0) - _transitionFrom) * eased;
             if (progress >= 1)
             {
@@ -75,11 +105,11 @@ public sealed class EdgePanelStateMachine(TimeProvider clock)
         }
 
         double dwell = _clock.GetElapsedTime(_pointerChanged).TotalMilliseconds;
-        if (State == EdgePanelState.Closed && _inside && !_waitForLeave && dwell >= 250)
+        if (State == EdgePanelState.Closed && _inside && !_waitForLeave && dwell >= HoverDwellDuration.TotalMilliseconds)
         {
             Transition(EdgePanelState.Opening);
         }
-        else if (State == EdgePanelState.Open && _leavePending && !_inside && dwell >= 700)
+        else if (State == EdgePanelState.Open && !IsDialogOpen && _leavePending && !_inside && dwell >= LeaveGraceDuration.TotalMilliseconds)
         {
             Transition(EdgePanelState.Closing);
         }
@@ -90,5 +120,11 @@ public sealed class EdgePanelStateMachine(TimeProvider clock)
         _transitionFrom = Reveal;
         _transitionStarted = _clock.GetTimestamp();
         State = next;
+        if (!AnimationsEnabled)
+        {
+            Reveal = next == EdgePanelState.Opening ? 1 : 0;
+            State = next == EdgePanelState.Opening ? EdgePanelState.Open : EdgePanelState.Closed;
+            _pointerChanged = _clock.GetTimestamp();
+        }
     }
 }

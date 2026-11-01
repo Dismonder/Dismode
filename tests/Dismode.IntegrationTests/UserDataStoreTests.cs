@@ -1,5 +1,6 @@
 using Dismode.Core.Domain.Identifiers;
 using Dismode.Core.History;
+using Dismode.Core.Interaction;
 using Dismode.Core.Profiles;
 using Dismode.Core.Updates;
 using Dismode.Data.UserData;
@@ -10,6 +11,38 @@ namespace Dismode.IntegrationTests;
 [TestClass]
 public sealed class UserDataStoreTests
 {
+    [TestMethod]
+    public async Task EdgeHandleTransparencyMigratesVersion23AndRoundTripsWithClamping()
+    {
+        using UserDataTestContext context = new();
+        await context.Store.SaveEdgePanelEnabledAsync(false, CancellationToken.None);
+        using (SqliteConnection connection = new($"Data Source={context.DatabasePath};Pooling=False"))
+        {
+            await connection.OpenAsync();
+            using SqliteCommand command = connection.CreateCommand();
+            command.CommandText = """
+                ALTER TABLE EdgePanelPreferences DROP COLUMN HandleTransparencyPercent;
+                DELETE FROM SchemaMigrations WHERE Version = 24;
+                """;
+            await command.ExecuteNonQueryAsync();
+        }
+        using SqliteUserDataStore migrated = new(context.DatabasePath);
+        EdgePanelPreferences defaults = await migrated.LoadEdgePanelPreferencesAsync(CancellationToken.None);
+        Assert.IsFalse(defaults.IsEnabled);
+        Assert.AreEqual(EdgePanelPreferences.DefaultHandleTransparencyPercent, defaults.HandleTransparencyPercent);
+        Assert.AreEqual(24, await ReadMaximumSchemaVersionAsync(context.DatabasePath));
+        foreach (int input in new[] { -10, 0, 50, 90, 100 })
+        {
+            await migrated.SaveEdgePanelPreferencesAsync(new(true, input), CancellationToken.None);
+            using SqliteUserDataStore reopened = new(context.DatabasePath);
+            EdgePanelPreferences loaded = await reopened.LoadEdgePanelPreferencesAsync(CancellationToken.None);
+            Assert.AreEqual(Math.Clamp(input, 0, 90), loaded.HandleTransparencyPercent);
+            Assert.IsTrue(loaded.IsEnabled);
+        }
+        await migrated.SaveEdgePanelEnabledAsync(false, CancellationToken.None);
+        Assert.AreEqual(90, (await migrated.LoadEdgePanelPreferencesAsync(CancellationToken.None)).HandleTransparencyPercent);
+    }
+
     [TestMethod]
     public async Task EdgePanelDefaultsOnAndPersistsIndependentlyOfOverlayAcrossReopen()
     {
@@ -34,14 +67,14 @@ public sealed class UserDataStoreTests
         {
             await connection.OpenAsync();
             using SqliteCommand command = connection.CreateCommand();
-            command.CommandText = "DROP TABLE EdgePanelPreferences; DELETE FROM SchemaMigrations WHERE Version = 23;";
+            command.CommandText = "DROP TABLE EdgePanelPreferences; DELETE FROM SchemaMigrations WHERE Version >= 23;";
             await command.ExecuteNonQueryAsync();
         }
 
         using SqliteUserDataStore migrated = new(context.DatabasePath);
         Assert.IsTrue(await migrated.LoadEdgePanelEnabledAsync(CancellationToken.None));
         Assert.AreEqual(saved, await migrated.LoadPerformanceOverlayPreferencesAsync(CancellationToken.None));
-        Assert.AreEqual(23, await ReadMaximumSchemaVersionAsync(context.DatabasePath));
+        Assert.AreEqual(24, await ReadMaximumSchemaVersionAsync(context.DatabasePath));
     }
 
     [TestMethod]
@@ -58,6 +91,7 @@ public sealed class UserDataStoreTests
             using SqliteCommand command = connection.CreateCommand();
             command.CommandText = """
                 ALTER TABLE PerformanceOverlayPreferences DROP COLUMN IsVendorTelemetryEnabled;
+                ALTER TABLE EdgePanelPreferences DROP COLUMN HandleTransparencyPercent;
                 DELETE FROM SchemaMigrations WHERE Version >= 22;
                 """;
             await command.ExecuteNonQueryAsync();
@@ -65,7 +99,7 @@ public sealed class UserDataStoreTests
 
         using SqliteUserDataStore migrated = new(context.DatabasePath);
         Assert.IsFalse((await migrated.LoadPerformanceOverlayPreferencesAsync(CancellationToken.None)).IsVendorTelemetryEnabled);
-        Assert.AreEqual(23, await ReadMaximumSchemaVersionAsync(context.DatabasePath));
+        Assert.AreEqual(24, await ReadMaximumSchemaVersionAsync(context.DatabasePath));
     }
 
     [TestMethod]
@@ -332,7 +366,8 @@ public sealed class UserDataStoreTests
                 ALTER TABLE GameOptimizationPreferences DROP COLUMN MaximizeRefreshRateDuringSession;
                 ALTER TABLE GameOptimizationPreferences DROP COLUMN ApplyBackgroundRulesDuringSession;
                 ALTER TABLE SessionSummaries DROP COLUMN DurationSeconds;
-                DELETE FROM SchemaMigrations WHERE Version IN (16, 17, 18, 19, 20, 21, 22, 23);
+                ALTER TABLE EdgePanelPreferences DROP COLUMN HandleTransparencyPercent;
+                DELETE FROM SchemaMigrations WHERE Version IN (16, 17, 18, 19, 20, 21, 22, 23, 24);
                 """;
             await command.ExecuteNonQueryAsync();
         }
@@ -348,7 +383,7 @@ public sealed class UserDataStoreTests
         Assert.IsNull(history[1].FrameRateStatistics!.OnePercentLowFramesPerSecond);
         Assert.IsNull(history[1].FrameRateStatistics!.PointOnePercentLowFramesPerSecond);
         Assert.IsNull(history[1].FrameRateStatistics!.HitchCount);
-        Assert.AreEqual(23, await ReadMaximumSchemaVersionAsync(testContext.DatabasePath));
+        Assert.AreEqual(24, await ReadMaximumSchemaVersionAsync(testContext.DatabasePath));
     }
 
     [TestMethod]
@@ -434,7 +469,8 @@ public sealed class UserDataStoreTests
                 ALTER TABLE GameOptimizationPreferences DROP COLUMN MaximizeRefreshRateDuringSession;
                 ALTER TABLE GameOptimizationPreferences DROP COLUMN ApplyBackgroundRulesDuringSession;
                 ALTER TABLE SessionSummaries DROP COLUMN DurationSeconds;
-                DELETE FROM SchemaMigrations WHERE Version IN (17, 18, 19, 20, 21, 22, 23);
+                ALTER TABLE EdgePanelPreferences DROP COLUMN HandleTransparencyPercent;
+                DELETE FROM SchemaMigrations WHERE Version IN (17, 18, 19, 20, 21, 22, 23, 24);
                 """;
             await command.ExecuteNonQueryAsync();
         }
@@ -444,7 +480,7 @@ public sealed class UserDataStoreTests
             await migrated.LoadOptimizationPreferencesAsync(profile, CancellationToken.None);
         Assert.IsTrue(loaded.PinGameToPreferredCores, "Istniejacy wiersz zachowuje dotychczasowe zachowanie.");
         Assert.IsTrue(loaded.KeepAwakeDuringSession, "Nowy przelacznik jest domyslnie wlaczony.");
-        Assert.AreEqual(23, await ReadMaximumSchemaVersionAsync(testContext.DatabasePath));
+        Assert.AreEqual(24, await ReadMaximumSchemaVersionAsync(testContext.DatabasePath));
     }
 
     [TestMethod]
@@ -824,7 +860,7 @@ public sealed class UserDataStoreTests
             Assert.AreEqual(legacySummary.SessionId, history[0].SessionId);
             Assert.IsNull(history[0].FrameRateStatistics);
             Assert.AreEqual(
-                23,
+                24,
                 await ReadMaximumSchemaVersionAsync(databasePath));
         }
         finally
@@ -879,7 +915,7 @@ public sealed class UserDataStoreTests
             SavedBackgroundActionMode.RestrainBackground,
             upgraded.BackgroundRules[0].ActionMode);
         Assert.AreEqual(
-            23,
+            24,
             await ReadMaximumSchemaVersionAsync(testContext.DatabasePath));
         Assert.AreEqual(
             1,
@@ -929,7 +965,7 @@ public sealed class UserDataStoreTests
             await Task.WhenAll(initializations);
 
             Assert.AreEqual(
-                23,
+                24,
                 await ReadMaximumSchemaVersionAsync(databasePath));
             IReadOnlyList<SessionSummary> history =
                 await stores[0].ListRecentAsync(
@@ -997,7 +1033,7 @@ public sealed class UserDataStoreTests
             Assert.AreEqual(artworkPath, migrated.ArtworkPath);
             Assert.IsEmpty(metadata);
             Assert.AreEqual(
-                23,
+                24,
                 await ReadMaximumSchemaVersionAsync(databasePath));
         }
         finally
@@ -1191,8 +1227,9 @@ public sealed class UserDataStoreTests
             DROP TABLE GlobalBackgroundProcessRules;
             ALTER TABLE GameOptimizationPreferences DROP COLUMN MaximizeRefreshRateDuringSession;
             ALTER TABLE GameOptimizationPreferences DROP COLUMN ApplyBackgroundRulesDuringSession;
+            ALTER TABLE EdgePanelPreferences DROP COLUMN HandleTransparencyPercent;
             DELETE FROM SchemaMigrations
-            WHERE Version IN (5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23);
+            WHERE Version IN (5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24);
             """;
         await command.ExecuteNonQueryAsync();
         await transaction.CommitAsync();
@@ -1259,7 +1296,8 @@ public sealed class UserDataStoreTests
             ALTER TABLE GameOptimizationPreferences DROP COLUMN MaximizeRefreshRateDuringSession;
             ALTER TABLE GameOptimizationPreferences DROP COLUMN ApplyBackgroundRulesDuringSession;
             ALTER TABLE SessionSummaries DROP COLUMN DurationSeconds;
-            DELETE FROM SchemaMigrations WHERE Version IN (15, 16, 17, 18, 19, 20, 21, 22, 23);
+            ALTER TABLE EdgePanelPreferences DROP COLUMN HandleTransparencyPercent;
+            DELETE FROM SchemaMigrations WHERE Version IN (15, 16, 17, 18, 19, 20, 21, 22, 23, 24);
             """;
         command.Parameters.AddWithValue(
             "$orphanedProfileId",
@@ -1313,7 +1351,8 @@ public sealed class UserDataStoreTests
             ALTER TABLE GameOptimizationPreferences DROP COLUMN MaximizeRefreshRateDuringSession;
             ALTER TABLE GameOptimizationPreferences DROP COLUMN ApplyBackgroundRulesDuringSession;
             ALTER TABLE SessionSummaries DROP COLUMN DurationSeconds;
-            DELETE FROM SchemaMigrations WHERE Version IN (16, 17, 18, 19, 20, 21, 22, 23);
+            ALTER TABLE EdgePanelPreferences DROP COLUMN HandleTransparencyPercent;
+            DELETE FROM SchemaMigrations WHERE Version IN (16, 17, 18, 19, 20, 21, 22, 23, 24);
             DELETE FROM SchemaMigrations
             WHERE Version IN (8, 9, 10, 11, 12, 13, 14, 15);
             """;

@@ -46,6 +46,55 @@ public sealed class UiResourceReferenceTests
         RegexOptions.CultureInvariant);
 
     [TestMethod]
+    public void EdgePanelIsACompactCardWithAccessibleOverlaySegmentsAndTransparencyRow()
+    {
+        XDocument panel = LoadUiXaml("EdgePanelWindow.xaml");
+        Assert.AreEqual("11", FindNamedElement(panel, "PanelRoot").Attribute("CornerRadius")?.Value);
+        Assert.IsNotNull(FindNamedElement(panel, "FpsSparkline"));
+        Assert.IsNotNull(FindNamedElement(panel, "SelectionIndicator"));
+        Assert.AreEqual("Collapsed", FindNamedElement(panel, "LastSessionText").Attribute("Visibility")?.Value);
+        XElement segment = FindNamedElement(panel, "OverlaySegment");
+        XElement[] buttons = segment.Descendants().Where(element => element.Name.LocalName == "Button").ToArray();
+        Assert.HasCount(5, buttons);
+        for (int i = 0; i < buttons.Length; i++)
+        {
+            Assert.AreEqual(i.ToString(System.Globalization.CultureInfo.InvariantCulture), buttons[i].Attribute("Tag")?.Value);
+            Assert.IsFalse(string.IsNullOrEmpty(buttons[i].Attribute("AutomationProperties.Name")?.Value));
+            Assert.AreEqual(buttons[i].Attribute("AutomationProperties.Name")?.Value, buttons[i].Attribute("ToolTipService.ToolTip")?.Value);
+        }
+        string source = LoadUiSource("EdgePanelWindow.xaml.cs");
+        Assert.IsFalse(source.Contains("TacticalAudioService", StringComparison.Ordinal));
+        StringAssert.Contains(source, "_state.NeedsTimer");
+        StringAssert.Contains(source, "_handle.Show();");
+        StringAssert.Contains(source, "_state.SetPointerInside(EdgePanelNativeWindow.PointerInsideHotZone(_handle.MonitorBounds, _handle.HandleRect));");
+        StringAssert.Contains(LoadUiSource("Services/EdgePanelBackdrop.cs"), "IsInputActive = true");
+        string nativeSource = LoadUiSource("Services/EdgePanelNativeWindow.cs");
+        StringAssert.Contains(nativeSource, "0x0010 | 0x0002 | 0x0001");
+        XDocument settings = LoadUiXaml("MainWindow.xaml");
+        XElement row = FindNamedElement(settings, "EdgeHandleTransparencyRow");
+        Assert.AreEqual("EdgePanelSettingsToggleSwitch", row.PreviousNode is XElement previous ? previous.Attribute(XamlNamespace + "Name")?.Value : null);
+        XElement slider = FindNamedElement(settings, "EdgeHandleTransparencySlider");
+        Assert.AreEqual("0", slider.Attribute("Minimum")?.Value);
+        Assert.AreEqual("90", slider.Attribute("Maximum")?.Value);
+        Assert.AreEqual("5", slider.Attribute("StepFrequency")?.Value);
+    }
+
+    [TestMethod]
+    public void EdgeWindowsEnterTopmostBandOnlyThroughSetWindowPos()
+    {
+        string source = LoadUiSource("Services/EdgePanelNativeWindow.cs");
+        Match mask = Regex.Match(source, @"SetWindowLongPtrW\(_handle, -20, extended \| \(nint\)(0x[0-9A-Fa-f]+)\)");
+        Assert.IsTrue(mask.Success);
+        Assert.AreEqual(0, Convert.ToInt32(mask.Groups[1].Value[2..], 16) & 0x8);
+        Match strip = Regex.Match(source, @"CreateWindowExW\(\s*(0x[0-9A-Fa-f]+)");
+        Assert.IsTrue(strip.Success);
+        Assert.AreEqual(0, Convert.ToInt32(strip.Groups[1].Value[2..], 16) & 0x8);
+        StringAssert.Contains(source, "extended | (nint)0x08000080);\n        AssertTopmost();");
+        StringAssert.Contains(source, "0x0010 | 0x0002 | 0x0001");
+        Assert.IsFalse(source.Contains("presenter.IsAlwaysOnTop = true", StringComparison.Ordinal));
+    }
+
+    [TestMethod]
     public void EveryCustomUiResourceReferenceHasADefinition()
     {
         string repositoryRoot = FindRepositoryRoot();

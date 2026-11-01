@@ -3048,6 +3048,20 @@ CPU —   GPU —
                           Header="Panel przy krawędzi ekranu" IsOn="True"
                           OnContent="Włączony" OffContent="Wyłączony"
                           Toggled="OnEdgePanelSettingChanged" />
+                      <StackPanel x:Name="EdgeHandleTransparencyRow" Spacing="4">
+                        <Grid ColumnSpacing="8">
+                          <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
+                          </Grid.ColumnDefinitions>
+                          <TextBlock Text="Przezroczystość uchwytu" FontSize="12" VerticalAlignment="Center" />
+                          <TextBlock x:Name="EdgeHandleTransparencyValue" Grid.Column="1" Text="50 %" FontSize="12"
+                              Foreground="{ThemeResource DismodeMutedTextBrush}" VerticalAlignment="Center" />
+                        </Grid>
+                        <Slider x:Name="EdgeHandleTransparencySlider" Minimum="0" Maximum="90" StepFrequency="5"
+                            Value="50" TickFrequency="5" SnapsTo="StepValues"
+                            AutomationProperties.Name="Przezroczystość uchwytu" ValueChanged="OnEdgeHandleTransparencyChanged" />
+                      </StackPanel>
                       <TextBlock Text="Alt+D" FontSize="12"
                           Foreground="{ThemeResource DismodeMutedTextBrush}" />
                     </StackPanel>
