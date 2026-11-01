@@ -1,20 +1,20 @@
-<p align="center"><img src="assets/brand/ui/readme-hero.svg" alt="Dismode 0.11.0 Gaming Edition — przygotowanie systemu na czas gry i przywracanie po sesji" width="100%"></p>
+<p align="center"><img src="assets/brand/ui/readme-hero.svg" alt="Dismode 0.12.0 Gaming Edition — przygotowanie systemu na czas gry i przywracanie po sesji" width="100%"></p>
 
-# Dismode 0.11.0 Gaming Edition
+# Dismode 0.12.0 Gaming Edition
 
 Natywny optymalizator sesji gry dla Windows 11: pokazuje plan zmian, mierzy FPS i przywraca poprzedni stan po zakończeniu gry.
 
-[![Wydanie](https://img.shields.io/badge/wydanie-0.11.0-00D7E2)](https://github.com/Dismonder/Dismode/releases/latest)
+[![Wydanie](https://img.shields.io/badge/wydanie-0.12.0-00D7E2)](https://github.com/Dismonder/Dismode/releases/latest)
 [![Licencja](https://img.shields.io/badge/licencja-warunki_produktu-9DA5AA)](installer/LICENSE-PL.txt)
 ![Windows](https://img.shields.io/badge/Windows_11-23H2%2B_x64-00D7E2)
 ![.NET](https://img.shields.io/badge/.NET-10-00D7E2)
 
-[![Pobierz 0.11.0](https://img.shields.io/badge/Pobierz-0.11.0-00D7E2?style=for-the-badge)](https://github.com/Dismonder/Dismode/releases/latest)
+[![Pobierz 0.12.0](https://img.shields.io/badge/Pobierz-0.12.0-00D7E2?style=for-the-badge)](https://github.com/Dismonder/Dismode/releases/latest)
 
-Plik: **`Dismode-Setup-0.11.0-win-x64.exe`**. SHA-256:
+Plik: **`Dismode-Setup-0.12.0-win-x64.exe`**. SHA-256:
 
 ```text
-9786550BA14212604EAB8A66E2BC2360A559FAA37CC959365D7173A819E244DA
+13B1F8BF626F550097C83BAC829EBC29E6E64CFD3A079E6D38511049B58D8208
 ```
 
 **Podpis testowy:** Windows SmartScreen ostrzega przed tym wydaniem. SHA-256 sprawdza integralność, ale nie zastępuje zaufanego podpisu Authenticode. U innych użytkowników **System Optimizer pozostaje tylko do odczytu**, dopóki klient nie ma zaufanego podpisu. Wydanie jest rozwojowe i nie gwarantuje wzrostu FPS.
@@ -70,6 +70,13 @@ Osobny interfejs i usługa `DismodeSystemAgent` udostępniają diagnostykę, kat
 Opcjonalny, niezależny składnik GPL-3.0-only ma własny tray i usługę LocalSystem. Pozostaje aktywny po zamknięciu części gamingowej; można odznaczyć go w instalatorze. Automat i działania ręczne przechodzą przez ochronę aktywnej gry. Domyślny profil przycina working sety procesów użytkownika i listę standby o niskim priorytecie. Operacje zaawansowane mogą wymusić ponowne doczytywanie danych i nie są funkcją zwiększania FPS.
 
 <img src="assets/brand/ui/memory-optimizer.svg" alt="Panel Memory Optimizer 400×548: RAM, automat i niezależna usługa" width="100%">
+
+### Nowości w 0.12.0
+
+- Panel „Pod ręką” jako minimalistyczna pływająca karta: FPS z wykresem, Tryb gry, nakładka jako pięć ikon, CPU/GPU/RAM i temperatura GPU, bez dźwięków.
+- Panel zawsze na wierzchu, wysuwa się na całej środkowej części prawej krawędzi i nie chowa się przy krótkim ruchu poza kartę; suwak przezroczystości uchwytu w Ustawieniach.
+- Nowa strona Ustawienia i odświeżone okna System Optimizer oraz Memory Optimizer: krótsze teksty, szczegóły pod „Więcej”.
+- Mniejsze obciążenie w tle: schowane okna, nakładka i usługi bez zbędnego odpytywania.
 
 ### Nowości w 0.11.0
 
@@ -219,8 +226,8 @@ Skrypt odmawia podmiany działających składników lub niedokończonego journal
 Artefakty bieżącej wersji:
 
 ```text
-artifacts\installer\Dismode-Setup-0.11.0-win-x64.exe
-artifacts\installer\Dismode-Setup-0.11.0-win-x64.exe.sha256
+artifacts\installer\Dismode-Setup-0.12.0-win-x64.exe
+artifacts\installer\Dismode-Setup-0.12.0-win-x64.exe.sha256
 ```
 
 Domyślny łańcuch wymaga certyfikatu Authenticode przez `DISMODE_RELEASE_SIGNING_THUMBPRINT` lub parametr skryptu. Podpisuje własnych klientów mutacji i instalator, sprawdza listę sygnatariuszy, tworzy sumę instalatora i manifest payloadu. Jawny tryb certyfikatu testowego w skrypcie nie nadaje klientowi zaufania produkcyjnego na innym komputerze.
@@ -254,7 +261,7 @@ cd infrastructure\website
 
 ## Status projektu
 
-**Wydanie rozwojowe 0.11.0 Gaming Edition.** Brak gwarancji poprawy FPS i zgodności z każdą grą lub anti-cheatem. Publiczny instalator ma podpis testowy, a System Optimizer u innych użytkowników działa tylko do odczytu. Wyniki ocenia się na podstawie pomiaru konkretnej sesji; braki danych są pokazywane wprost.
+**Wydanie rozwojowe 0.12.0 Gaming Edition.** Brak gwarancji poprawy FPS i zgodności z każdą grą lub anti-cheatem. Publiczny instalator ma podpis testowy, a System Optimizer u innych użytkowników działa tylko do odczytu. Wyniki ocenia się na podstawie pomiaru konkretnej sesji; braki danych są pokazywane wprost.
 
 ## English summary
 
