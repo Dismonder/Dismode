@@ -20,7 +20,7 @@
       <StaticResource x:Key="AccentButtonBorderBrushPressed" ResourceKey="DismodePanelAccentPressedBrush" />
       <Style x:Key="DismodePanelSegmentStyle" TargetType="Button">
         <Setter Property="Width" Value="48" />
-        <Setter Property="Height" Value="40" />
+        <Setter Property="Height" Value="48" />
         <Setter Property="Padding" Value="0" />
         <Setter Property="Background" Value="Transparent" />
         <Setter Property="BorderThickness" Value="0" />
@@ -74,9 +74,9 @@
             <TextBlock x:Name="SessionLabel" Text="Włącz Tryb gry" />
           </StackPanel>
         </Button>
-        <Grid x:Name="OverlaySegment" HorizontalAlignment="Center" Width="264" Height="48"
+        <Grid x:Name="OverlaySegment" HorizontalAlignment="Center" Width="264" Height="56"
               Background="{ThemeResource DismodeCardBrush}" CornerRadius="9">
-          <Border x:Name="SelectionIndicator" Width="48" Height="40" Margin="4" HorizontalAlignment="Left"
+          <Border x:Name="SelectionIndicator" Width="48" Height="48" Margin="4" HorizontalAlignment="Left"
                   VerticalAlignment="Center" CornerRadius="7" BorderThickness="1"
                   BorderBrush="{ThemeResource DismodeAccentBrush}" Background="{ThemeResource DismodeAccentSoftBrush}"
                   IsHitTestVisible="False">

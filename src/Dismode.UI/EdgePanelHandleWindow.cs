@@ -52,19 +52,11 @@ internal sealed class EdgePanelHandleWindow : Window, IDisposable
 
     private void OnPointerEntered(object sender, Microsoft.UI.Xaml.Input.PointerRoutedEventArgs args)
     {
-        if (Environment.GetEnvironmentVariable("DISMODE_UI_PREVIEW") == "1") // PREVIEW-HACK
-        { // PREVIEW-HACK
-            return; // PREVIEW-HACK
-        } // PREVIEW-HACK
         SetPointerInside(true);
     }
 
     private void OnPointerExited(object sender, Microsoft.UI.Xaml.Input.PointerRoutedEventArgs args)
     {
-        if (Environment.GetEnvironmentVariable("DISMODE_UI_PREVIEW") == "1") // PREVIEW-HACK
-        { // PREVIEW-HACK
-            return; // PREVIEW-HACK
-        } // PREVIEW-HACK
         SetPointerInside(EdgePanelNativeWindow.PointerInsideHotZone(MonitorBounds, HandleRect));
     }
 

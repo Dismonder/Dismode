@@ -66,6 +66,8 @@ public sealed class UiResourceReferenceTests
         Assert.IsFalse(source.Contains("TacticalAudioService", StringComparison.Ordinal));
         StringAssert.Contains(source, "_state.NeedsTimer");
         StringAssert.Contains(source, "_handle.Show();");
+        StringAssert.Contains(source, "_state.SetPointerInside(EdgePanelNativeWindow.PointerInsideHotZone(_handle.MonitorBounds, _handle.HandleRect));");
+        StringAssert.Contains(LoadUiSource("Services/EdgePanelBackdrop.cs"), "IsInputActive = true");
         string nativeSource = LoadUiSource("Services/EdgePanelNativeWindow.cs");
         StringAssert.Contains(nativeSource, "0x0010 | 0x0002 | 0x0001");
         XDocument settings = LoadUiXaml("MainWindow.xaml");
@@ -75,6 +77,21 @@ public sealed class UiResourceReferenceTests
         Assert.AreEqual("0", slider.Attribute("Minimum")?.Value);
         Assert.AreEqual("90", slider.Attribute("Maximum")?.Value);
         Assert.AreEqual("5", slider.Attribute("StepFrequency")?.Value);
+    }
+
+    [TestMethod]
+    public void EdgeWindowsEnterTopmostBandOnlyThroughSetWindowPos()
+    {
+        string source = LoadUiSource("Services/EdgePanelNativeWindow.cs");
+        Match mask = Regex.Match(source, @"SetWindowLongPtrW\(_handle, -20, extended \| \(nint\)(0x[0-9A-Fa-f]+)\)");
+        Assert.IsTrue(mask.Success);
+        Assert.AreEqual(0, Convert.ToInt32(mask.Groups[1].Value[2..], 16) & 0x8);
+        Match strip = Regex.Match(source, @"CreateWindowExW\(\s*(0x[0-9A-Fa-f]+)");
+        Assert.IsTrue(strip.Success);
+        Assert.AreEqual(0, Convert.ToInt32(strip.Groups[1].Value[2..], 16) & 0x8);
+        StringAssert.Contains(source, "extended | (nint)0x08000080);\n        AssertTopmost();");
+        StringAssert.Contains(source, "0x0010 | 0x0002 | 0x0001");
+        Assert.IsFalse(source.Contains("presenter.IsAlwaysOnTop = true", StringComparison.Ordinal));
     }
 
     [TestMethod]

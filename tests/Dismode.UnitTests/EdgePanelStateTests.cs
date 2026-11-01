@@ -40,22 +40,22 @@ public sealed class EdgePanelStateTests
         EdgePanelRect strip = EdgePanelMetrics.GetHotStripBounds(monitor);
         Assert.AreEqual(new EdgePanelRect(2558, 288, 2, 864), strip);
 
-        // Corners stay free (window close button at top-right, notification area at bottom-right).
+        // Rogi pozostaja wolne dla przycisku zamykania i obszaru powiadomien.
         Assert.IsFalse(EdgePanelMetrics.IsInHotZone(2559, 0, monitor, handle));
         Assert.IsFalse(EdgePanelMetrics.IsInHotZone(2559, 287, monitor, handle));
         Assert.IsFalse(EdgePanelMetrics.IsInHotZone(2559, 1152, monitor, handle));
         Assert.IsFalse(EdgePanelMetrics.IsInHotZone(2559, 1439, monitor, handle));
 
-        // Rightmost 2 px between 20% and 80% height are inside the hot-zone.
+        // Dwa skrajne piksele od 20% do 80% wysokosci otwieraja panel.
         Assert.IsTrue(EdgePanelMetrics.IsInHotZone(2558, 288, monitor, handle));
         Assert.IsTrue(EdgePanelMetrics.IsInHotZone(2559, 500, monitor, handle));
         Assert.IsTrue(EdgePanelMetrics.IsInHotZone(2558, 1151, monitor, handle));
         Assert.IsFalse(EdgePanelMetrics.IsInHotZone(2557, 400, monitor, handle));
 
-        // Visible handle is inside the hot-zone across its full width.
+        // Widoczny uchwyt dziala na calej szerokosci.
         Assert.IsTrue(EdgePanelMetrics.IsInHotZone(2548, 700, monitor, handle));
 
-        // Open card leave zone inflates the card by 32 DIP once the pointer has entered.
+        // Po pierwszym wejsciu karta zachowuje margines 32 DIP.
         EdgePanelRect card = new(2086, 400, 450, 600);
         Assert.IsFalse(EdgePanelMetrics.IsInOpenPanelZone(2050, 500, card, monitor, handle, scale: 1.5, pointerEntered: false));
         Assert.IsTrue(EdgePanelMetrics.IsInOpenPanelZone(2050, 500, card, monitor, handle, scale: 1.5, pointerEntered: true));
@@ -241,7 +241,8 @@ public sealed class EdgePanelStateTests
         Assert.AreEqual(opacity, preferences.HandleOpacity, 0.00001);
         FakeClock clock = new();
         EdgePanelStateMachine panel = new(clock);
-        panel.SetPointerInside(true);
+        panel.SetPointerInside(EdgePanelMetrics.IsInHotZone(2559, 400,
+            new(0, 0, 2560, 1440), new(2548, 672, 12, 96)));
         clock.Advance(250);
         panel.Tick();
         Assert.AreEqual(EdgePanelState.Opening, panel.State);

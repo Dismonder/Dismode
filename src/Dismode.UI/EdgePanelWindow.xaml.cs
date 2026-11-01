@@ -56,11 +56,6 @@ public sealed partial class EdgePanelWindow : Window, IDisposable
             _uiSettings.AdvancedEffectsEnabledChanged += OnAdvancedEffectsChanged;
             _timer.Tick += OnTick;
             Reposition();
-            if (Environment.GetEnvironmentVariable("DISMODE_PREVIEW_LEGACY_POLL") == "1") // PREVIEW-HACK
-            { // PREVIEW-HACK
-                RefreshContent(); // PREVIEW-HACK
-                _timer.Start(); // PREVIEW-HACK
-            } // PREVIEW-HACK
         }
         catch
         {
@@ -104,10 +99,9 @@ public sealed partial class EdgePanelWindow : Window, IDisposable
             && Microsoft.UI.Composition.SystemBackdrops.DesktopAcrylicController.IsSupported();
         if (glass)
         {
-            SystemBackdrop ??= new DesktopAcrylicBackdrop();
-            if (SystemBackdrop is not DesktopAcrylicBackdrop)
+            if (SystemBackdrop is not EdgePanelBackdrop)
             {
-                SystemBackdrop = new DesktopAcrylicBackdrop();
+                SystemBackdrop = new EdgePanelBackdrop();
             }
         }
         else if (SystemBackdrop is not TransparentBackdrop)
@@ -163,16 +157,6 @@ public sealed partial class EdgePanelWindow : Window, IDisposable
             : IsPointerInOpenPanel());
         _state.Tick();
         DrawState();
-        if (Environment.GetEnvironmentVariable("DISMODE_PREVIEW_LEGACY_POLL") == "1" && _state.State == EdgePanelState.Closed) // PREVIEW-HACK
-        { // PREVIEW-HACK
-            if (DateTimeOffset.UtcNow >= _nextContentUpdate) // PREVIEW-HACK
-            { // PREVIEW-HACK
-                Reposition(); // PREVIEW-HACK
-                _nextContentUpdate = DateTimeOffset.UtcNow.AddSeconds(1); // PREVIEW-HACK
-            } // PREVIEW-HACK
-            _timer.Start(); // PREVIEW-HACK
-            return; // PREVIEW-HACK
-        } // PREVIEW-HACK
         if (_state.State is EdgePanelState.Opening or EdgePanelState.Open)
         {
             if (DateTimeOffset.UtcNow >= _nextContentUpdate)
@@ -210,6 +194,8 @@ public sealed partial class EdgePanelWindow : Window, IDisposable
                 _escapeHotkey.Release();
                 _native.Hide();
                 _handle.Show();
+                // Po schowaniu karty tylko uchwyt i pas krawedzi moga blokowac ponowne otwarcie.
+                _state.SetPointerInside(EdgePanelNativeWindow.PointerInsideHotZone(_handle.MonitorBounds, _handle.HandleRect));
                 _telemetry.SetActive(false, null);
             }
         }
@@ -261,7 +247,10 @@ public sealed partial class EdgePanelWindow : Window, IDisposable
     {
         DoubleAnimation animation = new()
         {
-            From = from, To = to, Duration = new(duration), BeginTime = delay ?? TimeSpan.Zero,
+            From = from,
+            To = to,
+            Duration = new(duration),
+            BeginTime = delay ?? TimeSpan.Zero,
             EasingFunction = new ExponentialEase { Exponent = 6, EasingMode = opening ? EasingMode.EaseOut : EasingMode.EaseIn },
         };
         Storyboard.SetTarget(animation, target);
@@ -469,6 +458,7 @@ public sealed partial class EdgePanelWindow : Window, IDisposable
         _toggleHotkey.Dispose();
         _escapeHotkey.Dispose();
         _telemetry.Dispose();
+        SystemBackdrop = null;
         _uiSettings.AdvancedEffectsEnabledChanged -= OnAdvancedEffectsChanged;
         _native.Hide();
         _native.HotkeyPressed -= OnHotkey;

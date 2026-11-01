@@ -32,7 +32,6 @@ internal sealed class EdgePanelNativeWindow : IDisposable
         }
         if (window.AppWindow.Presenter is OverlappedPresenter presenter)
         {
-            presenter.IsAlwaysOnTop = true;
             presenter.IsResizable = false;
             presenter.IsMaximizable = false;
             presenter.IsMinimizable = false;
@@ -44,8 +43,10 @@ internal sealed class EdgePanelNativeWindow : IDisposable
         nint style = GetWindowLongPtrW(_handle, -16);
         _ = SetWindowLongPtrW(_handle, -16,
             (style & ~(nint)0x00CF0000) | unchecked((nint)0x80000000));
-        nint extended = GetWindowLongPtrW(_handle, -20) & ~(nint)0x00020301;
-        _ = SetWindowLongPtrW(_handle, -20, extended | (nint)0x08000088);
+        // WS_EX_TOPMOST ustawia wylacznie SetWindowPos, razem z pasmem Z-order.
+        nint extended = GetWindowLongPtrW(_handle, -20) & ~(nint)0x00020309;
+        _ = SetWindowLongPtrW(_handle, -20, extended | (nint)0x08000080);
+        AssertTopmost();
         Margins glass = new() { Left = -1, Right = -1, Top = -1, Bottom = -1 };
         _ = DwmExtendFrameIntoClientArea(_handle, ref glass);
         int cornerPreference = roundCorners ? 2 : 1;
@@ -58,10 +59,10 @@ internal sealed class EdgePanelNativeWindow : IDisposable
             throw new Win32Exception(Marshal.GetLastWin32Error());
         }
 
-        if (enableHotStrip && Environment.GetEnvironmentVariable("DISMODE_UI_PREVIEW") != "1") // PREVIEW-HACK
+        if (enableHotStrip)
         {
             _stripHandle = CreateWindowExW(
-                0x08080088,
+                0x08080080,
                 "STATIC",
                 string.Empty,
                 unchecked((int)0x80000000),
@@ -137,28 +138,16 @@ internal sealed class EdgePanelNativeWindow : IDisposable
 
     internal bool Register(int id, uint modifiers, uint key)
     {
-        if (Environment.GetEnvironmentVariable("DISMODE_UI_PREVIEW") == "1") // PREVIEW-HACK
-        { // PREVIEW-HACK
-            return Environment.GetEnvironmentVariable("DISMODE_PREVIEW_HOTKEY_TAKEN") != "1"; // PREVIEW-HACK
-        } // PREVIEW-HACK
         return RegisterHotKey(_handle, id, modifiers | 0x4000, key);
     }
 
     internal void Unregister(int id)
     {
-        if (Environment.GetEnvironmentVariable("DISMODE_UI_PREVIEW") == "1") // PREVIEW-HACK
-        { // PREVIEW-HACK
-            return; // PREVIEW-HACK
-        } // PREVIEW-HACK
         _ = UnregisterHotKey(_handle, id);
     }
 
     internal static bool PointerInsideHotZone(EdgePanelRect monitorBounds, EdgePanelRect handleBounds)
     {
-        if (Environment.GetEnvironmentVariable("DISMODE_UI_PREVIEW") == "1") // PREVIEW-HACK
-        { // PREVIEW-HACK
-            return false; // PREVIEW-HACK
-        } // PREVIEW-HACK
         return GetCursorPos(out NativePoint point)
             && EdgePanelMetrics.IsInHotZone(point.X, point.Y, monitorBounds, handleBounds);
     }
@@ -170,10 +159,6 @@ internal sealed class EdgePanelNativeWindow : IDisposable
         double scale,
         bool pointerEntered)
     {
-        if (Environment.GetEnvironmentVariable("DISMODE_UI_PREVIEW") == "1") // PREVIEW-HACK
-        { // PREVIEW-HACK
-            return false; // PREVIEW-HACK
-        } // PREVIEW-HACK
         return GetCursorPos(out NativePoint point)
             && EdgePanelMetrics.IsInOpenPanelZone(point.X, point.Y, cardBounds, monitorBounds, handleBounds, scale, pointerEntered);
     }
@@ -185,42 +170,39 @@ internal sealed class EdgePanelNativeWindow : IDisposable
             return 1;
         }
 
-        if (Environment.GetEnvironmentVariable("DISMODE_UI_PREVIEW") != "1") // PREVIEW-HACK
-        { // PREVIEW-HACK
-            if (message == 0x0200)
+        if (message == 0x0200)
+        {
+            bool isStrip = window == _stripHandle;
+            if (isStrip ? !_trackingStrip : !_trackingMain)
             {
-                bool isStrip = window == _stripHandle;
-                if (isStrip ? !_trackingStrip : !_trackingMain)
+                if (isStrip)
                 {
-                    if (isStrip)
-                    {
-                        _trackingStrip = true;
-                    }
-                    else
-                    {
-                        _trackingMain = true;
-                    }
-
-                    TrackMouse tracking = new() { Size = (uint)Marshal.SizeOf<TrackMouse>(), Flags = 2, Window = window };
-                    _ = TrackMouseEvent(ref tracking);
-                }
-
-                PointerChanged?.Invoke(true);
-            }
-            else if (message == 0x02A3)
-            {
-                if (window == _stripHandle)
-                {
-                    _trackingStrip = false;
+                    _trackingStrip = true;
                 }
                 else
                 {
-                    _trackingMain = false;
+                    _trackingMain = true;
                 }
 
-                PointerChanged?.Invoke(false);
+                TrackMouse tracking = new() { Size = (uint)Marshal.SizeOf<TrackMouse>(), Flags = 2, Window = window };
+                _ = TrackMouseEvent(ref tracking);
             }
-        } // PREVIEW-HACK
+
+            PointerChanged?.Invoke(true);
+        }
+        else if (message == 0x02A3)
+        {
+            if (window == _stripHandle)
+            {
+                _trackingStrip = false;
+            }
+            else
+            {
+                _trackingMain = false;
+            }
+
+            PointerChanged?.Invoke(false);
+        }
 
         if (message is 0x02E0 or 0x007E or 0x001A)
         {

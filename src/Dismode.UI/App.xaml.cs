@@ -17,11 +17,6 @@ public partial class App : Application
     {
         try
         {
-            if (Environment.GetEnvironmentVariable("DISMODE_UI_PREVIEW") == "1") // PREVIEW-HACK
-            { // PREVIEW-HACK
-                _window = EdgePreviewActions.Launch(); // PREVIEW-HACK
-                return; // PREVIEW-HACK
-            } // PREVIEW-HACK
             string[] commandLineArguments = Environment.GetCommandLineArgs()
                 .Skip(1)
                 .ToArray();
