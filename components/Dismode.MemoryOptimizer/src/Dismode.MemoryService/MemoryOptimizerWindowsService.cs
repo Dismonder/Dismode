@@ -11,6 +11,7 @@ internal sealed class MemoryOptimizerWindowsService : ServiceBase
         ServiceName = "DismodeMemoryService";
         CanStop = true;
         CanShutdown = true;
+        CanHandleSessionChangeEvent = true;
         AutoLog = true;
     }
 
@@ -23,6 +24,12 @@ internal sealed class MemoryOptimizerWindowsService : ServiceBase
     protected override void OnStop()
     {
         StopRuntime();
+    }
+
+    protected override void OnSessionChange(SessionChangeDescription changeDescription)
+    {
+        _runtime?.RefreshUsers();
+        base.OnSessionChange(changeDescription);
     }
 
     protected override void OnShutdown()

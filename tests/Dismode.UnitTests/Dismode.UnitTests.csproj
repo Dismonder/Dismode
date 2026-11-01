@@ -19,6 +19,8 @@
   </ItemGroup>
 
   <ItemGroup>
+    <Compile Include="..\..\src\Dismode.UI\Services\WindowRefreshController.cs"
+             Link="UI\WindowRefreshController.cs" />
     <Compile Include="..\..\src\Dismode.UI\Services\SessionPagePresentation.cs"
              Link="UI\SessionPagePresentation.cs" />
     <Compile Include="..\..\tools\Dismode.UpdatePublisher\UpdatePublisherTrust.cs"

@@ -31,7 +31,8 @@ public sealed class ForegroundWindowChangeListener : IDisposable
     private nint _hook;
 
     public ForegroundWindowChangeListener(
-        Action<int> onForegroundProcessChanged)
+        Action<int> onForegroundProcessChanged,
+        bool includeOwnProcess = false)
     {
         _onForegroundProcessChanged = onForegroundProcessChanged
             ?? throw new ArgumentNullException(
@@ -44,7 +45,7 @@ public sealed class ForegroundWindowChangeListener : IDisposable
             _procedure,
             0,
             0,
-            WinEventOutOfContext | WinEventSkipOwnProcess);
+            WinEventOutOfContext | (includeOwnProcess ? 0 : WinEventSkipOwnProcess));
         if (_hook == nint.Zero)
         {
             throw new Win32Exception(

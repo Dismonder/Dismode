@@ -15,5 +15,7 @@
     <Compile Include="..\..\src\Dismode.MemoryOptimizer\Presentation\*.cs" Link="Presentation\%(Filename)%(Extension)" />
     <Compile Include="..\..\src\Dismode.MemoryService\MemoryUserRuntime.cs" Link="Service\MemoryUserRuntime.cs" />
     <Compile Include="..\..\src\Dismode.MemoryService\SystemCpuSampler.cs" Link="Service\SystemCpuSampler.cs" />
+    <Compile Include="..\..\src\Dismode.MemoryService\ServiceWakeSignal.cs" Link="Service\ServiceWakeSignal.cs" />
+    <Compile Include="..\..\src\Dismode.MemoryService\MemoryAutomationPolling.cs" Link="Service\MemoryAutomationPolling.cs" />
   </ItemGroup>
 </Project>
