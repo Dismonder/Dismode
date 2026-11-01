@@ -1,6 +1,6 @@
 # Dismode: dopracowanie wyglądu, Ustawień, optymalizatorów i wydajności
 
-Stan: w toku (2026-10-31). Wydanie docelowe: 0.12.0. Baza: 0.11.0 (`main`).
+Stan: zakończony (2026-11-01). Wydanie docelowe: 0.12.0. Baza: 0.11.0 (`main`).
 
 ## Cel
 
