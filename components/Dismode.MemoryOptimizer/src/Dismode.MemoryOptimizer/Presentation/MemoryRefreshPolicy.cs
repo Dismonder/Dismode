@@ -36,9 +36,9 @@ internal sealed class MemoryRefreshPolicy
 
     public void InvalidateHistory() => _historyGeneration++;
 
-    public bool TryBeginStatus()
+    public bool TryBeginStatus(bool operationRunning = false)
     {
-        if (_statusInProgress)
+        if (_statusInProgress || operationRunning)
         {
             return false;
         }

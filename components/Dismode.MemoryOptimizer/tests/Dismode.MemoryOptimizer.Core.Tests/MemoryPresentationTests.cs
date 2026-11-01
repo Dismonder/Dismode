@@ -7,6 +7,26 @@ namespace Dismode.MemoryOptimizer.Core.Tests;
 public sealed class MemoryPresentationTests
 {
     [TestMethod]
+    public void TrayRefreshWaitsForTheManualOperationWithoutBlockingTheFinalReading()
+    {
+        MemoryRefreshPolicy policy = new() { IsVisible = false };
+        MemoryOperationGate operation = new();
+        Assert.IsTrue(operation.TryBegin(serviceBusy: false));
+
+        Assert.IsFalse(policy.TryBeginStatus(operation.IsRunning));
+        Assert.IsFalse(policy.TryBeginStatus(operation.IsRunning));
+
+        Assert.IsTrue(policy.TryBeginStatus());
+        policy.EndStatus();
+        operation.End();
+
+        Assert.IsTrue(policy.TryBeginStatus(operation.IsRunning));
+        Assert.IsFalse(policy.TryBeginStatus(operation.IsRunning));
+        policy.EndStatus();
+        Assert.IsFalse(policy.ShouldPollStatus);
+    }
+
+    [TestMethod]
     public void PollingPreservesDraftButMergesExternalPause()
     {
         MemorySettingsDraft draft = CreateDraft();

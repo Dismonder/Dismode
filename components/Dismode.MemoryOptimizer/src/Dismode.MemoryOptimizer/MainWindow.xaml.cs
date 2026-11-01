@@ -116,7 +116,7 @@ public sealed partial class MainWindow : Window
         UpdateRefreshActivity();
     }
 
-    internal Task RefreshForTrayAsync() => RefreshAsync(loadSettings: false);
+    internal Task RefreshForTrayAsync() => RefreshAsync(loadSettings: false, skipDuringOperation: true);
 
     internal async Task OptimizeNowAsync()
     {
@@ -198,7 +198,7 @@ public sealed partial class MainWindow : Window
         _ = ShowWindow(WindowHandle, 9);
         _ = SetForegroundWindow(WindowHandle);
         UpdateRefreshActivity();
-        _ = RefreshAsync(loadSettings: false);
+        _ = RefreshForTrayAsync();
     }
 
     internal void HideToTray()
@@ -269,9 +269,9 @@ public sealed partial class MainWindow : Window
         }
     }
 
-    private async Task RefreshAsync(bool loadSettings)
+    private async Task RefreshAsync(bool loadSettings, bool skipDuringOperation = false)
     {
-        if (!_refreshPolicy.TryBeginStatus())
+        if (!_refreshPolicy.TryBeginStatus(skipDuringOperation && _operationGate.IsRunning))
         {
             return;
         }
@@ -1243,7 +1243,7 @@ public sealed partial class MainWindow : Window
             UpdateRefreshActivity();
             if (!wasVisible && _refreshPolicy.ShouldPollStatus)
             {
-                _ = RefreshAsync(loadSettings: false);
+                _ = RefreshForTrayAsync();
             }
         }
 
