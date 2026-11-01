@@ -11,15 +11,18 @@ public sealed class ForegroundGameWatcherTests
     [DataRow(FrameRateStatus.InvalidComponent)]
     [DataRow(FrameRateStatus.AccessDenied)]
     [DataRow(FrameRateStatus.Failed)]
-    public async Task FailedCaptureDetachesUntilTheNextForegroundNotification(FrameRateStatus status)
+    public async Task FailedCaptureKeepsForegroundTargetForRetryWithoutForegroundChange(FrameRateStatus status)
     {
         FakeFrames frames = new() { Status = status };
         await using ForegroundGameWatcher watcher = new(frames, foregroundProcess: () => (42, "Game"));
 
         ForegroundGameSample failed = await watcher.SampleAsync(CancellationToken.None);
-        Assert.IsNull(failed.ProcessId);
+        Assert.AreEqual(42, failed.ProcessId);
         Assert.IsFalse(failed.IsPresenting);
         Assert.AreEqual(1, frames.Stops);
+
+        Assert.AreEqual(42, (await watcher.SampleAsync(CancellationToken.None)).ProcessId);
+        Assert.AreEqual(2, frames.Stops);
 
         frames.Status = FrameRateStatus.Measuring;
         ForegroundGameSample resumed = await watcher.SampleAsync(CancellationToken.None);
@@ -32,7 +35,9 @@ public sealed class ForegroundGameWatcherTests
     {
         FakeFrames frames = new() { ThrowOnSample = true };
         await using ForegroundGameWatcher watcher = new(frames, foregroundProcess: () => (42, "Game"));
-        Assert.IsNull((await watcher.SampleAsync(CancellationToken.None)).ProcessId);
+        ForegroundGameSample failed = await watcher.SampleAsync(CancellationToken.None);
+        Assert.AreEqual(42, failed.ProcessId);
+        Assert.IsFalse(failed.IsPresenting);
         Assert.AreEqual(1, frames.Stops);
         frames.ThrowOnSample = false;
         Assert.IsTrue((await watcher.SampleAsync(CancellationToken.None)).IsPresenting);

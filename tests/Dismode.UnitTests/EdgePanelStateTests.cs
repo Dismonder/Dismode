@@ -6,6 +6,32 @@ namespace Dismode.UnitTests;
 public sealed class EdgePanelStateTests
 {
     [TestMethod]
+    public void ForegroundChangeRestoresHandleAndStripWithoutActivation()
+    {
+        DirectoryInfo? directory = new(AppContext.BaseDirectory);
+        while (directory is not null && !File.Exists(Path.Combine(directory.FullName, "Dismode.sln")))
+        {
+            directory = directory.Parent;
+        }
+
+        Assert.IsNotNull(directory);
+        string uiRoot = Path.Combine(directory.FullName, "src", "Dismode.UI");
+        string main = File.ReadAllText(Path.Combine(uiRoot, "MainWindow.xaml.cs"));
+        string foregroundHandler = main[main.IndexOf("private void OnForegroundProcessChanged", StringComparison.Ordinal)..];
+        foregroundHandler = foregroundHandler[..foregroundHandler.IndexOf("private void ApplyPreparedPlan", StringComparison.Ordinal)];
+        StringAssert.Contains(foregroundHandler, "_edgePanel?.OnForegroundChanged();");
+        string panel = File.ReadAllText(Path.Combine(uiRoot, "EdgePanelWindow.xaml.cs"));
+        StringAssert.Contains(panel, "internal void OnForegroundChanged()");
+        StringAssert.Contains(panel, "_handle.AssertTopmost();");
+        string handle = File.ReadAllText(Path.Combine(uiRoot, "EdgePanelHandleWindow.cs"));
+        StringAssert.Contains(handle, "internal void AssertTopmost() => _native.AssertTopmost();");
+        string native = File.ReadAllText(Path.Combine(uiRoot, "Services", "EdgePanelNativeWindow.cs"));
+        StringAssert.Contains(native, "TopmostZOrderFlags = 0x0010 | 0x0002 | 0x0001;");
+        StringAssert.Contains(native, "SetWindowPos(_stripHandle, new(-1), 0, 0, 0, 0, TopmostZOrderFlags)");
+        StringAssert.Contains(native, "SetWindowPos(_handle, new(-1), 0, 0, 0, 0, TopmostZOrderFlags)");
+    }
+
+    [TestMethod]
     public void HoverRequiresDwellAndLeaveRequiresDelay()
     {
         FakeClock clock = new();

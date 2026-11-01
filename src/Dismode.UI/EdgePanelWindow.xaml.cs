@@ -77,6 +77,21 @@ public sealed partial class EdgePanelWindow : Window, IDisposable
 
     internal void SetHandleTransparency(int percent) => _handle.SetTransparency(percent);
 
+    internal void OnForegroundChanged()
+    {
+        if (_disposed)
+        {
+            return;
+        }
+
+        // Okno gry moze przykryc uchwyt i pas krawedzi w tym samym pasmie topmost.
+        _handle.AssertTopmost();
+        if (_state.State != EdgePanelState.Closed)
+        {
+            _native.AssertTopmost();
+        }
+    }
+
     private void OnGeometryChanged() => DispatcherQueue.TryEnqueue(() =>
     {
         if (!_disposed)

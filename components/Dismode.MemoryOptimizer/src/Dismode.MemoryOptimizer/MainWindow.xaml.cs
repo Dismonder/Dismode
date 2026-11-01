@@ -203,10 +203,8 @@ public sealed partial class MainWindow : Window
 
     internal void HideToTray()
     {
-        _refreshPolicy.IsVisible = false;
-        _refreshTimer.Stop();
-        StopPresentationAnimations();
         _ = ShowWindow(WindowHandle, 0);
+        UpdateRefreshActivity();
     }
 
     internal void AllowCloseAndClose()
@@ -402,7 +400,10 @@ public sealed partial class MainWindow : Window
                 MemoryUiFormatting.DescribeServiceMessage(status.LastResult.Message)
             : "Chroni aktywną grę przed przycięciami.";
 
-        AppendRamSample(memory);
+        if (_refreshPolicy.IsVisible)
+        {
+            AppendRamSample(memory);
+        }
         if (status.LastResult is not null)
         {
             RenderLastResult(status.LastResult);
@@ -1241,7 +1242,7 @@ public sealed partial class MainWindow : Window
         {
             bool wasVisible = _refreshPolicy.IsVisible;
             UpdateRefreshActivity();
-            if (!wasVisible && _refreshPolicy.ShouldPollStatus)
+            if (!wasVisible && _refreshPolicy.IsVisible)
             {
                 _ = RefreshForTrayAsync();
             }
@@ -1610,14 +1611,14 @@ public sealed partial class MainWindow : Window
     {
         _refreshPolicy.IsVisible = AppWindow.IsVisible &&
             AppWindow.Presenter is not OverlappedPresenter { State: OverlappedPresenterState.Minimized };
-        if (_refreshPolicy.ShouldPollStatus)
+        _refreshTimer.Interval = _refreshPolicy.StatusPollInterval;
+        _refreshTimer.Start();
+        if (_refreshPolicy.IsVisible)
         {
-            _refreshTimer.Start();
             UpdateActivityIndicators();
         }
         else
         {
-            _refreshTimer.Stop();
             StopPresentationAnimations();
         }
     }

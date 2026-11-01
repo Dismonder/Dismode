@@ -133,7 +133,7 @@ public sealed class ForegroundGameWatcher : IAsyncDisposable
                 or FrameRateStatus.Failed)
             {
                 await DetachAsync(cancellationToken).ConfigureAwait(false);
-                return new(null, processName, null, null, false);
+                return new(candidate, processName, null, null, false);
             }
 
             return new(
@@ -152,7 +152,7 @@ public sealed class ForegroundGameWatcher : IAsyncDisposable
                 or TimeoutException)
         {
             await DetachAsync(cancellationToken).ConfigureAwait(false);
-            return new(null, processName, null, null, false);
+            return new(candidate, processName, null, null, false);
         }
     }
 
@@ -227,7 +227,7 @@ public sealed class ForegroundGameWatcher : IAsyncDisposable
                 or InvalidOperationException
                 or Win32Exception)
         {
-            return (null, string.Empty);
+            return ((int?)processId, string.Empty);
         }
     }
 

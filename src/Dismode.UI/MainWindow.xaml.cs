@@ -5712,6 +5712,8 @@ public sealed partial class MainWindow : Window, IDisposable
     private void OnForegroundProcessChanged(int processId) =>
         _ = DispatcherQueue.TryEnqueue(() =>
         {
+            _edgePanel?.OnForegroundChanged();
+
             if (!_disposed
                 && _isLoaded
                 && _activeSession is null
@@ -6267,6 +6269,11 @@ public sealed partial class MainWindow : Window, IDisposable
                 HidePerformanceOverlay();
                 return;
             }
+
+            // Brak klatek wymaga ponowienia z opoznieniem, nie kolejnej zmiany okna.
+            _overlayPollTimer.Interval = sample.IsPresenting
+                ? TimeSpan.FromMilliseconds(500)
+                : TimeSpan.FromSeconds(5);
 
             if (!sample.IsPresenting)
             {

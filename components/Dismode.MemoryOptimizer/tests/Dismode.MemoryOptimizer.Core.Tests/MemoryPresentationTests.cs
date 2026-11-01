@@ -23,7 +23,7 @@ public sealed class MemoryPresentationTests
         Assert.IsTrue(policy.TryBeginStatus(operation.IsRunning));
         Assert.IsFalse(policy.TryBeginStatus(operation.IsRunning));
         policy.EndStatus();
-        Assert.IsFalse(policy.ShouldPollStatus);
+        Assert.IsTrue(policy.ShouldPollStatus);
     }
 
     [TestMethod]
@@ -185,20 +185,26 @@ public sealed class MemoryPresentationTests
     }
 
     [TestMethod]
-    public void HiddenStartupAllowsInitialReadButDoesNotSchedulePolling()
+    public void HiddenStartupKeepsSlowPollingForTrayAndServiceRecovery()
     {
         MemoryRefreshPolicy policy = new() { IsVisible = false };
-        Assert.IsFalse(policy.ShouldPollStatus);
+        Assert.IsTrue(policy.ShouldPollStatus);
+        Assert.AreEqual(TimeSpan.FromSeconds(30), policy.StatusPollInterval);
         Assert.IsTrue(policy.TryBeginStatus());
         policy.EndStatus();
-        Assert.IsFalse(policy.ShouldPollStatus);
+        Assert.IsTrue(policy.ShouldPollStatus);
         policy.IsVisible = true;
         Assert.IsTrue(policy.ShouldPollStatus);
         Assert.AreEqual(TimeSpan.FromSeconds(5), policy.StatusPollInterval);
         Assert.IsTrue(policy.TryBeginStatus());
         policy.EndStatus();
         policy.IsVisible = false;
-        Assert.IsFalse(policy.ShouldPollStatus);
+        Assert.IsTrue(policy.ShouldPollStatus);
+        Assert.AreEqual(TimeSpan.FromSeconds(30), policy.StatusPollInterval);
+        policy.SelectPage("processes");
+        Assert.IsFalse(policy.ShouldRefreshProcesses);
+        policy.SelectPage("history");
+        Assert.IsFalse(policy.NeedsHistory);
     }
 
     [TestMethod]

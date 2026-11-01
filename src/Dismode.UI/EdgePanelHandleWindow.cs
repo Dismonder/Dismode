@@ -50,6 +50,8 @@ internal sealed class EdgePanelHandleWindow : Window, IDisposable
 
     internal void Show() => _native.Show();
 
+    internal void AssertTopmost() => _native.AssertTopmost();
+
     private void OnPointerEntered(object sender, Microsoft.UI.Xaml.Input.PointerRoutedEventArgs args)
     {
         SetPointerInside(true);
