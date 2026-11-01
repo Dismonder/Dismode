@@ -49,48 +49,16 @@ public sealed class WindowRefreshControllerTests
     }
 
     [TestMethod]
-    public void BackgroundTimerStopsWhenIdleWithConfirmedEndpointAndNoWatchedGames()
+    public void BackgroundTimerKeepsFallbackForSessionsStartedByAnotherClient()
     {
         Assert.IsFalse(SessionBackgroundPollPolicy.ShouldRunBackgroundTimer(
-            windowVisible: true,
-            hasActiveSession: true,
-            endpointAvailable: true,
-            autoOptimizeEnabled: true,
-            profileCount: 3));
-        Assert.IsFalse(SessionBackgroundPollPolicy.ShouldRunBackgroundTimer(
-            windowVisible: false,
-            hasActiveSession: false,
-            endpointAvailable: true,
-            autoOptimizeEnabled: false,
-            profileCount: 3));
-        Assert.IsFalse(SessionBackgroundPollPolicy.ShouldRunBackgroundTimer(
-            windowVisible: false,
-            hasActiveSession: false,
-            endpointAvailable: true,
-            autoOptimizeEnabled: true,
-            profileCount: 0));
+            windowVisible: true));
         Assert.IsTrue(SessionBackgroundPollPolicy.ShouldRunBackgroundTimer(
-            windowVisible: false,
-            hasActiveSession: true,
-            endpointAvailable: true,
-            autoOptimizeEnabled: false,
-            profileCount: 0));
-        Assert.IsTrue(SessionBackgroundPollPolicy.ShouldRunBackgroundTimer(
-            windowVisible: false,
-            hasActiveSession: false,
-            endpointAvailable: false,
-            autoOptimizeEnabled: false,
-            profileCount: 0));
-        Assert.IsTrue(SessionBackgroundPollPolicy.ShouldRunBackgroundTimer(
-            windowVisible: false,
-            hasActiveSession: false,
-            endpointAvailable: true,
-            autoOptimizeEnabled: true,
-            profileCount: 2));
+            windowVisible: false));
     }
 
     [TestMethod]
-    public void ForegroundHookAllowsLongerIdleIntervalAndSkipsRedundantHostPolls()
+    public void ForegroundHookAllowsLongerIdleInterval()
     {
         TimeSpan watching = TimeSpan.FromSeconds(6);
         TimeSpan idle = TimeSpan.FromSeconds(15);
@@ -120,21 +88,29 @@ public sealed class WindowRefreshControllerTests
                 watching,
                 idle));
 
-        Assert.IsFalse(SessionBackgroundPollPolicy.ShouldQuerySessionHost(
-            hasActiveSession: false,
-            endpointAvailable: true,
-            forceCheck: false));
-        Assert.IsTrue(SessionBackgroundPollPolicy.ShouldQuerySessionHost(
-            hasActiveSession: true,
-            endpointAvailable: true,
-            forceCheck: false));
-        Assert.IsTrue(SessionBackgroundPollPolicy.ShouldQuerySessionHost(
-            hasActiveSession: false,
-            endpointAvailable: false,
-            forceCheck: false));
-        Assert.IsTrue(SessionBackgroundPollPolicy.ShouldQuerySessionHost(
-            hasActiveSession: false,
-            endpointAvailable: true,
-            forceCheck: true));
+    }
+
+    [TestMethod]
+    public void IdleHostChecksResumeOnDeadlineShowSessionAndEndpointFailure()
+    {
+        ManualClock clock = new();
+        SessionHostPollSchedule schedule = new(clock);
+        Assert.IsTrue(schedule.ShouldQuery(false, true, false));
+        Assert.IsFalse(schedule.ShouldQuery(false, true, false));
+        clock.Advance(TimeSpan.FromSeconds(14));
+        Assert.IsFalse(schedule.ShouldQuery(false, true, false));
+        clock.Advance(TimeSpan.FromSeconds(1));
+        Assert.IsTrue(schedule.ShouldQuery(false, true, false));
+        Assert.IsTrue(schedule.ShouldQuery(false, true, true));
+        Assert.IsTrue(schedule.ShouldQuery(true, true, false));
+        Assert.IsTrue(schedule.ShouldQuery(false, false, false));
+    }
+
+    private sealed class ManualClock : TimeProvider
+    {
+        private long _timestamp;
+        public override long TimestampFrequency => TimeSpan.TicksPerSecond;
+        public override long GetTimestamp() => _timestamp;
+        internal void Advance(TimeSpan elapsed) => _timestamp += elapsed.Ticks;
     }
 }

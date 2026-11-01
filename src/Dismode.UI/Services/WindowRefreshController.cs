@@ -30,16 +30,9 @@ internal sealed class WindowRefreshController(
 
 internal static class SessionBackgroundPollPolicy
 {
-    internal static bool ShouldRunBackgroundTimer(
-        bool windowVisible,
-        bool hasActiveSession,
-        bool endpointAvailable,
-        bool autoOptimizeEnabled,
-        int profileCount) =>
-        !windowVisible
-        && (hasActiveSession
-            || !endpointAvailable
-            || (autoOptimizeEnabled && profileCount > 0));
+    internal static bool ShouldRunBackgroundTimer(bool windowVisible) =>
+        // Inny klient moze uruchomic sesje takze przy wylaczonym automacie.
+        !windowVisible;
 
     internal static TimeSpan GetBackgroundInterval(
         bool hasActiveSession,
@@ -51,9 +44,27 @@ internal static class SessionBackgroundPollPolicy
             ? watchingInterval
             : idleInterval;
 
-    internal static bool ShouldQuerySessionHost(
+}
+
+internal sealed class SessionHostPollSchedule(TimeProvider? timeProvider = null)
+{
+    private readonly TimeProvider _clock = timeProvider ?? TimeProvider.System;
+    private long? _lastCheck;
+
+    internal bool ShouldQuery(
         bool hasActiveSession,
         bool endpointAvailable,
-        bool forceCheck) =>
-        forceCheck || hasActiveSession || !endpointAvailable;
+        bool forceCheck)
+    {
+        long now = _clock.GetTimestamp();
+        if (!forceCheck && !hasActiveSession && endpointAvailable
+            && _lastCheck is { } last
+            && _clock.GetElapsedTime(last, now) < TimeSpan.FromSeconds(15))
+        {
+            return false;
+        }
+
+        _lastCheck = now;
+        return true;
+    }
 }

@@ -15,6 +15,10 @@ internal sealed class ServiceWakeSignal(TimeProvider? timeProvider = null) : IDi
         {
             // Wystarczy jedno oczekujace powiadomienie.
         }
+        catch (ObjectDisposedException)
+        {
+            // Ostatnia zmiana sesji moze dotrzec juz po zatrzymaniu uslugi.
+        }
     }
 
     internal async Task WaitAsync(TimeSpan fallbackInterval, CancellationToken cancellationToken)

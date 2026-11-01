@@ -15,7 +15,6 @@ public partial class App : Application
 
     protected override void OnLaunched(LaunchActivatedEventArgs args)
     {
-        if (Environment.GetEnvironmentVariable("DISMODE_UI_PREVIEW") == "1") { _window = new MainWindow(); _window.Activate(); return; } // PREVIEW-HACK
         try
         {
             string[] commandLineArguments = Environment.GetCommandLineArgs()

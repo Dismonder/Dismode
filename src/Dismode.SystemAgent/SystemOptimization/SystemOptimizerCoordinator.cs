@@ -7,7 +7,8 @@ using Dismode.Data.SystemOptimization;
 namespace Dismode.SystemAgent.SystemOptimization;
 
 internal sealed class SystemOptimizerCoordinator :
-    ISystemOptimizerRecoveryMaintenance
+    ISystemOptimizerRecoveryMaintenance,
+    IDisposable
 {
     private static readonly TimeSpan StabilizationDuration =
         TimeSpan.FromSeconds(15);
@@ -33,6 +34,8 @@ internal sealed class SystemOptimizerCoordinator :
         _runtime = runtime;
         _recoveryJournalPath = Path.GetFullPath(recoveryJournalPath);
     }
+
+    public void Dispose() => _pendingTimeoutWake.Dispose();
 
     internal async ValueTask<SystemOptimizerStatus> GetStatusAsync(
         string ownerSid,

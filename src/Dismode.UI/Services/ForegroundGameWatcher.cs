@@ -132,6 +132,7 @@ public sealed class ForegroundGameWatcher : IAsyncDisposable
                 or FrameRateStatus.AccessDenied
                 or FrameRateStatus.Failed)
             {
+                await DetachAsync(cancellationToken).ConfigureAwait(false);
                 return new(null, processName, null, null, false);
             }
 
@@ -150,6 +151,7 @@ public sealed class ForegroundGameWatcher : IAsyncDisposable
                 or IOException
                 or TimeoutException)
         {
+            await DetachAsync(cancellationToken).ConfigureAwait(false);
             return new(null, processName, null, null, false);
         }
     }

@@ -8,6 +8,35 @@ namespace Dismode.IntegrationTests.SystemOptimization;
 [TestClass]
 public sealed class PerGameProfileCoordinatorTests
 {
+    [TestMethod]
+    public async Task IdleRecoveryWaitWakesWhenAPendingPhaseIsObservedAndCancelsAfterCleanup()
+    {
+        using CoordinatorContext context = new();
+        _ = await context.Coordinator.GetStatusAsync(OwnerSid, isReadOnly: false, CancellationToken.None);
+        using CancellationTokenSource lifetime = new(TimeSpan.FromSeconds(5));
+        Task waiting = context.Coordinator.WaitForPendingTimeoutAsync(
+            TimeSpan.FromMinutes(30), lifetime.Token).AsTask();
+        Assert.IsFalse(waiting.IsCompleted);
+
+        await context.Store.SetRecoveryStatusAsync(new(
+            RecoveryPhase.Capture, Guid.NewGuid(), DateTimeOffset.UtcNow,
+            IsJournalClean: false, HasConflicts: false, ConflictTargets: [], "fixture"), lifetime.Token);
+        _ = await context.Coordinator.GetStatusAsync(OwnerSid, isReadOnly: false, lifetime.Token);
+        await waiting.WaitAsync(TimeSpan.FromSeconds(2));
+        await context.Coordinator.WaitForPendingTimeoutAsync(
+            TimeSpan.FromMinutes(30), lifetime.Token);
+
+        await context.Store.SetRecoveryStatusAsync(new(
+            RecoveryPhase.Baseline, null, null,
+            IsJournalClean: true, HasConflicts: false, ConflictTargets: [], "fixture"), lifetime.Token);
+        _ = await context.Coordinator.GetStatusAsync(OwnerSid, isReadOnly: false, lifetime.Token);
+        waiting = context.Coordinator.WaitForPendingTimeoutAsync(
+            TimeSpan.FromMinutes(30), lifetime.Token).AsTask();
+        Assert.IsFalse(waiting.IsCompleted);
+        lifetime.Cancel();
+        await Assert.ThrowsExactlyAsync<OperationCanceledException>(async () => await waiting);
+    }
+
     private const string OwnerSid = "S-1-5-21-1000";
     private static readonly string ExecutableHash = new('A', 64);
     private static readonly string HardwareHash = new('B', 64);
@@ -610,6 +639,7 @@ public sealed class PerGameProfileCoordinatorTests
 
         public void Dispose()
         {
+            Coordinator.Dispose();
             Store.Dispose();
             try
             {

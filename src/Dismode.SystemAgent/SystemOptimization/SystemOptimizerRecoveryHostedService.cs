@@ -24,6 +24,7 @@ internal sealed class SystemOptimizerRecoveryHostedService : BackgroundService
 
     private readonly ISystemOptimizerRecoveryMaintenance _maintenance;
     private readonly TimeSpan _checkInterval;
+    private readonly TimeProvider _clock;
 
     internal SystemOptimizerRecoveryHostedService(
         ISystemOptimizerRecoveryMaintenance maintenance)
@@ -33,7 +34,8 @@ internal sealed class SystemOptimizerRecoveryHostedService : BackgroundService
 
     internal SystemOptimizerRecoveryHostedService(
         ISystemOptimizerRecoveryMaintenance maintenance,
-        TimeSpan checkInterval)
+        TimeSpan checkInterval,
+        TimeProvider? timeProvider = null)
     {
         ArgumentNullException.ThrowIfNull(maintenance);
         ArgumentOutOfRangeException.ThrowIfLessThanOrEqual(
@@ -42,6 +44,7 @@ internal sealed class SystemOptimizerRecoveryHostedService : BackgroundService
 
         _maintenance = maintenance;
         _checkInterval = checkInterval;
+        _clock = timeProvider ?? TimeProvider.System;
     }
 
     protected override async Task ExecuteAsync(
@@ -60,7 +63,7 @@ internal sealed class SystemOptimizerRecoveryHostedService : BackgroundService
                         token),
                     stoppingToken)
                 .ConfigureAwait(false);
-            await Task.Delay(_checkInterval, stoppingToken)
+            await Task.Delay(_checkInterval, _clock, stoppingToken)
                 .ConfigureAwait(false);
             await RunGuardedAsync(
                     _maintenance.RecoverTimedOutRebootExperimentAsync,

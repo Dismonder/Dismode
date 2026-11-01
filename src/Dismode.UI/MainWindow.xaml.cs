@@ -132,6 +132,7 @@ public sealed partial class MainWindow : Window, IDisposable
     };
     private readonly DispatcherTimer _backgroundSessionPollTimer = new();
     private readonly WindowRefreshController _windowRefresh;
+    private readonly SessionHostPollSchedule _sessionHostPollSchedule = new();
     private bool _sessionPollingReady;
     private bool _updateSpinnerRequested;
     private readonly DispatcherTimer _overlaySettingsSaveTimer = new()
@@ -390,7 +391,7 @@ public sealed partial class MainWindow : Window, IDisposable
             AppContext.BaseDirectory,
             "Assets",
             "Dismode.ico");
-        if (File.Exists(windowIconPath) && Environment.GetEnvironmentVariable("DISMODE_UI_PREVIEW") != "1") // PREVIEW-HACK
+        if (File.Exists(windowIconPath))
         {
             AppWindow.SetIcon(windowIconPath);
             try
@@ -414,13 +415,13 @@ public sealed partial class MainWindow : Window, IDisposable
         }
 
         _activationServer = new(
-            Environment.GetEnvironmentVariable("DISMODE_UI_PREVIEW") == "1" ? _userSid + "-p4-preview" : _userSid, // PREVIEW-HACK
+            _userSid,
             request => DispatcherQueue.TryEnqueue(
                 () => HandleActivationRequest(request)));
 
         try
         {
-            if (Environment.GetEnvironmentVariable("DISMODE_UI_PREVIEW") != "1") _foregroundChangeListener = new(OnForegroundProcessChanged); // PREVIEW-HACK
+            _foregroundChangeListener = new(OnForegroundProcessChanged);
         }
         catch (Win32Exception)
         {
@@ -428,7 +429,6 @@ public sealed partial class MainWindow : Window, IDisposable
             // reaguje wolniej.
         }
 
-        if (Environment.GetEnvironmentVariable("DISMODE_PREVIEW_OFFSCREEN") == "1") { AppWindow.MoveAndResize(new(-32000, -32000, 1240, 820)); } else // PREVIEW-HACK
         if (!_launchOptions.StartInBackground
             && AppWindow.Presenter is OverlappedPresenter presenter)
         {
@@ -458,7 +458,6 @@ public sealed partial class MainWindow : Window, IDisposable
 
     private async void OnRootLoaded(object sender, RoutedEventArgs args)
     {
-        if (Environment.GetEnvironmentVariable("DISMODE_UI_PREVIEW") == "1") { FpsTrackingToggleSwitch.IsOn = false; FpsOverlayToggleSwitch.IsOn = false; _isLoaded = true; await RefreshActiveSessionCoreAsync(_lifetime.Token); StartSessionPolling(); NavigateToPage(Environment.GetEnvironmentVariable("DISMODE_PREVIEW_PAGE") ?? "dashboard"); if (Environment.GetEnvironmentVariable("DISMODE_PREVIEW_PAGE") == "hidden") HideToTray(); return; } // PREVIEW-HACK
         if (_isLoaded)
         {
             return;
@@ -591,14 +590,8 @@ public sealed partial class MainWindow : Window, IDisposable
             return;
         }
 
-        if (Environment.GetEnvironmentVariable("DISMODE_PREVIEW_MODE") == "before") { _sessionPollTimer.Interval = _hiddenInTray ? TimeSpan.FromSeconds(15) : SessionPollWhileVisible; _sessionPollTimer.Start(); return; } // PREVIEW-HACK
         _windowRefresh.Update(AppWindow.IsVisible && !_hiddenInTray, IsWindowMinimized);
-        if (SessionBackgroundPollPolicy.ShouldRunBackgroundTimer(
-                _windowRefresh.IsActive,
-                _activeSession is not null,
-                _sessionEndpointAvailable,
-                IsAutomaticOptimizationEnabled,
-                _profiles.Count))
+        if (SessionBackgroundPollPolicy.ShouldRunBackgroundTimer(_windowRefresh.IsActive))
         {
             // Tylko obowiazki zasobnika i automatu; licznik widoku stoi.
             _backgroundSessionPollTimer.Interval = HiddenSessionPollInterval;
@@ -3537,7 +3530,6 @@ public sealed partial class MainWindow : Window, IDisposable
         _isSessionPollRunning = true;
         try
         {
-            if (Environment.GetEnvironmentVariable("DISMODE_PREVIEW_MODE") == "before") { _forceSessionEndpointCheck = true; _noActiveSessionApplied = false; if (!_hiddenInTray) UpdateDashboardSystemMetrics(); } else // PREVIEW-HACK
             if (IsMainWindowVisible && DashboardPage.Visibility == Visibility.Visible)
             {
                 // Wpisuje liczby do pol pulpitu. Przy schowanym oknie nie ma
@@ -4613,7 +4605,7 @@ public sealed partial class MainWindow : Window, IDisposable
         SessionStateClientSnapshot? previous = _activeSession;
         bool wasEndpointAvailable = _sessionEndpointAvailable;
         SessionStateClientSnapshot? current;
-        if (SessionBackgroundPollPolicy.ShouldQuerySessionHost(
+        if (_sessionHostPollSchedule.ShouldQuery(
                 previous is not null,
                 _sessionEndpointAvailable,
                 _forceSessionEndpointCheck))
@@ -5727,9 +5719,19 @@ public sealed partial class MainWindow : Window, IDisposable
         {
             _dashboardFrameSessionId = session.SessionId;
             _dashboardFrameTimes.Clear();
-            DashboardFrameTimeGraph.Points.Clear();
             TacticalAudioService.Instance.PlaySessionStart();
-            TacticalVfxService.Instance.AnimateQuickFlash(DashboardHeroCard);
+            if (IsMainWindowVisible)
+            {
+                DashboardFrameTimeGraph.Points.Clear();
+                TacticalVfxService.Instance.AnimateQuickFlash(DashboardHeroCard);
+            }
+        }
+
+        if (!IsMainWindowVisible)
+        {
+            UpdatePerformanceOverlay();
+            UpdateWindowActivity();
+            return;
         }
 
         string stateLabel = DescribeSessionState(session.State);

@@ -61,6 +61,7 @@ public sealed class SystemOptimizerRecoveryHostedServiceTests
     [TestMethod]
     public async Task ExecuteAsyncWaitsWhileIdleAndWakesWhenPendingTimeoutAppears()
     {
+        using ManualClock clock = new();
         TaskCompletionSource wake = new(
             TaskCreationOptions.RunContinuationsAsynchronously);
         FakeRecoveryMaintenance maintenance = new()
@@ -69,15 +70,20 @@ public sealed class SystemOptimizerRecoveryHostedServiceTests
         };
         using SystemOptimizerRecoveryHostedService service = new(
             maintenance,
-            TimeSpan.FromMilliseconds(10));
+            TimeSpan.FromMinutes(1),
+            clock);
 
         await service.StartAsync(CancellationToken.None);
-        await maintenance.StartupRecoveryObserved.Task.WaitAsync(
+        await maintenance.IdleWaitObserved.Task.WaitAsync(
             TimeSpan.FromSeconds(5));
-        await Task.Delay(40);
+        clock.Advance(TimeSpan.FromHours(1));
         Assert.AreEqual(0, maintenance.TimeoutRecoveryCount);
 
         wake.SetResult();
+        await clock.TimerCreated.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        clock.Advance(TimeSpan.FromSeconds(59));
+        Assert.AreEqual(0, maintenance.TimeoutRecoveryCount);
+        clock.Advance(TimeSpan.FromSeconds(1));
         await maintenance.TimeoutRecoveryObserved.Task.WaitAsync(
             TimeSpan.FromSeconds(5));
 
@@ -98,6 +104,9 @@ public sealed class SystemOptimizerRecoveryHostedServiceTests
             new(TaskCreationOptions.RunContinuationsAsynchronously);
 
         internal Task? PendingTimeoutGate { get; init; }
+
+        internal TaskCompletionSource IdleWaitObserved { get; } =
+            new(TaskCreationOptions.RunContinuationsAsynchronously);
 
         internal bool ThrowOnStartup { get; init; }
 
@@ -142,10 +151,47 @@ public sealed class SystemOptimizerRecoveryHostedServiceTests
             TimeSpan idleFallback,
             CancellationToken cancellationToken)
         {
+            IdleWaitObserved.TrySetResult();
             if (PendingTimeoutGate is not null)
             {
                 await PendingTimeoutGate.WaitAsync(idleFallback, cancellationToken);
             }
+        }
+    }
+
+    private sealed class ManualClock : TimeProvider, IDisposable
+    {
+        private TimeSpan _elapsed;
+        private ClockTimer? _timer;
+        public void Dispose() => _timer?.Dispose();
+        internal TaskCompletionSource TimerCreated { get; } =
+            new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public override ITimer CreateTimer(TimerCallback callback, object? state, TimeSpan dueTime, TimeSpan period)
+        {
+            _timer = new(callback, state, _elapsed + dueTime);
+            TimerCreated.TrySetResult();
+            return _timer;
+        }
+
+        internal void Advance(TimeSpan elapsed)
+        {
+            _elapsed += elapsed;
+            if (_timer is { IsDisposed: false } timer && _elapsed >= timer.Due)
+            {
+                timer.Callback(timer.State);
+            }
+        }
+
+        private sealed class ClockTimer(TimerCallback callback, object? state, TimeSpan due) : ITimer
+        {
+            internal TimerCallback Callback { get; } = callback;
+            internal object? State { get; } = state;
+            internal TimeSpan Due { get; } = due;
+            internal bool IsDisposed { get; private set; }
+            public bool Change(TimeSpan dueTime, TimeSpan period) => throw new NotSupportedException();
+            public void Dispose() => IsDisposed = true;
+            public ValueTask DisposeAsync() { Dispose(); return ValueTask.CompletedTask; }
         }
     }
 }

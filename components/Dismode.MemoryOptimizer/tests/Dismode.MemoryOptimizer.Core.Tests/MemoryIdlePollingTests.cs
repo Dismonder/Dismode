@@ -82,6 +82,14 @@ public sealed class MemoryIdlePollingTests
     }
 
     [TestMethod]
+    public void LateSessionNotificationAfterShutdownDoesNotFail()
+    {
+        ServiceWakeSignal signal = new();
+        signal.Dispose();
+        signal.Wake();
+    }
+
+    [TestMethod]
     public async Task FakeClockExpiresFallbackAndCancellationStopsWaiting()
     {
         using ManualClock clock = new();
