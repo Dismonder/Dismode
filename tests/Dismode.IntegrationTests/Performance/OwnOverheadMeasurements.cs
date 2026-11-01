@@ -449,13 +449,13 @@ public sealed class OwnOverheadMeasurements
             };
             await store.SaveSettingsAsync(settings, CancellationToken.None);
             MemoryRefreshPolicy policy = new() { IsVisible = false };
-            double interval = policy.StatusPollInterval.TotalSeconds;
-            Assert.AreEqual(30d, interval);
+            // A hidden tray does not poll status at all; only the 15 s automation reads settings.
+            Assert.IsFalse(policy.ShouldPollStatus);
             Measurement result = await MeasureAsync(async () =>
             {
                 MemoryOptimizerSettings current = await store.GetSettingsAsync(CancellationToken.None);
                 Assert.HasCount(32, current.ExcludedProcesses);
-            }, 1_000, 1 / interval + 1d / 15);
+            }, 1_000, 1d / 15);
             Report("6 settings read, hidden tray + 15 s automation", result);
             Assert.IsLessThanOrEqualTo(1_700d, result.Bytes);
             await using MemoryOptimizerStore other = new(path);
@@ -464,6 +464,7 @@ public sealed class OwnOverheadMeasurements
             await store.SaveSettingsAsync(settings with { AutomationPaused = false }, CancellationToken.None);
             Assert.IsFalse((await store.GetSettingsAsync(CancellationToken.None)).AutomationPaused);
             policy.IsVisible = true;
+            Assert.IsTrue(policy.ShouldPollStatus);
             Assert.AreEqual(TimeSpan.FromSeconds(5), policy.StatusPollInterval);
             Assert.IsTrue(policy.TryBeginStatus());
             policy.EndStatus();
