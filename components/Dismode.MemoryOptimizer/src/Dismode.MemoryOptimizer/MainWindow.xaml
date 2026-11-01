@@ -120,18 +120,20 @@
         <ColumnDefinition Width="Auto" />
         <ColumnDefinition Width="*" />
         <ColumnDefinition Width="Auto" />
-        <ColumnDefinition x:Name="TitleBarRightInset" Width="138" />
+        <ColumnDefinition x:Name="TitleBarRightInset" Width="208" />
       </Grid.ColumnDefinitions>
       <Border
           Grid.Column="1"
-          Width="27"
-          Height="27"
-          Margin="16,0,10,0"
+          Width="28"
+          Height="28"
+          Margin="16,0,8,0"
           VerticalAlignment="Center"
           Background="{ThemeResource MemoryAccentSoftBrush}"
-          CornerRadius="7">
+          BorderBrush="{ThemeResource MemoryAccentBrush}"
+          BorderThickness="1"
+          CornerRadius="8">
         <FontIcon
-            FontSize="15"
+            FontSize="14"
             Foreground="{ThemeResource MemoryAccentBrush}"
             Glyph="&#xE950;" />
       </Border>
@@ -146,17 +148,20 @@
             x:Name="TitleBarStatusBadge"
             Grid.Column="3"
             Padding="6,2"
-            Margin="10,0,16,0"
+            Margin="8,0,16,0"
             Width="92"
             Height="24"
             VerticalAlignment="Center"
             Background="{ThemeResource MemoryInsetBrush}"
-            CornerRadius="5">
+            BorderBrush="{ThemeResource MemoryBorderBrush}"
+            BorderThickness="1"
+            CornerRadius="11">
           <TextBlock
               x:Name="TitleBarStatusText"
               Width="78"
               MinHeight="16"
               FontSize="11"
+              TextAlignment="Center"
               Foreground="{ThemeResource MemoryMutedBrush}"
               TextTrimming="CharacterEllipsis"
               TextWrapping="NoWrap"
@@ -247,39 +252,60 @@
                     <RowDefinition Height="Auto" />
                   </Grid.RowDefinitions>
 
-                  <Grid RowSpacing="4">
-                    <Grid.RowDefinitions>
-                      <RowDefinition Height="Auto" />
-                      <RowDefinition Height="Auto" />
-                    </Grid.RowDefinitions>
-                    <Grid.ColumnDefinitions>
-                      <ColumnDefinition Width="*" />
-                      <ColumnDefinition Width="Auto" />
-                    </Grid.ColumnDefinitions>
-                    <StackPanel Spacing="4">
-                      <TextBlock Style="{StaticResource MemoryEyebrowStyle}" Text="DISMODE / PAMIĘĆ SYSTEMU" />
-                      <TextBlock Style="{StaticResource MemoryPageTitleStyle}" Text="Przegląd pamięci" />
-                      <TextBlock
-                          Style="{StaticResource MemoryMutedTextStyle}"
-                          Text="Bezpieczny profil działa w tle i zatrzymuje się automatycznie podczas gry." />
-                    </StackPanel>
-                    <StackPanel
-                        x:Name="OverviewHeaderActions"
-                        Grid.Column="1"
-                        VerticalAlignment="Center"
-                        Orientation="Horizontal"
-                        Spacing="9">
-                      <Button
-                          Click="RefreshButton_Click"
-                          Content="Odśwież"
-                          Style="{StaticResource MemorySecondaryButtonStyle}" />
-                      <Button
-                          x:Name="CompactModeButton"
-                          Click="CompactButton_Click"
-                          Content="Mini panel"
-                          Style="{StaticResource MemorySecondaryButtonStyle}" />
-                    </StackPanel>
-                  </Grid>
+                  <Border Style="{StaticResource DismodeDeckHeaderStyle}">
+                    <Grid RowSpacing="8">
+                      <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="Auto" />
+                      </Grid.RowDefinitions>
+                      <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                      </Grid.ColumnDefinitions>
+                      <StackPanel Spacing="4">
+                        <TextBlock Style="{StaticResource MemoryEyebrowStyle}" Text="DISMODE / PAMIĘĆ SYSTEMU" />
+                        <TextBlock Style="{StaticResource MemoryPageTitleStyle}" Text="Przegląd pamięci" />
+                        <StackPanel Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
+                          <TextBlock
+                              Style="{StaticResource MemoryMutedTextStyle}"
+                              VerticalAlignment="Center"
+                              Text="Czyści zbędny RAM w tle i automatycznie wstrzymuje pracę podczas gry." />
+                          <ToggleButton
+                              Style="{StaticResource MemoryMoreToggleStyle}"
+                              Tag="OverviewMoreDetails"
+                              AutomationProperties.Name="Więcej"
+                              Click="ToggleDetails_Click">
+                            <StackPanel Orientation="Horizontal" Spacing="4">
+                              <TextBlock Text="Więcej" />
+                              <FontIcon Glyph="&#xE70D;" FontSize="10" />
+                            </StackPanel>
+                          </ToggleButton>
+                        </StackPanel>
+                        <TextBlock
+                            x:Name="OverviewMoreDetails"
+                            Visibility="Collapsed"
+                            FontSize="12"
+                            Style="{StaticResource MemoryMutedTextStyle}"
+                            Text="Bezpieczny profil przycina tylko nieużywane working sety procesów użytkownika poza wykluczeniami i aktywną grą. Usługa sprawdza grę i zabezpieczenia przed każdą operacją. Używa zapisanego profilu." />
+                      </StackPanel>
+                      <StackPanel
+                          x:Name="OverviewHeaderActions"
+                          Grid.Column="1"
+                          VerticalAlignment="Center"
+                          Orientation="Horizontal"
+                          Spacing="8">
+                        <Button
+                            Click="RefreshButton_Click"
+                            Content="Odśwież"
+                            Style="{StaticResource MemorySecondaryButtonStyle}" />
+                        <Button
+                            x:Name="CompactModeButton"
+                            Click="CompactButton_Click"
+                            Content="Mini panel"
+                            Style="{StaticResource MemorySecondaryButtonStyle}" />
+                      </StackPanel>
+                    </Grid>
+                  </Border>
 
                   <!--
                     MinHeight, nie Height. Pasek deklarowal obie naraz, a Height
@@ -297,7 +323,7 @@
                       Background="{ThemeResource MemoryAccentSoftBrush}"
                       BorderBrush="{ThemeResource MemoryBorderBrush}"
                       BorderThickness="1"
-                      CornerRadius="10">
+                      CornerRadius="11">
                     <Grid ColumnSpacing="12">
                       <Grid.ColumnDefinitions>
                         <ColumnDefinition Width="Auto" />
@@ -415,7 +441,8 @@
                             <TextBlock Style="{StaticResource MemorySectionTitleStyle}" Text="Ostatnia minuta" />
                             <TextBlock
                                 Style="{StaticResource MemoryMutedTextStyle}"
-                                Text="Krótki trend lokalny, bez zapisywania telemetrii." />
+                                Text="Lokalny wykres użycia pamięci."
+                                ToolTipService.ToolTip="Krótki trend lokalny, bez zapisywania telemetrii." />
                           </StackPanel>
                           <TextBlock
                               x:Name="RamUsageSummaryText"
@@ -430,9 +457,11 @@
                         </Grid>
                         <Border
                             Height="112"
-                            Padding="10"
+                            Padding="12"
                             Background="{ThemeResource MemoryInsetBrush}"
-                            CornerRadius="9">
+                            BorderBrush="{ThemeResource MemoryDividerBrush}"
+                            BorderThickness="1"
+                            CornerRadius="11">
                           <Viewbox Stretch="Fill">
                             <Canvas Width="600" Height="90">
                               <Line X1="0" Y1="22" X2="600" Y2="22" Stroke="{ThemeResource MemoryDividerBrush}" StrokeThickness="1" />
@@ -451,14 +480,14 @@
                             MinHeight="40"
                             MaxLines="2"
                             Foreground="{ThemeResource MemoryMutedBrush}"
-                            Text="Usługa sprawdza aktywną grę i zabezpieczenia przed każdą operacją."
+                            Text="Chroni aktywną grę przed przycięciami."
                             TextTrimming="CharacterEllipsis"
                             TextWrapping="Wrap" />
                       </StackPanel>
                     </Grid>
                   </Border>
 
-                  <Grid Grid.Row="3" ColumnSpacing="12" RowSpacing="12">
+                  <Grid Grid.Row="3" ColumnSpacing="16" RowSpacing="16">
                     <Grid.RowDefinitions>
                       <RowDefinition Height="Auto" />
                       <RowDefinition Height="Auto" />
@@ -470,24 +499,24 @@
                       <ColumnDefinition x:Name="MetricColumn3" Width="*" />
                     </Grid.ColumnDefinitions>
                     <Border Style="{StaticResource MemoryCardStyle}">
-                      <StackPanel Spacing="7">
+                      <StackPanel Spacing="8">
                         <TextBlock Style="{StaticResource MemoryMetricLabelStyle}" Text="UŻYWANY RAM" />
                         <TextBlock x:Name="UsedRamText" Style="{StaticResource MemoryMetricValueStyle}" Text="—" />
-                        <TextBlock Style="{StaticResource MemoryMutedTextStyle}" Text="Pamięć zajęta przez system i aplikacje" />
+                        <TextBlock Style="{StaticResource MemoryMutedTextStyle}" Text="Zajęte przez system i aplikacje" />
                       </StackPanel>
                     </Border>
                     <Border x:Name="AvailableMetricCard" Grid.Column="1" Style="{StaticResource MemoryCardStyle}">
-                      <StackPanel Spacing="7">
+                      <StackPanel Spacing="8">
                         <TextBlock Style="{StaticResource MemoryMetricLabelStyle}" Text="DOSTĘPNY RAM" />
                         <TextBlock x:Name="AvailableRamText" Style="{StaticResource MemoryMetricValueStyle}" Text="—" />
-                        <TextBlock Style="{StaticResource MemoryMutedTextStyle}" Text="Pamięć gotowa do natychmiastowego użycia" />
+                        <TextBlock Style="{StaticResource MemoryMutedTextStyle}" Text="Gotowe dla gier i programów" />
                       </StackPanel>
                     </Border>
                     <Border x:Name="TotalMetricCard" Grid.Column="2" Style="{StaticResource MemoryCardStyle}">
-                      <StackPanel Spacing="7">
+                      <StackPanel Spacing="8">
                         <TextBlock Style="{StaticResource MemoryMetricLabelStyle}" Text="CAŁKOWITY RAM" />
                         <TextBlock x:Name="TotalRamText" Style="{StaticResource MemoryMetricValueStyle}" Text="—" />
-                        <TextBlock Style="{StaticResource MemoryMutedTextStyle}" Text="Fizyczna pamięć zainstalowana w komputerze" />
+                        <TextBlock Style="{StaticResource MemoryMutedTextStyle}" Text="Zainstalowana pamięć fizyczna" />
                       </StackPanel>
                     </Border>
                     <Border
@@ -495,10 +524,10 @@
                         Grid.Column="3"
                         Style="{StaticResource MemoryCardStyle}"
                         ToolTipService.ToolTip="Pamięć zadeklarowana przez Windows i aplikacje. Limit obejmuje RAM oraz plik stronicowania.">
-                      <StackPanel Spacing="7">
+                      <StackPanel Spacing="8">
                         <TextBlock Style="{StaticResource MemoryMetricLabelStyle}" Text="PAMIĘĆ ZADEKLAROWANA" />
                         <TextBlock x:Name="CommitRamText" MinHeight="34" Style="{StaticResource MemoryMetricValueStyle}" FontSize="22" TextWrapping="Wrap" TextTrimming="CharacterEllipsis" Text="—" />
-                        <TextBlock Style="{StaticResource MemoryMutedTextStyle}" Text="Użyto / limit (RAM + plik stronicowania)" />
+                        <TextBlock Style="{StaticResource MemoryMutedTextStyle}" Text="RAM + plik stronicowania" />
                       </StackPanel>
                     </Border>
                   </Grid>
@@ -578,11 +607,31 @@
                     <RowDefinition Height="Auto" />
                     <RowDefinition Height="Auto" />
                   </Grid.RowDefinitions>
-                  <StackPanel Spacing="4">
-                    <TextBlock Style="{StaticResource MemoryEyebrowStyle}" Text="MEMORY OPTIMIZER / REGUŁY" />
-                    <TextBlock Style="{StaticResource MemoryPageTitleStyle}" Text="Automatyzacja" />
-                    <TextBlock Style="{StaticResource MemoryMutedTextStyle}" Text="Ustal, kiedy usługa może użyć bezpiecznego profilu. Aktywna gra zawsze ma pierwszeństwo." />
-                  </StackPanel>
+                  <Border Style="{StaticResource DismodeDeckHeaderStyle}">
+                    <StackPanel Spacing="4">
+                      <TextBlock Style="{StaticResource MemoryEyebrowStyle}" Text="MEMORY OPTIMIZER / REGUŁY" />
+                      <TextBlock Style="{StaticResource MemoryPageTitleStyle}" Text="Automatyzacja" />
+                      <StackPanel Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
+                        <TextBlock Style="{StaticResource MemoryMutedTextStyle}" VerticalAlignment="Center" Text="Czyści RAM tylko w spoczynku — nigdy w trakcie gry." />
+                        <ToggleButton
+                            Style="{StaticResource MemoryMoreToggleStyle}"
+                            Tag="AutomationMoreDetails"
+                            AutomationProperties.Name="Więcej"
+                            Click="ToggleDetails_Click">
+                          <StackPanel Orientation="Horizontal" Spacing="4">
+                            <TextBlock Text="Więcej" />
+                            <FontIcon Glyph="&#xE70D;" FontSize="10" />
+                          </StackPanel>
+                        </ToggleButton>
+                      </StackPanel>
+                      <TextBlock
+                          x:Name="AutomationMoreDetails"
+                          Visibility="Collapsed"
+                          FontSize="12"
+                          Style="{StaticResource MemoryMutedTextStyle}"
+                          Text="Optymalizacja wykona się dopiero po spełnieniu wszystkich aktywnych warunków. Opcje interfejsu dotyczą okna i zasobnika, natomiast usługa działa w tle." />
+                    </StackPanel>
+                  </Border>
                   <Grid Grid.Row="1" ColumnSpacing="16" RowSpacing="16">
                     <Grid.RowDefinitions>
                       <RowDefinition Height="Auto" />
@@ -594,10 +643,7 @@
                     </Grid.ColumnDefinitions>
                     <Border Style="{StaticResource MemoryCardStyle}">
                       <StackPanel Spacing="16">
-                        <StackPanel Spacing="4">
-                          <TextBlock Style="{StaticResource MemorySectionTitleStyle}" Text="Warunki uruchomienia" />
-                          <TextBlock Style="{StaticResource MemoryMutedTextStyle}" Text="Optymalizacja wykona się dopiero po spełnieniu wszystkich aktywnych warunków." />
-                        </StackPanel>
+                        <TextBlock Style="{StaticResource MemorySectionTitleStyle}" Text="Warunki uruchomienia" />
                         <ToggleSwitch
                             x:Name="AutomationSwitch"
                             Header="Automatyczna optymalizacja"
@@ -641,16 +687,17 @@
 
                     <Border x:Name="AutomationSecondaryCard" Grid.Column="1" Style="{StaticResource MemoryCardStyle}">
                       <StackPanel Spacing="16">
-                        <StackPanel Spacing="4">
-                          <TextBlock Style="{StaticResource MemorySectionTitleStyle}" Text="Interfejs i uruchamianie" />
-                          <TextBlock Style="{StaticResource MemoryMutedTextStyle}" Text="Te opcje dotyczą niepodwyższonego interfejsu i trayu, nie usługi LocalSystem." />
-                        </StackPanel>
+                        <TextBlock Style="{StaticResource MemorySectionTitleStyle}" Text="Interfejs i uruchamianie" />
                         <CheckBox x:Name="NotificationsCheckBox" Content="Pokazuj powiadomienia po operacji" Checked="SettingsControl_Changed" Unchecked="SettingsControl_Changed" />
                         <CheckBox x:Name="StartWithWindowsCheckBox" Content="Uruchamiaj interfejs wraz z Windows" Checked="SettingsControl_Changed" Unchecked="SettingsControl_Changed" />
                         <CheckBox x:Name="StartMinimizedCheckBox" Content="Po starcie pozostaw tylko ikonę w zasobniku" Checked="SettingsControl_Changed" Unchecked="SettingsControl_Changed" />
                         <CheckBox x:Name="CompactModeCheckBox" Content="Po uruchomieniu pokazuj mini panel" Checked="SettingsControl_Changed" Unchecked="SettingsControl_Changed" />
-                        <TextBox x:Name="HotkeyTextBox" Header="Skrót ręcznej optymalizacji" PlaceholderText="Ctrl+Shift+M" TextChanged="TextSetting_Changed" />
-                        <TextBlock Style="{StaticResource MemoryMutedTextStyle}" Text="Dozwolone są Ctrl, Alt, Shift lub Win oraz litera, cyfra albo F1–F12." />
+                        <TextBox
+                            x:Name="HotkeyTextBox"
+                            Header="Skrót ręcznej optymalizacji"
+                            PlaceholderText="Ctrl+Shift+M"
+                            ToolTipService.ToolTip="Dozwolone są Ctrl, Alt, Shift lub Win oraz litera, cyfra albo F1–F12."
+                            TextChanged="TextSetting_Changed" />
                       </StackPanel>
                     </Border>
                   </Grid>
@@ -669,31 +716,51 @@
                     <RowDefinition Height="Auto" />
                     <RowDefinition Height="Auto" />
                   </Grid.RowDefinitions>
-                  <Grid RowSpacing="4">
-                    <Grid.RowDefinitions>
-                      <RowDefinition Height="Auto" />
-                      <RowDefinition Height="Auto" />
-                    </Grid.RowDefinitions>
-                    <Grid.ColumnDefinitions>
-                      <ColumnDefinition Width="*" />
-                      <ColumnDefinition Width="Auto" />
-                    </Grid.ColumnDefinitions>
-                    <StackPanel Spacing="4">
-                      <TextBlock Style="{StaticResource MemoryEyebrowStyle}" Text="MEMORY OPTIMIZER / PROCESY" />
-                      <TextBlock Style="{StaticResource MemoryPageTitleStyle}" Text="Procesy i wykluczenia" />
-                      <TextBlock Style="{StaticResource MemoryMutedTextStyle}" Text="Wykluczone aplikacje nie są przycinane przez profil working setów użytkownika." />
-                    </StackPanel>
-                    <StackPanel x:Name="ProcessHeaderActions" Grid.Column="1" VerticalAlignment="Center" Orientation="Horizontal" Spacing="9">
-                      <TextBox x:Name="ProcessSearchBox" Width="210" PlaceholderText="Szukaj procesu" TextChanged="ProcessSearchBox_TextChanged"
-                               AutomationProperties.Name="Szukaj procesu" />
-                      <ComboBox x:Name="ProcessSortCombo" Width="165" SelectionChanged="ProcessSortCombo_SelectionChanged" SelectedIndex="0"
-                                AutomationProperties.Name="Sortowanie procesów">
-                        <ComboBoxItem Content="Najwięcej RAM" />
-                        <ComboBoxItem Content="Nazwa A–Z" />
-                        <ComboBoxItem Content="Nazwa Z–A" />
-                      </ComboBox>
-                    </StackPanel>
-                  </Grid>
+                  <Border Style="{StaticResource DismodeDeckHeaderStyle}">
+                    <Grid RowSpacing="8">
+                      <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="Auto" />
+                      </Grid.RowDefinitions>
+                      <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                      </Grid.ColumnDefinitions>
+                      <StackPanel Spacing="4">
+                        <TextBlock Style="{StaticResource MemoryEyebrowStyle}" Text="MEMORY OPTIMIZER / PROCESY" />
+                        <TextBlock Style="{StaticResource MemoryPageTitleStyle}" Text="Procesy i wykluczenia" />
+                        <StackPanel Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
+                          <TextBlock Style="{StaticResource MemoryMutedTextStyle}" VerticalAlignment="Center" Text="Wskaż aplikacje, których pamięci Dismode ma nie dotykać." />
+                          <ToggleButton
+                              Style="{StaticResource MemoryMoreToggleStyle}"
+                              Tag="ProcessesMoreDetails"
+                              AutomationProperties.Name="Więcej"
+                              Click="ToggleDetails_Click">
+                            <StackPanel Orientation="Horizontal" Spacing="4">
+                              <TextBlock Text="Więcej" />
+                              <FontIcon Glyph="&#xE70D;" FontSize="10" />
+                            </StackPanel>
+                          </ToggleButton>
+                        </StackPanel>
+                        <TextBlock
+                            x:Name="ProcessesMoreDetails"
+                            Visibility="Collapsed"
+                            FontSize="12"
+                            Style="{StaticResource MemoryMutedTextStyle}"
+                            Text="Wykluczone aplikacje nie są przycinane przez profil working setów użytkownika. Wpisz nazwę bez rozszerzenia .exe (limit: 256 pozycji)." />
+                      </StackPanel>
+                      <StackPanel x:Name="ProcessHeaderActions" Grid.Column="1" VerticalAlignment="Center" Orientation="Horizontal" Spacing="8">
+                        <TextBox x:Name="ProcessSearchBox" Width="210" PlaceholderText="Szukaj procesu" TextChanged="ProcessSearchBox_TextChanged"
+                                 AutomationProperties.Name="Szukaj procesu" />
+                        <ComboBox x:Name="ProcessSortCombo" Width="165" SelectionChanged="ProcessSortCombo_SelectionChanged" SelectedIndex="0"
+                                  AutomationProperties.Name="Sortowanie procesów">
+                          <ComboBoxItem Content="Najwięcej RAM" />
+                          <ComboBoxItem Content="Nazwa A–Z" />
+                          <ComboBoxItem Content="Nazwa Z–A" />
+                        </ComboBox>
+                      </StackPanel>
+                    </Grid>
+                  </Border>
                   <Grid Grid.Row="1" ColumnSpacing="16" RowSpacing="16">
                     <Grid.RowDefinitions>
                       <RowDefinition Height="Auto" />
@@ -801,22 +868,42 @@
                     <RowDefinition Height="Auto" />
                     <RowDefinition Height="Auto" />
                   </Grid.RowDefinitions>
-                  <Grid RowSpacing="4">
-                    <Grid.RowDefinitions>
-                      <RowDefinition Height="Auto" />
-                      <RowDefinition Height="Auto" />
-                    </Grid.RowDefinitions>
-                    <Grid.ColumnDefinitions>
-                      <ColumnDefinition Width="*" />
-                      <ColumnDefinition Width="Auto" />
-                    </Grid.ColumnDefinitions>
-                    <StackPanel Spacing="4">
-                      <TextBlock Style="{StaticResource MemoryEyebrowStyle}" Text="MEMORY OPTIMIZER / DZIENNIK" />
-                      <TextBlock Style="{StaticResource MemoryPageTitleStyle}" Text="Historia operacji" />
-                      <TextBlock Style="{StaticResource MemoryMutedTextStyle}" Text="Wyniki pokazują zmianę dostępnego RAM oddzielnie od redukcji working setów." />
-                    </StackPanel>
-                    <Button x:Name="HistoryHeaderAction" Grid.Column="1" VerticalAlignment="Center" Click="RefreshHistoryButton_Click" Content="Odśwież historię" Style="{StaticResource MemorySecondaryButtonStyle}" />
-                  </Grid>
+                  <Border Style="{StaticResource DismodeDeckHeaderStyle}">
+                    <Grid RowSpacing="8">
+                      <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="Auto" />
+                      </Grid.RowDefinitions>
+                      <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                      </Grid.ColumnDefinitions>
+                      <StackPanel Spacing="4">
+                        <TextBlock Style="{StaticResource MemoryEyebrowStyle}" Text="MEMORY OPTIMIZER / DZIENNIK" />
+                        <TextBlock Style="{StaticResource MemoryPageTitleStyle}" Text="Historia operacji" />
+                        <StackPanel Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
+                          <TextBlock Style="{StaticResource MemoryMutedTextStyle}" VerticalAlignment="Center" Text="Sprawdź, ile pamięci odzyskano w ostatnich czyszczeniach." />
+                          <ToggleButton
+                              Style="{StaticResource MemoryMoreToggleStyle}"
+                              Tag="HistoryMoreDetails"
+                              AutomationProperties.Name="Więcej"
+                              Click="ToggleDetails_Click">
+                            <StackPanel Orientation="Horizontal" Spacing="4">
+                              <TextBlock Text="Więcej" />
+                              <FontIcon Glyph="&#xE70D;" FontSize="10" />
+                            </StackPanel>
+                          </ToggleButton>
+                        </StackPanel>
+                        <TextBlock
+                            x:Name="HistoryMoreDetails"
+                            Visibility="Collapsed"
+                            FontSize="12"
+                            Style="{StaticResource MemoryMutedTextStyle}"
+                            Text="Wyniki pokazują zmianę dostępnego RAM oddzielnie od redukcji working setów." />
+                      </StackPanel>
+                      <Button x:Name="HistoryHeaderAction" Grid.Column="1" VerticalAlignment="Center" Click="RefreshHistoryButton_Click" Content="Odśwież historię" Style="{StaticResource MemoryPrimaryButtonStyle}" />
+                    </Grid>
+                  </Border>
                   <Border Grid.Row="1" Style="{StaticResource MemoryCardStyle}">
                     <StackPanel Spacing="5">
                       <TextBlock Style="{StaticResource MemoryMetricLabelStyle}" Text="OSTATNIA OPERACJA" />
@@ -876,19 +963,39 @@
                     <RowDefinition Height="Auto" />
                     <RowDefinition Height="Auto" />
                   </Grid.RowDefinitions>
-                  <StackPanel Spacing="4">
-                    <TextBlock Style="{StaticResource MemoryEyebrowStyle}" Text="MEMORY OPTIMIZER / ŚWIADOMY DOSTĘP" />
-                    <TextBlock Style="{StaticResource MemoryPageTitleStyle}" Text="Ustawienia zaawansowane" />
-                    <TextBlock Style="{StaticResource MemoryMutedTextStyle}" Text="Globalne operacje pamięci są przeznaczone dla świadomych użytkowników i nie gwarantują wzrostu FPS." />
-                  </StackPanel>
+                  <Border Style="{StaticResource DismodeDeckHeaderStyle}">
+                    <StackPanel Spacing="4">
+                      <TextBlock Style="{StaticResource MemoryEyebrowStyle}" Text="MEMORY OPTIMIZER / ŚWIADOMY DOSTĘP" />
+                      <TextBlock Style="{StaticResource MemoryPageTitleStyle}" Text="Ustawienia zaawansowane" />
+                      <StackPanel Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
+                        <TextBlock Style="{StaticResource MemoryMutedTextStyle}" VerticalAlignment="Center" Text="Dodatkowe czyszczenie buforów Windows dla zaawansowanych." />
+                        <ToggleButton
+                            Style="{StaticResource MemoryMoreToggleStyle}"
+                            Tag="AdvancedMoreDetails"
+                            AutomationProperties.Name="Więcej"
+                            Click="ToggleDetails_Click">
+                          <StackPanel Orientation="Horizontal" Spacing="4">
+                            <TextBlock Text="Więcej" />
+                            <FontIcon Glyph="&#xE70D;" FontSize="10" />
+                          </StackPanel>
+                        </ToggleButton>
+                      </StackPanel>
+                      <TextBlock
+                          x:Name="AdvancedMoreDetails"
+                          Visibility="Collapsed"
+                          FontSize="12"
+                          Style="{StaticResource MemoryMutedTextStyle}"
+                          Text="Opróżnianie globalnych list Windows może spowodować ponowne doczytywanie danych, krótkie przycięcia i większą aktywność dysku. Dismode nadal zablokuje wykonanie podczas gry." />
+                    </StackPanel>
+                  </Border>
 
                   <Border x:Name="AdvancedLockedPanel" Grid.Row="1" Padding="32" Style="{StaticResource MemoryCardStyle}">
-                    <StackPanel MaxWidth="620" HorizontalAlignment="Center" Spacing="14">
-                      <Border Width="54" Height="54" HorizontalAlignment="Center" Background="{ThemeResource MemoryAccentSoftBrush}" CornerRadius="27">
-                        <FontIcon FontSize="23" Foreground="{ThemeResource MemoryAccentBrush}" Glyph="&#xE72E;" />
+                    <StackPanel MaxWidth="560" HorizontalAlignment="Center" Spacing="16">
+                      <Border Width="56" Height="56" HorizontalAlignment="Center" Background="{ThemeResource MemoryAccentSoftBrush}" BorderBrush="{ThemeResource MemoryAccentBrush}" BorderThickness="1" CornerRadius="11">
+                        <FontIcon FontSize="22" Foreground="{ThemeResource MemoryAccentBrush}" Glyph="&#xE72E;" />
                       </Border>
                       <TextBlock HorizontalAlignment="Center" Style="{StaticResource MemorySectionTitleStyle}" Text="Zaawansowane operacje są zablokowane" />
-                      <TextBlock HorizontalAlignment="Center" TextAlignment="Center" Style="{StaticResource MemoryMutedTextStyle}" Text="Opróżnianie globalnych list Windows może spowodować ponowne doczytywanie danych, krótkie przycięcia i większą aktywność dysku. Dismode nadal zablokuje wykonanie podczas gry." />
+                      <TextBlock HorizontalAlignment="Center" TextAlignment="Center" Style="{StaticResource MemoryMutedTextStyle}" Text="Czyszczenie globalnych list pamięci może chwilowo zwiększyć pracę dysku i nie gwarantuje wzrostu FPS." />
                       <Button
                           HorizontalAlignment="Center"
                           Click="UnlockAdvancedButton_Click"
@@ -898,7 +1005,7 @@
                   </Border>
 
                   <StackPanel x:Name="AdvancedUnlockedPanel" Grid.Row="1" Spacing="16" Visibility="Collapsed">
-                    <Border x:Name="AdvancedWarningBanner" Padding="16" Background="{ThemeResource MemoryWarningSoftBrush}" BorderBrush="{ThemeResource MemoryWarningBrush}" BorderThickness="1" CornerRadius="10">
+                    <Border x:Name="AdvancedWarningBanner" Padding="16" Background="{ThemeResource MemoryWarningSoftBrush}" BorderBrush="{ThemeResource MemoryWarningBrush}" BorderThickness="1" CornerRadius="11">
                       <Grid ColumnSpacing="12">
                         <Grid.ColumnDefinitions>
                           <ColumnDefinition Width="Auto" />
@@ -1097,7 +1204,7 @@
               MaxLines="2"
               TextTrimming="CharacterEllipsis"
               Foreground="{ThemeResource MemoryMutedBrush}" />
-          <ProgressBar x:Name="CompactBusyProgress" Grid.Row="4" Height="3" IsIndeterminate="True" Opacity="0" Visibility="Visible" />
+          <ProgressBar x:Name="CompactBusyProgress" Grid.Row="4" Height="3" IsIndeterminate="False" Opacity="0" Visibility="Visible" />
         </Grid>
       </Border>
     </Grid>

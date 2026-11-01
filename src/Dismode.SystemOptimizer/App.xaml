@@ -11,21 +11,130 @@
 
       <ResourceDictionary.ThemeDictionaries>
         <ResourceDictionary x:Key="Default">
-          <SolidColorBrush x:Key="OptimizerBackgroundBrush" Color="#FF070B10" />
-          <SolidColorBrush x:Key="OptimizerTitleBarBrush" Color="#FF090D12" />
-          <SolidColorBrush x:Key="OptimizerNavigationBrush" Color="#F20B1117" />
-          <SolidColorBrush x:Key="OptimizerCardBrush" Color="#F2141C23" />
-          <SolidColorBrush x:Key="OptimizerElevatedBrush" Color="#FF1A252D" />
-          <SolidColorBrush x:Key="OptimizerBorderBrush" Color="#FF293842" />
-          <SolidColorBrush x:Key="OptimizerMutedBrush" Color="#FF91A2AD" />
-          <SolidColorBrush x:Key="OptimizerTextBrush" Color="#FFF2F7F9" />
-          <SolidColorBrush x:Key="OptimizerAccentBrush" Color="#FF19D3D3" />
+          <LinearGradientBrush x:Key="OptimizerBackgroundBrush" StartPoint="0,0" EndPoint="1,1">
+            <GradientStop Offset="0" Color="#FF070B0E" />
+            <GradientStop Offset="0.62" Color="#FF080C0F" />
+            <GradientStop Offset="1" Color="#FF0A0F13" />
+          </LinearGradientBrush>
+          <SolidColorBrush x:Key="OptimizerTitleBarBrush" Color="#FF090A0E" />
+          <SolidColorBrush x:Key="OptimizerNavigationBrush" Color="#F2090A0E" />
+          <SolidColorBrush x:Key="OptimizerCardBrush" Color="#F2151A1E" />
+          <SolidColorBrush x:Key="OptimizerElevatedBrush" Color="#EF1B1F23" />
+          <SolidColorBrush x:Key="OptimizerBorderBrush" Color="#FF24292E" />
+          <SolidColorBrush x:Key="OptimizerMutedBrush" Color="#9DA5AA" />
+          <SolidColorBrush x:Key="OptimizerTextBrush" Color="#D8DDE2E5" />
+          <SolidColorBrush x:Key="OptimizerAccentBrush" Color="#00D7E2" />
           <SolidColorBrush x:Key="OptimizerAccentForegroundBrush" Color="#FF041112" />
-          <SolidColorBrush x:Key="OptimizerAccentSoftBrush" Color="#3519D3D3" />
-          <SolidColorBrush x:Key="OptimizerSuccessBrush" Color="#FF3BD680" />
-          <SolidColorBrush x:Key="OptimizerWarningBrush" Color="#FFFFB84D" />
-          <SolidColorBrush x:Key="OptimizerDangerBrush" Color="#FFFF6978" />
+          <SolidColorBrush x:Key="OptimizerAccentSoftBrush" Color="#2A00D7E2" />
+          <SolidColorBrush x:Key="OptimizerSuccessBrush" Color="#3DCB70" />
+          <SolidColorBrush x:Key="OptimizerWarningBrush" Color="#FFA51F" />
+          <SolidColorBrush x:Key="OptimizerDangerBrush" Color="#FF6B73" />
+          <SolidColorBrush x:Key="CardBackgroundFillColorDefaultBrush" Color="#F2151A1E" />
+          <SolidColorBrush x:Key="CardBackgroundFillColorSecondaryBrush" Color="#EF1B1F23" />
+          <SolidColorBrush x:Key="CardStrokeColorDefaultBrush" Color="#FF24292E" />
+          <SolidColorBrush x:Key="TextFillColorSecondaryBrush" Color="#9DA5AA" />
+          <SolidColorBrush x:Key="DismodeCardBrush" Color="#F2151A1E" />
+          <SolidColorBrush x:Key="DismodeAccentBrush" Color="#00D7E2" />
+          <LinearGradientBrush x:Key="DismodeDeckHeaderBrush" StartPoint="0,0" EndPoint="1,0">
+            <GradientStop Offset="0" Color="#F50C1217" />
+            <GradientStop Offset="0.52" Color="#F20D141A" />
+            <GradientStop Offset="1" Color="#4A1FB9C2" />
+          </LinearGradientBrush>
+          <LinearGradientBrush x:Key="DismodeDeckHeaderEdgeBrush" StartPoint="0,0" EndPoint="1,1">
+            <GradientStop Offset="0" Color="#B300D7E2" />
+            <GradientStop Offset="0.22" Color="#FF2A3339" />
+            <GradientStop Offset="1" Color="#FF1C2126" />
+          </LinearGradientBrush>
+          <LinearGradientBrush x:Key="DismodeCardEdgeBrush" StartPoint="0,0" EndPoint="0,1">
+            <GradientStop Offset="0" Color="#FF323C43" />
+            <GradientStop Offset="0.4" Color="#FF24292E" />
+            <GradientStop Offset="1" Color="#FF1D2227" />
+          </LinearGradientBrush>
         </ResourceDictionary>
+
+        <ResourceDictionary x:Key="Dark">
+          <LinearGradientBrush x:Key="OptimizerBackgroundBrush" StartPoint="0,0" EndPoint="1,1">
+            <GradientStop Offset="0" Color="#FF070B0E" />
+            <GradientStop Offset="0.62" Color="#FF080C0F" />
+            <GradientStop Offset="1" Color="#FF0A0F13" />
+          </LinearGradientBrush>
+          <SolidColorBrush x:Key="OptimizerTitleBarBrush" Color="#FF090A0E" />
+          <SolidColorBrush x:Key="OptimizerNavigationBrush" Color="#F2090A0E" />
+          <SolidColorBrush x:Key="OptimizerCardBrush" Color="#F2151A1E" />
+          <SolidColorBrush x:Key="OptimizerElevatedBrush" Color="#EF1B1F23" />
+          <SolidColorBrush x:Key="OptimizerBorderBrush" Color="#FF24292E" />
+          <SolidColorBrush x:Key="OptimizerMutedBrush" Color="#9DA5AA" />
+          <SolidColorBrush x:Key="OptimizerTextBrush" Color="#D8DDE2E5" />
+          <SolidColorBrush x:Key="OptimizerAccentBrush" Color="#00D7E2" />
+          <SolidColorBrush x:Key="OptimizerAccentForegroundBrush" Color="#FF041112" />
+          <SolidColorBrush x:Key="OptimizerAccentSoftBrush" Color="#2A00D7E2" />
+          <SolidColorBrush x:Key="OptimizerSuccessBrush" Color="#3DCB70" />
+          <SolidColorBrush x:Key="OptimizerWarningBrush" Color="#FFA51F" />
+          <SolidColorBrush x:Key="OptimizerDangerBrush" Color="#FF6B73" />
+          <SolidColorBrush x:Key="CardBackgroundFillColorDefaultBrush" Color="#F2151A1E" />
+          <SolidColorBrush x:Key="CardBackgroundFillColorSecondaryBrush" Color="#EF1B1F23" />
+          <SolidColorBrush x:Key="CardStrokeColorDefaultBrush" Color="#FF24292E" />
+          <SolidColorBrush x:Key="TextFillColorSecondaryBrush" Color="#9DA5AA" />
+          <SolidColorBrush x:Key="DismodeCardBrush" Color="#F2151A1E" />
+          <SolidColorBrush x:Key="DismodeAccentBrush" Color="#00D7E2" />
+          <LinearGradientBrush x:Key="DismodeDeckHeaderBrush" StartPoint="0,0" EndPoint="1,0">
+            <GradientStop Offset="0" Color="#F50C1217" />
+            <GradientStop Offset="0.52" Color="#F20D141A" />
+            <GradientStop Offset="1" Color="#4A1FB9C2" />
+          </LinearGradientBrush>
+          <LinearGradientBrush x:Key="DismodeDeckHeaderEdgeBrush" StartPoint="0,0" EndPoint="1,1">
+            <GradientStop Offset="0" Color="#B300D7E2" />
+            <GradientStop Offset="0.22" Color="#FF2A3339" />
+            <GradientStop Offset="1" Color="#FF1C2126" />
+          </LinearGradientBrush>
+          <LinearGradientBrush x:Key="DismodeCardEdgeBrush" StartPoint="0,0" EndPoint="0,1">
+            <GradientStop Offset="0" Color="#FF323C43" />
+            <GradientStop Offset="0.4" Color="#FF24292E" />
+            <GradientStop Offset="1" Color="#FF1D2227" />
+          </LinearGradientBrush>
+        </ResourceDictionary>
+
+        <ResourceDictionary x:Key="Light">
+          <LinearGradientBrush x:Key="OptimizerBackgroundBrush" StartPoint="0,0" EndPoint="1,1">
+            <GradientStop Offset="0" Color="#F5F8FA" />
+            <GradientStop Offset="0.58" Color="#EDF3F5" />
+            <GradientStop Offset="1" Color="#E7EEF1" />
+          </LinearGradientBrush>
+          <SolidColorBrush x:Key="OptimizerTitleBarBrush" Color="#F8FBFC" />
+          <SolidColorBrush x:Key="OptimizerNavigationBrush" Color="#F7FBFC" />
+          <SolidColorBrush x:Key="OptimizerCardBrush" Color="#FCFFFFFF" />
+          <SolidColorBrush x:Key="OptimizerElevatedBrush" Color="#EAF4F8F9" />
+          <SolidColorBrush x:Key="OptimizerBorderBrush" Color="#33576C74" />
+          <SolidColorBrush x:Key="OptimizerMutedBrush" Color="#53666E" />
+          <SolidColorBrush x:Key="OptimizerTextBrush" Color="#D81A2126" />
+          <SolidColorBrush x:Key="OptimizerAccentBrush" Color="#087E86" />
+          <SolidColorBrush x:Key="OptimizerAccentForegroundBrush" Color="#FFFFFFFF" />
+          <SolidColorBrush x:Key="OptimizerAccentSoftBrush" Color="#24069AA3" />
+          <SolidColorBrush x:Key="OptimizerSuccessBrush" Color="#08784D" />
+          <SolidColorBrush x:Key="OptimizerWarningBrush" Color="#9B5A00" />
+          <SolidColorBrush x:Key="OptimizerDangerBrush" Color="#B72C38" />
+          <SolidColorBrush x:Key="CardBackgroundFillColorDefaultBrush" Color="#FCFFFFFF" />
+          <SolidColorBrush x:Key="CardBackgroundFillColorSecondaryBrush" Color="#EAF4F8F9" />
+          <SolidColorBrush x:Key="CardStrokeColorDefaultBrush" Color="#33576C74" />
+          <SolidColorBrush x:Key="TextFillColorSecondaryBrush" Color="#53666E" />
+          <SolidColorBrush x:Key="DismodeCardBrush" Color="#FCFFFFFF" />
+          <SolidColorBrush x:Key="DismodeAccentBrush" Color="#087E86" />
+          <LinearGradientBrush x:Key="DismodeDeckHeaderBrush" StartPoint="0,0" EndPoint="1,0">
+            <GradientStop Offset="0" Color="#FFFFFFFF" />
+            <GradientStop Offset="0.52" Color="#FAF7FBFC" />
+            <GradientStop Offset="1" Color="#FFD4EEF1" />
+          </LinearGradientBrush>
+          <LinearGradientBrush x:Key="DismodeDeckHeaderEdgeBrush" StartPoint="0,0" EndPoint="1,1">
+            <GradientStop Offset="0" Color="#99087E86" />
+            <GradientStop Offset="0.22" Color="#40576C74" />
+            <GradientStop Offset="1" Color="#33576C74" />
+          </LinearGradientBrush>
+          <LinearGradientBrush x:Key="DismodeCardEdgeBrush" StartPoint="0,0" EndPoint="0,1">
+            <GradientStop Offset="0" Color="#26576C74" />
+            <GradientStop Offset="1" Color="#40576C74" />
+          </LinearGradientBrush>
+        </ResourceDictionary>
+
         <ResourceDictionary x:Key="HighContrast">
           <SolidColorBrush x:Key="OptimizerBackgroundBrush" Color="{ThemeResource SystemColorWindowColor}" />
           <SolidColorBrush x:Key="OptimizerTitleBarBrush" Color="{ThemeResource SystemColorWindowColor}" />
@@ -41,19 +150,48 @@
           <SolidColorBrush x:Key="OptimizerSuccessBrush" Color="{ThemeResource SystemColorHotlightColor}" />
           <SolidColorBrush x:Key="OptimizerWarningBrush" Color="{ThemeResource SystemColorHighlightColor}" />
           <SolidColorBrush x:Key="OptimizerDangerBrush" Color="{ThemeResource SystemColorHotlightColor}" />
+          <SolidColorBrush x:Key="DismodeCardBrush" Color="{ThemeResource SystemColorWindowColor}" />
+          <SolidColorBrush x:Key="DismodeAccentBrush" Color="{ThemeResource SystemColorHighlightColor}" />
+          <SolidColorBrush x:Key="DismodeDeckHeaderBrush" Color="{ThemeResource SystemColorWindowColor}" />
+          <SolidColorBrush x:Key="DismodeDeckHeaderEdgeBrush" Color="{ThemeResource SystemColorWindowTextColor}" />
+          <SolidColorBrush x:Key="DismodeCardEdgeBrush" Color="{ThemeResource SystemColorWindowTextColor}" />
         </ResourceDictionary>
       </ResourceDictionary.ThemeDictionaries>
 
-      <Style x:Key="OptimizerCardStyle" TargetType="Border">
-        <Setter Property="Padding" Value="20" />
-        <Setter Property="CornerRadius" Value="14" />
+      <Style x:Key="DismodeDeckCardStyle" TargetType="Border">
+        <Setter Property="Padding" Value="22,17" />
+        <Setter Property="Background" Value="{ThemeResource DismodeCardBrush}" />
+        <Setter Property="BorderBrush" Value="{ThemeResource DismodeCardEdgeBrush}" />
+        <Setter Property="BorderThickness" Value="1" />
+        <Setter Property="CornerRadius" Value="11" />
+      </Style>
+      <Style x:Key="DismodeDeckHeaderStyle" TargetType="Border">
+        <Setter Property="Padding" Value="24,18" />
+        <Setter Property="Background" Value="{ThemeResource DismodeDeckHeaderBrush}" />
+        <Setter Property="BorderBrush" Value="{ThemeResource DismodeDeckHeaderEdgeBrush}" />
+        <Setter Property="BorderThickness" Value="1" />
+        <Setter Property="CornerRadius" Value="11" />
+      </Style>
+      <Style TargetType="FontIcon">
+        <Setter Property="FontFamily" Value="Segoe Fluent Icons" />
+      </Style>
+      <Style x:Key="OptimizerCardStyle" TargetType="Border" BasedOn="{StaticResource DismodeDeckCardStyle}">
+        <Setter Property="Padding" Value="16" />
+        <Setter Property="CornerRadius" Value="11" />
         <Setter Property="Background" Value="{ThemeResource OptimizerCardBrush}" />
+        <Setter Property="BorderBrush" Value="{ThemeResource DismodeCardEdgeBrush}" />
+        <Setter Property="BorderThickness" Value="1" />
+      </Style>
+      <Style x:Key="OptimizerInsetCardStyle" TargetType="Border">
+        <Setter Property="Padding" Value="16" />
+        <Setter Property="CornerRadius" Value="11" />
+        <Setter Property="Background" Value="{ThemeResource OptimizerElevatedBrush}" />
         <Setter Property="BorderBrush" Value="{ThemeResource OptimizerBorderBrush}" />
         <Setter Property="BorderThickness" Value="1" />
       </Style>
       <Style x:Key="OptimizerPrimaryButtonStyle" TargetType="Button" BasedOn="{StaticResource AccentButtonStyle}">
-        <Setter Property="MinHeight" Value="42" />
-        <Setter Property="Padding" Value="18,9" />
+        <Setter Property="MinHeight" Value="40" />
+        <Setter Property="Padding" Value="16,8" />
         <Setter Property="Background" Value="{ThemeResource OptimizerAccentBrush}" />
         <Setter Property="Foreground" Value="{ThemeResource OptimizerAccentForegroundBrush}" />
         <Setter Property="FontWeight" Value="SemiBold" />
@@ -67,15 +205,39 @@
         <Setter Property="Foreground" Value="{ThemeResource OptimizerTextBrush}" />
         <Setter Property="CornerRadius" Value="8" />
       </Style>
+      <Style x:Key="OptimizerMoreButtonStyle" TargetType="Button">
+        <Setter Property="Padding" Value="6,2" />
+        <Setter Property="MinHeight" Value="0" />
+        <Setter Property="MinWidth" Value="0" />
+        <Setter Property="Background" Value="Transparent" />
+        <Setter Property="BorderThickness" Value="0" />
+        <Setter Property="CornerRadius" Value="4" />
+        <Setter Property="Foreground" Value="{ThemeResource OptimizerAccentBrush}" />
+        <Setter Property="FontSize" Value="12" />
+        <Setter Property="FontWeight" Value="SemiBold" />
+      </Style>
+      <Style x:Key="OptimizerMoreToggleStyle" TargetType="ToggleButton">
+        <Setter Property="Padding" Value="6,2" />
+        <Setter Property="MinHeight" Value="0" />
+        <Setter Property="MinWidth" Value="0" />
+        <Setter Property="Background" Value="Transparent" />
+        <Setter Property="BorderThickness" Value="0" />
+        <Setter Property="CornerRadius" Value="4" />
+        <Setter Property="Foreground" Value="{ThemeResource OptimizerAccentBrush}" />
+        <Setter Property="FontSize" Value="12" />
+        <Setter Property="FontWeight" Value="SemiBold" />
+      </Style>
       <Style x:Key="OptimizerPageTitleStyle" TargetType="TextBlock">
         <Setter Property="FontFamily" Value="Segoe UI Variable Display" />
         <Setter Property="FontSize" Value="30" />
         <Setter Property="FontWeight" Value="SemiBold" />
+        <Setter Property="TextWrapping" Value="Wrap" />
       </Style>
       <Style x:Key="OptimizerSectionTitleStyle" TargetType="TextBlock">
         <Setter Property="FontFamily" Value="Segoe UI Variable Display" />
         <Setter Property="FontSize" Value="19" />
         <Setter Property="FontWeight" Value="SemiBold" />
+        <Setter Property="TextWrapping" Value="Wrap" />
       </Style>
       <Style x:Key="OptimizerEyebrowStyle" TargetType="TextBlock">
         <Setter Property="Foreground" Value="{ThemeResource OptimizerAccentBrush}" />

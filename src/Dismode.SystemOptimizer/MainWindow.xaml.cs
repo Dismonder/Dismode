@@ -71,6 +71,7 @@ public sealed partial class MainWindow : Window
         ConfigureInitialWindowSize();
         _refreshTimer.Interval = TimeSpan.FromSeconds(10);
         _refreshTimer.Tick += RefreshTimer_Tick;
+        AppWindow.Changed += AppWindow_Changed;
         Closed += MainWindow_Closed;
         ShowPage("overview");
     }
@@ -81,18 +82,31 @@ public sealed partial class MainWindow : Window
         UpdateMinimumWindowSize();
         RootLayout.ActualThemeChanged += RootLayout_ActualThemeChanged;
         await RefreshAsync().ConfigureAwait(true);
-        _refreshTimer.Start();
+        UpdateRefreshActivity();
     }
 
     private void RootLayout_ActualThemeChanged(
         FrameworkElement sender,
-        object args) => ConfigureTitleBar();
+        object args)
+    {
+        ConfigureTitleBar();
+        if (_status is not null)
+        {
+            RenderStatus(_status);
+        }
+        else
+        {
+            ServiceStatusDot.Fill = ResourceBrush("OptimizerDangerBrush");
+        }
+    }
 
     private void MainWindow_Closed(object sender, WindowEventArgs args)
     {
         _benchmarkCancellation?.Cancel();
         _refreshTimer.Stop();
         _refreshTimer.Tick -= RefreshTimer_Tick;
+        AppWindow.Changed -= AppWindow_Changed;
+        StopPresentationAnimations();
         RootLayout.ActualThemeChanged -= RootLayout_ActualThemeChanged;
         if (!_operationInProgress)
         {
@@ -100,8 +114,43 @@ public sealed partial class MainWindow : Window
         }
     }
 
-    private async void RefreshTimer_Tick(object? sender, object e) =>
-        await RefreshAsync().ConfigureAwait(true);
+    private async void RefreshTimer_Tick(object? sender, object e)
+    {
+        if (IsPresentationVisible)
+        {
+            await RefreshAsync().ConfigureAwait(true);
+        }
+    }
+
+    private bool IsPresentationVisible => AppWindow.IsVisible &&
+        AppWindow.Presenter is not OverlappedPresenter { State: OverlappedPresenterState.Minimized };
+
+    private void AppWindow_Changed(AppWindow sender, AppWindowChangedEventArgs args)
+    {
+        if (args.DidVisibilityChange || args.DidPresenterChange || args.DidSizeChange)
+        {
+            bool wasRefreshing = _refreshTimer.IsEnabled;
+            UpdateRefreshActivity();
+            if (!wasRefreshing && IsPresentationVisible && RootLayout.IsLoaded)
+            {
+                _ = RefreshAsync();
+            }
+        }
+    }
+
+    private void UpdateRefreshActivity()
+    {
+        if (IsPresentationVisible && RootLayout.IsLoaded)
+        {
+            _refreshTimer.Start();
+            UpdateOperationSurface();
+        }
+        else
+        {
+            _refreshTimer.Stop();
+            StopPresentationAnimations();
+        }
+    }
 
     private async void RefreshButton_Click(object sender, RoutedEventArgs e) =>
         await RefreshAsync().ConfigureAwait(true);
@@ -418,7 +467,7 @@ public sealed partial class MainWindow : Window
             ThrowIfFrameCaptureUnavailable(sample);
             await Task.Delay(TimeSpan.FromSeconds(1), cancellationToken)
                 .ConfigureAwait(true);
-            ExperimentProgressBar.Value = second + 1;
+            TweenExperimentProgress(second + 1);
         }
 
         experiment = await _client.AdvanceExperimentAsync(
@@ -453,8 +502,8 @@ public sealed partial class MainWindow : Window
                 break;
             }
 
-            ExperimentProgressBar.Value =
-                StabilizationDuration.TotalSeconds + second + 1;
+            TweenExperimentProgress(
+                StabilizationDuration.TotalSeconds + second + 1);
         }
 
         PresentMonBenchmarkCapture capture = await captureTask
@@ -820,7 +869,7 @@ public sealed partial class MainWindow : Window
             "Brak pozycji sklasyfikowanych jako Dangerous lub Blocked.");
     }
 
-    private static Border CreateCatalogCard(
+    private Border CreateCatalogCard(
         SystemTweakDefinitionMessage definition)
     {
         TextBlock title = new()
@@ -867,14 +916,39 @@ public sealed partial class MainWindow : Window
             });
         }
 
-        content.Children.Add(new TextBlock
+        TextBlock technicalDetails = new()
         {
             Text = $"Źródło: {definition.TechnicalSource}  •  "
                 + $"Restore: {definition.RestoreDescription}",
             Foreground = ResourceBrush("OptimizerMutedBrush"),
             FontSize = 12,
             TextWrapping = TextWrapping.Wrap,
-        });
+            Visibility = Visibility.Collapsed,
+        };
+        StackPanel moreContent = new()
+        {
+            Orientation = Orientation.Horizontal,
+            Spacing = 4,
+        };
+        moreContent.Children.Add(new TextBlock { Text = "Więcej" });
+        moreContent.Children.Add(new FontIcon { Glyph = "\uE70D", FontSize = 10 });
+        Microsoft.UI.Xaml.Controls.Primitives.ToggleButton moreButton = new()
+        {
+            Style = (Style)Application.Current.Resources["OptimizerMoreToggleStyle"],
+            Content = moreContent,
+        };
+        Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(moreButton, "Więcej");
+        moreButton.Click += (_, _) =>
+        {
+            bool expanded = moreButton.IsChecked == true;
+            technicalDetails.Visibility = expanded ? Visibility.Visible : Visibility.Collapsed;
+            if (expanded)
+            {
+                _effects.Fade(technicalDetails, IsPresentationVisible);
+            }
+        };
+        content.Children.Add(moreButton);
+        content.Children.Add(technicalDetails);
         return CreateCard(content);
     }
 
@@ -1184,13 +1258,15 @@ public sealed partial class MainWindow : Window
             ? Visibility.Visible : Visibility.Collapsed;
         HistoryPage.Visibility = page == "history"
             ? Visibility.Visible : Visibility.Collapsed;
+        AnimatePage(page);
     }
 
     private void UpdateOperationSurface()
     {
         bool busy = _operationInProgress || _refreshInProgress;
-        OperationProgressRing.IsActive = busy;
-        OperationProgressRing.Opacity = busy ? 1 : 0;
+        bool animateBusy = busy && IsPresentationVisible && _effects.AnimationsEnabled;
+        OperationProgressRing.IsActive = animateBusy;
+        OperationProgressRing.Opacity = animateBusy ? 1 : 0;
         RefreshButton.IsEnabled = !busy;
         if (_status is not null)
         {
@@ -1267,8 +1343,9 @@ public sealed partial class MainWindow : Window
         TitleBarModeText.Text = "Offline";
         SetServiceState(
             "Usługa System Optimizer jest niedostępna",
-            details,
+            "Otwórz Dismode, aby sprawdzić połączenie.",
             "OptimizerDangerBrush");
+        ToolTipService.SetToolTip(ServiceStatusMessage, details);
         OverviewStateText.Text = "Brak połączenia z usługą";
         OverviewDetailText.Text =
             "Sprawdź instalację usługi DismodeSystemAgent i jej stan.";
@@ -1325,9 +1402,16 @@ public sealed partial class MainWindow : Window
             return;
         }
 
-        WindowsColor background = WindowsColor.FromArgb(255, 9, 13, 18);
-        WindowsColor foreground = WindowsColor.FromArgb(255, 238, 246, 248);
-        WindowsColor inactive = WindowsColor.FromArgb(255, 137, 153, 163);
+        bool isLight = RootLayout.ActualTheme == ElementTheme.Light;
+        WindowsColor background = isLight
+            ? WindowsColor.FromArgb(255, 248, 251, 252)
+            : WindowsColor.FromArgb(255, 9, 10, 14);
+        WindowsColor foreground = isLight
+            ? WindowsColor.FromArgb(255, 26, 33, 38)
+            : WindowsColor.FromArgb(255, 238, 246, 248);
+        WindowsColor inactive = isLight
+            ? WindowsColor.FromArgb(255, 83, 102, 110)
+            : WindowsColor.FromArgb(255, 137, 153, 163);
         WindowsColor transparent = WindowsColor.FromArgb(0, 0, 0, 0);
         titleBar.BackgroundColor = background;
         titleBar.ForegroundColor = foreground;
@@ -1335,11 +1419,13 @@ public sealed partial class MainWindow : Window
         titleBar.InactiveForegroundColor = inactive;
         titleBar.ButtonBackgroundColor = transparent;
         titleBar.ButtonForegroundColor = foreground;
-        titleBar.ButtonHoverBackgroundColor =
-            WindowsColor.FromArgb(255, 31, 43, 53);
+        titleBar.ButtonHoverBackgroundColor = isLight
+            ? WindowsColor.FromArgb(255, 224, 236, 240)
+            : WindowsColor.FromArgb(255, 31, 43, 53);
         titleBar.ButtonHoverForegroundColor = foreground;
-        titleBar.ButtonPressedBackgroundColor =
-            WindowsColor.FromArgb(255, 43, 58, 70);
+        titleBar.ButtonPressedBackgroundColor = isLight
+            ? WindowsColor.FromArgb(255, 208, 224, 230)
+            : WindowsColor.FromArgb(255, 43, 58, 70);
         titleBar.ButtonPressedForegroundColor = foreground;
         titleBar.ButtonInactiveBackgroundColor = transparent;
         titleBar.ButtonInactiveForegroundColor = inactive;
@@ -1388,7 +1474,7 @@ public sealed partial class MainWindow : Window
     {
         double scale = GetWindowScale();
         TitleBarLeftInset.Width = new(AppWindow.TitleBar.LeftInset / scale);
-        TitleBarRightInset.Width = new(AppWindow.TitleBar.RightInset / scale);
+        TitleBarRightInset.Width = new(Math.Max(208d, AppWindow.TitleBar.RightInset / scale));
     }
 
     private double GetWindowScale() =>
@@ -1494,7 +1580,7 @@ public sealed partial class MainWindow : Window
             _ => "nieznany",
         };
 
-    private static void EnsureNonEmptyCatalogList(
+    private void EnsureNonEmptyCatalogList(
         StackPanel list,
         string message)
     {
@@ -1509,18 +1595,33 @@ public sealed partial class MainWindow : Window
         }
     }
 
-    private static Border CreateCard(UIElement content) => new()
+    private Border CreateCard(UIElement content) => new()
     {
-        Padding = new(20),
-        CornerRadius = new(14),
+        Padding = new(16),
+        CornerRadius = new(11),
         Background = ResourceBrush("OptimizerCardBrush"),
-        BorderBrush = ResourceBrush("OptimizerBorderBrush"),
+        BorderBrush = ResourceBrush("DismodeCardEdgeBrush"),
         BorderThickness = new(1),
         Child = content,
     };
 
-    private static Brush ResourceBrush(string key) =>
-        (Brush)Application.Current.Resources[key];
+    private Brush ResourceBrush(string key)
+    {
+        string themeKey = RootLayout.ActualTheme == ElementTheme.Light
+            ? "Light"
+            : "Default";
+        if (Application.Current.Resources.ThemeDictionaries.TryGetValue(
+                themeKey,
+                out object? dictObj)
+            && dictObj is ResourceDictionary themeDict
+            && themeDict.TryGetValue(key, out object? brushObj)
+            && brushObj is Brush themeBrush)
+        {
+            return themeBrush;
+        }
+
+        return (Brush)Application.Current.Resources[key];
+    }
 
     private sealed record SafeTweakOption(
         SystemTweakDefinitionMessage Definition)
