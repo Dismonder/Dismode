@@ -1,7 +1,7 @@
 # P4: praca w tle
 
 Zakres obejmuje caly patch P4, lacznie z zachowana praca z commita WIP
-`3fa9c1b`. Nie zmieniano EdgePanel, ustawien, okien ani tray UI optymalizatorow.
+`3fa9c1b` i `60055dd`. Nie zmieniano EdgePanel, ustawien, okien ani tray UI optymalizatorow.
 Nie zmieniano tekstow interfejsu ani schematu danych.
 
 ## Zmiany
@@ -34,7 +34,7 @@ dostepu do `TotalProcessorTime`: podano osobny, rowniez 120-sekundowy odczyt
 `Win32_Process.KernelModeTime + UserModeTime`, bez podnoszenia uprawnien.
 Wczesnych zer wynikajacych z braku dostepu nie uznano za wynik pomiaru.
 
-Debug UI porownano z rzeczywistym kodem UI sprzed P4 (`HEAD~1`), zbudowanym
+Debug UI porownano z rzeczywistym kodem UI sprzed P4 (`08bbde9`), zbudowanym
 tymczasowo w tym samym worktree. Kazda proba miala osobny proces, 6 s rozgrzewki
 i 30 s pomiaru; powtorzenie Ustawien mialo 15 s rozgrzewki. Okno widoczne
 pozostawalo poza obszarem pulpitu (`AppWindow.IsVisible=true`); stan ukryty
@@ -111,7 +111,7 @@ Uwzgledniono tez petle wykonywane przez zaleznosci SessionHost/UI.
 | `src/Dismode.UI/Services/OverlayTargetWindow.cs:39` | Maksymalnie jeden probe uchwytu na 1 s | Cache odpytywany przez widoczna nakladke; brak osobnego timera |
 | `src/Dismode.UI/Services/TacticalVfxService.cs:36` | Skonczony Storyboard: 400 ms, AutoReverse, RepeatBehavior(2) | Tylko akcja uzytkownika. Wejscia stron: 220/320 ms; flash 300 ms. Brak RepeatBehavior=Forever i CompositionTarget.Rendering w zakresie P4 |
 | `src/Dismode.UI/MainWindow.xaml.cs:921` | Task.Delay 100 ms, do 30 s | Tylko oczekiwanie zleconego startu gry na koniec innej operacji; brak pracy w zwyklym idle |
-| `src/Dismode.UI/Services/StartupGate.cs:316` | Thread.Sleep 250 ms, limit 8 s | Tylko start hosta i oczekiwanie na jego pipe |
+| `src/Dismode.UI/Services/StartupGate.cs:336` | Thread.Sleep 250 ms, limit 8 s | Tylko start hosta i oczekiwanie na jego pipe |
 | `src/Dismode.Core/Activation/UiActivationServer.cs:145` | Task.Delay 1 s | Retry tylko po bledzie utworzenia pipe; normalnie WaitForConnectionAsync. Deadline 10 s dotyczy pojedynczego podlaczonego klienta |
 | `src/Dismode.UI/Services/MemoryOptimizerComponentService.cs:96` | Task.Delay 2 s | Jednorazowa obserwacja zleconego uruchomienia komponentu; nie petla |
 | `src/Dismode.Windows/Sessions/LocalGameSessionOrchestrator.cs:1772`, `:1779`, `:1890` | Petla monitora, Task.Delay 1 s | Wylacznie aktywna/odtworzona sesja gry, w tym handoff i kontrola wyjscia; nie istnieje bez sesji. Bez zmian |
@@ -151,11 +151,10 @@ w prawdziwej grze pozostaja niezmierzone.
 | Komenda | Wynik |
 |---|---|
 | `dotnet build Dismode.sln -m` | Sukces, 0 ostrzezen, 0 bledow; bez tymczasowego kodu podgladu |
-| `dotnet test tests/Dismode.UnitTests --no-restore` | 350/350 |
-| `dotnet test tests/Dismode.RecoveryTests --no-restore` | 42/42 |
-| `dotnet test tests/Dismode.SecurityTests --no-restore` | 10/10 |
-| `dotnet test tests/Dismode.IntegrationTests --no-restore --filter "FullyQualifiedName~SystemOptimizerRecoveryHostedServiceTests\|FullyQualifiedName~ForegroundGameWatcherTests"` | 10/10 |
-| `dotnet test tests/Dismode.IntegrationTests --no-restore --filter "FullyQualifiedName~PerGameProfileCoordinatorTests"` | 15/15 |
+| `dotnet test tests/Dismode.UnitTests --no-build --no-restore` | 350/350 |
+| `dotnet test tests/Dismode.RecoveryTests --no-build --no-restore` | 42/42 |
+| `dotnet test tests/Dismode.SecurityTests --no-build --no-restore` | 10/10 |
+| `dotnet test tests/Dismode.IntegrationTests --no-build --no-restore --filter "FullyQualifiedName~SystemOptimizerRecoveryHostedServiceTests\|FullyQualifiedName~ForegroundGameWatcherTests\|FullyQualifiedName~PerGameProfileCoordinatorTests"` | 25/25 |
 | `dotnet build components/Dismode.MemoryOptimizer/Dismode.MemoryOptimizer.sln -m` | Sukces, 0 ostrzezen, 0 bledow |
 | `dotnet test components/Dismode.MemoryOptimizer/tests/Dismode.MemoryOptimizer.Core.Tests --no-build --no-restore` | 93/93 |
 | `dotnet test components/Dismode.MemoryOptimizer/tests/Dismode.MemoryOptimizer.Security.Tests --no-build --no-restore` | 12 sukcesow, 1 swiadomie pominiety test wymagajacy VM |
@@ -167,6 +166,12 @@ Unit/Recovery/Security uruchomiono wspolbieznie. Zmiany harmonogramow sprawdzaja
 falszywe zegary i widocznosc, sygnaly wznowienia/anulowania oraz falszywy
 provider klatek, ktory nie uruchamia PresentMon. Nowe regresje byly najpierw
 odtworzone testami, potem usuniete. Wszystkie uruchomienia mialy limity czasu.
+
+W kontynuacji 2026-11-01 ponownie zbudowano obie solucje i uruchomiono powyzsze
+testy z limitem 1500 s na komende. Przejrzano kod harmonogramow i zachowane
+zrzuty przed/po przy skalach 100% i 150%, w tym jasny motyw i oba tla nakladki.
+Pomiary i PNG pochodza z poprzednich sesji tego samego zadania; nie zmieniano
+od tego czasu kodu runtime P4 ani nie uruchamiano ponownie okien podgladu.
 
 Poza scislym zakresem uslug konieczne byly: mala metoda odczytu cooldownu w
 `Dismode.MemoryOptimizer.Core/Automation/AutoOptimizationPolicy.cs` oraz
