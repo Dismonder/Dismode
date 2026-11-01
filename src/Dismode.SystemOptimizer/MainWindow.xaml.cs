@@ -51,6 +51,7 @@ public sealed partial class MainWindow : Window
     private CancellationTokenSource? _benchmarkCancellation;
     private bool _refreshInProgress;
     private bool _operationInProgress;
+    private bool _closed;
 
     public MainWindow()
     {
@@ -102,16 +103,14 @@ public sealed partial class MainWindow : Window
 
     private void MainWindow_Closed(object sender, WindowEventArgs args)
     {
+        _closed = true;
         _benchmarkCancellation?.Cancel();
         _refreshTimer.Stop();
         _refreshTimer.Tick -= RefreshTimer_Tick;
         AppWindow.Changed -= AppWindow_Changed;
         StopPresentationAnimations();
         RootLayout.ActualThemeChanged -= RootLayout_ActualThemeChanged;
-        if (!_operationInProgress)
-        {
-            _client.Dispose();
-        }
+        UpdateOperationSurface();
     }
 
     private async void RefreshTimer_Tick(object? sender, object e)
@@ -122,7 +121,7 @@ public sealed partial class MainWindow : Window
         }
     }
 
-    private bool IsPresentationVisible => AppWindow.IsVisible &&
+    private bool IsPresentationVisible => !_closed && AppWindow.IsVisible &&
         AppWindow.Presenter is not OverlappedPresenter { State: OverlappedPresenterState.Minimized };
 
     private void AppWindow_Changed(AppWindow sender, AppWindowChangedEventArgs args)
@@ -140,6 +139,11 @@ public sealed partial class MainWindow : Window
 
     private void UpdateRefreshActivity()
     {
+        if (_closed)
+        {
+            return;
+        }
+
         if (IsPresentationVisible && RootLayout.IsLoaded)
         {
             _refreshTimer.Start();
@@ -251,7 +255,7 @@ public sealed partial class MainWindow : Window
         SystemTweakDefinitionMessage definition,
         string? dangerousConfirmation)
     {
-        if (_operationInProgress
+        if (_closed || _operationInProgress
             || _status is null
             || _status.IsReadOnly
             || !_status.HasUserConsent
@@ -281,6 +285,11 @@ public sealed partial class MainWindow : Window
                     dangerousConfirmation,
                     CancellationToken.None)
                 .ConfigureAwait(true);
+            if (_closed)
+            {
+                return false;
+            }
+
             ResetBenchmarkDecisionSurface();
             ExperimentStepText.Text = _activeExperiment.Message;
             SetServiceState(
@@ -310,7 +319,7 @@ public sealed partial class MainWindow : Window
         object sender,
         RoutedEventArgs e)
     {
-        if (_operationInProgress
+        if (_closed || _operationInProgress
             || _activeExperiment is null
             || _activeExperiment.State
                 != ExperimentStateValue.ExperimentStateWaitingForScene)
@@ -346,6 +355,11 @@ public sealed partial class MainWindow : Window
                     _benchmarkCancellation.Token)
                 .ConfigureAwait(true);
             _activeExperiment = decision.Experiment;
+            if (_closed)
+            {
+                return;
+            }
+
             RenderBenchmarkDecision(decision);
             ExperimentStepText.Text = decision.Explanation;
             SetServiceState(
@@ -372,8 +386,11 @@ public sealed partial class MainWindow : Window
             _benchmarkCancellation.Dispose();
             _benchmarkCancellation = null;
             _operationInProgress = false;
-            ExperimentProgressBar.Opacity = 0;
-            ExperimentProgressBar.Value = 0;
+            if (!_closed)
+            {
+                ExperimentProgressBar.Opacity = 0;
+                ExperimentProgressBar.Value = 0;
+            }
             UpdateOperationSurface();
         }
 
@@ -541,6 +558,11 @@ public sealed partial class MainWindow : Window
     private async Task RunOperationAsync(
         Func<CancellationToken, Task<SystemOptimizerOperationReply>> operation)
     {
+        if (_closed)
+        {
+            return;
+        }
+
         SystemOptimizerOperationReply? operationResult = null;
         _operationInProgress = true;
         UpdateOperationSurface();
@@ -560,7 +582,7 @@ public sealed partial class MainWindow : Window
             UpdateOperationSurface();
         }
 
-        if (operationResult is not null)
+        if (!_closed && operationResult is not null)
         {
             await RefreshAsync().ConfigureAwait(true);
             if (_status is not null)
@@ -581,10 +603,20 @@ public sealed partial class MainWindow : Window
 
     private async Task<ActiveGameLease?> RefreshActiveGameLeaseAsync()
     {
+        if (_closed)
+        {
+            return null;
+        }
+
         ActiveGameLease? lease = await _activeGameLeaseReader.TryReadAsync(
                 _callerSid,
                 CancellationToken.None)
             .ConfigureAwait(true);
+        if (_closed)
+        {
+            return null;
+        }
+
         _activeGameLease = lease;
         ActiveGameLeaseText.Text = lease is null
             ? "Brak aktualnej, zweryfikowanej dzierżawy gry. Uruchom grę przez Dismode."
@@ -599,7 +631,7 @@ public sealed partial class MainWindow : Window
         string successTitle,
         bool clearCompletedExperiment = false)
     {
-        if (_activeExperiment is null)
+        if (_closed || _activeExperiment is null)
         {
             return;
         }
@@ -613,6 +645,11 @@ public sealed partial class MainWindow : Window
                     action,
                     CancellationToken.None)
                 .ConfigureAwait(true);
+            if (_closed)
+            {
+                return;
+            }
+
             ExperimentStepText.Text = _activeExperiment.Message;
             SetServiceState(
                 successTitle,
@@ -653,6 +690,11 @@ public sealed partial class MainWindow : Window
                     ExperimentControlAction.CancelAndRestore,
                     CancellationToken.None)
                 .ConfigureAwait(true);
+            if (_closed)
+            {
+                return;
+            }
+
             ExperimentStepText.Text = _activeExperiment.Message;
             SetServiceState(
                 "Pomiar anulowany i przywrócony",
@@ -670,7 +712,7 @@ public sealed partial class MainWindow : Window
 
     private async Task RefreshAsync()
     {
-        if (_refreshInProgress || _operationInProgress)
+        if (_closed || _refreshInProgress || _operationInProgress)
         {
             return;
         }
@@ -696,6 +738,10 @@ public sealed partial class MainWindow : Window
                     historyTask,
                     profilesTask)
                 .ConfigureAwait(true);
+            if (_closed)
+            {
+                return;
+            }
 
             _status = await statusTask.ConfigureAwait(true);
             RenderStatus(_status);
@@ -1263,6 +1309,15 @@ public sealed partial class MainWindow : Window
 
     private void UpdateOperationSurface()
     {
+        if (_closed)
+        {
+            if (!_operationInProgress && !_refreshInProgress)
+            {
+                _client.Dispose();
+            }
+            return;
+        }
+
         bool busy = _operationInProgress || _refreshInProgress;
         bool animateBusy = busy && IsPresentationVisible && _effects.AnimationsEnabled;
         OperationProgressRing.IsActive = animateBusy;
@@ -1340,6 +1395,11 @@ public sealed partial class MainWindow : Window
 
     private void SetDisconnectedState(string details)
     {
+        if (_closed)
+        {
+            return;
+        }
+
         TitleBarModeText.Text = "Offline";
         SetServiceState(
             "Usługa System Optimizer jest niedostępna",
@@ -1358,6 +1418,11 @@ public sealed partial class MainWindow : Window
         string message,
         string brushKey)
     {
+        if (_closed)
+        {
+            return;
+        }
+
         ServiceStatusTitle.Text = title;
         ServiceStatusMessage.Text = message;
         ToolTipService.SetToolTip(ServiceStatusMessage, message);

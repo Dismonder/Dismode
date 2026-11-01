@@ -15,6 +15,7 @@ internal sealed class EdgePanelHandleWindow : Window, IDisposable
     private readonly Grid _hitArea;
     private Storyboard? _hover;
     private bool _inside;
+    private bool _disposed;
     internal RectInt32 HandleBounds { get; private set; }
     internal EdgePanelRect HandleRect => EdgePanelNativeWindow.ToEdgeRect(HandleBounds);
     internal EdgePanelRect MonitorBounds => EdgePanelNativeWindow.ToEdgeRect(_native.MonitorBounds);
@@ -105,6 +106,11 @@ internal sealed class EdgePanelHandleWindow : Window, IDisposable
 
     internal void Reposition()
     {
+        if (_disposed)
+        {
+            return;
+        }
+
         RectInt32 work = _native.WorkArea;
         int width = (int)Math.Ceiling(12 * _native.Scale);
         int height = (int)Math.Ceiling(96 * _native.Scale);
@@ -120,6 +126,12 @@ internal sealed class EdgePanelHandleWindow : Window, IDisposable
 
     public void Dispose()
     {
+        if (_disposed)
+        {
+            return;
+        }
+
+        _disposed = true;
         _hover?.Stop();
         _hitArea.PointerEntered -= OnPointerEntered;
         _hitArea.PointerExited -= OnPointerExited;

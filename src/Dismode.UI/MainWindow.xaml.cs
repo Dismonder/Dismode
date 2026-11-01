@@ -446,6 +446,7 @@ public sealed partial class MainWindow : Window, IDisposable
             "Light" => 1,
             _ => 2,
         };
+        RootLayout.ActualThemeChanged += OnActualThemeChanged;
         UpdateTitleBarTheme(RootLayout.ActualTheme);
         UpdateDashboardSystemMetrics();
         DiagnosticsProtocolText.Text =
@@ -553,6 +554,11 @@ public sealed partial class MainWindow : Window, IDisposable
     /// </summary>
     public void HideToTray()
     {
+        if (_trayIcon is null)
+        {
+            return;
+        }
+
         AppWindow.Hide();
         if (_hiddenInTray)
         {
@@ -2282,8 +2288,8 @@ public sealed partial class MainWindow : Window, IDisposable
             // pokazywany tylko wtedy, gdy w magazynie sterownikow jej nie ma.
             NeuralModelPick[] modelPicks =
             [
-                new(NvidiaDriverStoreProbe.NeuralRenderingModelFileName),
-                new(NvidiaDriverStoreProbe.UpscalerModelFileName),
+                new(NvidiaDriverStoreProbe.NeuralRenderingModelFileName, ThemeBrush("DismodeMutedTextBrush")),
+                new(NvidiaDriverStoreProbe.UpscalerModelFileName, ThemeBrush("DismodeMutedTextBrush")),
             ];
             foreach (NeuralModelPick pick in modelPicks)
             {
@@ -2305,8 +2311,7 @@ public sealed partial class MainWindow : Window, IDisposable
             };
             TextBlock neuralStatus = new()
             {
-                Foreground = (Brush)Application.Current.Resources[
-                    "DismodeMutedTextBrush"],
+                Foreground = ThemeBrush("DismodeMutedTextBrush"),
                 MaxWidth = 500,
                 Text = DescribeNeuralRenderingCapability(
                     driverStore,
@@ -2342,8 +2347,7 @@ public sealed partial class MainWindow : Window, IDisposable
             });
             content.Children.Add(new TextBlock
             {
-                Foreground = (Brush)Application.Current.Resources[
-                    "DismodeMutedTextBrush"],
+                Foreground = ThemeBrush("DismodeMutedTextBrush"),
                 Text = $"Cel: {preflight.TargetExecutablePath}",
                 TextWrapping = TextWrapping.Wrap,
             });
@@ -2687,13 +2691,11 @@ public sealed partial class MainWindow : Window, IDisposable
         using CancellationTokenSource cancellation =
             CancellationTokenSource.CreateLinkedTokenSource(_lifetime.Token);
 
-        Brush mutedBrush = (Brush)Application.Current.Resources[
-            "DismodeMutedTextBrush"];
+        Brush mutedBrush = ThemeBrush("DismodeMutedTextBrush");
         ProgressBar progressBar = new()
         {
             CornerRadius = new CornerRadius(3),
-            Foreground = (Brush)Application.Current.Resources[
-                "DismodeAccentBrush"],
+            Foreground = ThemeBrush("DismodeAccentBrush"),
             Height = 6,
             IsIndeterminate = true,
             Maximum = 100,
@@ -2948,7 +2950,7 @@ public sealed partial class MainWindow : Window, IDisposable
     /// </summary>
     private sealed class NeuralModelPick
     {
-        public NeuralModelPick(string fileName)
+        public NeuralModelPick(string fileName, Brush mutedBrush)
         {
             FileName = fileName;
             Button = new()
@@ -2958,8 +2960,7 @@ public sealed partial class MainWindow : Window, IDisposable
             };
             Status = new()
             {
-                Foreground = (Brush)Application.Current.Resources[
-                    "DismodeMutedTextBrush"],
+                Foreground = mutedBrush,
                 MaxWidth = 500,
                 Text = $"{fileName}: nie wybrano pliku.",
                 TextWrapping = TextWrapping.Wrap,
@@ -4295,12 +4296,12 @@ public sealed partial class MainWindow : Window, IDisposable
 
         // Pedzle motywu zamiast bialej alfy: w jasnym motywie biale tlo
         // nieaktywnego kroku znikalo na bialej karcie.
-        Brush accentBg = (Brush)Application.Current.Resources["DismodeAccentSoftBrush"];
-        Brush accentBorder = (Brush)Application.Current.Resources["DismodeAccentBrush"];
-        Brush successBg = (Brush)Application.Current.Resources["DismodeSuccessSoftBrush"];
-        Brush successBorder = (Brush)Application.Current.Resources["DismodeSuccessBrush"];
-        Brush idleBg = (Brush)Application.Current.Resources["DismodeOverlayBrush"];
-        Brush idleBorder = (Brush)Application.Current.Resources["DismodeOverlayBorderBrush"];
+        Brush accentBg = ThemeBrush("DismodeAccentSoftBrush");
+        Brush accentBorder = ThemeBrush("DismodeAccentBrush");
+        Brush successBg = ThemeBrush("DismodeSuccessSoftBrush");
+        Brush successBorder = ThemeBrush("DismodeSuccessBrush");
+        Brush idleBg = ThemeBrush("DismodeOverlayBrush");
+        Brush idleBorder = ThemeBrush("DismodeOverlayBorderBrush");
 
         UpdateStep1Badge.Background = activeStep >= 1 ? accentBg : idleBg;
         UpdateStep1Badge.BorderBrush = activeStep >= 1 ? accentBorder : idleBorder;
@@ -6722,8 +6723,8 @@ public sealed partial class MainWindow : Window, IDisposable
         HistoryTroubledValueText.Text = troubled.ToString(
             System.Globalization.CultureInfo.CurrentCulture);
         HistoryTroubledValueText.Foreground = troubled > 0
-            ? (Brush)Application.Current.Resources["DismodeAmberBrush"]
-            : (Brush)Application.Current.Resources["DismodeSuccessBrush"];
+            ? ThemeBrush("DismodeAmberBrush")
+            : ThemeBrush("DismodeSuccessBrush");
     }
 
     private void UpdateDashboardHero()
@@ -7795,6 +7796,7 @@ public sealed partial class MainWindow : Window, IDisposable
 
         _sessionPollTimer.Stop();
         _sessionPollTimer.Tick -= OnSessionPollTick;
+        RootLayout.ActualThemeChanged -= OnActualThemeChanged;
         AppWindow.Changed -= OnMainWindowChanged;
         _backgroundSessionPollTimer.Stop();
         _backgroundSessionPollTimer.Tick -= OnSessionPollTick;

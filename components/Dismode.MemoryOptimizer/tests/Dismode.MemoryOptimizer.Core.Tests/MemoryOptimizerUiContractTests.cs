@@ -8,6 +8,20 @@ public sealed class MemoryOptimizerUiContractTests
     private static readonly XNamespace Xaml = "http://schemas.microsoft.com/winfx/2006/xaml";
 
     [TestMethod]
+    public void FailedTrayRegistrationLeavesTheWindowClosable()
+    {
+        string root = Path.Combine(FindComponentRoot(), "src", "Dismode.MemoryOptimizer");
+        string application = File.ReadAllText(Path.Combine(root, "App.xaml.cs"));
+        string window = File.ReadAllText(Path.Combine(root, "MainWindow.xaml.cs"));
+        StringAssert.Contains(application, "_window.HasTrayIcon = _tray is not null;");
+        StringAssert.Contains(window, "internal bool HasTrayIcon { get; set; }");
+        int closing = window.IndexOf("private void AppWindow_Closing(", StringComparison.Ordinal);
+        Assert.IsGreaterThanOrEqualTo(0, closing);
+        string handler = window[closing..window.IndexOf("private static bool IsExpectedClientFailure", closing, StringComparison.Ordinal)];
+        StringAssert.Contains(handler, "if (_allowClose || !HasTrayIcon)");
+    }
+
+    [TestMethod]
     public void ShellRequestsDarkThemeBeforeTheFirstFrame()
     {
         XElement application = XDocument.Load(Path.Combine(
