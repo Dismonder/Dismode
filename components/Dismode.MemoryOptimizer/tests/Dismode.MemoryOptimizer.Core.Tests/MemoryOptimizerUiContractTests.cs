@@ -345,7 +345,9 @@ public sealed class MemoryOptimizerUiContractTests
 
     internal static string FindComponentRoot()
     {
-        DirectoryInfo? directory = new(AppContext.BaseDirectory);
+        // Long worktree paths come with the \\?\ prefix, which XDocument.Load cannot parse as a URI.
+        string start = AppContext.BaseDirectory;
+        DirectoryInfo? directory = new(start.StartsWith(@"\\?\", StringComparison.Ordinal) ? start[4..] : start);
         while (directory is not null)
         {
             if (File.Exists(Path.Combine(directory.FullName, "Dismode.MemoryOptimizer.sln")))

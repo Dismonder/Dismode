@@ -17,6 +17,7 @@ internal sealed class MemoryUserRuntime : IAsyncDisposable
     private readonly MemoryOptimizerEngine _engine;
     private readonly AutoOptimizationPolicy _policy = new();
     private readonly SystemCpuSampler _cpu = new();
+    private readonly ServiceWakeSignal _settingsChanged = new();
     private OptimizationResult? _lastResult;
 
     internal MemoryUserRuntime(string userSid)
@@ -126,11 +127,10 @@ internal sealed class MemoryUserRuntime : IAsyncDisposable
         {
             MemoryOptimizerSettings settings = await _store.GetSettingsAsync(
                 cancellationToken).ConfigureAwait(false);
-            MemorySnapshot memory = _metrics.Capture();
-            AutoOptimizationDecision decision = _policy.Evaluate(
-                settings,
-                memory,
-                _cpu.Sample(),
+            AutoOptimizationDecision decision = MemoryAutomationPolling.Evaluate(
+                _policy, settings,
+                _metrics.Capture,
+                _cpu.Sample,
                 DateTimeOffset.UtcNow);
             if (decision.ShouldRun)
             {
@@ -150,8 +150,11 @@ internal sealed class MemoryUserRuntime : IAsyncDisposable
                 }
             }
 
-            await Task.Delay(
-                TimeSpan.FromSeconds(settings.PollIntervalSeconds),
+            await _settingsChanged.WaitAsync(
+                MemoryAutomationPolling.Interval(
+                    settings,
+                    _policy,
+                    DateTimeOffset.UtcNow),
                 cancellationToken).ConfigureAwait(false);
         }
     }
@@ -159,6 +162,7 @@ internal sealed class MemoryUserRuntime : IAsyncDisposable
     public async ValueTask DisposeAsync()
     {
         _engine.Dispose();
+        _settingsChanged.Dispose();
         await _store.DisposeAsync().ConfigureAwait(false);
     }
 
@@ -190,6 +194,7 @@ internal sealed class MemoryUserRuntime : IAsyncDisposable
             settings,
             cancellationToken).ConfigureAwait(false);
         WriteComponentStatus(settings);
+        _settingsChanged.Wake();
         return settings;
     }
 
@@ -239,6 +244,7 @@ internal sealed class MemoryUserRuntime : IAsyncDisposable
             settings,
             cancellationToken).ConfigureAwait(false);
         WriteComponentStatus(settings);
+        _settingsChanged.Wake();
         return settings;
     }
 

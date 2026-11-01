@@ -96,6 +96,24 @@ public sealed class AutoOptimizationPolicy
                 : "Available RAM is above the threshold.");
     }
 
+    public TimeSpan RemainingCooldown(
+        MemoryOptimizerSettings settings,
+        DateTimeOffset nowUtc)
+    {
+        lock (_sync)
+        {
+            settings = MemoryOptimizerSettings.Normalize(settings);
+            if (_lastOptimizationUtc is not { } last)
+            {
+                return TimeSpan.Zero;
+            }
+
+            TimeSpan remaining =
+                TimeSpan.FromMinutes(settings.CooldownMinutes) - (nowUtc - last);
+            return remaining > TimeSpan.Zero ? remaining : TimeSpan.Zero;
+        }
+    }
+
     public void RecordCompleted(DateTimeOffset completedAtUtc)
     {
         lock (_sync)

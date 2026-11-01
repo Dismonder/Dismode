@@ -7,7 +7,8 @@ using Dismode.Data.SystemOptimization;
 namespace Dismode.SystemAgent.SystemOptimization;
 
 internal sealed class SystemOptimizerCoordinator :
-    ISystemOptimizerRecoveryMaintenance
+    ISystemOptimizerRecoveryMaintenance,
+    IDisposable
 {
     private static readonly TimeSpan StabilizationDuration =
         TimeSpan.FromSeconds(15);
@@ -18,6 +19,9 @@ internal sealed class SystemOptimizerCoordinator :
     private readonly string _recoveryJournalPath;
     private readonly SystemTweakSelectionValidator _selectionValidator = new(
         SystemTweakCatalog.CreateDefault());
+    private readonly SemaphoreSlim _pendingTimeoutWake = new(0, 1);
+    private volatile bool _hasPendingRecoveryTimeout;
+    private volatile bool _recoveryPhaseKnown;
 
     internal SystemOptimizerCoordinator(
         SqliteSystemOptimizerStore store,
@@ -30,6 +34,8 @@ internal sealed class SystemOptimizerCoordinator :
         _runtime = runtime;
         _recoveryJournalPath = Path.GetFullPath(recoveryJournalPath);
     }
+
+    public void Dispose() => _pendingTimeoutWake.Dispose();
 
     internal async ValueTask<SystemOptimizerStatus> GetStatusAsync(
         string ownerSid,
@@ -529,7 +535,7 @@ internal sealed class SystemOptimizerCoordinator :
                 .ConfigureAwait(false);
         }
 
-        await _store.SetRecoveryStatusAsync(
+        await SetRecoveryStatusTrackedAsync(
                 new(
                     RecoveryPhase.GameSessionActive,
                     activation.ActivationId,
@@ -584,7 +590,7 @@ internal sealed class SystemOptimizerCoordinator :
                         remaining,
                         cancellationToken)
                     .ConfigureAwait(false);
-                await _store.SetRecoveryStatusAsync(
+                await SetRecoveryStatusTrackedAsync(
                         new(
                             RecoveryPhase.Failed,
                             active.ActivationId,
@@ -865,9 +871,10 @@ internal sealed class SystemOptimizerCoordinator :
     internal async ValueTask RecoverTimedOutRebootExperimentAsync(
         CancellationToken cancellationToken)
     {
-        RecoveryStatus recovery = await GetCurrentRecoveryAsync(
+        RecoveryStatus recovery = await _store.GetRecoveryStatusAsync(
                 cancellationToken)
             .ConfigureAwait(false);
+        ObserveRecoveryPhase(recovery.Phase);
         if (recovery.PhaseEnteredAtUtc is not DateTimeOffset entered
             || SystemOptimizerRecoveryStateMachine.EvaluateTimeout(
                 recovery.Phase,
@@ -891,6 +898,27 @@ internal sealed class SystemOptimizerCoordinator :
         }
     }
 
+    internal async ValueTask WaitForPendingTimeoutAsync(
+        TimeSpan idleFallback,
+        CancellationToken cancellationToken)
+    {
+        if (!_recoveryPhaseKnown)
+        {
+            RecoveryStatus stored = await _store.GetRecoveryStatusAsync(
+                    cancellationToken)
+                .ConfigureAwait(false);
+            ObserveRecoveryPhase(stored.Phase);
+        }
+
+        if (_hasPendingRecoveryTimeout)
+        {
+            return;
+        }
+
+        _ = await _pendingTimeoutWake.WaitAsync(idleFallback, cancellationToken)
+            .ConfigureAwait(false);
+    }
+
     ValueTask ISystemOptimizerRecoveryMaintenance
         .RecoverAfterUnexpectedRestartAsync(
             CancellationToken cancellationToken) =>
@@ -900,6 +928,12 @@ internal sealed class SystemOptimizerCoordinator :
         .RecoverTimedOutRebootExperimentAsync(
             CancellationToken cancellationToken) =>
         RecoverTimedOutRebootExperimentAsync(cancellationToken);
+
+    ValueTask ISystemOptimizerRecoveryMaintenance
+        .WaitForPendingTimeoutAsync(
+            TimeSpan idleFallback,
+            CancellationToken cancellationToken) =>
+        WaitForPendingTimeoutAsync(idleFallback, cancellationToken);
 
     private async ValueTask<CoordinatorExperimentResult> BeginStabilizationAsync(
         ExperimentPlan experiment,
@@ -925,7 +959,7 @@ internal sealed class SystemOptimizerCoordinator :
                 throw new InvalidOperationException(applied.Message);
             }
 
-            await _store.SetRecoveryStatusAsync(
+            await SetRecoveryStatusTrackedAsync(
                     new(
                         RecoveryPhase.Capture,
                         experiment.ExperimentId,
@@ -1108,7 +1142,7 @@ internal sealed class SystemOptimizerCoordinator :
             experiment.ExperimentId);
         await _store.UpsertGlobalProfileAsync(profile, cancellationToken)
             .ConfigureAwait(false);
-        await _store.SetRecoveryStatusAsync(
+        await SetRecoveryStatusTrackedAsync(
                 new(
                     RecoveryPhase.PromotedGlobally,
                     experiment.ExperimentId,
@@ -1195,7 +1229,7 @@ internal sealed class SystemOptimizerCoordinator :
                         remaining,
                         cancellationToken)
                     .ConfigureAwait(false);
-                await _store.SetRecoveryStatusAsync(
+                await SetRecoveryStatusTrackedAsync(
                         new(
                             RecoveryPhase.Failed,
                             activation.ActivationId,
@@ -1259,6 +1293,7 @@ internal sealed class SystemOptimizerCoordinator :
         RecoveryStatus stored = await _store.GetRecoveryStatusAsync(
                 cancellationToken)
             .ConfigureAwait(false);
+        ObserveRecoveryPhase(stored.Phase);
         RecoveryJournalInspection journal =
             await RecoveryJournalInspector.InspectAsync(
                     _recoveryJournalPath,
@@ -1272,7 +1307,7 @@ internal sealed class SystemOptimizerCoordinator :
 
     private ValueTask SetCleanRecoveryAsync(
         CancellationToken cancellationToken) =>
-        _store.SetRecoveryStatusAsync(
+        SetRecoveryStatusTrackedAsync(
             new(
                 RecoveryPhase.Baseline,
                 ExperimentId: null,
@@ -1287,7 +1322,7 @@ internal sealed class SystemOptimizerCoordinator :
         ExperimentPlan experiment,
         string message,
         CancellationToken cancellationToken) =>
-        _store.SetRecoveryStatusAsync(
+        SetRecoveryStatusTrackedAsync(
             new(
                 RecoveryPhase.Failed,
                 experiment.ExperimentId,
@@ -1297,6 +1332,38 @@ internal sealed class SystemOptimizerCoordinator :
                 ConflictTargets: [experiment.Selection.TweakId],
                 message),
             cancellationToken);
+
+    private async ValueTask SetRecoveryStatusTrackedAsync(
+        RecoveryStatus status,
+        CancellationToken cancellationToken)
+    {
+        await _store.SetRecoveryStatusAsync(status, cancellationToken)
+            .ConfigureAwait(false);
+        ObserveRecoveryPhase(status.Phase);
+    }
+
+    private void ObserveRecoveryPhase(RecoveryPhase phase)
+    {
+        bool pending = HasPendingTimeout(phase);
+        _hasPendingRecoveryTimeout = pending;
+        _recoveryPhaseKnown = true;
+        if (pending && _pendingTimeoutWake.CurrentCount == 0)
+        {
+            try
+            {
+                _ = _pendingTimeoutWake.Release();
+            }
+            catch (SemaphoreFullException)
+            {
+            }
+        }
+    }
+
+    private static bool HasPendingTimeout(RecoveryPhase phase) =>
+        phase is
+            RecoveryPhase.CandidatePendingReboot
+            or RecoveryPhase.PostBootVerification
+            or RecoveryPhase.Capture;
 
     private static BenchmarkVariant GetExpectedVariant(
         ExperimentPlan experiment)

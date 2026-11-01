@@ -19,7 +19,7 @@
         <Setter Property="BorderBrush" Value="Transparent" />
       </Style>
     </Grid.Resources>
-    <Border Padding="20" BorderBrush="{ThemeResource MemoryBorderBrush}" BorderThickness="1" CornerRadius="12">
+    <Border Padding="20" BorderBrush="{ThemeResource DismodeCardEdgeBrush}" BorderThickness="1" CornerRadius="11">
       <Grid RowSpacing="14">
         <Grid.RowDefinitions>
           <RowDefinition Height="40" />
@@ -33,8 +33,8 @@
             <ColumnDefinition Width="*" />
             <ColumnDefinition Width="32" />
           </Grid.ColumnDefinitions>
-          <Border Height="36" Background="{ThemeResource MemoryAccentSoftBrush}" CornerRadius="10">
-            <FontIcon FontSize="19" Foreground="{ThemeResource MemoryAccentBrush}" Glyph="&#xE950;" />
+          <Border Height="36" Background="{ThemeResource MemoryAccentSoftBrush}" BorderBrush="{ThemeResource MemoryAccentBrush}" BorderThickness="1" CornerRadius="11">
+            <FontIcon FontSize="18" Foreground="{ThemeResource MemoryAccentBrush}" Glyph="&#xE950;" />
           </Border>
           <StackPanel Grid.Column="1" VerticalAlignment="Center" Spacing="1">
             <TextBlock Text="Memory Optimizer" FontSize="16" FontWeight="SemiBold" />
@@ -42,11 +42,11 @@
           </StackPanel>
           <Button x:Name="CloseMenuButton" Grid.Column="2" Width="32" Height="32" MinHeight="32"
                   Padding="0" Click="CloseMenuButton_Click" Content="&#xE711;"
-                  FontFamily="Segoe MDL2 Assets" FontSize="12" Style="{StaticResource TrayQuietActionStyle}"
+                  FontFamily="Segoe Fluent Icons" FontSize="12" Style="{StaticResource TrayQuietActionStyle}"
                   AutomationProperties.Name="Zamknij menu" ToolTipService.ToolTip="Zamknij menu (Esc)" />
         </Grid>
 
-        <Border Grid.Row="1" Padding="14" Background="{ThemeResource MemoryInsetBrush}" CornerRadius="10">
+        <Border Grid.Row="1" Padding="14" Background="{ThemeResource MemoryInsetBrush}" BorderBrush="{ThemeResource MemoryDividerBrush}" BorderThickness="1" CornerRadius="11">
           <Grid RowSpacing="8">
             <Grid.RowDefinitions>
               <RowDefinition Height="*" />
@@ -64,7 +64,7 @@
               </StackPanel>
               <StackPanel Grid.Column="1" VerticalAlignment="Center" HorizontalAlignment="Right">
                 <TextBlock x:Name="AvailableMemoryText" Text="—" FontSize="21" FontWeight="SemiBold" HorizontalAlignment="Right" />
-                <TextBlock Text="dostępnej pamięci" FontSize="12" Foreground="{ThemeResource MemoryMutedBrush}" />
+                <TextBlock Text="wolnego RAM" FontSize="12" Foreground="{ThemeResource MemoryMutedBrush}" />
               </StackPanel>
             </Grid>
             <ProgressBar x:Name="RamProgressBar" Grid.Row="1" Height="6" Minimum="0" Maximum="100"
@@ -96,7 +96,7 @@
                   <ColumnDefinition Width="20" />
                 </Grid.ColumnDefinitions>
                 <FontIcon Glyph="&#xE945;" FontSize="17" />
-                <TextBlock x:Name="OptimizeMenuTitle" Grid.Column="1" Text="Optymalizuj zapisany profil"
+                <TextBlock x:Name="OptimizeMenuTitle" Grid.Column="1" Text="Optymalizuj teraz"
                            FontSize="14" FontWeight="SemiBold" VerticalAlignment="Center" />
                 <ProgressRing x:Name="OptimizeProgress" Grid.Column="2" Width="18" Height="18"
                               IsActive="False" Opacity="0" Foreground="{ThemeResource MemoryAccentForegroundBrush}" />
@@ -172,10 +172,11 @@
           </StackPanel>
 
           <StackPanel x:Name="DisablePromptPanel" Spacing="14" Visibility="Collapsed">
-            <Border Padding="14" Background="{ThemeResource MemoryWarningSoftBrush}" CornerRadius="10">
+            <Border Padding="14" Background="{ThemeResource MemoryWarningSoftBrush}" BorderBrush="{ThemeResource MemoryWarningBrush}" BorderThickness="1" CornerRadius="11">
               <StackPanel Spacing="8">
                 <TextBlock Text="Wyłączyć cały moduł?" FontSize="17" FontWeight="SemiBold" />
-                <TextBlock Text="Zatrzymamy usługę i wyłączymy start z Windows. Optymalizacja w tle przestanie działać. Dane i historia pozostaną na dysku."
+                <TextBlock Text="Zatrzymamy usługę i autostart. Historia pozostanie na dysku."
+                           ToolTipService.ToolTip="Zatrzymamy usługę i wyłączymy start z Windows. Optymalizacja w tle przestanie działać. Dane i historia pozostaną na dysku."
                            FontSize="13" TextWrapping="Wrap" />
               </StackPanel>
             </Border>

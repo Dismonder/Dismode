@@ -127,6 +127,15 @@ public sealed class ForegroundGameWatcher : IAsyncDisposable
             FrameRateSample sample = await _frameRates
                 .SampleAsync([candidate], cancellationToken)
                 .ConfigureAwait(false);
+            if (sample.Status is FrameRateStatus.MissingComponent
+                or FrameRateStatus.InvalidComponent
+                or FrameRateStatus.AccessDenied
+                or FrameRateStatus.Failed)
+            {
+                await DetachAsync(cancellationToken).ConfigureAwait(false);
+                return new(candidate, processName, null, null, false);
+            }
+
             return new(
                 candidate,
                 processName,
@@ -142,6 +151,7 @@ public sealed class ForegroundGameWatcher : IAsyncDisposable
                 or IOException
                 or TimeoutException)
         {
+            await DetachAsync(cancellationToken).ConfigureAwait(false);
             return new(candidate, processName, null, null, false);
         }
     }
@@ -217,7 +227,7 @@ public sealed class ForegroundGameWatcher : IAsyncDisposable
                 or InvalidOperationException
                 or Win32Exception)
         {
-            return (null, string.Empty);
+            return ((int?)processId, string.Empty);
         }
     }
 

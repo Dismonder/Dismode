@@ -7,6 +7,26 @@ namespace Dismode.MemoryOptimizer.Core.Tests;
 public sealed class MemoryPresentationTests
 {
     [TestMethod]
+    public void TrayRefreshWaitsForTheManualOperationWithoutBlockingTheFinalReading()
+    {
+        MemoryRefreshPolicy policy = new() { IsVisible = false };
+        MemoryOperationGate operation = new();
+        Assert.IsTrue(operation.TryBegin(serviceBusy: false));
+
+        Assert.IsFalse(policy.TryBeginStatus(operation.IsRunning));
+        Assert.IsFalse(policy.TryBeginStatus(operation.IsRunning));
+
+        Assert.IsTrue(policy.TryBeginStatus());
+        policy.EndStatus();
+        operation.End();
+
+        Assert.IsTrue(policy.TryBeginStatus(operation.IsRunning));
+        Assert.IsFalse(policy.TryBeginStatus(operation.IsRunning));
+        policy.EndStatus();
+        Assert.IsTrue(policy.ShouldPollStatus);
+    }
+
+    [TestMethod]
     public void PollingPreservesDraftButMergesExternalPause()
     {
         MemorySettingsDraft draft = CreateDraft();
@@ -165,17 +185,26 @@ public sealed class MemoryPresentationTests
     }
 
     [TestMethod]
-    public void HiddenStartupKeepsSlowCadenceThroughInitialStatusRefresh()
+    public void HiddenStartupKeepsSlowPollingForTrayAndServiceRecovery()
     {
         MemoryRefreshPolicy policy = new() { IsVisible = false };
+        Assert.IsTrue(policy.ShouldPollStatus);
         Assert.AreEqual(TimeSpan.FromSeconds(30), policy.StatusPollInterval);
         Assert.IsTrue(policy.TryBeginStatus());
         policy.EndStatus();
-        Assert.AreEqual(TimeSpan.FromSeconds(30), policy.StatusPollInterval);
+        Assert.IsTrue(policy.ShouldPollStatus);
         policy.IsVisible = true;
+        Assert.IsTrue(policy.ShouldPollStatus);
         Assert.AreEqual(TimeSpan.FromSeconds(5), policy.StatusPollInterval);
         Assert.IsTrue(policy.TryBeginStatus());
         policy.EndStatus();
+        policy.IsVisible = false;
+        Assert.IsTrue(policy.ShouldPollStatus);
+        Assert.AreEqual(TimeSpan.FromSeconds(30), policy.StatusPollInterval);
+        policy.SelectPage("processes");
+        Assert.IsFalse(policy.ShouldRefreshProcesses);
+        policy.SelectPage("history");
+        Assert.IsFalse(policy.NeedsHistory);
     }
 
     [TestMethod]

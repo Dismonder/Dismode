@@ -16,6 +16,8 @@ internal sealed class MemoryRefreshPolicy
 
     public TimeSpan StatusPollInterval => TimeSpan.FromSeconds(IsVisible ? 5 : 30);
 
+    public bool ShouldPollStatus { get; } = true;
+
     public bool ShouldRefreshProcesses =>
         IsVisible && !IsCompact && ActivePage == "processes";
 
@@ -34,9 +36,9 @@ internal sealed class MemoryRefreshPolicy
 
     public void InvalidateHistory() => _historyGeneration++;
 
-    public bool TryBeginStatus()
+    public bool TryBeginStatus(bool operationRunning = false)
     {
-        if (_statusInProgress)
+        if (_statusInProgress || operationRunning)
         {
             return false;
         }

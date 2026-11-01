@@ -1,3 +1,4 @@
+using Dismode.Core.SystemOptimization;
 using Microsoft.Extensions.Hosting;
 
 namespace Dismode.SystemAgent.SystemOptimization;
@@ -9,6 +10,11 @@ internal interface ISystemOptimizerRecoveryMaintenance
 
     ValueTask RecoverTimedOutRebootExperimentAsync(
         CancellationToken cancellationToken);
+
+    ValueTask WaitForPendingTimeoutAsync(
+        TimeSpan idleFallback,
+        CancellationToken cancellationToken) =>
+        ValueTask.CompletedTask;
 }
 
 internal sealed class SystemOptimizerRecoveryHostedService : BackgroundService
@@ -18,6 +24,7 @@ internal sealed class SystemOptimizerRecoveryHostedService : BackgroundService
 
     private readonly ISystemOptimizerRecoveryMaintenance _maintenance;
     private readonly TimeSpan _checkInterval;
+    private readonly TimeProvider _clock;
 
     internal SystemOptimizerRecoveryHostedService(
         ISystemOptimizerRecoveryMaintenance maintenance)
@@ -27,7 +34,8 @@ internal sealed class SystemOptimizerRecoveryHostedService : BackgroundService
 
     internal SystemOptimizerRecoveryHostedService(
         ISystemOptimizerRecoveryMaintenance maintenance,
-        TimeSpan checkInterval)
+        TimeSpan checkInterval,
+        TimeProvider? timeProvider = null)
     {
         ArgumentNullException.ThrowIfNull(maintenance);
         ArgumentOutOfRangeException.ThrowIfLessThanOrEqual(
@@ -36,6 +44,7 @@ internal sealed class SystemOptimizerRecoveryHostedService : BackgroundService
 
         _maintenance = maintenance;
         _checkInterval = checkInterval;
+        _clock = timeProvider ?? TimeProvider.System;
     }
 
     protected override async Task ExecuteAsync(
@@ -46,10 +55,16 @@ internal sealed class SystemOptimizerRecoveryHostedService : BackgroundService
                 stoppingToken)
             .ConfigureAwait(false);
 
-        using PeriodicTimer timer = new(_checkInterval);
-        while (await timer.WaitForNextTickAsync(stoppingToken)
-                   .ConfigureAwait(false))
+        while (!stoppingToken.IsCancellationRequested)
         {
+            await RunGuardedAsync(
+                    token => _maintenance.WaitForPendingTimeoutAsync(
+                        SystemOptimizerRecoveryStateMachine.ConfirmationTimeout,
+                        token),
+                    stoppingToken)
+                .ConfigureAwait(false);
+            await Task.Delay(_checkInterval, _clock, stoppingToken)
+                .ConfigureAwait(false);
             await RunGuardedAsync(
                     _maintenance.RecoverTimedOutRebootExperimentAsync,
                     stoppingToken)

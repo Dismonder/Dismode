@@ -26,6 +26,7 @@ using Dismode.Windows.Security;
 using Dismode.Windows.Sessions;
 using Microsoft.UI.Windowing;
 using Microsoft.UI.Xaml;
+using Microsoft.UI.Xaml.Automation;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Controls.Primitives;
 using Microsoft.UI.Xaml.Media;
@@ -128,8 +129,13 @@ public sealed partial class MainWindow : Window, IDisposable
     private readonly Queue<UiActivationRequest> _pendingActivationRequests = [];
     private readonly DispatcherTimer _sessionPollTimer = new()
     {
-        Interval = TimeSpan.FromSeconds(2),
+        Interval = SessionPollWhileVisible,
     };
+    private readonly DispatcherTimer _backgroundSessionPollTimer = new();
+    private readonly WindowRefreshController _windowRefresh;
+    private readonly SessionHostPollSchedule _sessionHostPollSchedule = new();
+    private bool _sessionPollingReady;
+    private bool _updateSpinnerRequested;
     private readonly DispatcherTimer _overlaySettingsSaveTimer = new()
     {
         Interval = TimeSpan.FromMilliseconds(400),
@@ -167,6 +173,8 @@ public sealed partial class MainWindow : Window, IDisposable
     private bool _isDeferredStartupRunning;
     private bool _automaticUpdateDeferredForSession;
     private bool _sessionEndpointAvailable;
+    private bool _forceSessionEndpointCheck = true;
+    private bool _noActiveSessionApplied;
     private bool? _isRecoveryJournalClean;
     private ProfileListItem? _detectedRunningUnoptimizedGame;
     private int _detectedRunningProcessId;
@@ -279,9 +287,12 @@ public sealed partial class MainWindow : Window, IDisposable
         _gameDetectionPreferences?.AutoOptimizeDetectedGames == true;
 
     private TimeSpan HiddenSessionPollInterval =>
-        IsAutomaticOptimizationEnabled
-            ? SessionPollWhileHiddenWatching
-            : SessionPollWhileHidden;
+        SessionBackgroundPollPolicy.GetBackgroundInterval(
+            _activeSession is not null,
+            IsAutomaticOptimizationEnabled,
+            _foregroundChangeListener is not null,
+            SessionPollWhileHiddenWatching,
+            SessionPollWhileHidden);
 
     /// <summary>
     /// Czy okno siedzi w zasobniku. Steruje tym, ile pracy wolno pominac.
@@ -337,6 +348,7 @@ public sealed partial class MainWindow : Window, IDisposable
             _gameDetectionIndex.Invalidate();
             ApplyLibraryFilter();
             RebuildHistoryTiles();
+            UpdateWindowActivity();
         };
         ApplyLibraryFilter();
         DashboardGameRail.ItemsSource = _profiles;
@@ -349,6 +361,31 @@ public sealed partial class MainWindow : Window, IDisposable
         ServiceClassificationsList.ItemsSource =
             _serviceClassifications;
         _sessionPollTimer.Tick += OnSessionPollTick;
+        _backgroundSessionPollTimer.Tick += OnSessionPollTick;
+        _windowRefresh = new(
+            enabled =>
+            {
+                _sessionPollTimer.Stop();
+                _backgroundSessionPollTimer.Stop();
+                if (enabled)
+                {
+                    _sessionPollTimer.Start();
+                }
+                GlobalProgress.IsActive = enabled && _isBusy;
+                UpdateActivitySpinner.IsActive = enabled && _updateSpinnerRequested;
+            },
+            () =>
+            {
+                _forceSessionEndpointCheck = true;
+                if (DashboardPage.Visibility == Visibility.Visible)
+                {
+                    UpdateDashboardSystemMetrics();
+                }
+
+                RenderDashboardFrameTimeGraph();
+                OnSessionPollTick(this, EventArgs.Empty);
+            });
+        AppWindow.Changed += OnMainWindowChanged;
         _overlaySettingsSaveTimer.Tick += OnOverlaySettingsSaveTick;
         _overlayPollTimer.Tick += OnOverlayPollTick;
         string windowIconPath = Path.Combine(
@@ -403,7 +440,13 @@ public sealed partial class MainWindow : Window, IDisposable
             AppWindow.Resize(new(1240, 820));
         }
 
-        UpdateTitleBarTheme(ElementTheme.Dark);
+        ThemeSelector.SelectedIndex = CreateSettingsThemePreferences().Load() switch
+        {
+            "Dark" => 0,
+            "Light" => 1,
+            _ => 2,
+        };
+        UpdateTitleBarTheme(RootLayout.ActualTheme);
         UpdateDashboardSystemMetrics();
         DiagnosticsProtocolText.Text =
             $"v{ProtocolInfo.CurrentVersion}; limit "
@@ -411,6 +454,9 @@ public sealed partial class MainWindow : Window, IDisposable
         DiagnosticsPlatformText.Text =
             WindowsPlatformSupport.DescribeCurrentSystem();
         DiagnosticsUserText.Text = RedactSid(_userSid);
+        SetSettingsStatus(DiagnosticsSessionHostDot, DashboardStatusKind.Pending);
+        SetSettingsStatus(DiagnosticsSystemAgentDot, DashboardStatusKind.Pending);
+        SetSettingsStatus(DiagnosticsCpuDot, DashboardStatusKind.Pending);
         UpdateGamingDiagnostics();
         UpdatesCurrentVersionText.Text =
             ProductInformation.FullDisplayName;
@@ -455,7 +501,7 @@ public sealed partial class MainWindow : Window, IDisposable
             await RefreshDashboardRecoveryStatusAsync(_lifetime.Token);
             if (!_lifetime.IsCancellationRequested)
             {
-                _sessionPollTimer.Start();
+                StartSessionPolling();
                 await LaunchExternalGameAsync(
                     executablePath,
                     keepWindowHidden: _launchOptions.StartInBackground,
@@ -480,7 +526,7 @@ public sealed partial class MainWindow : Window, IDisposable
 
         if (!_lifetime.IsCancellationRequested)
         {
-            _sessionPollTimer.Start();
+            StartSessionPolling();
             _ = CheckForUpdatesAsync(
                 manual: false,
                 _lifetime.Token);
@@ -514,7 +560,7 @@ public sealed partial class MainWindow : Window, IDisposable
         }
 
         _hiddenInTray = true;
-        _sessionPollTimer.Interval = HiddenSessionPollInterval;
+        UpdateWindowActivity();
     }
 
     private void ShowFromTray()
@@ -532,11 +578,45 @@ public sealed partial class MainWindow : Window, IDisposable
         }
 
         _hiddenInTray = false;
-        _sessionPollTimer.Interval = SessionPollWhileVisible;
-        RenderDashboardFrameTimeGraph();
-        // Natychmiast, bo inaczej uzytkownik zobaczylby stan sprzed
-        // kilkunastu sekund i uznal go za zepsuty.
-        OnSessionPollTick(this, EventArgs.Empty);
+        UpdateWindowActivity();
+    }
+
+    private void StartSessionPolling()
+    {
+        _sessionPollingReady = true;
+        UpdateWindowActivity();
+    }
+
+    private bool IsMainWindowVisible =>
+        !_hiddenInTray && AppWindow.IsVisible && !IsWindowMinimized;
+
+    private void OnMainWindowChanged(AppWindow sender, AppWindowChangedEventArgs args) =>
+        UpdateWindowActivity();
+
+    private void UpdateWindowActivity()
+    {
+        if (!_sessionPollingReady || _disposed)
+        {
+            return;
+        }
+
+        _windowRefresh.Update(AppWindow.IsVisible && !_hiddenInTray, IsWindowMinimized);
+        if (SessionBackgroundPollPolicy.ShouldRunBackgroundTimer(_windowRefresh.IsActive))
+        {
+            // Tylko obowiazki zasobnika i automatu; licznik widoku stoi.
+            _backgroundSessionPollTimer.Interval = HiddenSessionPollInterval;
+            _backgroundSessionPollTimer.Start();
+        }
+        else
+        {
+            _backgroundSessionPollTimer.Stop();
+        }
+    }
+
+    private void SetUpdateSpinnerActive(bool active)
+    {
+        _updateSpinnerRequested = active;
+        UpdateActivitySpinner.IsActive = active && IsMainWindowVisible;
     }
 
     /// <summary>
@@ -960,6 +1040,7 @@ public sealed partial class MainWindow : Window, IDisposable
         object sender,
         RoutedEventArgs args)
     {
+        UpdateGamingDiagnostics();
         await RefreshDiagnosticsAsync(_lifetime.Token);
         await RefreshMemoryOptimizerStatusAsync(_lifetime.Token);
         await RefreshSystemOptimizerStatusAsync(_lifetime.Token);
@@ -1121,6 +1202,9 @@ public sealed partial class MainWindow : Window, IDisposable
     /// </summary>
     private void ApplyCpuTopologyDescription(CpuTopology? topology)
     {
+        SetSettingsStatus(DiagnosticsCpuDot,
+            topology is null || topology.Processors.Count == 0
+                ? DashboardStatusKind.Warning : DashboardStatusKind.Ready);
         if (topology is null || topology.Processors.Count == 0)
         {
             CpuTopologyText.Text =
@@ -1406,6 +1490,11 @@ public sealed partial class MainWindow : Window, IDisposable
         DiagnosticsNavigationIndicator.Opacity = selectedTag == "diagnostics"
             ? 1
             : 0;
+        if (_isLoaded && IsMainWindowVisible && selectedTag == "dashboard")
+        {
+            UpdateDashboardSystemMetrics();
+            RenderDashboardFrameTimeGraph();
+        }
     }
 
     private void ConfigurePageEntranceAnimations() =>
@@ -3455,7 +3544,7 @@ public sealed partial class MainWindow : Window, IDisposable
         _isSessionPollRunning = true;
         try
         {
-            if (!_hiddenInTray)
+            if (IsMainWindowVisible && DashboardPage.Visibility == Visibility.Visible)
             {
                 // Wpisuje liczby do pol pulpitu. Przy schowanym oknie nie ma
                 // ich gdzie zobaczyc, a probkowanie procesora i pamieci
@@ -3800,7 +3889,7 @@ public sealed partial class MainWindow : Window, IDisposable
         object sender,
         SelectionChangedEventArgs args)
     {
-        if (ThemeSelector.SelectedItem is not ComboBoxItem item)
+        if (ThemeSelector.SelectedItem is not RadioButton item)
         {
             return;
         }
@@ -3816,6 +3905,36 @@ public sealed partial class MainWindow : Window, IDisposable
             selectedTheme == ElementTheme.Default
                 ? RootLayout.ActualTheme
                 : selectedTheme);
+        if (_isLoaded)
+        {
+            CreateSettingsThemePreferences().Save(item.Tag?.ToString() ?? "Default");
+        }
+    }
+
+    private static SettingsThemePreferences CreateSettingsThemePreferences()
+    {
+        string path = Path.Combine(DismodeStoragePaths.UserDataDirectory, "appearance-theme.txt");
+        return new(
+            () => File.Exists(path) ? File.ReadAllText(path).Trim() : null,
+            theme =>
+            {
+                Directory.CreateDirectory(DismodeStoragePaths.UserDataDirectory);
+                File.WriteAllText(path, theme);
+            });
+    }
+
+    private static void SetSettingsStatus(
+        Microsoft.UI.Xaml.Shapes.Ellipse dot,
+        DashboardStatusKind status)
+    {
+        dot.Fill = new SolidColorBrush(GetDashboardStatusColor(status));
+        AutomationProperties.SetName(dot, status switch
+        {
+            DashboardStatusKind.Ready => "Gotowe",
+            DashboardStatusKind.Warning => "Wymaga uwagi",
+            DashboardStatusKind.Error => "Błąd",
+            _ => "Sprawdzanie…",
+        });
     }
 
     private void UpdateTitleBarTheme(ElementTheme theme)
@@ -3931,13 +4050,13 @@ public sealed partial class MainWindow : Window, IDisposable
             switch (result.State)
             {
                 case UpdateCheckState.NotDue:
-                    UpdateActivitySpinner.IsActive = false;
+                    SetUpdateSpinnerActive(false);
                     UpdateActivitySpinner.Visibility = Visibility.Collapsed;
                     return;
                 case UpdateCheckState.UpToDate:
                 case UpdateCheckState.AheadOfChannel:
                 case UpdateCheckState.ManualUpgradeRequired:
-                    UpdateActivitySpinner.IsActive = false;
+                    SetUpdateSpinnerActive(false);
                     UpdateActivitySpinner.Visibility = Visibility.Collapsed;
                     ApplyNoAvailableUpdate();
                     if (manual)
@@ -3990,7 +4109,7 @@ public sealed partial class MainWindow : Window, IDisposable
 
                     break;
                 case UpdateCheckState.Failed:
-                    UpdateActivitySpinner.IsActive = false;
+                    SetUpdateSpinnerActive(false);
                     UpdateActivitySpinner.Visibility = Visibility.Collapsed;
                     ShowInfo(
                         UpdateInfoBar,
@@ -4028,7 +4147,7 @@ public sealed partial class MainWindow : Window, IDisposable
         finally
         {
             _isUpdateOperationRunning = false;
-            UpdateActivitySpinner.IsActive = false;
+            SetUpdateSpinnerActive(false);
             UpdateActivitySpinner.Visibility = Visibility.Collapsed;
             UpdateUpdateControls();
         }
@@ -4042,7 +4161,7 @@ public sealed partial class MainWindow : Window, IDisposable
                 "Najpierw sprawdź dostępność aktualizacji.");
 
         SetUpdatePipelineStep(2);
-        UpdateActivitySpinner.IsActive = true;
+        SetUpdateSpinnerActive(true);
         UpdateActivitySpinner.Visibility = Visibility.Visible;
         UpdateDownloadProgressBar.Value = 0;
         UpdateDownloadPercentText.Text = "0%";
@@ -4075,7 +4194,7 @@ public sealed partial class MainWindow : Window, IDisposable
         }
 
         SetUpdatePipelineStep(4);
-        UpdateActivitySpinner.IsActive = false;
+        SetUpdateSpinnerActive(false);
         UpdateActivitySpinner.Visibility = Visibility.Collapsed;
         UpdateDownloadProgressBar.Value = 100;
         UpdateDownloadPercentText.Text = "100%";
@@ -4264,6 +4383,7 @@ public sealed partial class MainWindow : Window, IDisposable
             await _userDataStore.InitializeAsync(cancellationToken);
             await LoadProfilesAsync(cancellationToken);
             await LoadHistoryAsync(cancellationToken);
+            _forceSessionEndpointCheck = true;
             await RefreshActiveSessionCoreAsync(cancellationToken);
             await RefreshDashboardRecoveryStatusAsync(cancellationToken);
             await RefreshDiagnosticsCoreAsync(cancellationToken);
@@ -4386,6 +4506,8 @@ public sealed partial class MainWindow : Window, IDisposable
         {
             DiagnosticsSessionHostText.Text =
                 $"Błąd diagnostyki: {exception.Message}";
+            SetSettingsStatus(DiagnosticsSessionHostDot, DashboardStatusKind.Error);
+            SetSettingsStatus(DiagnosticsSystemAgentDot, DashboardStatusKind.Error);
         }
         finally
         {
@@ -4396,6 +4518,8 @@ public sealed partial class MainWindow : Window, IDisposable
     private async Task RefreshDiagnosticsCoreAsync(
         CancellationToken cancellationToken)
     {
+        SetSettingsStatus(DiagnosticsSessionHostDot, DashboardStatusKind.Pending);
+        SetSettingsStatus(DiagnosticsSystemAgentDot, DashboardStatusKind.Pending);
         Task<DiagnosticsEndpointSnapshot> sessionHostTask =
             _diagnostics.ProbeAsync(
                 "SessionHost",
@@ -4408,6 +4532,13 @@ public sealed partial class MainWindow : Window, IDisposable
                 cancellationToken);
         DiagnosticsEndpointSnapshot[] endpoints =
             await Task.WhenAll(sessionHostTask, systemAgentTask);
+
+        SetSettingsStatus(DiagnosticsSessionHostDot, !endpoints[0].IsAvailable
+            ? DashboardStatusKind.Error : endpoints[0].IsCompatible
+                ? DashboardStatusKind.Ready : DashboardStatusKind.Warning);
+        SetSettingsStatus(DiagnosticsSystemAgentDot, !endpoints[1].IsAvailable
+            ? DashboardStatusKind.Error : endpoints[1].IsCompatible
+                ? DashboardStatusKind.Ready : DashboardStatusKind.Warning);
 
         ApplyEndpointSnapshot(
             endpoints[0],
@@ -4527,18 +4658,36 @@ public sealed partial class MainWindow : Window, IDisposable
         CancellationToken cancellationToken)
     {
         SessionStateClientSnapshot? previous = _activeSession;
+        bool wasEndpointAvailable = _sessionEndpointAvailable;
         SessionStateClientSnapshot? current;
-        try
+        if (_sessionHostPollSchedule.ShouldQuery(
+                previous is not null,
+                _sessionEndpointAvailable,
+                _forceSessionEndpointCheck))
         {
-            current = await _sessions.GetActiveAsync(cancellationToken);
-            _sessionEndpointAvailable = true;
+            _forceSessionEndpointCheck = false;
+            try
+            {
+                current = await _sessions.GetActiveAsync(cancellationToken);
+                _sessionEndpointAvailable = true;
+            }
+            catch (Exception exception) when (IsExpectedUiFailure(exception))
+            {
+                _sessionEndpointAvailable = false;
+                _noActiveSessionApplied = false;
+                ApplySessionUnavailable(exception.Message);
+                UpdateSessionControls();
+                if (wasEndpointAvailable)
+                {
+                    UpdateWindowActivity();
+                }
+
+                return;
+            }
         }
-        catch (Exception exception) when (IsExpectedUiFailure(exception))
+        else
         {
-            _sessionEndpointAvailable = false;
-            ApplySessionUnavailable(exception.Message);
-            UpdateSessionControls();
-            return;
+            current = null;
         }
 
         if (!ReferenceEquals(_activeSession, previous))
@@ -4550,8 +4699,11 @@ public sealed partial class MainWindow : Window, IDisposable
         }
 
         _activeSession = current;
+        bool sessionStateChanged = !ReferenceEquals(previous, current)
+            || wasEndpointAvailable != _sessionEndpointAvailable;
         if (current is not null)
         {
+            _noActiveSessionApplied = false;
             _pendingPlan = null;
             _planActions.Clear();
             _detectedRunningUnoptimizedGame = null;
@@ -4564,7 +4716,11 @@ public sealed partial class MainWindow : Window, IDisposable
         }
         else
         {
-            ApplyNoActiveSession();
+            if (previous is not null || !_noActiveSessionApplied || _pendingPlan is not null)
+            {
+                ApplyNoActiveSession();
+            }
+
             if (previous is not null)
             {
                 await SuppressRunningInstancesOfEndedSessionAsync(
@@ -4584,9 +4740,16 @@ public sealed partial class MainWindow : Window, IDisposable
             }
 
             await CheckForRunningUnoptimizedGameAsync(cancellationToken);
+            if (previous is not null || wasEndpointAvailable != _sessionEndpointAvailable || _pendingPlan is not null)
+            {
+                UpdateSessionControls();
+            }
         }
 
-        UpdateSessionControls();
+        if (sessionStateChanged)
+        {
+            UpdateWindowActivity();
+        }
     }
 
     private async Task CheckForRunningUnoptimizedGameAsync(
@@ -4606,7 +4769,7 @@ public sealed partial class MainWindow : Window, IDisposable
             return;
         }
 
-        if (_hiddenInTray && !IsAutomaticOptimizationEnabled)
+        if (!IsMainWindowVisible && !IsAutomaticOptimizationEnabled)
         {
             // Bez automatu skan sluzy wylacznie banerowi w oknie, a schowane
             // okno nie ma go gdzie pokazac. Z automatem skan jest tym, co
@@ -5265,10 +5428,7 @@ public sealed partial class MainWindow : Window, IDisposable
 
         _trayIcon?.SetAutomaticOptimizationState(
             preferences.AutoOptimizeDetectedGames);
-        if (_hiddenInTray)
-        {
-            _sessionPollTimer.Interval = HiddenSessionPollInterval;
-        }
+        UpdateWindowActivity();
     }
 
     private async void OnAutoOptimizeDetectedGamesSettingChanged(
@@ -5552,15 +5712,29 @@ public sealed partial class MainWindow : Window, IDisposable
     private void OnForegroundProcessChanged(int processId) =>
         _ = DispatcherQueue.TryEnqueue(() =>
         {
+            _edgePanel?.OnForegroundChanged();
+
+            if (!_disposed
+                && _isLoaded
+                && _activeSession is null
+                && FpsTrackingToggleSwitch.IsOn
+                && FpsOverlayToggleSwitch.IsOn
+                && !_overlayPollTimer.IsEnabled)
+            {
+                UpdatePerformanceOverlay();
+                OnOverlayPollTick(this, EventArgs.Empty);
+            }
+
             // Przy aktywnej sesji automat nie ma nic do roboty, a alt-tab
             // miedzy gra a czatem szedlby co sekunde do hosta i probnika
             // metryk. Zwykly takt wystarczy, by zauwazyc koniec sesji.
             if (_disposed
                 || !_isLoaded
-                || !_sessionPollTimer.IsEnabled
+                || (!_sessionPollTimer.IsEnabled && !_backgroundSessionPollTimer.IsEnabled)
                 || _activeSession is not null
+                || _profiles.Count == 0
                 || processId == _detectedRunningProcessId
-                || (_hiddenInTray && !IsAutomaticOptimizationEnabled))
+                || (!IsMainWindowVisible && !IsAutomaticOptimizationEnabled))
             {
                 return;
             }
@@ -5578,6 +5752,7 @@ public sealed partial class MainWindow : Window, IDisposable
 
     private void ApplyPreparedPlan(SessionPlanClientSnapshot plan)
     {
+        _noActiveSessionApplied = false;
         _planActions.Clear();
         foreach (SessionPlanActionClientSnapshot action in plan.Actions)
         {
@@ -5594,15 +5769,27 @@ public sealed partial class MainWindow : Window, IDisposable
 
     private void ApplyActiveSession(SessionStateClientSnapshot session)
     {
+        RecordEdgePanelFps(session.FrameRateProcessId, session.FramesPerSecond);
+        _noActiveSessionApplied = false;
         _trayIcon?.SetActiveGame(session.GameDisplayName);
         _ = TryRenewActiveGameLeaseAsync(session, _lifetime.Token);
         if (_dashboardFrameSessionId != session.SessionId)
         {
             _dashboardFrameSessionId = session.SessionId;
             _dashboardFrameTimes.Clear();
-            DashboardFrameTimeGraph.Points.Clear();
             TacticalAudioService.Instance.PlaySessionStart();
-            TacticalVfxService.Instance.AnimateQuickFlash(DashboardHeroCard);
+            if (IsMainWindowVisible)
+            {
+                DashboardFrameTimeGraph.Points.Clear();
+                TacticalVfxService.Instance.AnimateQuickFlash(DashboardHeroCard);
+            }
+        }
+
+        if (!IsMainWindowVisible)
+        {
+            UpdatePerformanceOverlay();
+            UpdateWindowActivity();
+            return;
         }
 
         string stateLabel = DescribeSessionState(session.State);
@@ -5662,6 +5849,7 @@ public sealed partial class MainWindow : Window, IDisposable
         PlanActionsList.Visibility = Visibility.Collapsed;
         UpdateDashboardHero();
         UpdateSessionControls();
+        UpdateWindowActivity();
     }
 
     private async Task TryExportKnownGamesAsync(
@@ -5749,7 +5937,7 @@ public sealed partial class MainWindow : Window, IDisposable
 
     private void RenderDashboardFrameTimeGraph()
     {
-        if (_hiddenInTray)
+        if (!IsMainWindowVisible || DashboardPage.Visibility != Visibility.Visible)
         {
             return;
         }
@@ -5847,6 +6035,10 @@ public sealed partial class MainWindow : Window, IDisposable
         if (!FpsTrackingToggleSwitch.IsOn)
         {
             ClearFrameRateTelemetryForDisabledTracking();
+        }
+        else if (_activeSession is null)
+        {
+            ResetFrameRateDisplay();
         }
         OverlayStyleSketchText.Text = GetSelectedOverlayStyle() switch
         {
@@ -6068,7 +6260,31 @@ public sealed partial class MainWindow : Window, IDisposable
                 return;
             }
 
-            _edgeForegroundSample = sample.IsPresenting ? sample : null;
+            if (sample.ProcessId is null && _foregroundChangeListener is not null)
+            {
+                // Pulpit nie wymaga probkowania; hak wznowi prace przy zmianie okna.
+                _overlayPollTimer.Stop();
+                _edgeForegroundSample = null;
+                RecordEdgePanelFps(null, null);
+                HidePerformanceOverlay();
+                return;
+            }
+
+            // Brak klatek wymaga ponowienia z opoznieniem, nie kolejnej zmiany okna.
+            _overlayPollTimer.Interval = sample.IsPresenting
+                ? TimeSpan.FromMilliseconds(500)
+                : TimeSpan.FromSeconds(5);
+
+            if (!sample.IsPresenting)
+            {
+                _edgeForegroundSample = null;
+                RecordEdgePanelFps(null, null);
+                HidePerformanceOverlay();
+                return;
+            }
+
+            _edgeForegroundSample = sample;
+            RecordEdgePanelFps(sample.ProcessId, sample.FramesPerSecond);
             _performanceOverlay ??= new();
             _performanceOverlay.Update(
                 sample.ProcessName,
@@ -6116,6 +6332,7 @@ public sealed partial class MainWindow : Window, IDisposable
 
     private void ApplyCompletedSession(SessionStateClientSnapshot session)
     {
+        _noActiveSessionApplied = false;
         TacticalAudioService.Instance.PlaySessionStop();
         ActiveSessionStateText.Text = "Gotowość";
         ActiveSessionDetailsText.Text = "Sesja zakończona. Szczegóły znajdziesz w Historii.";
@@ -6129,6 +6346,7 @@ public sealed partial class MainWindow : Window, IDisposable
         PlanActionsList.Visibility = Visibility.Collapsed;
         UpdateDashboardHero();
         UpdateSessionControls();
+        UpdateWindowActivity();
     }
 
     private void ApplyNoActiveSession()
@@ -6147,6 +6365,7 @@ public sealed partial class MainWindow : Window, IDisposable
             return;
         }
 
+        _noActiveSessionApplied = true;
         PlanStateTitleText.Text = "Brak aktywnego planu";
         PlanDetailsText.Text =
             "Wybierz grę, przeanalizuj aplikacje w tle i zaznacz te, "
@@ -6183,6 +6402,7 @@ public sealed partial class MainWindow : Window, IDisposable
 
     private void ApplySessionUnavailable(string message)
     {
+        _noActiveSessionApplied = false;
         bool invalidatedPreparedPlan = _pendingPlan is not null;
         if (invalidatedPreparedPlan)
         {
@@ -6217,6 +6437,8 @@ public sealed partial class MainWindow : Window, IDisposable
                 : "Uruchom SessionHost, aby przygotować bezpieczny plan "
                     + "i sprawdzić aktywną sesję.";
         }
+
+        UpdateWindowActivity();
     }
 
     private void ClearPreparedPlan()
@@ -6623,7 +6845,7 @@ public sealed partial class MainWindow : Window, IDisposable
     private void SetBusy(bool isBusy)
     {
         _isBusy = isBusy;
-        GlobalProgress.IsActive = isBusy;
+        GlobalProgress.IsActive = isBusy && IsMainWindowVisible;
         GlobalProgress.Opacity = isBusy ? 1 : 0;
         AddProfileButton.IsEnabled = !isBusy;
         DiscoverGamesButton.IsEnabled = !isBusy;
@@ -7520,6 +7742,8 @@ public sealed partial class MainWindow : Window, IDisposable
 
     private void UpdateGamingDiagnostics()
     {
+        SetSettingsStatus(DiagnosticsPlatformDot, WindowsPlatformSupport.IsSupported
+            ? DashboardStatusKind.Ready : DashboardStatusKind.Warning);
         try
         {
             WindowsGamingDiagnosticReport report =
@@ -7549,12 +7773,16 @@ public sealed partial class MainWindow : Window, IDisposable
                 "\n\n",
                 report.Recommendations.Select(
                     r => $"• {r.Title}\n  {r.Description}"));
+            SetSettingsStatus(DiagnosticsGamingDot, report.Recommendations.All(
+                recommendation => recommendation.Severity == DiagnosticSeverity.Success)
+                ? DashboardStatusKind.Ready : DashboardStatusKind.Warning);
         }
         catch (Exception exception)
         {
             DiagnosticsGamingEnvironmentText.Text =
                 $"Błąd odczytu konfiguracji gamingowej: {exception.Message}";
             DiagnosticsGamingRecommendationsText.Text = string.Empty;
+            SetSettingsStatus(DiagnosticsGamingDot, DashboardStatusKind.Error);
         }
     }
 
@@ -7567,6 +7795,9 @@ public sealed partial class MainWindow : Window, IDisposable
 
         _sessionPollTimer.Stop();
         _sessionPollTimer.Tick -= OnSessionPollTick;
+        AppWindow.Changed -= OnMainWindowChanged;
+        _backgroundSessionPollTimer.Stop();
+        _backgroundSessionPollTimer.Tick -= OnSessionPollTick;
         _overlaySettingsSaveTimer.Stop();
         _overlaySettingsSaveTimer.Tick -= OnOverlaySettingsSaveTick;
         _overlayPollTimer.Stop();

@@ -174,6 +174,7 @@ public partial class App : Application
         {
             existing.UpdateState(window.CurrentTrayStatus, window.CanOptimizeFromTray, window.CanPauseFromTray);
             existing.ShowAtCursor();
+            _ = window.RefreshForTrayAsync();
             return;
         }
 
@@ -203,6 +204,7 @@ public partial class App : Application
         _trayMenu = menu;
         menu.Dismissed += TrayMenu_Dismissed;
         menu.ShowAtCursor();
+        _ = window.RefreshForTrayAsync();
     }
 
     private void TrayMenu_Dismissed(object? sender, EventArgs e)

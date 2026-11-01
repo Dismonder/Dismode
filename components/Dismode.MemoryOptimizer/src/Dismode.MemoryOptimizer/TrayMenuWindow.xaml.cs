@@ -26,6 +26,10 @@ internal sealed partial class TrayMenuWindow : Window
     private readonly Func<Task> _togglePause;
     private readonly Func<Task<bool>> _disable;
     private readonly Action _exit;
+    private readonly TacticalVfxService _effects = new();
+    private MemoryOptimizerStatus? _lastStatus;
+    private bool _lastCanOptimize;
+    private bool _lastCanPause;
     private bool _isShown;
     private bool _disableInProgress;
     private bool _isClosed;
@@ -68,6 +72,7 @@ internal sealed partial class TrayMenuWindow : Window
 
         Activated += OnActivated;
         Closed += OnClosed;
+        MenuRoot.ActualThemeChanged += (_, _) => UpdateState(_lastStatus, _lastCanOptimize, _lastCanPause);
         RemoveNonClientFrame();
         ApplyWindowChrome();
         UpdateState(status, canOptimize, canPause);
@@ -187,26 +192,50 @@ internal sealed partial class TrayMenuWindow : Window
             return;
         }
 
+        _lastStatus = status;
+        _lastCanOptimize = canOptimize;
+        _lastCanPause = canPause;
         TrayMenuState state = TrayMenuState.Create(status, canOptimize, canPause, CultureInfo.CurrentCulture);
         MemoryPercentText.Text = state.PercentText;
         AvailableMemoryText.Text = state.AvailableText;
         MemoryUsageText.Text = state.UsageText;
+        double previousPercent = RamProgressBar.Value;
         RamProgressBar.Value = state.Percent ?? 0;
+        _effects.Tween(RamProgressBar, previousPercent, RamProgressBar.Value, _isShown && AppWindow.IsVisible);
         RamProgressBar.Opacity = state.Percent.HasValue ? 1 : 0.25;
         MemoryPressureText.Text = state.PressureText;
         MemoryStatusText.Text = state.StatusText;
         ServiceDetailText.Text = state.DetailText;
         ToolTipService.SetToolTip(ServiceDetailText, state.DetailText);
-        ServiceStatusDot.Fill = (Brush)Application.Current.Resources[state.StatusBrush];
-        MemoryPercentText.Foreground = (Brush)Application.Current.Resources[state.PressureBrush];
+        ServiceStatusDot.Fill = ResourceBrush(state.StatusBrush);
+        MemoryPercentText.Foreground = ResourceBrush(state.PressureBrush);
         RamProgressBar.Foreground = MemoryPercentText.Foreground;
         PauseMenuTitle.Text = state.PauseText;
         PauseMenuIcon.Glyph = status?.IsPaused == true ? "\uE768" : "\uE769";
-        OptimizeMenuTitle.Text = state.IsBusy ? "Optymalizacja w toku…" : "Optymalizuj zapisany profil";
+        OptimizeMenuTitle.Text = state.IsBusy ? "Optymalizacja w toku…" : "Optymalizuj teraz";
         OptimizeMenuButton.IsEnabled = state.CanOptimize;
         PauseMenuButton.IsEnabled = state.CanPause;
-        OptimizeProgress.IsActive = state.IsBusy;
-        OptimizeProgress.Opacity = state.IsBusy ? 1 : 0;
+        bool animateBusy = state.IsBusy && _isShown && AppWindow.IsVisible && _effects.AnimationsEnabled;
+        OptimizeProgress.IsActive = animateBusy;
+        OptimizeProgress.Opacity = animateBusy ? 1 : 0;
+    }
+
+    private Brush ResourceBrush(string key)
+    {
+        string themeKey = MenuRoot.ActualTheme == ElementTheme.Light
+            ? "Light"
+            : "Default";
+        if (Application.Current.Resources.ThemeDictionaries.TryGetValue(
+                themeKey,
+                out object? dictObj) &&
+            dictObj is ResourceDictionary themeDict &&
+            themeDict.TryGetValue(key, out object? brushObj) &&
+            brushObj is Brush themeBrush)
+        {
+            return themeBrush;
+        }
+
+        return (Brush)Application.Current.Resources[key];
     }
 
     /// <summary>
@@ -357,6 +386,8 @@ internal sealed partial class TrayMenuWindow : Window
         _isShown = true;
         PositionAtCursor();
         Activate();
+        UpdateState(_lastStatus, _lastCanOptimize, _lastCanPause);
+        _effects.Fade(MenuRoot, isVisible: true);
         _ = DispatcherQueue.TryEnqueue(() =>
         {
             if (_isClosed)
@@ -439,6 +470,8 @@ internal sealed partial class TrayMenuWindow : Window
 
     private void OnClosed(object sender, WindowEventArgs args)
     {
+        _effects.Stop();
+        OptimizeProgress.IsActive = false;
         _isClosed = true;
         _isShown = false;
         Activated -= OnActivated;

@@ -9,6 +9,9 @@ internal sealed class MemoryServiceRuntime : IAsyncDisposable
     private readonly ConcurrentDictionary<string, UserEndpoint> _users = new(
         StringComparer.OrdinalIgnoreCase);
     private Task? _discoveryTask;
+    private readonly ServiceWakeSignal _sessionChanged = new();
+
+    internal void RefreshUsers() => _sessionChanged.Wake();
 
     internal void Start()
     {
@@ -46,6 +49,7 @@ internal sealed class MemoryServiceRuntime : IAsyncDisposable
         }
 
         _lifetime.Dispose();
+        _sessionChanged.Dispose();
     }
 
     private async Task DiscoverUsersAsync(CancellationToken cancellationToken)
@@ -99,8 +103,8 @@ internal sealed class MemoryServiceRuntime : IAsyncDisposable
                 }
             }
 
-            await Task.Delay(
-                TimeSpan.FromSeconds(5),
+            await _sessionChanged.WaitAsync(
+                TimeSpan.FromMinutes(1),
                 cancellationToken).ConfigureAwait(false);
         }
     }

@@ -6,6 +6,32 @@ namespace Dismode.UnitTests;
 public sealed class EdgePanelStateTests
 {
     [TestMethod]
+    public void ForegroundChangeRestoresHandleAndStripWithoutActivation()
+    {
+        DirectoryInfo? directory = new(AppContext.BaseDirectory);
+        while (directory is not null && !File.Exists(Path.Combine(directory.FullName, "Dismode.sln")))
+        {
+            directory = directory.Parent;
+        }
+
+        Assert.IsNotNull(directory);
+        string uiRoot = Path.Combine(directory.FullName, "src", "Dismode.UI");
+        string main = File.ReadAllText(Path.Combine(uiRoot, "MainWindow.xaml.cs"));
+        string foregroundHandler = main[main.IndexOf("private void OnForegroundProcessChanged", StringComparison.Ordinal)..];
+        foregroundHandler = foregroundHandler[..foregroundHandler.IndexOf("private void ApplyPreparedPlan", StringComparison.Ordinal)];
+        StringAssert.Contains(foregroundHandler, "_edgePanel?.OnForegroundChanged();");
+        string panel = File.ReadAllText(Path.Combine(uiRoot, "EdgePanelWindow.xaml.cs"));
+        StringAssert.Contains(panel, "internal void OnForegroundChanged()");
+        StringAssert.Contains(panel, "_handle.AssertTopmost();");
+        string handle = File.ReadAllText(Path.Combine(uiRoot, "EdgePanelHandleWindow.cs"));
+        StringAssert.Contains(handle, "internal void AssertTopmost() => _native.AssertTopmost();");
+        string native = File.ReadAllText(Path.Combine(uiRoot, "Services", "EdgePanelNativeWindow.cs"));
+        StringAssert.Contains(native, "TopmostZOrderFlags = 0x0010 | 0x0002 | 0x0001;");
+        StringAssert.Contains(native, "SetWindowPos(_stripHandle, new(-1), 0, 0, 0, 0, TopmostZOrderFlags)");
+        StringAssert.Contains(native, "SetWindowPos(_handle, new(-1), 0, 0, 0, 0, TopmostZOrderFlags)");
+    }
+
+    [TestMethod]
     public void HoverRequiresDwellAndLeaveRequiresDelay()
     {
         FakeClock clock = new();
@@ -17,7 +43,7 @@ public sealed class EdgePanelStateTests
         clock.Advance(1);
         panel.Tick();
         Assert.AreEqual(EdgePanelState.Opening, panel.State);
-        clock.Advance(180);
+        clock.Advance(240);
         panel.Tick();
         Assert.AreEqual(EdgePanelState.Open, panel.State);
         panel.SetPointerInside(false);
@@ -27,33 +53,40 @@ public sealed class EdgePanelStateTests
         clock.Advance(1);
         panel.Tick();
         Assert.AreEqual(EdgePanelState.Closing, panel.State);
-        clock.Advance(180);
+        clock.Advance(160);
         panel.Tick();
         Assert.AreEqual(EdgePanelState.Closed, panel.State);
     }
 
     [TestMethod]
-    public void EdgeStripCoversTheMiddleOfTheRightEdgeAndLeavesCornersFree()
+    public void HotZoneGeometryCoversRightmostTwoPixelsAndHandleWhileKeepingCornersFree()
     {
-        EdgePanelRect strip = EdgePanelHotZone.EdgeStrip(new(0, 0, 2560, 1440));
+        EdgePanelRect monitor = new(0, 0, 2560, 1440);
+        EdgePanelRect handle = new(2548, 672, 12, 96);
+        EdgePanelRect strip = EdgePanelMetrics.GetHotStripBounds(monitor);
         Assert.AreEqual(new EdgePanelRect(2558, 288, 2, 864), strip);
-        Assert.IsTrue(strip.Contains(2559, 720));
-        Assert.IsTrue(strip.Contains(2558, 288));
-        Assert.IsFalse(strip.Contains(2557, 720));
-        Assert.IsFalse(strip.Contains(2559, 100));
-        Assert.IsFalse(strip.Contains(2559, 1400));
-        Assert.AreEqual(
-            new EdgePanelRect(-2, 216, 2, 648),
-            EdgePanelHotZone.EdgeStrip(new(-1920, 0, 1920, 1080)));
-    }
 
-    [TestMethod]
-    public void LeaveBoundsForgiveSmallOvershoot()
-    {
-        EdgePanelRect leave = new EdgePanelRect(2220, 296, 340, 800).Inflate(32);
-        Assert.AreEqual(new EdgePanelRect(2188, 264, 404, 864), leave);
-        Assert.IsTrue(leave.Contains(2188, 700));
-        Assert.IsFalse(leave.Contains(2187, 700));
+        // Rogi pozostaja wolne dla przycisku zamykania i obszaru powiadomien.
+        Assert.IsFalse(EdgePanelMetrics.IsInHotZone(2559, 0, monitor, handle));
+        Assert.IsFalse(EdgePanelMetrics.IsInHotZone(2559, 287, monitor, handle));
+        Assert.IsFalse(EdgePanelMetrics.IsInHotZone(2559, 1152, monitor, handle));
+        Assert.IsFalse(EdgePanelMetrics.IsInHotZone(2559, 1439, monitor, handle));
+
+        // Dwa skrajne piksele od 20% do 80% wysokosci otwieraja panel.
+        Assert.IsTrue(EdgePanelMetrics.IsInHotZone(2558, 288, monitor, handle));
+        Assert.IsTrue(EdgePanelMetrics.IsInHotZone(2559, 500, monitor, handle));
+        Assert.IsTrue(EdgePanelMetrics.IsInHotZone(2558, 1151, monitor, handle));
+        Assert.IsFalse(EdgePanelMetrics.IsInHotZone(2557, 400, monitor, handle));
+
+        // Widoczny uchwyt dziala na calej szerokosci.
+        Assert.IsTrue(EdgePanelMetrics.IsInHotZone(2548, 700, monitor, handle));
+
+        // Po pierwszym wejsciu karta zachowuje margines 32 DIP.
+        EdgePanelRect card = new(2086, 400, 450, 600);
+        Assert.IsFalse(EdgePanelMetrics.IsInOpenPanelZone(2050, 500, card, monitor, handle, scale: 1.5, pointerEntered: false));
+        Assert.IsTrue(EdgePanelMetrics.IsInOpenPanelZone(2050, 500, card, monitor, handle, scale: 1.5, pointerEntered: true));
+        Assert.IsTrue(EdgePanelMetrics.IsInOpenPanelZone(2038, 500, card, monitor, handle, scale: 1.5, pointerEntered: true));
+        Assert.IsFalse(EdgePanelMetrics.IsInOpenPanelZone(2037, 500, card, monitor, handle, scale: 1.5, pointerEntered: true));
     }
 
     [TestMethod]
@@ -68,13 +101,13 @@ public sealed class EdgePanelStateTests
         panel.Tick();
         Assert.AreEqual(EdgePanelState.Closed, panel.State);
         panel.Toggle();
-        clock.Advance(180);
+        clock.Advance(240);
         panel.Tick();
         panel.SetPointerInside(true);
         panel.SetPointerInside(false);
-        clock.Advance(300);
+        clock.Advance(650);
         panel.SetPointerInside(true);
-        clock.Advance(500);
+        clock.Advance(800);
         panel.Tick();
         Assert.AreEqual(EdgePanelState.Open, panel.State);
     }
@@ -114,13 +147,46 @@ public sealed class EdgePanelStateTests
         FakeClock clock = new();
         EdgePanelStateMachine panel = new(clock);
         panel.Toggle();
-        clock.Advance(180);
+        clock.Advance(240);
         panel.Tick();
-        clock.Advance(1000);
+        clock.Advance(10000);
         panel.Tick();
         Assert.AreEqual(EdgePanelState.Open, panel.State);
+        Assert.IsFalse(panel.HasPointerEntered);
         panel.SetPointerInside(true);
+        Assert.IsTrue(panel.HasPointerEntered);
         panel.SetPointerInside(false);
+        clock.Advance(699);
+        panel.Tick();
+        Assert.AreEqual(EdgePanelState.Open, panel.State);
+        clock.Advance(1);
+        panel.Tick();
+        Assert.AreEqual(EdgePanelState.Closing, panel.State);
+    }
+
+    [TestMethod]
+    public void DialogKeepsPanelOpenOnLeaveAndResetsLeaveGraceWhenDialogCloses()
+    {
+        FakeClock clock = new();
+        EdgePanelStateMachine panel = new(clock);
+        panel.SetPointerInside(true);
+        clock.Advance(250);
+        panel.Tick();
+        clock.Advance(240);
+        panel.Tick();
+        Assert.AreEqual(EdgePanelState.Open, panel.State);
+
+        panel.SetDialogOpen(true);
+        panel.SetPointerInside(false);
+        clock.Advance(5000);
+        panel.Tick();
+        Assert.AreEqual(EdgePanelState.Open, panel.State);
+        panel.Close();
+        Assert.AreEqual(EdgePanelState.Open, panel.State);
+        panel.Toggle();
+        Assert.AreEqual(EdgePanelState.Open, panel.State);
+
+        panel.SetDialogOpen(false);
         clock.Advance(699);
         panel.Tick();
         Assert.AreEqual(EdgePanelState.Open, panel.State);
@@ -144,6 +210,110 @@ public sealed class EdgePanelStateTests
         hotkey.Release();
         hotkey.Release();
         Assert.AreEqual(1, releases);
+    }
+
+    [TestMethod]
+    public void ClosedPanelNeedsNoTimerExceptDuringHoverDwell()
+    {
+        FakeClock clock = new();
+        EdgePanelStateMachine panel = new(clock);
+        Assert.IsFalse(panel.NeedsTimer);
+        panel.SetPointerInside(true);
+        Assert.IsTrue(panel.NeedsTimer);
+        panel.SetPointerInside(false);
+        Assert.IsFalse(panel.NeedsTimer);
+        panel.Toggle();
+        Assert.IsTrue(panel.NeedsTimer);
+        clock.Advance(240);
+        panel.Tick();
+        panel.SetPointerInside(true);
+        panel.Close();
+        clock.Advance(160);
+        panel.Tick();
+        Assert.IsFalse(panel.NeedsTimer);
+        panel.SetPointerInside(false);
+        panel.SetPointerInside(true);
+        Assert.IsTrue(panel.NeedsTimer);
+    }
+
+    [TestMethod]
+    public void DisabledAnimationsKeepHoverDelaysButCompleteTransitionsImmediately()
+    {
+        FakeClock clock = new();
+        EdgePanelStateMachine panel = new(clock) { AnimationsEnabled = false };
+        panel.SetPointerInside(true);
+        clock.Advance(249);
+        panel.Tick();
+        Assert.AreEqual(EdgePanelState.Closed, panel.State);
+        clock.Advance(1);
+        panel.Tick();
+        Assert.AreEqual(EdgePanelState.Open, panel.State);
+        Assert.AreEqual(1, panel.Reveal);
+        panel.Close();
+        Assert.AreEqual(EdgePanelState.Closed, panel.State);
+        Assert.IsFalse(panel.NeedsTimer);
+    }
+
+    [TestMethod]
+    [DataRow(-10, 0, 1d)]
+    [DataRow(0, 0, 1d)]
+    [DataRow(50, 50, 0.5d)]
+    [DataRow(90, 90, 0.1d)]
+    [DataRow(200, 90, 0.1d)]
+    public void TransparencyClampsAndDoesNotPreventHover(int input, int expected, double opacity)
+    {
+        EdgePanelPreferences preferences = new(true, input);
+        Assert.AreEqual(expected, preferences.HandleTransparencyPercent);
+        Assert.AreEqual(opacity, preferences.HandleOpacity, 0.00001);
+        FakeClock clock = new();
+        EdgePanelStateMachine panel = new(clock);
+        panel.SetPointerInside(EdgePanelMetrics.IsInHotZone(2559, 400,
+            new(0, 0, 2560, 1440), new(2548, 672, 12, 96)));
+        clock.Advance(250);
+        panel.Tick();
+        Assert.AreEqual(EdgePanelState.Opening, panel.State);
+    }
+
+    [TestMethod]
+    public void OverlaySegmentsMapOffAndEveryStyleInVisualOrder()
+    {
+        Dismode.Core.Profiles.PerformanceOverlayStyle[] styles =
+        [
+            Dismode.Core.Profiles.PerformanceOverlayStyle.MinimalText,
+            Dismode.Core.Profiles.PerformanceOverlayStyle.FpsAndLows,
+            Dismode.Core.Profiles.PerformanceOverlayStyle.CompactBar,
+            Dismode.Core.Profiles.PerformanceOverlayStyle.FullDeck,
+        ];
+        for (int i = 0; i < styles.Length; i++)
+        {
+            Assert.AreEqual(0, EdgePanelMetrics.GetOverlaySegment(false, styles[i]));
+            Assert.AreEqual(i + 1, EdgePanelMetrics.GetOverlaySegment(true, styles[i]));
+            Assert.AreEqual(styles[i], EdgePanelMetrics.GetOverlayStyle(i + 1));
+        }
+        Assert.IsNull(EdgePanelMetrics.GetOverlayStyle(0));
+        Assert.IsNull(EdgePanelMetrics.GetOverlayStyle(5));
+    }
+
+    [TestMethod]
+    public void FpsHistoryUsesTimeWindowAndFixedCapacityAndRejectsInvalidReadings()
+    {
+        FakeClock clock = new();
+        EdgePanelMetrics history = new(clock);
+        history.Add(100);
+        history.Add(double.NaN);
+        history.Add(null);
+        clock.Advance(59000);
+        history.Add(120);
+        Assert.AreEqual(2, history.Read().Count);
+        clock.Advance(1001);
+        Assert.AreEqual(120d, history.Read().Single().Fps);
+        for (int i = 0; i < 1000; i++)
+        {
+            history.Add(i);
+        }
+        Assert.IsTrue(history.Read().Count <= EdgePanelMetrics.Capacity);
+        clock.Advance(60001);
+        Assert.AreEqual(0, history.Read().Count);
     }
 
     private sealed class FakeClock : TimeProvider

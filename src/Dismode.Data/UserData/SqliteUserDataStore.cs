@@ -3,6 +3,7 @@ using System.Globalization;
 using System.Text.Json;
 using Dismode.Core.Domain.Identifiers;
 using Dismode.Core.History;
+using Dismode.Core.Interaction;
 using Dismode.Core.Profiles;
 using Dismode.Core.Updates;
 using Dismode.Data.Storage;
@@ -18,9 +19,10 @@ public sealed class SqliteUserDataStore :
     IUpdatePreferencesRepository,
     IGameDetectionPreferencesRepository,
     IGlobalBackgroundRuleRepository,
+    IEdgePanelPreferencesRepository,
     IDisposable
 {
-    private const int CurrentSchemaVersion = 23;
+    private const int CurrentSchemaVersion = 24;
     private const int MaximumGlobalRuleCount = 128;
     private const int MaximumHistoryPageSize = 1000;
 
@@ -820,6 +822,38 @@ public sealed class SqliteUserDataStore :
         command.CommandText = "SELECT IsEnabled FROM EdgePanelPreferences WHERE SettingsKey = 1;";
         object? value = await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false);
         return value is null || Convert.ToInt32(value, CultureInfo.InvariantCulture) != 0;
+    }
+
+    public async ValueTask<EdgePanelPreferences> LoadEdgePanelPreferencesAsync(CancellationToken cancellationToken)
+    {
+        await InitializeAsync(cancellationToken).ConfigureAwait(false);
+        await using SqliteConnection connection = CreateConnection();
+        await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
+        await ConfigureConnectionAsync(connection, cancellationToken).ConfigureAwait(false);
+        await using SqliteCommand command = connection.CreateCommand();
+        command.CommandText = "SELECT IsEnabled, HandleTransparencyPercent FROM EdgePanelPreferences WHERE SettingsKey = 1;";
+        await using SqliteDataReader reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+        return await reader.ReadAsync(cancellationToken).ConfigureAwait(false)
+            ? new(reader.GetInt32(0) != 0, reader.GetInt32(1)) : new();
+    }
+
+    public async ValueTask SaveEdgePanelPreferencesAsync(EdgePanelPreferences preferences, CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(preferences);
+        await InitializeAsync(cancellationToken).ConfigureAwait(false);
+        await using SqliteConnection connection = CreateConnection();
+        await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
+        await ConfigureConnectionAsync(connection, cancellationToken).ConfigureAwait(false);
+        await using SqliteCommand command = connection.CreateCommand();
+        command.CommandText = """
+            INSERT INTO EdgePanelPreferences (SettingsKey, IsEnabled, HandleTransparencyPercent)
+            VALUES (1, $enabled, $transparency)
+            ON CONFLICT(SettingsKey) DO UPDATE SET IsEnabled = excluded.IsEnabled,
+                HandleTransparencyPercent = excluded.HandleTransparencyPercent;
+            """;
+        command.Parameters.AddWithValue("$enabled", preferences.IsEnabled ? 1 : 0);
+        command.Parameters.AddWithValue("$transparency", preferences.HandleTransparencyPercent);
+        await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
     }
 
     public async ValueTask SaveEdgePanelEnabledAsync(bool enabled, CancellationToken cancellationToken)
@@ -2254,6 +2288,23 @@ public sealed class SqliteUserDataStore :
             await schema.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
             await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
         }
+
+        if (existingVersion < 24)
+        {
+            await using SqliteTransaction transaction =
+                (SqliteTransaction)await connection.BeginTransactionAsync(
+                    IsolationLevel.Serializable, cancellationToken).ConfigureAwait(false);
+            await using SqliteCommand schema = connection.CreateCommand();
+            schema.Transaction = transaction;
+            schema.CommandText = """
+                ALTER TABLE EdgePanelPreferences ADD COLUMN HandleTransparencyPercent INTEGER NOT NULL DEFAULT 50
+                    CHECK (HandleTransparencyPercent BETWEEN 0 AND 90);
+                INSERT INTO SchemaMigrations (Version, AppliedAtUtc) VALUES (24, $appliedAtUtc);
+                """;
+            schema.Parameters.AddWithValue("$appliedAtUtc", FormatTimestamp(DateTimeOffset.UtcNow));
+            await schema.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+            await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
+        }
     }
 
     private static async ValueTask VerifyRequiredSchemaAsync(
@@ -2356,6 +2407,10 @@ public sealed class SqliteUserDataStore :
 
                 SELECT ExecutablePath, ActionMode, UpdatedAtUtc
                 FROM GlobalBackgroundProcessRules
+                LIMIT 0;
+
+                SELECT SettingsKey, IsEnabled, HandleTransparencyPercent
+                FROM EdgePanelPreferences
                 LIMIT 0;
                 """;
             await columns.ExecuteNonQueryAsync(cancellationToken)
