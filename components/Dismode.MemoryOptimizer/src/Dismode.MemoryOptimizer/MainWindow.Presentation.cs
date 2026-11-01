@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-only
+using Dismode.MemoryOptimizer.Presentation;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls.Primitives;
 using Microsoft.UI.Xaml.Media.Animation;
@@ -12,6 +13,8 @@ internal sealed class TacticalVfxService
     private readonly UISettings _settings = new();
 
     public bool IsEnabled { get; set; } = true;
+
+    public bool AnimationsEnabled => IsEnabled && _settings.AnimationsEnabled;
 
     public void Fade(UIElement element, bool isVisible) =>
         Animate(element, "Opacity", 0.86, 1, isVisible);
@@ -78,11 +81,30 @@ public sealed partial class MainWindow
     private void StopPresentationAnimations()
     {
         _effects.Stop();
+        RamUsageRing.IsActive = false;
         OptimizeProgressRing.IsActive = false;
         OptimizeProgressRing.Opacity = 0;
         SaveProgressRing.IsActive = false;
         SaveProgressRing.Opacity = 0;
+        CompactBusyProgress.IsIndeterminate = false;
         CompactBusyProgress.Opacity = 0;
+    }
+
+    private void UpdateActivityIndicators()
+    {
+        MemoryActivityState activity = MemoryActivityState.Create(
+            _refreshPolicy.IsVisible,
+            _refreshPolicy.IsCompact,
+            _operationGate.IsRunning || (_status?.IsOptimizationRunning ?? false),
+            _settingsDraft.IsSaving,
+            _effects.AnimationsEnabled);
+        RamUsageRing.IsActive = activity.RamUsage;
+        OptimizeProgressRing.IsActive = activity.Optimize;
+        OptimizeProgressRing.Opacity = activity.Optimize ? 1 : 0;
+        SaveProgressRing.IsActive = activity.Save;
+        SaveProgressRing.Opacity = activity.Save ? 1 : 0;
+        CompactBusyProgress.IsIndeterminate = activity.Compact;
+        CompactBusyProgress.Opacity = activity.Compact ? 1 : 0;
     }
 
     private void AnimateCurrentPage()

@@ -77,6 +77,7 @@ public sealed partial class MainWindow : Window
         Closed += (_, _) =>
         {
             _refreshTimer.Stop();
+            StopPresentationAnimations();
             AppWindow.Closing -= AppWindow_Closing;
             AppWindow.Changed -= AppWindow_Changed;
         };
@@ -114,6 +115,8 @@ public sealed partial class MainWindow : Window
         await RefreshAsync(loadSettings: true).ConfigureAwait(true);
         UpdateRefreshActivity();
     }
+
+    internal Task RefreshForTrayAsync() => RefreshAsync(loadSettings: false);
 
     internal async Task OptimizeNowAsync()
     {
@@ -327,9 +330,9 @@ public sealed partial class MainWindow : Window
         {
             _serviceAvailable = false;
             ShowError(
-                "Usługa Memory Optimizer jest niedostępna. " +
-                exception.Message,
+                "Usługa Memory Optimizer jest niedostępna.",
                 isServiceConnectionError: true);
+            ToolTipService.SetToolTip(GlobalInfoBar, exception.Message);
             TitleBarStatusText.Text = "Usługa offline";
             ServiceStatusDot.Fill = ResourceBrush("MemoryDangerBrush");
             ServiceStatusTitle.Text = "Brak połączenia z usługą";
@@ -603,8 +606,6 @@ public sealed partial class MainWindow : Window
         _settingsDraft.Edit(BuildSettingsFromControls());
         _settingsRevision++;
         SaveButton.IsEnabled = false;
-        SaveProgressRing.IsActive = true;
-        SaveProgressRing.Opacity = 1;
         DirtyBarMessage.Text = "Zapisywanie i walidowanie ustawień…";
         try
         {
@@ -632,8 +633,6 @@ public sealed partial class MainWindow : Window
         }
         finally
         {
-            SaveProgressRing.IsActive = false;
-            SaveProgressRing.Opacity = 0;
             SetDirty(_settingsDraft.HasChanges);
             UpdateOperationState();
         }
@@ -993,6 +992,8 @@ public sealed partial class MainWindow : Window
                 compact ? 420 : 1180,
                 compact ? 240 : 850);
         }
+
+        UpdateActivityIndicators();
     }
 
     private void UpdateOperationState()
@@ -1010,9 +1011,7 @@ public sealed partial class MainWindow : Window
         CompactPinButton.IsEnabled = _serviceAvailable && !saving && !_pauseInProgress && interactive;
         CompactModeButton.IsEnabled = _serviceAvailable && !saving && !_pauseInProgress && interactive;
         CompactExpandButton.IsEnabled = !saving && interactive;
-        CompactBusyProgress.Opacity = busy || saving ? 1 : 0;
-        OptimizeProgressRing.IsActive = busy;
-        OptimizeProgressRing.Opacity = busy ? 1 : 0;
+        UpdateActivityIndicators();
         TrayStatusChanged?.Invoke(
             this,
             new(_status?.Memory.MemoryLoadPercent ?? 0, _status?.IsPaused ?? false));
@@ -1096,7 +1095,8 @@ public sealed partial class MainWindow : Window
     {
         double scale = RootLayout.XamlRoot?.RasterizationScale ?? GetDpiForWindow(WindowHandle) / 96d;
         TitleBarLeftInset.Width = new(AppWindow.TitleBar.LeftInset / scale);
-        TitleBarRightInset.Width = new(Math.Max(138d, AppWindow.TitleBar.RightInset / scale));
+        double minimumInset = _isCompactMode ? 138d : 208d;
+        TitleBarRightInset.Width = new(Math.Max(minimumInset, AppWindow.TitleBar.RightInset / scale));
     }
 
     private void TitleBar_SizeChanged(object sender, SizeChangedEventArgs e)
@@ -1161,7 +1161,6 @@ public sealed partial class MainWindow : Window
             return;
         }
 
-        if (Environment.GetEnvironmentVariable("DISMODE_UI_PREVIEW") == "1") { presenter.PreferredMinimumWidth = 1; presenter.PreferredMinimumHeight = 1; return; } // PREVIEW-HACK
         double scale = RootLayout.XamlRoot?.RasterizationScale ?? GetDpiForWindow(WindowHandle) / 96d;
         RectInt32 workArea = DisplayArea.GetFromWindowId(
             AppWindow.Id, DisplayAreaFallback.Primary).WorkArea;
@@ -1614,6 +1613,7 @@ public sealed partial class MainWindow : Window
         if (_refreshPolicy.ShouldPollStatus)
         {
             _refreshTimer.Start();
+            UpdateActivityIndicators();
         }
         else
         {

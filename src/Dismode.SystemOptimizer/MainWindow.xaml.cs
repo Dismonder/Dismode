@@ -143,6 +143,7 @@ public sealed partial class MainWindow : Window
         if (IsPresentationVisible && RootLayout.IsLoaded)
         {
             _refreshTimer.Start();
+            UpdateOperationSurface();
         }
         else
         {
@@ -1263,8 +1264,9 @@ public sealed partial class MainWindow : Window
     private void UpdateOperationSurface()
     {
         bool busy = _operationInProgress || _refreshInProgress;
-        OperationProgressRing.IsActive = busy;
-        OperationProgressRing.Opacity = busy ? 1 : 0;
+        bool animateBusy = busy && IsPresentationVisible && _effects.AnimationsEnabled;
+        OperationProgressRing.IsActive = animateBusy;
+        OperationProgressRing.Opacity = animateBusy ? 1 : 0;
         RefreshButton.IsEnabled = !busy;
         if (_status is not null)
         {
@@ -1341,8 +1343,9 @@ public sealed partial class MainWindow : Window
         TitleBarModeText.Text = "Offline";
         SetServiceState(
             "Usługa System Optimizer jest niedostępna",
-            details,
+            "Otwórz Dismode, aby sprawdzić połączenie.",
             "OptimizerDangerBrush");
+        ToolTipService.SetToolTip(ServiceStatusMessage, details);
         OverviewStateText.Text = "Brak połączenia z usługą";
         OverviewDetailText.Text =
             "Sprawdź instalację usługi DismodeSystemAgent i jej stan.";
@@ -1451,7 +1454,6 @@ public sealed partial class MainWindow : Window
             return;
         }
 
-        if (Environment.GetEnvironmentVariable("DISMODE_UI_PREVIEW") == "1") { presenter.PreferredMinimumWidth = 1; presenter.PreferredMinimumHeight = 1; return; } // PREVIEW-HACK
         double scale = GetWindowScale();
         DisplayArea display = DisplayArea.GetFromWindowId(
             AppWindow.Id,
@@ -1472,7 +1474,7 @@ public sealed partial class MainWindow : Window
     {
         double scale = GetWindowScale();
         TitleBarLeftInset.Width = new(AppWindow.TitleBar.LeftInset / scale);
-        TitleBarRightInset.Width = new(Math.Max(138d, AppWindow.TitleBar.RightInset / scale));
+        TitleBarRightInset.Width = new(Math.Max(208d, AppWindow.TitleBar.RightInset / scale));
     }
 
     private double GetWindowScale() =>

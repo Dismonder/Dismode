@@ -23,7 +23,7 @@
         <Grid.ColumnDefinitions>
           <ColumnDefinition x:Name="TitleBarLeftInset" Width="0" />
           <ColumnDefinition Width="*" />
-          <ColumnDefinition x:Name="TitleBarRightInset" Width="138" />
+          <ColumnDefinition x:Name="TitleBarRightInset" Width="208" />
         </Grid.ColumnDefinitions>
         <Grid
             x:Name="TitleBarDragRegion"
@@ -209,7 +209,7 @@
                     <TextBlock Text="Przegląd" Style="{StaticResource OptimizerPageTitleStyle}" />
                     <StackPanel Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
                       <TextBlock
-                          Text="Bezpieczne poprawki pod gry — każdą zmianę cofniesz jednym kliknięciem."
+                          Text="Bezpieczne poprawki pod gry. Zmiany możesz cofnąć."
                           Style="{StaticResource OptimizerMutedTextStyle}"
                           VerticalAlignment="Center" />
                       <ToggleButton

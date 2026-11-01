@@ -26,6 +26,7 @@ internal sealed partial class TrayMenuWindow : Window
     private readonly Func<Task> _togglePause;
     private readonly Func<Task<bool>> _disable;
     private readonly Action _exit;
+    private readonly TacticalVfxService _effects = new();
     private MemoryOptimizerStatus? _lastStatus;
     private bool _lastCanOptimize;
     private bool _lastCanPause;
@@ -198,7 +199,9 @@ internal sealed partial class TrayMenuWindow : Window
         MemoryPercentText.Text = state.PercentText;
         AvailableMemoryText.Text = state.AvailableText;
         MemoryUsageText.Text = state.UsageText;
+        double previousPercent = RamProgressBar.Value;
         RamProgressBar.Value = state.Percent ?? 0;
+        _effects.Tween(RamProgressBar, previousPercent, RamProgressBar.Value, _isShown && AppWindow.IsVisible);
         RamProgressBar.Opacity = state.Percent.HasValue ? 1 : 0.25;
         MemoryPressureText.Text = state.PressureText;
         MemoryStatusText.Text = state.StatusText;
@@ -212,8 +215,9 @@ internal sealed partial class TrayMenuWindow : Window
         OptimizeMenuTitle.Text = state.IsBusy ? "Optymalizacja w toku…" : "Optymalizuj teraz";
         OptimizeMenuButton.IsEnabled = state.CanOptimize;
         PauseMenuButton.IsEnabled = state.CanPause;
-        OptimizeProgress.IsActive = state.IsBusy;
-        OptimizeProgress.Opacity = state.IsBusy ? 1 : 0;
+        bool animateBusy = state.IsBusy && _isShown && AppWindow.IsVisible && _effects.AnimationsEnabled;
+        OptimizeProgress.IsActive = animateBusy;
+        OptimizeProgress.Opacity = animateBusy ? 1 : 0;
     }
 
     private Brush ResourceBrush(string key)
@@ -382,6 +386,8 @@ internal sealed partial class TrayMenuWindow : Window
         _isShown = true;
         PositionAtCursor();
         Activate();
+        UpdateState(_lastStatus, _lastCanOptimize, _lastCanPause);
+        _effects.Fade(MenuRoot, isVisible: true);
         _ = DispatcherQueue.TryEnqueue(() =>
         {
             if (_isClosed)
@@ -464,6 +470,8 @@ internal sealed partial class TrayMenuWindow : Window
 
     private void OnClosed(object sender, WindowEventArgs args)
     {
+        _effects.Stop();
+        OptimizeProgress.IsActive = false;
         _isClosed = true;
         _isShown = false;
         Activated -= OnActivated;

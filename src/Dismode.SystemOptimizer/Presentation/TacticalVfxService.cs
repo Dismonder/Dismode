@@ -11,6 +11,8 @@ internal sealed class TacticalVfxService
 
     public bool IsEnabled { get; set; } = true;
 
+    public bool AnimationsEnabled => IsEnabled && _settings.AnimationsEnabled;
+
     public void Fade(UIElement element, bool isVisible) =>
         Animate(element, "Opacity", 0.86, 1, isVisible);
 

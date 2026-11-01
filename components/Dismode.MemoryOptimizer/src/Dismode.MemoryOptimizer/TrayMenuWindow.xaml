@@ -176,6 +176,7 @@
               <StackPanel Spacing="8">
                 <TextBlock Text="Wyłączyć cały moduł?" FontSize="17" FontWeight="SemiBold" />
                 <TextBlock Text="Zatrzymamy usługę i autostart. Historia pozostanie na dysku."
+                           ToolTipService.ToolTip="Zatrzymamy usługę i wyłączymy start z Windows. Optymalizacja w tle przestanie działać. Dane i historia pozostaną na dysku."
                            FontSize="13" TextWrapping="Wrap" />
               </StackPanel>
             </Border>

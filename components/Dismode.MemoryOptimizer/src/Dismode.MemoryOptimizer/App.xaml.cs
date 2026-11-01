@@ -31,7 +31,6 @@ public partial class App : Application
 
     protected override void OnLaunched(LaunchActivatedEventArgs args)
     {
-        if (Environment.GetEnvironmentVariable("DISMODE_UI_PREVIEW") == "1") { P3Preview.Run(); return; } // PREVIEW-HACK
         if (!OperatingSystem.IsWindowsVersionAtLeast(10, 0, 22631))
         {
             Exit();
@@ -175,6 +174,7 @@ public partial class App : Application
         {
             existing.UpdateState(window.CurrentTrayStatus, window.CanOptimizeFromTray, window.CanPauseFromTray);
             existing.ShowAtCursor();
+            _ = window.RefreshForTrayAsync();
             return;
         }
 
@@ -204,6 +204,7 @@ public partial class App : Application
         _trayMenu = menu;
         menu.Dismissed += TrayMenu_Dismissed;
         menu.ShowAtCursor();
+        _ = window.RefreshForTrayAsync();
     }
 
     private void TrayMenu_Dismissed(object? sender, EventArgs e)

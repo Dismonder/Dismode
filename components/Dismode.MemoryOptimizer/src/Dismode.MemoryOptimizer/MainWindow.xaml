@@ -120,7 +120,7 @@
         <ColumnDefinition Width="Auto" />
         <ColumnDefinition Width="*" />
         <ColumnDefinition Width="Auto" />
-        <ColumnDefinition x:Name="TitleBarRightInset" Width="138" />
+        <ColumnDefinition x:Name="TitleBarRightInset" Width="208" />
       </Grid.ColumnDefinitions>
       <Border
           Grid.Column="1"
@@ -286,7 +286,7 @@
                             Visibility="Collapsed"
                             FontSize="12"
                             Style="{StaticResource MemoryMutedTextStyle}"
-                            Text="Bezpieczny profil przycina tylko nieużywane working sety procesów użytkownika poza wykluczeniami i aktywną grą." />
+                            Text="Bezpieczny profil przycina tylko nieużywane working sety procesów użytkownika poza wykluczeniami i aktywną grą. Usługa sprawdza grę i zabezpieczenia przed każdą operacją. Używa zapisanego profilu." />
                       </StackPanel>
                       <StackPanel
                           x:Name="OverviewHeaderActions"
@@ -441,7 +441,8 @@
                             <TextBlock Style="{StaticResource MemorySectionTitleStyle}" Text="Ostatnia minuta" />
                             <TextBlock
                                 Style="{StaticResource MemoryMutedTextStyle}"
-                                Text="Lokalny wykres użycia pamięci." />
+                                Text="Lokalny wykres użycia pamięci."
+                                ToolTipService.ToolTip="Krótki trend lokalny, bez zapisywania telemetrii." />
                           </StackPanel>
                           <TextBlock
                               x:Name="RamUsageSummaryText"
@@ -1203,7 +1204,7 @@
               MaxLines="2"
               TextTrimming="CharacterEllipsis"
               Foreground="{ThemeResource MemoryMutedBrush}" />
-          <ProgressBar x:Name="CompactBusyProgress" Grid.Row="4" Height="3" IsIndeterminate="True" Opacity="0" Visibility="Visible" />
+          <ProgressBar x:Name="CompactBusyProgress" Grid.Row="4" Height="3" IsIndeterminate="False" Opacity="0" Visibility="Visible" />
         </Grid>
       </Border>
     </Grid>

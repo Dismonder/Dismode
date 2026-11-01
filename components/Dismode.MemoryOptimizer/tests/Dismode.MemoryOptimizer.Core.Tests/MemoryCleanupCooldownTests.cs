@@ -49,8 +49,10 @@ public sealed class MemoryCleanupCooldownTests
         AutoOptimizationPolicy policy = new();
         MemoryOptimizerSettings settings = new()
         {
-            ScheduleEnabled = true, ScheduleIntervalMinutes = 60,
-            CooldownMinutes = 5, IdleCpuMinutes = 1,
+            ScheduleEnabled = true,
+            ScheduleIntervalMinutes = 60,
+            CooldownMinutes = 5,
+            IdleCpuMinutes = 1,
         };
         MemorySnapshot memory = LowMemory with { AvailablePhysicalBytes = 800 };
         policy.RecordCompleted(Now.AddMinutes(-59));
