@@ -57,6 +57,7 @@ public sealed class AccessibleNameTests
     [TestMethod]
     [DataRow("MainWindow.xaml")]
     [DataRow("PerformanceOverlayWindow.xaml")]
+    [DataRow("EdgePanelWindow.xaml")]
     public void EveryInteractiveControlAnnouncesWhatItIs(string fileName)
     {
         XDocument document = XDocument.Load(UiFilePath(fileName));
@@ -85,15 +86,32 @@ public sealed class AccessibleNameTests
                 + string.Join("\n", unnamed));
     }
 
+    [TestMethod]
+    public void TooltipTextDoesNotProvideAnAccessibleControlName()
+    {
+        XElement button = new(Presentation + "Button",
+            new XElement(Presentation + "ToolTipService.ToolTip",
+                new XElement(Presentation + "TextBlock", new XAttribute("Text", "Hint"))));
+        Assert.IsFalse(HasVisibleLabel(button));
+    }
+
+    [TestMethod]
+    public void EmptyAutomationNameDoesNotLabelAControl()
+    {
+        XElement button = new(Presentation + "Button", new XAttribute("AutomationProperties.Name", " "));
+        Assert.IsFalse(HasAutomationName(button));
+    }
+
     private static bool HasAutomationName(XElement element) =>
         element.Attributes().Any(attribute =>
-            attribute.Name.LocalName.Equals(
+            !string.IsNullOrWhiteSpace(attribute.Value)
+            && (attribute.Name.LocalName.Equals(
                 "AutomationProperties.Name",
                 StringComparison.Ordinal)
             || attribute.Name.LocalName.Equals(
                 "Name",
                 StringComparison.Ordinal)
-                && attribute.Name.Namespace == Presentation);
+                && attribute.Name.Namespace == Presentation));
 
     /// <summary>
     /// True when the control, or anything inside it, carries literal text. A
@@ -102,7 +120,10 @@ public sealed class AccessibleNameTests
     /// is about.
     /// </summary>
     private static bool HasVisibleLabel(XElement element) =>
-        element.DescendantsAndSelf().Any(descendant => descendant
+        element.DescendantsAndSelf()
+            .Where(descendant => !descendant.AncestorsAndSelf().Any(ancestor =>
+                ancestor.Name.LocalName == "ToolTipService.ToolTip"))
+            .Any(descendant => descendant
             .Attributes()
             .Any(attribute =>
                 LabelAttributes.Contains(

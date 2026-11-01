@@ -231,6 +231,7 @@ public sealed partial class PerformanceOverlayWindow : Window, IDisposable
             displayedFramesPerSecond, droppedFrames);
         if (_targetProcessId != processId)
         {
+            _frameTimeHistory.Clear();
             _layoutDirty = true;
         }
         _targetProcessId = processId;

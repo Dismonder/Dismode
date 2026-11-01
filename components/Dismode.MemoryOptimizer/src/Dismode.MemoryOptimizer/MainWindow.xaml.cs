@@ -96,6 +96,8 @@ public sealed partial class MainWindow : Window
 
     internal nint WindowHandle { get; }
 
+    internal bool HasTrayIcon { get; set; }
+
     internal MemoryOptimizerStatus? CurrentTrayStatus => _serviceAvailable && _status is { } status
         ? status with { IsOptimizationRunning = status.IsOptimizationRunning || _operationGate.IsRunning }
         : null;
@@ -1648,7 +1650,7 @@ public sealed partial class MainWindow : Window
         AppWindow sender,
         AppWindowClosingEventArgs args)
     {
-        if (_allowClose)
+        if (_allowClose || !HasTrayIcon)
         {
             return;
         }

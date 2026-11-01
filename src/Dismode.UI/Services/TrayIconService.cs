@@ -86,13 +86,14 @@ public sealed class TrayIconService : IDisposable
         {
             if (!ShellNotifyIcon(NotifyIconModify, ref _iconData))
             {
+                int registrationError = Marshal.GetLastWin32Error();
                 _ = RemoveWindowSubclass(
                     _windowHandle,
                     _subclassProcedure,
                     IconId);
                 _ = DestroyIcon(_iconHandle);
                 _disposed = true;
-                return;
+                throw new Win32Exception(registrationError);
             }
         }
 

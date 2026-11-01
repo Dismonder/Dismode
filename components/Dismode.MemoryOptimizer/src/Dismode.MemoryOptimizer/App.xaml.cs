@@ -110,6 +110,7 @@ public partial class App : Application
         _window.Activate();
         RegisterActivationSignal();
         _tray = TryCreateTray(_window);
+        _window.HasTrayIcon = _tray is not null;
         if (_tray is { } tray)
         {
             _window.TrayStatusChanged += (_, status) =>

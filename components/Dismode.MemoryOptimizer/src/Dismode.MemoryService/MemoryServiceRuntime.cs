@@ -92,6 +92,11 @@ internal sealed class MemoryServiceRuntime : IAsyncDisposable
                         await endpoint.DisposeAsync().ConfigureAwait(false);
                     }
                 }
+                catch (OperationCanceledException)
+                {
+                    await runtime.DisposeAsync().ConfigureAwait(false);
+                    throw;
+                }
                 catch (Exception exception) when (
                     exception is not OperationCanceledException)
                 {
