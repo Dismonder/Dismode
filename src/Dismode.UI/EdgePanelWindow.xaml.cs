@@ -303,7 +303,7 @@ public sealed partial class EdgePanelWindow : Window, IDisposable
         CpuText.Text = Metric(hardware.Cpu?.CpuPercent, "%");
         GpuText.Text = Metric(hardware.Gpu?.ThreeDPercent, "%");
         AnimateBars(hardware.Cpu?.CpuPercent, hardware.Gpu?.ThreeDPercent);
-        TemperatureText.Text = Metric(hardware.Vendor?.TemperatureCelsius, " °C");
+        TemperatureText.Text = Valid(hardware.Vendor?.TemperatureCelsius) is double celsius ? $"{celsius:0} °C" : "— °C";
         long? ram = SystemMemoryUsageReader.TryReadUsedPhysicalMemoryBytes();
         RamText.Text = "RAM  " + (ram is long bytes ? $"{bytes / 1073741824d:0.0} GB" : "—");
         LastSessionText.Visibility = content.LastSession is null ? Visibility.Collapsed : Visibility.Visible;

@@ -129,7 +129,7 @@
             </StackPanel>
           </Grid>
           <Grid><TextBlock x:Name="RamText" Text="RAM  —" FontFamily="Consolas" FontSize="12" />
-            <TextBlock x:Name="TemperatureText" Text="—" FontFamily="Consolas" FontSize="12" HorizontalAlignment="Right"
+            <TextBlock x:Name="TemperatureText" Text="— °C" FontFamily="Consolas" FontSize="12" HorizontalAlignment="Right"
                        ToolTipService.ToolTip="Temperatura GPU" AutomationProperties.Name="Temperatura GPU" /></Grid>
         </StackPanel>
         <TextBlock x:Name="LastSessionText" Visibility="Collapsed" FontSize="12" TextTrimming="CharacterEllipsis"

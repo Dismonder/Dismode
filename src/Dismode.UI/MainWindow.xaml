@@ -2803,6 +2803,19 @@ CPU —   GPU —
           <!-- DIAGNOSTICS & SETTINGS PAGE -->
           <ScrollViewer x:Name="DiagnosticsPage" HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto" Visibility="Collapsed">
             <ScrollViewer.Resources>
+              <!-- Akcent aplikacji zamiast systemowego dla przelacznikow i suwaka, jak na stronie Sesja. -->
+              <StaticResource x:Key="ToggleSwitchFillOn" ResourceKey="DismodeAccentBrush"/>
+              <StaticResource x:Key="ToggleSwitchFillOnPointerOver" ResourceKey="DismodeAccentBrush"/>
+              <StaticResource x:Key="ToggleSwitchFillOnPressed" ResourceKey="DismodeAccentBrush"/>
+              <StaticResource x:Key="ToggleSwitchStrokeOn" ResourceKey="DismodeAccentBrush"/>
+              <StaticResource x:Key="ToggleSwitchStrokeOnPointerOver" ResourceKey="DismodeAccentBrush"/>
+              <StaticResource x:Key="ToggleSwitchStrokeOnPressed" ResourceKey="DismodeAccentBrush"/>
+              <StaticResource x:Key="SliderTrackValueFill" ResourceKey="DismodeAccentBrush"/>
+              <StaticResource x:Key="SliderTrackValueFillPointerOver" ResourceKey="DismodeAccentBrush"/>
+              <StaticResource x:Key="SliderTrackValueFillPressed" ResourceKey="DismodeAccentBrush"/>
+              <StaticResource x:Key="SliderThumbBackground" ResourceKey="DismodeAccentBrush"/>
+              <StaticResource x:Key="SliderThumbBackgroundPointerOver" ResourceKey="DismodeAccentBrush"/>
+              <StaticResource x:Key="SliderThumbBackgroundPressed" ResourceKey="DismodeAccentBrush"/>
               <Style x:Key="SettingsSectionTitleStyle" TargetType="TextBlock">
                 <Setter Property="FontSize" Value="14"/>
                 <Setter Property="FontWeight" Value="SemiBold"/>
